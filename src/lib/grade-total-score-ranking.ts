@@ -39,6 +39,8 @@ export interface GradeTotalScoreRankingReport {
   scoreModeLabel: "原始分" | "赋分";
   subjects: string[];
   topN: number;
+  separateTopN: number;
+  hasSeparateGroups: boolean;
   tables: GradeTotalScoreRankingTable[];
 }
 
@@ -106,6 +108,7 @@ export function buildGradeTotalScoreRankingReport(
   const records = participatingGradeRecords(exam.records).filter((record) => !hiddenClassIds.has(record.classId));
   const subjects = [...exam.subjects];
   const topN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreTopN);
+  const separateTopN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreSeparateTopN ?? topN);
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
 
   const classTracks = new Map<string, GradeAcademicTrackClassification>();
@@ -127,10 +130,11 @@ export function buildGradeTotalScoreRankingReport(
     key: GradeTotalScoreRankingTable["key"],
     label: string,
     source: GradeScoreRecord[],
+    limit: number,
   ): GradeTotalScoreRankingTable => ({
     key,
     title: `${exam.name}${label}（${scoreModeLabel}）`,
-    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, topN),
+    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit),
   });
 
   const rankedGroups = new Map<string, GradeScoreRecord[]>();
@@ -144,6 +148,7 @@ export function buildGradeTotalScoreRankingReport(
   const tables: GradeTotalScoreRankingTable[] = [];
   rankedGroups.forEach((groupRecords, groupKey) => {
     const separateSubjects = JSON.parse(groupKey) as string[];
+    const groupTopN = separateSubjects.length ? separateTopN : topN;
     const groupLabel = !hasSeparateGroups ? ""
       : separateSubjects.length ? `单独排名（${separateSubjects.join("、")}）` : "统一排名";
     const keySuffix = separateSubjects.length ? `separate-${separateSubjects.join("-")}` : "all";
@@ -155,10 +160,10 @@ export function buildGradeTotalScoreRankingReport(
       (["science", "arts"] as const).forEach((track) => {
         const trackRecords = classifiedRecords.filter((item) => item.track === track).map((item) => item.record);
         const trackName = track === "science" ? "理科" : "文科";
-        tables.push(table(hasSeparateGroups ? `${track}-${keySuffix}` : track, `${trackName}${groupLabel}总分前${topN}名`, trackRecords));
+        tables.push(table(hasSeparateGroups ? `${track}-${keySuffix}` : track, `${trackName}${groupLabel}总分前${groupTopN}名`, trackRecords, groupTopN));
       });
     } else {
-      tables.push(table(keySuffix, `${groupLabel}总分前${topN}名`, groupRecords));
+      tables.push(table(keySuffix, `${groupLabel}总分前${groupTopN}名`, groupRecords, groupTopN));
     }
   });
 
@@ -168,6 +173,8 @@ export function buildGradeTotalScoreRankingReport(
     scoreModeLabel,
     subjects,
     topN,
+    separateTopN,
+    hasSeparateGroups,
     tables,
   };
 }

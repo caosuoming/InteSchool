@@ -234,7 +234,7 @@ describe("PublishedGradeReportPage", () => {
     expect(screen.getByText("期末考试班级平均分统计表")).toBeInTheDocument();
     expect(screen.getByText("期末考试总分分数段汇总表（赋分）")).toBeInTheDocument();
     expect(screen.getByText("期末考试总分前1名（赋分）")).toBeInTheDocument();
-    expect(screen.getByText(/表五前 1 名学生/)).toBeInTheDocument();
+    expect(screen.getByText(/表五榜单学生的姓名、学号和成绩/)).toBeInTheDocument();
     expect(bundle.totalScoreRanking?.tables[0].rows[0]).not.toHaveProperty("studentId");
     expect(bundle.totalScoreRanking?.tables[0].rows[0]).not.toHaveProperty("classId");
 

@@ -374,6 +374,15 @@ describe("grade statistics", () => {
     });
   });
 
+  it("normalizes the separate ranking top-N independently", () => {
+    const settings = buildDefaultGradeSettings(["数学"], ["class-1"]);
+    const template = settings.templates.find((item) => item.kind === "totalScoreSegment")!;
+    template.totalScoreSegmentOptions = { totalScoreTopN: 32, totalScoreSeparateTopN: 1200 };
+    const normalized = normalizeGradeSettings(settings, ["数学"], ["class-1"]);
+    expect(normalized.templates.find((item) => item.kind === "totalScoreSegment")
+      ?.totalScoreSegmentOptions).toMatchObject({ totalScoreTopN: 32, totalScoreSeparateTopN: 1000 });
+  });
+
   it("assigns elective scores and produces grade and class competition ranks", () => {
     const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
     const records = calculateGradeRecords(baseRecords, ["数学", "化学"], settings);

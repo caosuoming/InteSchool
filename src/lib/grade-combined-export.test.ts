@@ -322,6 +322,34 @@ describe("combined grade exports", () => {
     ]);
   });
 
+  it("exports group-specific top-N titles without using a misleading file name", async () => {
+    const groupedExam: GradeExam = {
+      ...exam,
+      settings: {
+        ...exam.settings,
+        classSubjects: [
+          { classId: "class-1", examSubjects: ["语文", "化学"], statisticSubjects: ["语文", "化学"], separateRankSubjects: ["化学"] },
+          { classId: "class-2", examSubjects: ["语文", "化学"], statisticSubjects: ["语文", "化学"] },
+        ],
+      },
+    };
+    const report = buildGradeTotalScoreRankingReport(groupedExam, {
+      ...totalScoreSegmentTemplate,
+      totalScoreSegmentOptions: { totalScoreTopN: 1, totalScoreSeparateTopN: 2 },
+    }, context, classAverageTemplate);
+
+    await exportGradeTotalScoreRankingReport(report, exam.name);
+
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      data: Array<Array<{ value?: string | number }>>;
+    }>;
+    expect(sheets.map((sheet) => sheet.data[0][0].value)).toEqual([
+      "期末考试单独排名（化学）总分前2名（赋分）",
+      "期末考试统一排名总分前1名（赋分）",
+    ]);
+    expect(toFile).toHaveBeenCalledWith("期末考试总分排名.xlsx");
+  });
+
   it("places every class from table six in its own sheet", async () => {
     const report = buildGradeClassStatisticsReport(exam, [], {
       showSubjectClassRanks: true,

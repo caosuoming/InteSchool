@@ -447,7 +447,7 @@ export async function exportGradeTotalScoreRankingReport(
   const fallbackTitle = `${report.tables[0].title}${report.tables.length > 1 ? "等" : ""}`;
   await writeXlsxFile(sheets).toFile(gradeReportFileName(
     examName,
-    `总分前${report.topN}名`,
+    report.hasSeparateGroups && report.separateTopN !== report.topN ? "总分排名" : `总分前${report.topN}名`,
     fallbackTitle,
   ));
 }

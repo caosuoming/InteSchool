@@ -58,19 +58,25 @@ export function GradeTotalScoreRankingTable({
     effectiveClassAverageTemplate,
   ), [context, effectiveClassAverageTemplate, effectiveTemplate, exam]);
 
-  const updateTopN = (value: string) => {
+  const updateTopN = (field: "totalScoreTopN" | "totalScoreSeparateTopN", value: string) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return;
     const topN = Math.max(1, Math.min(1000, Math.round(parsed)));
-    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    const currentSettings = latestSettings.current;
+    const options = currentSettings.templates.find((item) => item.id === effectiveTemplate.id)
+      ?.totalScoreSegmentOptions || {};
     const nextSettings: GradeExamSettings = {
-      ...settings,
-      templates: settings.templates.map((item) => item.id === effectiveTemplate.id
+      ...currentSettings,
+      templates: currentSettings.templates.map((item) => item.id === effectiveTemplate.id
         ? {
             ...item,
             totalScoreSegmentOptions: {
               ...options,
-              totalScoreTopN: topN,
+              ...(report.hasSeparateGroups && field === "totalScoreTopN" && {
+                totalScoreSeparateTopN: options.totalScoreSeparateTopN
+                  ?? options.totalScoreTopN ?? DEFAULT_TOTAL_SCORE_TOP_N,
+              }),
+              [field]: topN,
             },
           }
         : item),
@@ -114,27 +120,49 @@ export function GradeTotalScoreRankingTable({
             <Trophy className="h-4 w-4" />
           </div>
           <div>
-            <div className="font-medium text-ink-900">表五、总分前{report.topN}名（{report.scoreModeLabel}）</div>
+            <div className="font-medium text-ink-900">
+              表五、{report.hasSeparateGroups ? "总分排名" : `总分前${report.topN}名`}（{report.scoreModeLabel}）
+            </div>
             <div className="mt-0.5 text-xs text-ink-500">
               单独排名科目的班级另组排名，其余班级统一排名；组内文理科均存在且能识别时继续分科排名。总分和各科成绩类型与表二保持一致。
             </div>
+            {report.hasSeparateGroups && (
+              <div className="mt-1 text-xs text-ink-500">统一排名前 {report.topN} 名，单独排名前 {report.separateTopN} 名。</div>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div className="w-28">
             <Input
-              label="前多少名"
-              aria-label="表五前多少名"
+              label={report.hasSeparateGroups ? "统一排名前多少名" : "前多少名"}
+              aria-label={report.hasSeparateGroups ? "表五统一排名前多少名" : "表五前多少名"}
               type="number"
               min={1}
               max={1000}
               defaultValue={effectiveTemplate.totalScoreSegmentOptions?.totalScoreTopN ?? DEFAULT_TOTAL_SCORE_TOP_N}
               onBlur={(event) => {
-                updateTopN(event.target.value);
+                updateTopN("totalScoreTopN", event.target.value);
                 void autoSave();
               }}
             />
           </div>
+          {report.hasSeparateGroups && (
+            <div className="w-28">
+              <Input
+                label="单独排名前多少名"
+                aria-label="表五单独排名前多少名"
+                type="number"
+                min={1}
+                max={1000}
+                defaultValue={effectiveTemplate.totalScoreSegmentOptions?.totalScoreSeparateTopN
+                  ?? effectiveTemplate.totalScoreSegmentOptions?.totalScoreTopN ?? DEFAULT_TOTAL_SCORE_TOP_N}
+                onBlur={(event) => {
+                  updateTopN("totalScoreSeparateTopN", event.target.value);
+                  void autoSave();
+                }}
+              />
+            </div>
+          )}
           <Button variant="outline" size="sm" onClick={exportReport} loading={exporting} disabled={!hasRows}>
             <Download className="h-3.5 w-3.5" />导出 Excel
           </Button>
