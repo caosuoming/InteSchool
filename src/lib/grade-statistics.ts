@@ -30,7 +30,6 @@ export const DEFAULT_ASSIGNMENT_RULES: GradeBandRule[] = [
 ];
 
 export type GradeClassSubjectAvailability = Record<string, string[]>;
-export type GradeClassStatisticSubjectPresets = Record<string, string[]>;
 
 const ELECTIVE_SELECTION_ALIASES: Record<string, string[]> = {
   物理: ["物理", "物"],
@@ -95,7 +94,6 @@ export function inferClassSubjectAvailability(
     sourceAssignedScores?: Record<string, number | null>;
   }>,
   subjects: string[],
-  expectedClassCounts: Record<string, number> = {},
 ): GradeClassSubjectAvailability {
   const normalizedSubjects = unique(subjects);
   const grouped = new Map<string, typeof records>();
@@ -106,16 +104,14 @@ export function inferClassSubjectAvailability(
   });
   return Object.fromEntries([...grouped.entries()].map(([classId, classRecords]) => [
     classId,
-    classRecords.length < (expectedClassCounts[classId] || 0)
-      ? []
-      : normalizedSubjects.filter((subject) => classRecords.every((record) => {
-        const values = [
-          record.scores[subject],
-          record.assignedScores?.[subject],
-          record.sourceAssignedScores?.[subject],
-        ];
-        return values.some((value) => typeof value === "number" && Number.isFinite(value));
-      })),
+    normalizedSubjects.filter((subject) => classRecords.some((record) => {
+      const values = [
+        record.scores[subject],
+        record.assignedScores?.[subject],
+        record.sourceAssignedScores?.[subject],
+      ];
+      return values.some((value) => typeof value === "number" && Number.isFinite(value));
+    })),
   ]));
 }
 
@@ -143,7 +139,6 @@ export function buildDefaultGradeSettings(
   classIds: string[],
   teachers: GradeTeacherOption[] = [],
   classSubjectAvailability: GradeClassSubjectAvailability = {},
-  classStatisticSubjectPresets: GradeClassStatisticSubjectPresets = {},
 ): GradeExamSettings {
   const normalizedSubjects = unique(subjects);
   const electiveSubjects = normalizedSubjects.filter((subject) =>
@@ -197,14 +192,10 @@ export function buildDefaultGradeSettings(
     const defaultSubjects = hasObservedSubjects
       ? normalizedSubjects.filter((subject) => observedSubjects.has(subject))
       : normalizedSubjects;
-    const statisticPreset = classStatisticSubjectPresets[classId];
-    const statisticSubjects = statisticPreset
-      ? defaultSubjects.filter((subject) => statisticPreset.includes(subject))
-      : defaultSubjects;
     return {
       classId,
       examSubjects: [...defaultSubjects],
-      statisticSubjects: [...statisticSubjects],
+      statisticSubjects: [...defaultSubjects],
       separateRankSubjects: [],
     };
   });
@@ -691,9 +682,10 @@ export function calculateGradeRecords(
 
   for (const [subject, rules] of Object.entries(settings.assignmentRules)) {
     if (!normalizedSubjects.includes(subject)) continue;
-    const unifiedRecords = participating.filter((record) =>
-      !(classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
-    );
+    const unifiedRecords = participating.filter((record) => {
+      const classSetting = classSettings.get(record.classId);
+      return !classSetting || classSetting.statisticSubjects.includes(subject);
+    });
     assignSubjectScores(unifiedRecords, subject, rules);
 
     const separateRecords = participating.filter((record) =>
@@ -705,8 +697,8 @@ export function calculateGradeRecords(
   normalizedSubjects.forEach((subject) => {
     const unifiedRecords = participating.filter((record) => {
       if (typeof record.assignedScores[subject] !== "number") return false;
-      const separateSubjects = classSettings.get(record.classId)?.separateRankSubjects || [];
-      return !separateSubjects.includes(subject);
+      const classSetting = classSettings.get(record.classId);
+      return !classSetting || classSetting.statisticSubjects.includes(subject);
     });
     const unifiedRanks = competitionRanks(
       unifiedRecords,

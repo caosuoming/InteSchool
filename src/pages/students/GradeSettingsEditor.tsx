@@ -39,7 +39,6 @@ import {
   ASSIGNMENT_GRADE_SUBJECTS,
   calculateGradeRecords,
   DEFAULT_ASSIGNMENT_RULES,
-  inferStatisticSubjectsFromSelections,
 } from "@/lib/grade-statistics";
 import { toast } from "@/stores/ui";
 
@@ -662,7 +661,7 @@ function ClassSubjectSettings({
         <div>
           <div className="font-medium text-ink-900">配置3、各班统一排名与单独排名科目</div>
           <div className="mt-0.5 text-xs text-ink-500">
-            每个科目最多选择一列；选择单独排名的班级合并为一组，其余班级合并为统一排名组，总分排名也按各班的单独排名科目组合分组。尚未保存配置时，统一排名优先按班级学生整体选科预设，无法识别选科时再参考整班成绩科目。
+            默认所有实际考试科目均纳入统一排名；取消勾选即不参加该科目排名，也可选择单独排名。选择单独排名的班级合并为一组，其余参加统一排名的班级合并为统一组。
           </div>
         </div>
       </div>
@@ -681,17 +680,10 @@ function ClassSubjectSettings({
               const inferredSubjects = profile?.hasImportedScores
                 ? subjects.filter((subject) => profile.scoreSubjects.includes(subject))
                 : subjects;
-              const selectionPreset = inferStatisticSubjectsFromSelections(
-                subjects,
-                profile?.subjectSelections || [],
-              );
-              const presetStatisticSubjects = selectionPreset
-                ? inferredSubjects.filter((subject) => selectionPreset.includes(subject))
-                : inferredSubjects;
               const current = settings.classSubjects.find((item) => item.classId === classItem.id) || {
                 classId: classItem.id,
                 examSubjects: inferredSubjects,
-                statisticSubjects: presetStatisticSubjects,
+                statisticSubjects: inferredSubjects,
                 separateRankSubjects: [],
               };
               const replace = (patch: Partial<typeof current>) => {
@@ -709,7 +701,7 @@ function ClassSubjectSettings({
                 if (mode === "cohort") statisticSubjects.push(subject);
                 if (mode === "class") separateRankSubjects.push(subject);
                 replace({
-                  examSubjects: [...new Set([...statisticSubjects, ...separateRankSubjects])],
+                  examSubjects: [...new Set([...current.examSubjects, ...statisticSubjects, ...separateRankSubjects])],
                   statisticSubjects,
                   separateRankSubjects,
                 });
@@ -719,10 +711,8 @@ function ClassSubjectSettings({
                 <tr key={classItem.id} className="align-top">
                   <td className="px-4 py-3">
                     <ClassSummary classItem={classItem} context={context} />
-                    {selectionPreset ? (
-                      <div className="mt-1.5 text-[11px] text-blue-600">已按班级整体选科预设统一排名科目</div>
-                    ) : profile?.hasImportedScores ? (
-                      <div className="mt-1.5 text-[11px] text-blue-600">选科无法识别，已参考最近一次整班成绩</div>
+                    {profile?.hasImportedScores ? (
+                      <div className="mt-1.5 text-[11px] text-blue-600">已参考最近一次整班成绩确定考试科目</div>
                     ) : null}
                   </td>
                   <td className="px-4 py-3">

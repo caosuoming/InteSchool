@@ -232,7 +232,7 @@ describe("combined grade exports", () => {
     }>>;
     const overallRow = rows.find((row) => String(row[0]?.value).startsWith("全校平均"))!;
     expect(overallRow[0]).toMatchObject({
-      value: "全校平均（不参与统一排名：化学：1班；总分：1班）",
+      value: "全校平均（部分）",
       columnSpan: 3,
       wrap: true,
     });

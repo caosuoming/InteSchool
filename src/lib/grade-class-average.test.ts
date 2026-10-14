@@ -261,7 +261,7 @@ describe("grade class average report", () => {
       total: ["2班"],
     });
     expect(classAverageOverallLabel(report))
-      .toBe("全校平均（不参与统一排名：英语：2班；总分：2班）");
+      .toBe("全校平均（部分）");
   });
 
   it("respects non-participating subjects, custom labels, and hidden classes", () => {
@@ -280,13 +280,13 @@ describe("grade class average report", () => {
 
     expect(report.overallAverage.subjectValues.数学).toEqual({ raw: 70, assigned: 70 });
     expect(report.overallAverage.subjectValues.英语).toEqual({ raw: 80, assigned: 80 });
-    expect(report.overallAverage.totalValues).toEqual({ raw: 170, assigned: 170 });
+    expect(report.overallAverage.totalValues).toEqual({ raw: null, assigned: null });
     expect(report.overallExcludedClasses).toEqual({
       subjects: { 数学: ["二班"], 英语: ["十班"] },
-      total: ["十班"],
+      total: ["二班", "十班"],
     });
     expect(classAverageOverallLabel(report))
-      .toBe("全校平均（不参与统一排名：数学：二班；英语：十班；总分：十班）");
+      .toBe("全校平均（部分）");
 
     const hiddenReport = buildGradeClassAverageReport(exam, {
       ...customized,
@@ -294,10 +294,55 @@ describe("grade class average report", () => {
     }, context, settings);
     expect(hiddenReport.overallExcludedClasses).toEqual({
       subjects: { 数学: ["二班"], 英语: [] },
-      total: [],
+      total: ["二班"],
     });
     expect(hiddenReport.overallAverage.subjectValues.数学.raw).toBeNull();
     expect(hiddenReport.overallAverage.subjectValues.英语.raw).toBe(80);
+  });
+
+  it("does not mark missing non-exam subjects as manually excluded", () => {
+    const settings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-2", examSubjects: ["数学"], statisticSubjects: ["数学"], separateRankSubjects: [] },
+        { classId: "class-10", examSubjects: ["数学", "英语"], statisticSubjects: ["数学", "英语"], separateRankSubjects: [] },
+      ],
+    };
+    const noEnglishExam: GradeExam = {
+      ...exam,
+      records: exam.records.map((record) => record.classId === "class-2"
+        ? { ...record, scores: { ...record.scores, 英语: null }, assignedScores: { ...record.assignedScores, 英语: null } }
+        : record),
+    };
+    const report = buildGradeClassAverageReport(noEnglishExam, template, context, settings);
+    expect(report.overallAverage.subjectValues.英语.raw).toBe(100);
+    expect(report.overallExcludedClasses).toEqual({
+      subjects: { 数学: [], 英语: [] },
+      total: [],
+    });
+    expect(classAverageOverallLabel(report)).toBe("全校平均");
+  });
+
+  it("uses only participating class scores when a subject is unchecked without separate ranking", () => {
+    const settings = {
+      ...exam.settings,
+      classSubjects: [
+        { classId: "class-2", examSubjects: ["数学", "英语"], statisticSubjects: ["数学"], separateRankSubjects: [] },
+        { classId: "class-10", examSubjects: ["数学", "英语"], statisticSubjects: ["数学", "英语"], separateRankSubjects: [] },
+      ],
+    };
+    const report = buildGradeClassAverageReport(exam, template, context, settings);
+
+    expect(report.overallAverage.subjectValues.数学.raw).toBe(83.33);
+    expect(report.overallAverage.subjectValues.英语.raw).toBe(100);
+    expect(report.overallAverage.totalValues.raw).toBe(170);
+    expect(report.overallExcludedClasses).toEqual({
+      subjects: { 数学: [], 英语: ["2班"] },
+      total: ["2班"],
+    });
+    expect(classAverageOverallLabel(report)).toBe("全校平均（部分）");
+    expect(classAverageOverallLabel(buildGradeClassAverageReport(exam, template, context)))
+      .toBe("全校平均");
   });
 
   it("excludes all separately ranked students without inventing a school-wide average", () => {

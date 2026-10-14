@@ -117,6 +117,7 @@ describe("GradeSettingsEditor", () => {
     expect(classSetting.statisticSubjects).not.toContain("数学");
     expect(classSetting.separateRankSubjects).toContain("数学");
     expect(classSetting.examSubjects).toContain("数学");
+    expect(classSetting.statisticSubjects).toContain("化学");
   });
 
   it("starts with no class teacher selected and changes only the chosen class", async () => {
