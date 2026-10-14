@@ -4,6 +4,7 @@ export type AnswerSheetResourceType = "exam-paper" | "lecture";
 export type AnswerSheetPaperSize = "A4" | "A3" | "8K";
 export type AnswerSheetMode = "blank" | "with-questions";
 export type AnswerSheetChoiceLayout = "inline" | "concentrated";
+export type AnswerSheetChoiceDirection = "horizontal" | "vertical";
 export type AnswerSheetWideColumns = 2 | 3;
 export type AnswerSheetBoxStyle = "solid" | "dashed";
 export type AnswerSheetOptionBreak = "new-line" | "same-line";
@@ -19,6 +20,7 @@ export interface AnswerSheetSettings {
   mode: AnswerSheetMode;
   studentNumberDigits: number;
   choiceLayout: AnswerSheetChoiceLayout;
+  concentratedChoiceDirection?: AnswerSheetChoiceDirection;
   widePaperColumns: AnswerSheetWideColumns;
   a4Columns: 1 | 2;
   answerBoxStyle: AnswerSheetBoxStyle;
@@ -47,6 +49,7 @@ export const DEFAULT_ANSWER_SHEET_SETTINGS: AnswerSheetSettings = {
   mode: "blank",
   studentNumberDigits: DEFAULT_STUDENT_NUMBER_DIGITS,
   choiceLayout: "inline",
+  concentratedChoiceDirection: "horizontal",
   widePaperColumns: 2,
   a4Columns: 1,
   answerBoxStyle: "solid",

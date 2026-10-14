@@ -127,9 +127,11 @@ describe("AnswerSheetComposer", () => {
     expect(student).toHaveClass("w-[49mm]", "border-l");
     expect(qr).toHaveClass("w-[24mm]", "border-l");
     expect(fields.nextElementSibling).toHaveClass("contents");
-    expect(fields.nextElementSibling?.firstElementChild).toBe(student);
+    expect(fields.nextElementSibling?.firstElementChild).toHaveAttribute("aria-hidden", "true");
+    expect(fields.nextElementSibling?.children[1]).toBe(student);
     expect(student.nextElementSibling).toBe(qr);
     expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区").parentElement).toHaveClass("flex-col");
     // 38 + 49 + 24 = 111 mm, less than the 114 mm usable width of an 8K three-column page.
     expect(38 + 49 + 24).toBeLessThan((370 - 2 * 8 - 2 * 6) / 3);
     expect(screen.getByTestId("answer-sheet-page-header")).not.toHaveTextContent("高一 · 2026-2027学年");
@@ -636,6 +638,80 @@ describe("AnswerSheetComposer", () => {
     } finally {
       measurement.mockRestore();
     }
+  });
+
+  it("keeps the signature below the name and identity sections aligned on all paper sizes", () => {
+    const { container } = renderComposer();
+    for (const paperSize of ["A4", "8K", "A3"] as const) {
+      fireEvent.change(screen.getByLabelText("纸张"), { target: { value: paperSize } });
+      const signature = screen.getByLabelText("姓名签名填写区");
+      const nameLabel = signature.previousElementSibling;
+      expect(nameLabel).toHaveTextContent("姓名：");
+      expect(signature.parentElement).toHaveClass("flex-col", "items-start");
+      expect(screen.getByTestId("answer-sheet-identity-area").firstElementChild)
+        .toBe(screen.getByTestId("answer-sheet-identity-fields"));
+      expect(screen.getByTestId("answer-sheet-identity-fields").nextElementSibling?.firstElementChild)
+        .toHaveClass("flex-1");
+      expect(container.querySelector('[data-testid="answer-sheet-qr-position"]'))
+        .toBe(screen.getByTestId("answer-sheet-student-number-column").nextElementSibling);
+    }
+  });
+
+  it("moves option controls to the toolbar and preserves each selected question's layout", () => {
+    const onSettingsChange = vi.fn();
+    const { container } = renderComposer({
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+    });
+    const controls = screen.getByTestId("answer-sheet-choice-controls");
+    expect(controls).toContainElement(screen.getByLabelText("选择题号"));
+    expect(screen.getByLabelText("选择题号")).toHaveValue("q1");
+    expect(controls.querySelectorAll("select")).toHaveLength(4);
+    expect(container.querySelector('[data-testid="inline-choice-question"] select')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("第1题选项B排列方式"), { target: { value: "new-line" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      choiceOptionBreaks: { q1: { 1: "new-line" } },
+    }));
+    fireEvent.change(screen.getByLabelText("选择题号"), { target: { value: "q2" } });
+    expect(screen.getByLabelText("第2题选项B排列方式")).toHaveValue("auto");
+    fireEvent.change(screen.getByLabelText("第2题选项D排列方式"), { target: { value: "same-line" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      choiceOptionBreaks: { q1: { 1: "new-line" }, q2: { 3: "same-line" } },
+    }));
+    fireEvent.change(screen.getByLabelText("选择题号"), { target: { value: "q1" } });
+    expect(screen.getByLabelText("第1题选项B排列方式")).toHaveValue("new-line");
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.queryByTestId("answer-sheet-choice-controls")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("choice-option-row").length).toBeGreaterThan(2);
+  });
+
+  it("defaults concentrated choice fills to horizontal and saves a vertical layout for preview", () => {
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+      onSettingsChange,
+    });
+    const direction = screen.getByLabelText("选择题填涂方向");
+    expect(direction).toHaveValue("horizontal");
+    expect(screen.getAllByTestId("choice-answer-options")).toHaveLength(2);
+    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-wrap");
+
+    fireEvent.change(direction, { target: { value: "vertical" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      concentratedChoiceDirection: "vertical",
+    }));
+    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-col");
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveAttribute("data-direction", "vertical");
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+    expect(screen.getByLabelText("选择题填涂方向")).toHaveValue("vertical");
+
+    fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "inline" } });
+    expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "concentrated" } });
+    expect(screen.getByLabelText("选择题填涂方向")).toHaveValue("vertical");
   });
 
   it("saves per-option line break choices and reproduces them in preview", () => {

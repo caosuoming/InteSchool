@@ -27,6 +27,7 @@ import {
   type AnswerSheetBoxStyle,
   type AnswerSheetOptionBreak,
   type AnswerSheetChoiceLayout,
+  type AnswerSheetChoiceDirection,
   type AnswerSheetPaperSize,
   type AnswerSheetQuestion,
   type AnswerSheetResourceType,
@@ -214,12 +215,20 @@ function splitEssayStemContent(stem: string): EssayStemContent {
   };
 }
 
-function ChoiceAnswer({ number, optionCount }: { number: number | string; optionCount: number }) {
+function ChoiceAnswer({ number, optionCount, direction = "horizontal" }: {
+  number: number | string;
+  optionCount: number;
+  direction?: AnswerSheetChoiceDirection;
+}) {
   const count = Math.min(8, Math.max(2, optionCount || 4));
   return (
     <div className="flex items-center gap-2">
       <span className="w-7 shrink-0 font-mono text-xs font-semibold text-ink-800">{number}.</span>
-      <div className="flex flex-wrap gap-2">
+      <div
+        className={direction === "vertical" ? "flex flex-col items-start gap-1" : "flex flex-wrap gap-2"}
+        data-testid="choice-answer-options"
+        data-direction={direction}
+      >
         {Array.from({ length: count }, (_, index) => (
           <span key={index} className="font-mono text-xs text-ink-900">
             [{String.fromCharCode(65 + index)}]
@@ -372,16 +381,13 @@ function DraggableQuestionContent({
 interface ChoiceQuestionProps extends NumberedQuestion {
   editable: boolean;
   breaks?: Record<number, AnswerSheetOptionBreak>;
-  onBreakChange: (index: number, value: AnswerSheetOptionBreak | "auto") => void;
 }
 
 /** Measures rendered option widths, including rich text and mathematical notation. */
 function ChoiceOptions({
   question,
-  number,
   editable,
   breaks,
-  onBreakChange,
   labelStyle,
 }: ChoiceQuestionProps & { labelStyle: "brackets" | "dots" }) {
   const options = useMemo(
@@ -462,29 +468,6 @@ function ChoiceOptions({
           </div>
         ))}
       </div>
-      {editable && options.length > 1 && (
-        <div className="no-print mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-ink-500">
-          {options.slice(1).map((_, offset) => {
-            const index = offset + 1;
-            const label = String.fromCharCode(65 + index);
-            return (
-              <label key={index} className="inline-flex items-center gap-1">
-                {label}:
-                <select
-                  aria-label={`第${number}题选项${label}排列方式`}
-                  className="rounded border border-ink-300 bg-white px-1 py-0.5 text-[10px] text-ink-700"
-                  value={breaks?.[index] ?? "auto"}
-                  onChange={(event) => onBreakChange(index, event.target.value as AnswerSheetOptionBreak | "auto")}
-                >
-                  <option value="auto">自动</option>
-                  <option value="new-line">另起一行</option>
-                  <option value="same-line">接上一项</option>
-                </select>
-              </label>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -688,6 +671,7 @@ function buildInitialSettings(initialSettings?: Partial<AnswerSheetSettings>): A
     ),
     widePaperColumns: initialSettings?.widePaperColumns === 3 ? 3 : 2,
     a4Columns: initialSettings?.a4Columns === 2 ? 2 : 1,
+    concentratedChoiceDirection: initialSettings?.concentratedChoiceDirection === "vertical" ? "vertical" : "horizontal",
     answerBoxStyle: initialSettings?.answerBoxStyle === "dashed" ? "dashed" : "solid",
     stemFontSize: normalizeAnswerSheetStemFontSize(
       initialSettings?.stemFontSize ?? DEFAULT_ANSWER_SHEET_SETTINGS.stemFontSize,
@@ -717,6 +701,7 @@ export function AnswerSheetComposer({
   const [viewMode, setViewMode] = useState<"edit" | "preview">(initialViewMode);
   const [pageStarts, setPageStarts] = useState<number[]>([0]);
   const [publishing, setPublishing] = useState(false);
+  const [selectedChoiceId, setSelectedChoiceId] = useState("");
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
 
@@ -726,6 +711,7 @@ export function AnswerSheetComposer({
     () => numberedQuestions.filter(({ question }) => isChoiceQuestion(question)),
     [numberedQuestions],
   );
+  const selectedChoice = choiceItems.find(({ question }) => question.id === selectedChoiceId) ?? choiceItems[0];
   const fillItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isFillQuestion(question)),
     [numberedQuestions],
@@ -793,6 +779,7 @@ export function AnswerSheetComposer({
   };
 
   const updateChoiceOptionBreak = (questionId: string, index: number, value: AnswerSheetOptionBreak | "auto") => {
+    if (published) return;
     setSettings((current) => {
       const perQuestion = { ...current.choiceOptionBreaks?.[questionId] };
       if (value === "auto") delete perQuestion[index];
@@ -929,7 +916,7 @@ export function AnswerSheetComposer({
   }, [
     columnWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle,
     settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits,
-    settings.stemFontSize, viewMode,
+    settings.choiceOptionBreaks, settings.concentratedChoiceDirection, settings.stemFontSize, viewMode,
   ]);
 
   useEffect(() => {
@@ -980,8 +967,8 @@ export function AnswerSheetComposer({
             <span className="shrink-0">班级：</span>
             <span className="h-5 min-w-10 flex-1 border-b border-ink-700" aria-label="班级填写区" />
           </div>
-          <div className={isWidePaper ? "flex items-center gap-1 text-xs" : "text-sm"}>
-            <div className={isWidePaper ? "shrink-0" : "mb-1"}>姓名：</div>
+          <div className={isWidePaper ? "flex flex-col items-start gap-1 text-xs" : "flex flex-col items-start gap-1 text-sm"}>
+            <div>姓名：</div>
             <span
               className="block h-[13mm] w-[20mm] shrink-0 border border-dashed border-ink-700"
               aria-label="姓名签名填写区"
@@ -991,7 +978,7 @@ export function AnswerSheetComposer({
           </div>
         </div>
         <div className="contents">
-          {!isWidePaper && <div className="min-w-0 flex-1" aria-hidden="true" />}
+          <div className="min-w-0 flex-1" aria-hidden="true" />
           <div
             className={isWidePaper
               ? "flex w-[49mm] shrink-0 items-center border-l border-ink-900 p-[1mm]"
@@ -1039,12 +1026,10 @@ export function AnswerSheetComposer({
     if (isChoiceQuestion(question)) {
       if (settings.choiceLayout === "inline") {
         return <InlineChoiceQuestion {...item} editable={!isPreview}
-          breaks={settings.choiceOptionBreaks?.[question.id]}
-          onBreakChange={(index, value) => updateChoiceOptionBreak(question.id, index, value)} />;
+          breaks={settings.choiceOptionBreaks?.[question.id]} />;
       }
       return <ChoiceQuestionText {...item} editable={!isPreview}
-        breaks={settings.choiceOptionBreaks?.[question.id]}
-        onBreakChange={(index, value) => updateChoiceOptionBreak(question.id, index, value)} />;
+        breaks={settings.choiceOptionBreaks?.[question.id]} />;
     }
 
     if (isFillQuestion(question)) {
@@ -1085,6 +1070,7 @@ export function AnswerSheetComposer({
           <ChoiceAnswer
             number={flowItem.item.question.label || flowItem.item.number}
             optionCount={flowItem.item.question.options?.length || 4}
+            direction={settings.concentratedChoiceDirection}
           />
         </div>
       );
@@ -1317,6 +1303,59 @@ export function AnswerSheetComposer({
                   {typeof totalScore === "number" && <Badge variant="gold">{totalScore}分</Badge>}
                 </div>
               </div>
+              {settings.mode === "with-questions" && choiceItems.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-200 pt-4" data-testid="answer-sheet-choice-controls">
+                  <div className="w-36">
+                    <Select
+                      label="选择题号"
+                      value={selectedChoice?.question.id ?? ""}
+                      onChange={(event) => setSelectedChoiceId(event.target.value)}
+                      options={choiceItems.map(({ question, number }) => ({
+                        value: question.id,
+                        label: "第" + (question.label || number) + "题",
+                      }))}
+                    />
+                  </div>
+                  {selectedChoice && Array.from(
+                    { length: Math.min(8, Math.max(2, selectedChoice.question.options?.length || 4)) - 1 },
+                    (_, offset) => offset + 1,
+                  ).map((index) => {
+                    const label = String.fromCharCode(65 + index);
+                    return (
+                      <div className="w-32" key={selectedChoice.question.id + "-" + index}>
+                        <Select
+                          label={label + " 选项位置"}
+                          aria-label={"第" + (selectedChoice.question.label || selectedChoice.number) + "题选项" + label + "排列方式"}
+                          value={settings.choiceOptionBreaks?.[selectedChoice.question.id]?.[index] ?? "auto"}
+                          onChange={(event) => updateChoiceOptionBreak(
+                            selectedChoice.question.id, index, event.target.value as AnswerSheetOptionBreak | "auto",
+                          )}
+                          options={[
+                            { value: "auto", label: "自动" },
+                            { value: "new-line", label: "另起一行" },
+                            { value: "same-line", label: "接上一项" },
+                          ]}
+                        />
+                      </div>
+                    );
+                  })}
+                  {settings.choiceLayout === "concentrated" && (
+                    <div className="w-36">
+                      <Select
+                        label="选择题填涂方向"
+                        value={settings.concentratedChoiceDirection ?? "horizontal"}
+                        onChange={(event) => updateSettings({
+                          concentratedChoiceDirection: event.target.value as AnswerSheetChoiceDirection,
+                        })}
+                        options={[
+                          { value: "horizontal", label: "横向" },
+                          { value: "vertical", label: "竖向" },
+                        ]}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           )}
         </div>
