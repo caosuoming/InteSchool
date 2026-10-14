@@ -296,4 +296,22 @@ describe("classroomHomeworkService", () => {
       expect(state.classroomHomeworks).toEqual([updated]);
     });
   });
+  it("keeps a migrated classroom record in the exam directory after ordinary content edits", async () => {
+    const state = createState();
+    await runWithState(state, async () => {
+      const input = {
+        title: "数学练习", content: "完成课本", classIds: ["class-1"],
+        assignedDate: "2026-08-02", publishAt: now,
+      };
+      const created = await classroomHomeworkService.createHomework("teacher-1", "school-1", input);
+      expect(created.managementCategory).toBe("homework");
+      const moved = await classroomHomeworkService.updateHomework(created.id, "teacher-1", "school-1", {
+        ...input, managementCategory: "exam",
+      });
+      expect(moved.managementCategory).toBe("exam");
+      const updated = await classroomHomeworkService.updateHomework(created.id, "teacher-1", "school-1", input);
+      expect(updated.managementCategory).toBe("exam");
+    });
+  });
+
 });

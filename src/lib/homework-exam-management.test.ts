@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ClassroomHomework, ExamPublication, HomeworkClassOverviewRecord } from "@/types";
-import { homeworkStatus, homeworkSubmissionCounts, homeworkTitle, publicationStatus } from "./homework-exam-management";
+import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord } from "@/types";
+import { homeworkStatus, homeworkSubmissionCounts, homeworkTitle, paperHomeworkStatus, publicationStatus } from "./homework-exam-management";
 
 const homework: ClassroomHomework = {
   id: "hw-1", teacherId: "teacher-1", teacherName: "王老师", schoolId: "school-1", subject: "数学",
@@ -35,6 +35,13 @@ describe("作业考试管理展示", () => {
     expect(homeworkSubmissionCounts(homework, new Map([["a", [record("a")]]]))).toBeNull();
     expect(homeworkSubmissionCounts(homework, new Map([["a", [record("a")]], ["b", [record("b", { attendanceTaken: false })]]]))).toBeNull();
     expect(homeworkSubmissionCounts({ ...homework, assignedEndDate: "2026-10-13" }, data)).toBeNull();
+  });
+
+  it("does not claim that a library draft was assigned to students", () => {
+    const paper = { status: "draft", assignedDate: "2026-10-12", assignedEndDate: "2026-10-13" } as ExamPaper;
+    const now = new Date("2026-10-12T12:00:00+08:00");
+    expect(paperHomeworkStatus(paper, now)).toBe("草稿");
+    expect(paperHomeworkStatus({ ...paper, status: "published" }, now)).toBe("进行中");
   });
 
   it("uses publication lifecycle and unlock date without inventing an exam date", () => {

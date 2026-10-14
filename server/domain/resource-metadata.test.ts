@@ -68,6 +68,35 @@ describe("document resource metadata", () => {
     });
   });
 
+  it("moves exam documents without losing metadata and gives copies independent homework status", async () => {
+    const state: AppState = { teachers: [], currentTeacherId: null, examPapers: [], reflections: [] };
+    await runWithState(state, async () => {
+      const paper = await examPaperService.createPaper("teacher-1", "school-1", {
+        title: "函数练习", chapterIds: [], knowledgePointIds: [], grade: "高一",
+        schoolYear: "2026-2027", duration: 45, totalScore: 0, questions: [],
+      });
+      expect(paper.managementCategory).toBe("homework");
+      const moved = await examPaperService.updatePaper(paper.id, {
+        managementCategory: "exam", assignedDate: "2026-10-20",
+        assignedEndDate: "2026-10-25", classIds: ["class-1"],
+      });
+      expect(moved).toMatchObject({
+        managementCategory: "exam", assignedDate: "2026-10-20",
+        assignedEndDate: "2026-10-25", classIds: ["class-1"],
+      });
+      expect(await examPaperService.getPaper(paper.id)).toMatchObject({ managementCategory: "exam" });
+      await expect(examPaperService.updatePaper(paper.id, {
+        assignedDate: "2026-10-26", assignedEndDate: "2026-10-25",
+      })).rejects.toThrow("结束日期");
+      await expect(examPaperService.updatePaper(paper.id, {
+        managementCategory: "invalid" as "exam",
+      })).rejects.toThrow("管理目录");
+      const copied = await examPaperService.duplicatePaper(paper.id);
+      expect(copied.managementCategory).toBe("homework");
+      expect(copied.assignedDate).toBeUndefined();
+    });
+  });
+
   it("publishes only created answer sheets and locks document content until withdrawal", async () => {
     const state: AppState = {
       teachers: [], currentTeacherId: null, examPapers: [], lectures: [], reflections: [],

@@ -1,4 +1,4 @@
-import type { ClassroomHomework, ExamPublication, HomeworkClassOverviewRecord } from "@/types";
+import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord } from "@/types";
 
 export function localDate(date: Date): string {
   const year = date.getFullYear();
@@ -48,4 +48,14 @@ export function homeworkSubmissionCounts(
     missing += [...students].filter((id) => !handedIn.has(id) && !absent.has(id)).length;
   }
   return { submitted, missing };
+}
+
+/** 未排期的试卷文档只是待布置资源，不应被显示为已开始的作业。 */
+export function paperHomeworkStatus(paper: ExamPaper, now = new Date()): string {
+  if (paper.status !== "published") return "草稿";
+  if (!paper.assignedDate) return "已发布";
+  const today = localDate(now);
+  if (today < paper.assignedDate) return "待开始";
+  if (today > (paper.assignedEndDate || paper.assignedDate)) return "已结束";
+  return "进行中";
 }

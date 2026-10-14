@@ -6,11 +6,13 @@ import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { examPublishService } from "@/services/examPublish";
+import { examPaperService } from "@/services/examPaper";
 import { homeworkRecordService } from "@/services/homeworkRecord";
-import type { ClassroomHomework, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Teacher } from "@/types";
+import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({ classService: { listSchoolClasses: vi.fn() } }));
-vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn() } }));
+vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn(), updateHomework: vi.fn() } }));
+vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn(), updatePaper: vi.fn() } }));
 vi.mock("@/services/examPublish", () => ({ examPublishService: { listPublications: vi.fn() } }));
 vi.mock("@/services/homeworkRecord", () => ({ homeworkRecordService: { listClassOverviews: vi.fn() } }));
 
@@ -22,6 +24,13 @@ const homework: ClassroomHomework = {
   schoolId: "school-1", subject: "数学", classIds: [one.id], assignedDate: "2026-10-12",
   publishAt: "2026-10-12T00:00:00Z", createdAt: "2026-10-11T00:00:00Z", updatedAt: "2026-10-11T00:00:00Z",
 };
+const paper = {
+  id: "paper-1", teacherId: "teacher-1", schoolId: "school-1", title: "资源篮函数练习",
+  description: "从资源篮组卷", originalFileName: "函数练习.pdf", classIds: [one.id],
+  chapterIds: [], knowledgePointIds: [], grade: "高二", schoolYear: "2026-2027",
+  questions: [], totalScore: 0, duration: 45, status: "draft",
+  createdAt: "2026-10-10T00:00:00Z", updatedAt: "2026-10-11T00:00:00Z",
+} as ExamPaper;
 const attendance = {
   id: "record-1", schoolId: "school-1", teacherId: "teacher-1", classId: one.id,
   homeworkDate: "2026-10-12", summary: "", studentIds: ["s1", "s2", "s3"],
@@ -49,6 +58,7 @@ describe("作业考试管理页面", () => {
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([one]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([homework]);
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([attendance]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
     vi.mocked(examPublishService.listPublications).mockResolvedValue([
       publication, { ...publication, id: "pub-2", title: "其他人的试卷", publisherId: "teacher-2" },
     ]);
@@ -60,10 +70,74 @@ describe("作业考试管理页面", () => {
     expect(within(row).getByText("高二 · 一班")).toBeInTheDocument();
     expect(within(row).getByText("2")).toBeInTheDocument();
     expect(within(row).getByText("1")).toBeInTheDocument();
-    expect(within(row).getByRole("link", { name: "编辑" })).toHaveAttribute("href", "/my-lessons?tab=homework&edit=homework-1");
+    expect(screen.getByRole("columnheader", { name: "作业名称" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "作业文件名" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "出作业" })).toHaveAttribute("href", "/my-resources/exam-papers?create=homework");
+    fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("link", { name: "编辑作业内容与附件" })).toHaveAttribute("href", "/my-lessons?tab=homework&edit=homework-1");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(classroomHomeworkService.listHomeworks).toHaveBeenCalledWith({ schoolId: "school-1", teacherId: "teacher-1" });
     fireEvent.change(screen.getByRole("textbox", { name: "搜索作业" }), { target: { value: "不存在" } });
     expect(screen.getByText("没有符合筛选条件的记录")).toBeInTheDocument();
+  });
+
+  it("includes library documents and copies with truthful original filenames", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      paper, { ...paper, id: "copy-1", title: "函数练习（副本）", originalFileName: undefined },
+    ]);
+    mount("homework");
+    const first = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    expect(within(first).getByText("函数练习.pdf")).toBeInTheDocument();
+    const copied = screen.getByRole("row", { name: /函数练习（副本）/ });
+    expect(within(copied).getAllByText("—").length).toBeGreaterThan(0);
+    expect(within(copied).getByText("草稿")).toBeInTheDocument();
+    expect(examPaperService.listPapers).toHaveBeenCalledWith({ schoolId: "school-1", teacherId: "teacher-1" });
+  });
+
+  it("edits document metadata and moves it into exam management without deleting the document", async () => {
+    vi.mocked(examPaperService.updatePaper).mockImplementation(async (id, patch) => {
+      const updated = { ...paper, ...patch };
+      vi.mocked(examPaperService.listPapers).mockResolvedValue([updated]);
+      return updated;
+    });
+    const view = mount("homework");
+    const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("link", { name: "编辑试卷内容" })).toHaveAttribute("href", "/exam-papers/paper-1");
+    fireEvent.change(screen.getByLabelText("管理目录"), { target: { value: "exam" } });
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-10-20" } });
+    fireEvent.change(screen.getByLabelText("结束日期"), { target: { value: "2026-10-21" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(examPaperService.updatePaper).toHaveBeenCalledWith("paper-1", expect.objectContaining({
+      managementCategory: "exam", classIds: ["class-1"], assignedDate: "2026-10-20", assignedEndDate: "2026-10-21",
+    })));
+    await waitFor(() => expect(screen.queryByText("资源篮函数练习")).not.toBeInTheDocument());
+    view.unmount();
+    mount("exams");
+    const moved = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    expect(within(moved).getByText("考试试卷")).toBeInTheDocument();
+    expect(within(moved).getByRole("button", { name: "编辑" })).toBeInTheDocument();
+  });
+
+  it("moves a classroom homework into exam management while preserving its contents", async () => {
+    vi.mocked(classroomHomeworkService.updateHomework).mockImplementation(async (_id, _teacher, _school, input) => {
+      const updated = { ...homework, ...input };
+      vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([updated]);
+      return updated;
+    });
+    const view = mount("homework");
+    const row = await screen.findByRole("row", { name: /函数专题作业/ });
+    fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
+    fireEvent.change(screen.getByLabelText("管理目录"), { target: { value: "exam" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(classroomHomeworkService.updateHomework).toHaveBeenCalledWith(
+      "homework-1", "teacher-1", "school-1",
+      expect.objectContaining({ content: "完成第1题", managementCategory: "exam" }),
+    ));
+    view.unmount();
+    mount("exams");
+    const moved = await screen.findByRole("row", { name: /函数专题作业/ });
+    expect(within(moved).getByText("班级作业")).toBeInTheDocument();
   });
 
   it("shows only the teacher's publications and links to the original editor", async () => {
@@ -87,6 +161,6 @@ describe("作业考试管理页面", () => {
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([]);
     mount("homework");
     const row = await screen.findByRole("row", { name: /函数专题作业/ });
-    expect(within(row).getAllByText("—")).toHaveLength(2);
+    expect(within(row).getAllByText("—")).toHaveLength(3);
   });
 });
