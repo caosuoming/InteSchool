@@ -113,6 +113,29 @@ describe("TreeView", () => {
     expect(onNodeDrop).not.toHaveBeenCalled();
   });
 
+  it("shows only directly linked questions and progress without descendant counts", () => {
+    const data: TreeNode = {
+      id: "root", name: "全部章节", type: "chapter", count: 3,
+      children: [{
+        id: "parent", name: "父章节", type: "chapter",
+        count: 3, directCount: 1, doneCount: 2, directDoneCount: 0,
+        masteryRate: 0.75,
+        children: [{
+          id: "child", name: "子章节", type: "chapter",
+          count: 2, directCount: 2, doneCount: 2, directDoneCount: 2,
+          masteryRate: 0.75, directMasteryRate: 0.75, children: [],
+        }],
+      }],
+    };
+    const { rerender } = render(<TreeView data={data} showDoneCount defaultExpandAll />);
+    expect(screen.getByText("父章节").parentElement).toHaveTextContent("2（75%）/3");
+
+    rerender(<TreeView data={data} showDoneCount defaultExpandAll includeDescendantCounts={false} />);
+    expect(screen.getByText("父章节").parentElement).toHaveTextContent("0/1");
+    expect(screen.getByText("父章节").parentElement).not.toHaveTextContent("75%");
+    expect(screen.getByText("子章节").parentElement).toHaveTextContent("2（75%）/2");
+  });
+
   it("shows mastery percentage after the completed-question count", () => {
     const progressTree: TreeNode = {
       id: "root",

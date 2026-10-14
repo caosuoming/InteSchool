@@ -20,6 +20,7 @@ interface TreeViewProps {
   selectedId?: string;
   onSelect?: (node: TreeNode) => void;
   showCount?: boolean;
+  includeDescendantCounts?: boolean;
   showDoneCount?: boolean;
   className?: string;
   defaultExpandAll?: boolean;
@@ -43,6 +44,7 @@ export function TreeView({
   selectedId,
   onSelect,
   showCount = true,
+  includeDescendantCounts = true,
   showDoneCount = false,
   className,
   defaultExpandAll = false,
@@ -187,6 +189,10 @@ export function TreeView({
     const isChecked = isFullyChecked(node);
     const isPartial = isPartiallyChecked(node);
     const isRoot = node.id === "root";
+    const showDirectCounts = !includeDescendantCounts && node.directCount !== undefined;
+    const count = showDirectCounts ? node.directCount : node.count;
+    const doneCount = showDirectCounts ? node.directDoneCount : node.doneCount;
+    const masteryRate = showDirectCounts ? node.directMasteryRate : node.masteryRate;
     const isHighlighted = highlightedIds.includes(node.id);
     const isDragging = draggedNode?.id === node.id;
     const isDropTarget = dropTargetId === node.id
@@ -308,14 +314,14 @@ export function TreeView({
 
           {showCount && !isRoot && (
             <span className="text-xs font-mono flex-shrink-0 flex items-center gap-1">
-              {showDoneCount && node.doneCount !== undefined && (
+              {showDoneCount && doneCount !== undefined && (
                 <span className="text-emerald-600">
-                  {node.doneCount}
-                  {node.masteryRate !== undefined && `（${Math.round(node.masteryRate * 100)}%）`}
+                  {doneCount}
+                  {masteryRate !== undefined && `（${Math.round(masteryRate * 100)}%）`}
                   /
                 </span>
               )}
-              <span className="text-ink-400">{node.count}</span>
+              <span className="text-ink-400">{count}</span>
             </span>
           )}
 
