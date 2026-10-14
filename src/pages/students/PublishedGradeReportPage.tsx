@@ -486,7 +486,7 @@ export default function PublishedGradeReportPage() {
               <div className="mt-2 flex items-center gap-1.5 text-xs text-ink-400">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {bundle.totalScoreRanking
-                  ? `此公开页面包含汇总统计及表五前 ${bundle.totalScoreRanking.topN} 名学生的姓名、学号和成绩，请仅在适当范围内分享。`
+                  ? `此公开页面包含汇总统计及表五榜单学生的姓名、学号和成绩，请仅在适当范围内分享。`
                   : "此公开页面仅包含聚合统计，不包含学生姓名和逐人成绩。"}
               </div>
             </div>

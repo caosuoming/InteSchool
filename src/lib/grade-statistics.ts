@@ -400,6 +400,9 @@ function normalizeTotalScoreSegmentOptions(
     totalScoreTopN: Number.isFinite(options.totalScoreTopN)
       ? Math.max(1, Math.min(1000, Math.round(Number(options.totalScoreTopN))))
       : undefined,
+    totalScoreSeparateTopN: Number.isFinite(options.totalScoreSeparateTopN)
+      ? Math.max(1, Math.min(1000, Math.round(Number(options.totalScoreSeparateTopN))))
+      : undefined,
   };
 }
 

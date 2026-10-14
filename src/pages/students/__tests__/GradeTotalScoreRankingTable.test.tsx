@@ -97,4 +97,59 @@ describe("GradeTotalScoreRankingTable", () => {
     expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
       ?.totalScoreSegmentOptions?.totalScoreTopN).toBe(2);
   });
+
+  it("saves and renders separate and unified top-N values independently", async () => {
+    const user = userEvent.setup();
+    const onAutoSave = vi.fn();
+    const groupedExam: GradeExam = {
+      ...exam,
+      records: [
+        ...exam.records,
+        { ...exam.records[0], id: "r3", studentId: "s3", studentNo: "003", studentName: "丙", classId: "c2", className: "高三(2)班", assignedScores: { 数学: 80 } },
+        { ...exam.records[1], id: "r4", studentId: "s4", studentNo: "004", studentName: "丁", classId: "c2", className: "高三(2)班", assignedScores: { 数学: 70 } },
+      ],
+      settings: {
+        ...exam.settings,
+        classSubjects: [
+          { classId: "c1", examSubjects: ["数学"], statisticSubjects: ["数学"], separateRankSubjects: ["数学"] },
+          { classId: "c2", examSubjects: ["数学"], statisticSubjects: ["数学"] },
+        ],
+      },
+    };
+
+    function Harness() {
+      const [settings, setSettings] = useState(groupedExam.settings);
+      return (
+        <GradeTotalScoreRankingTable
+          exam={groupedExam} settings={settings} template={template}
+          classAverageTemplate={classAverageTemplate} context={context}
+          onChange={setSettings} onAutoSave={onAutoSave}
+        />
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByText("表五、总分排名（赋分）")).toBeInTheDocument();
+    expect(screen.getByText("统一排名前 1 名，单独排名前 1 名。")).toBeInTheDocument();
+
+    const separateInput = screen.getByRole("spinbutton", { name: "表五单独排名前多少名" });
+    await user.clear(separateInput);
+    await user.type(separateInput, "2");
+    await user.tab();
+
+    expect(screen.getByText("期末考试单独排名（数学）总分前2名（赋分）")).toBeInTheDocument();
+    expect(screen.getByText("期末考试统一排名总分前1名（赋分）")).toBeInTheDocument();
+    expect(screen.getByText("乙")).toBeInTheDocument();
+    expect(screen.queryByText("丁")).not.toBeInTheDocument();
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
+      ?.totalScoreSegmentOptions).toMatchObject({ totalScoreTopN: 1, totalScoreSeparateTopN: 2 });
+
+    const unifiedInput = screen.getByRole("spinbutton", { name: "表五统一排名前多少名" });
+    await user.clear(unifiedInput);
+    await user.type(unifiedInput, "2");
+    await user.tab();
+
+    expect(screen.getByText("丁")).toBeInTheDocument();
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
+      ?.totalScoreSegmentOptions).toMatchObject({ totalScoreTopN: 2, totalScoreSeparateTopN: 2 });
+  });
 });

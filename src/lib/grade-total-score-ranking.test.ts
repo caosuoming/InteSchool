@@ -212,4 +212,36 @@ describe("buildGradeTotalScoreRankingReport", () => {
     expect(report.tables[0].title).toContain("单独排名");
     expect(report.tables[1].title).toContain("统一排名");
   });
+
+  it("uses different top-N limits for unified and separate groups, with legacy fallback", () => {
+    const groupedExam: GradeExam = {
+      ...exam,
+      records: exam.records.map((record, index) => ({
+        ...record, classId: `c${index + 1}`, className: `${index + 1}班`,
+      })),
+      settings: {
+        ...exam.settings,
+        classSubjects: exam.records.map((_, index) => ({
+          classId: `c${index + 1}`, examSubjects: ["数学"], statisticSubjects: ["数学"],
+          separateRankSubjects: index < 2 ? ["数学"] : [],
+        })),
+      },
+    };
+    const report = buildGradeTotalScoreRankingReport(groupedExam, {
+      ...template, totalScoreSegmentOptions: { totalScoreTopN: 1, totalScoreSeparateTopN: 2 },
+    }, { ...context, classProfiles: {} });
+    expect(report).toMatchObject({ topN: 1, separateTopN: 2, hasSeparateGroups: true });
+    expect(report.tables.map((item) => item.title)).toEqual([
+      "期末考试单独排名（数学）总分前2名（原始分）",
+      "期末考试统一排名总分前1名（原始分）",
+    ]);
+    expect(report.tables.map((item) => item.rows.map((row) => row.studentName)))
+      .toEqual([["甲", "乙"], ["丙"]]);
+
+    const legacy = buildGradeTotalScoreRankingReport(groupedExam, template, {
+      ...context, classProfiles: {},
+    });
+    expect(legacy.separateTopN).toBe(legacy.topN);
+    expect(legacy.tables[0].rows).toHaveLength(1);
+  });
 });

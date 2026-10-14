@@ -1068,6 +1068,8 @@ export interface GradeTotalScoreSegmentOptions {
   classTargets?: Record<string, GradeTotalScoreClassTargets>;
   /** 表五展示的总分前 N 名人数。 */
   totalScoreTopN?: number;
+  /** 表五单独排名组展示的前 N 名人数；旧数据沿用统一排名人数。 */
+  totalScoreSeparateTopN?: number;
 }
 
 export interface GradeStatisticsTemplate {
