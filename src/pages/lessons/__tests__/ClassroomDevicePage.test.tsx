@@ -78,6 +78,7 @@ function snapshot(state: "active" | "locked" | "closed" = "active"): ClassroomDe
       updatedAt: "2026-09-01T00:00:00.000Z",
     }],
     homeworkHistory: [],
+    homeworkRecords: [],
     notices: [],
     students: [],
   };

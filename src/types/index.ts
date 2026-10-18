@@ -512,6 +512,7 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   lessons: LessonCourseware[];
   homeworks: ClassroomHomework[];
   homeworkHistory: ClassroomHomework[];
+  homeworkRecords: HomeworkClassOverviewRecord[];
   notices: ClassroomNotice[];
   students: Array<Pick<Student, "id" | "name">>;
   studentAttentionByTeacherId?: Record<string, {
@@ -3290,6 +3291,10 @@ export interface HomeworkClassOverviewRecord {
   submittedStudentIds: string[];
   /** 当天请假的学生；请假学生不会被视为未交作业。 */
   absentStudentIds: string[];
+  /** 点名时的学生姓名快照，用于历史记录。 */
+  studentNames?: Record<string, string>;
+  /** 当天作业图片。 */
+  images?: StudentInteractionAttachment[];
   /** 是否已经保存过本次作业点名。 */
   attendanceTaken: boolean;
   createdAt: string;

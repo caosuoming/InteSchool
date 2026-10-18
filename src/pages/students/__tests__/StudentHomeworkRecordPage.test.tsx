@@ -268,7 +268,7 @@ describe("StudentHomeworkRecordPage", () => {
     expect(screen.getByText("作业点名")).toBeInTheDocument();
 
     await user.click(screen.getByRole("checkbox", { name: "甲同学已交作业" }));
-    await user.click(screen.getByRole("button", { name: "保存作业点名" }));
+    expect(screen.queryByRole("button", { name: "保存作业点名" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(homeworkRecordService.saveClassOverview).toHaveBeenCalledWith(expect.objectContaining({

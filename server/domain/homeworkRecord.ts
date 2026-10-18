@@ -9,6 +9,7 @@ import type {
   KnowledgePoint,
   Student,
   StudentMissingHomeworkRecord,
+  StudentInteractionAttachment,
   Teacher,
 } from "../../src/types/index.js";
 import { HOMEWORK_ATTITUDE_KEYWORDS } from "../../src/types/index.js";
@@ -189,7 +190,7 @@ export const homeworkRecordService = {
       .filter((item) => (
         item.teacherId === teacher.id
         && item.classId === normalizedClassId
-        && (item.attendanceTaken || Boolean(item.summary?.trim()))
+        && (item.attendanceTaken || Boolean(item.summary?.trim()) || Boolean(item.images?.length))
       ))
       .sort((left, right) => {
         const dateOrder = right.homeworkDate.localeCompare(left.homeworkDate);
@@ -202,6 +203,7 @@ export const homeworkRecordService = {
       classId: string;
       homeworkDate: string;
       summary?: string;
+      images?: StudentInteractionAttachment[];
       submittedStudentIds?: string[];
       absentStudentIds?: string[];
       attendanceTaken?: boolean;
@@ -224,7 +226,20 @@ export const homeworkRecordService = {
     ));
     const summary = input.summary === undefined ? existing?.summary || "" : String(input.summary).trim();
     if (summary.length > 4000) throw new Error("作业概况不能超过 4000 字");
+    const images = input.images === undefined ? existing?.images || [] : input.images;
+    if (!Array.isArray(images) || images.length > 6) throw new Error("作业图片最多 6 张");
+    const normalizedImages = images.map((image) => {
+      if (!image || typeof image !== "object") throw new Error("作业图片格式不正确");
+      const id = String(image.id || "").trim();
+      const url = String(image.url || "").trim();
+      const mimeType = String(image.mimeType || "").trim();
+      const size = Number(image.size);
+      if (!id || url !== `/api/files/${id}` || !/^image\//.test(mimeType)
+        || !Number.isFinite(size) || size < 0) throw new Error("作业图片格式不正确");
+      return { id, url, name: String(image.name || "作业图片").slice(0, 200), mimeType, size };
+    });
 
+    let studentNames = existing?.studentNames || {};
     let studentIds = existing?.studentIds || [];
     let submittedStudentIds = existing?.submittedStudentIds || [];
     let absentStudentIds = existing?.absentStudentIds || [];
@@ -235,6 +250,8 @@ export const homeworkRecordService = {
       || input.attendanceTaken !== undefined;
     if (updatingAttendance) {
       studentIds = classStudentIds(classInfo);
+      const names = new Map(((db.read("students") || []) as Student[]).map((student) => [student.id, student.name]));
+      studentNames = Object.fromEntries(studentIds.map((id) => [id, names.get(id) || studentNames[id] || id]));
       const allowedStudentIds = new Set(studentIds);
       submittedStudentIds = normalizeStudentIds(
         input.submittedStudentIds ?? submittedStudentIds,
@@ -260,6 +277,8 @@ export const homeworkRecordService = {
       ? {
           ...existing,
           summary,
+          images: normalizedImages,
+          studentNames,
           studentIds,
           submittedStudentIds,
           absentStudentIds,
@@ -273,6 +292,8 @@ export const homeworkRecordService = {
           classId,
           homeworkDate,
           summary,
+          images: normalizedImages,
+          studentNames,
           studentIds,
           submittedStudentIds,
           absentStudentIds,

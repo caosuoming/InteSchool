@@ -6,6 +6,7 @@ import type {
   HomeworkKnowledgeRecord,
   HomeworkKnowledgeStatus,
   StudentMissingHomeworkRecord,
+  StudentInteractionAttachment,
 } from "@/types";
 
 export const homeworkRecordService = {
@@ -41,6 +42,7 @@ export const homeworkRecordService = {
     classId: string;
     homeworkDate: string;
     summary?: string;
+    images?: StudentInteractionAttachment[];
     submittedStudentIds?: string[];
     absentStudentIds?: string[];
     attendanceTaken?: boolean;

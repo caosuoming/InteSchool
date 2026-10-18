@@ -23,6 +23,7 @@ import {
   MoveDiagonal2,
   MousePointer2,
   NotebookPen,
+  ClipboardList,
   Palette,
   Plus,
   RotateCcw,
@@ -32,7 +33,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import type { LessonSlide, LessonSlideElement, LessonSlideTextElement, Question } from "@/types";
+import type { LessonSlide, LessonSlideElement, LessonSlideTextElement, Question, HomeworkClassOverviewRecord } from "@/types";
 import { cn } from "@/lib/utils";
 import { getMaximumContrastTextColor, normalizeHexColor } from "@/lib/color-contrast";
 import { eligibleLotteryStudents, pickWeightedLotteryStudent, studentLotteryDurationMs } from "@/lib/student-lottery";
@@ -45,6 +46,7 @@ import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { uploadFile } from "@/services/api";
+import { HomeworkHistoryPanel } from "./HomeworkHistoryPanel";
 import { questionService } from "@/services/question";
 import { toast } from "@/stores/ui";
 import {
@@ -57,6 +59,7 @@ interface PresentationModeProps {
   slides: LessonSlide[];
   initialIndex: number;
   students: { id: string; name: string }[];
+  homeworkRecords?: HomeworkClassOverviewRecord[];
   followedStudentIds?: ReadonlySet<string>;
   ignoredStudentIds?: ReadonlySet<string>;
   relatedQuestionsById: Record<string, Question>;
@@ -74,7 +77,7 @@ type DrawingToolId =
 
 type Tool = "none" | "select" | "eraser" | DrawingToolId;
 type Side = "left" | "right";
-type SideTab = "display" | "ask" | "related";
+type SideTab = "homework" | "display" | "ask" | "related";
 type QuestionRevealSection = "answer" | "analysis";
 type StudentMastery = "correct" | "partial" | "incorrect";
 
@@ -1022,6 +1025,7 @@ export function PresentationMode({
   slides,
   initialIndex,
   students,
+  homeworkRecords = [],
   followedStudentIds = EMPTY_STUDENT_ID_SET,
   ignoredStudentIds = EMPTY_STUDENT_ID_SET,
   relatedQuestionsById,
@@ -2180,6 +2184,7 @@ export function PresentationMode({
   };
 
   const renderPanelContent = (tab: SideTab) => {
+    if (tab === "homework") return <HomeworkHistoryPanel records={homeworkRecords} students={students} />;
     if (tab === "display") {
       return (
         <div role="group" aria-label="显示内容开关" className="flex items-center gap-1 whitespace-nowrap">
@@ -2406,7 +2411,8 @@ export function PresentationMode({
 
   const renderSideRail = (side: Side) => {
     const tabs: Array<{ id: SideTab; short: string; label: string; icon: typeof Eye }> = [
-      { id: "display", short: "显", label: "显示内容", icon: Eye },
+      ...(currentIndex === 0 ? [{ id: "homework" as const, short: "作", label: "作业记录", icon: ClipboardList }] : []),
+      { id: "display", short: "答", label: "显示内容", icon: Eye },
       { id: "ask", short: "问", label: "提问学生", icon: Users },
       { id: "related", short: "题", label: "相关题", icon: Link2 },
     ];
@@ -2447,7 +2453,8 @@ export function PresentationMode({
           <section
             className={cn(
               "absolute bottom-1/2 z-[100] translate-y-1/2 rounded-xl border border-ink-100 bg-paper text-ink-900 shadow-2xl",
-              activeTab === "display" ? "w-max max-w-[calc(100vw-7rem)] p-2" : "w-72 p-4",
+              activeTab === "display" ? "w-max max-w-[calc(100vw-7rem)] p-2"
+                : activeTab === "homework" ? "w-[min(36rem,calc(100vw-7rem))] p-4" : "w-72 p-4",
               side === "left" ? "left-full ml-2" : "right-full mr-2",
             )}
           >
