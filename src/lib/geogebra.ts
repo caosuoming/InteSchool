@@ -1,6 +1,8 @@
 export interface GeoGebraApi {
   getBase64(callback: (value: string) => void): void;
   remove(): void;
+  setGraphicsOptions?(viewId: number, options: { bgColor: string }): void;
+  setSize?(width: number, height: number): void;
 }
 
 export interface GeoGebraApplet {

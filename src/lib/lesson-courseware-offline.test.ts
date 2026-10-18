@@ -105,6 +105,29 @@ describe("offline lesson courseware export", () => {
     }
   });
 
+  it("keeps inserted GeoGebra files downloadable in offline lessons", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      blob: async () => new Blob(["ggb"], { type: "application/vnd.geogebra.file" }),
+    } as Response);
+
+    try {
+      const { html, warnings } = await buildOfflineLessonCoursewareHtml(lesson({
+        slides: [{
+          id: "slide-ggb",
+          type: "knowledge",
+          title: "几何演示",
+          elements: [{ id: "ggb-1", kind: "geogebra", src: "/api/files/circle.ggb", title: "圆", x: 10, y: 10, width: 70, height: 60 }],
+        }],
+      }));
+      expect(warnings).toEqual([]);
+      expect(html).toContain("下载 GeoGebra 课件");
+      expect(html).toContain("data:application/vnd.geogebra.file;base64,Z2di");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("falls back to an offline lesson wrapper for a raw library courseware", () => {
     const courseware: Courseware = {
       id: "courseware-1",

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
 import { hasLessonElementAnimation } from "@/lib/lesson-animation";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { GeoGebraEmbed } from "@/components/courseware/GeoGebraEmbed";
 
 interface LessonSlideCanvasProps {
   elements?: LessonSlideElement[];
@@ -438,6 +439,14 @@ export function LessonSlideCanvas({
                 alt={element.alt || "课件图片"}
                 draggable={false}
                 className="h-full w-full rounded-md object-contain"
+              />
+            ) : element.kind === "geogebra" ? (
+              <GeoGebraEmbed
+                fileUrl={element.src}
+                title={element.title}
+                className="h-full w-full"
+                backgroundColor={typeof canvasStyle?.backgroundColor === "string" ? canvasStyle.backgroundColor : "#FFFFFF"}
+                compact
               />
             ) : element.kind === "audio" || element.kind === "video" ? (
               <LessonMediaElement

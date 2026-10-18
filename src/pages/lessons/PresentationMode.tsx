@@ -2646,7 +2646,7 @@ export function PresentationMode({
                 className="h-full w-full overflow-hidden bg-paper"
                 style={{ backgroundColor: effectivePageBackgroundColor }}
               >
-                <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-0" />
+                <CoursewareEmbed courseware={displayedSlide} title={displayedSlide.title} className="h-full min-h-0" backgroundColor={effectivePageBackgroundColor} />
               </div>
             ) : displayedSlide ? (
               <div data-testid="presentation-slide-page" className="relative h-full w-full">

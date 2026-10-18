@@ -66,6 +66,7 @@ function renderInspector(overrides: Partial<ComponentProps<typeof LessonEditorIn
     onAddImage: vi.fn(),
     onAddLink: vi.fn(),
     onAddMaterial: vi.fn(),
+    onAddGeoGebra: vi.fn(),
     onAddQuestion: vi.fn(),
     onAddSlide: vi.fn(),
     onSplitSlide: vi.fn(),
@@ -100,6 +101,9 @@ describe("LessonEditorInspector", () => {
 
     await user.click(screen.getByRole("button", { name: "素材" }));
     expect(props.onAddMaterial).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: "插入 GGB" }));
+    expect(props.onAddGeoGebra).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole("button", { name: "题目" }));
     expect(props.onAddQuestion).toHaveBeenCalledOnce();

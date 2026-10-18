@@ -5,6 +5,7 @@ import {
   ChevronUp,
   ClipboardPaste,
   Copy,
+  Blocks,
   FileBox,
   FileQuestion,
   EyeOff,
@@ -78,6 +79,7 @@ interface LessonEditorInspectorProps {
   onAddImage: (file: File) => void;
   onAddLink: () => void;
   onAddMaterial: () => void;
+  onAddGeoGebra: () => void;
   onAddQuestion: () => void;
   onAddSlide: () => void;
   onSplitSlide: () => void;
@@ -124,6 +126,7 @@ const SLIDE_BACKGROUND_PRESETS = [
 ] as const;
 
 function elementLabel(element: LessonSlideElement, index: number): string {
+  if (element.kind === "geogebra") return element.title || `GeoGebra ${index + 1}`;
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
   if (element.kind === "audio") return element.title || `音频 ${index + 1}`;
   if (element.kind === "video") return element.title || `视频 ${index + 1}`;
@@ -132,6 +135,7 @@ function elementLabel(element: LessonSlideElement, index: number): string {
 }
 
 function elementPreviewText(element: LessonSlideElement, index: number): string {
+  if (element.kind === "geogebra") return element.title || `GeoGebra ${index + 1}`;
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
   if (element.kind === "audio") return element.title || `音频 ${index + 1}`;
   if (element.kind === "video") return element.title || `视频 ${index + 1}`;
@@ -220,6 +224,7 @@ export function LessonEditorInspector({
   onAddImage,
   onAddLink,
   onAddMaterial,
+  onAddGeoGebra,
   onAddQuestion,
   onAddSlide,
   onSplitSlide,
@@ -399,6 +404,10 @@ export function LessonEditorInspector({
                   <FileBox className="h-4 w-4" />
                   素材
                 </Button>
+                <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddGeoGebra}>
+                  <Blocks className="h-4 w-4" />
+                  插入 GGB
+                </Button>
                 <Button variant="outline" size="sm" className="h-auto flex-col gap-1 py-3" onClick={onAddQuestion}>
                   <FileQuestion className="h-4 w-4" />
                   题目
@@ -476,6 +485,7 @@ export function LessonEditorInspector({
                     {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" />
                       : element.kind === "audio" ? <Music2 className="h-3.5 w-3.5" />
                       : element.kind === "video" ? <Video className="h-3.5 w-3.5" />
+                      : element.kind === "geogebra" ? <Blocks className="h-3.5 w-3.5" />
                       : element.href ? <LinkIcon className="h-3.5 w-3.5" />
                       : <Type className="h-3.5 w-3.5" />}
                     {element.kind === "text" ? (
@@ -518,11 +528,13 @@ export function LessonEditorInspector({
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg bg-mist px-3 py-2 text-sm font-medium text-ink-800">
               {selectedElement.kind === "image" ? <ImageIcon className="h-4 w-4" />
+                : selectedElement.kind === "geogebra" ? <Blocks className="h-4 w-4" />
                 : selectedElement.kind === "audio" ? <Music2 className="h-4 w-4" />
                 : selectedElement.kind === "video" ? <Video className="h-4 w-4" />
                 : selectedElement.href ? <LinkIcon className="h-4 w-4" />
                 : <Type className="h-4 w-4" />}
               {selectedElement.kind === "image" ? "图片元素"
+                : selectedElement.kind === "geogebra" ? "GeoGebra 课件"
                 : selectedElement.kind === "audio" ? "音频素材"
                 : selectedElement.kind === "video" ? "视频素材"
                 : selectedElement.href ? "超链接元素"
@@ -581,6 +593,14 @@ export function LessonEditorInspector({
                   value={selectedElement.alt || ""}
                   onChange={(event) => onUpdateElement({ alt: event.target.value })}
                   placeholder="课件图片"
+                />
+              </div>
+            ) : selectedElement.kind === "geogebra" ? (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-ink-600">GGB 课件名称</label>
+                <Input
+                  value={selectedElement.title}
+                  onChange={(event) => onUpdateElement({ title: event.target.value })}
                 />
               </div>
             ) : (
@@ -860,6 +880,7 @@ export function LessonEditorInspector({
                       className="flex w-full items-center gap-2 rounded-lg border border-ink-100 px-2.5 py-2 text-left text-xs text-ink-700 hover:border-gold-300"
                     >
                       {element.kind === "image" ? <ImageIcon className="h-3.5 w-3.5" />
+                        : element.kind === "geogebra" ? <Blocks className="h-3.5 w-3.5" />
                         : element.kind === "audio" ? <Music2 className="h-3.5 w-3.5" />
                         : element.kind === "video" ? <Video className="h-3.5 w-3.5" />
                         : <Type className="h-3.5 w-3.5" />}
