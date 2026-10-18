@@ -15,7 +15,7 @@ import { examPublishService } from "@/services/examPublish";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass } from "@/types";
+import type { ClassroomHomework, ExamPaper, ExamPaperQuestion, ExamPublication, HomeworkClassOverviewRecord, SchoolClass } from "@/types";
 import {
   homeworkStatus, homeworkSubmissionCounts, homeworkTitle, paperHomeworkStatus, publicationStatus,
 } from "@/lib/homework-exam-management";
@@ -65,6 +65,23 @@ function recordStatus(record: ManagedRecord, now: Date): string {
   return record.kind === "paper" ? paperHomeworkStatus(record.item, now) : homeworkStatus(record.item, now);
 }
 
+function choiceQuestions(paper: ExamPaper): ExamPaperQuestion[] {
+  return paper.questions.filter((question) => question.type === "single" || question.type === "multiple");
+}
+
+function hasChoiceAnswers(paper: ExamPaper): boolean {
+  const questions = choiceQuestions(paper);
+  return questions.length > 0 && questions.every((question) => question.answer?.trim());
+}
+
+function normalizeChoiceAnswer(question: ExamPaperQuestion, raw: string): string | null {
+  const value = raw.toUpperCase().replace(/[\s,，、]/g, "");
+  if (!/^[A-Z]*$/.test(value) || (question.type === "single" && value.length > 1)) return null;
+  if (new Set(value).size !== value.length) return null;
+  if (question.options?.length && [...value].some((letter) => letter.charCodeAt(0) - 65 >= question.options!.length)) return null;
+  return [...value].sort().join("");
+}
+
 export default function HomeworkExamManagementPage({ section }: { section: Section }) {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const affiliation = teacher ? getCurrentAffiliation() : null;
@@ -83,11 +100,16 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const [editing, setEditing] = useState<ManagedRecord | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [saving, setSaving] = useState(false);
+  const [answerPaper, setAnswerPaper] = useState<ExamPaper | null>(null);
+  const [answerDraft, setAnswerDraft] = useState<Record<string, string>>({});
+  const [answerLoadingId, setAnswerLoadingId] = useState<string | null>(null);
+  const [answerSaving, setAnswerSaving] = useState(false);
 
   useEffect(() => {
     setQuery("");
     setStatusFilter("all");
     setEditing(null);
+    setAnswerPaper(null);
   }, [section]);
 
   useEffect(() => {
@@ -184,6 +206,51 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     });
   };
 
+  const openAnswers = async (paper: ExamPaper) => {
+    setAnswerLoadingId(paper.id);
+    try {
+      const latest = await examPaperService.getPaper(paper.id);
+      if (!latest) throw new Error("试卷不存在");
+      setAnswerPaper(latest);
+      setAnswerDraft(Object.fromEntries(choiceQuestions(latest).map((question) => [question.id, question.answer || ""])));
+    } catch (err) {
+      toast.error("加载答案失败", err instanceof Error ? err.message : "未知错误");
+    } finally {
+      setAnswerLoadingId(null);
+    }
+  };
+
+  const saveAnswers = async () => {
+    if (!answerPaper) return;
+    const answers = new Map<string, string>();
+    for (const [index, question] of answerPaper.questions.entries()) {
+      if (question.type !== "single" && question.type !== "multiple") continue;
+      const answer = normalizeChoiceAnswer(question, answerDraft[question.id] || "");
+      if (answer === null) {
+        toast.warning(`第 ${index + 1} 题答案格式不正确，请填写有效选项字母`);
+        return;
+      }
+      answers.set(question.id, answer);
+    }
+    const questions = answerPaper.questions.map((question) =>
+      answers.has(question.id) ? { ...question, answer: answers.get(question.id)! } : question);
+    if (questions.every((question, index) => question.answer === answerPaper.questions[index].answer)) {
+      setAnswerPaper(null);
+      return;
+    }
+    setAnswerSaving(true);
+    try {
+      const updated = await examPaperService.updatePaper(answerPaper.id, { questions });
+      setPapers((current) => current.map((paper) => paper.id === updated.id ? updated : paper));
+      setAnswerPaper(null);
+      toast.success("选择题答案已保存");
+    } catch (err) {
+      toast.error("保存答案失败", err instanceof Error ? err.message : "未知错误");
+    } finally {
+      setAnswerSaving(false);
+    }
+  };
+
   const saveEdit = async () => {
     if (!editing || !editForm || !teacherId || !schoolId) return;
     if (!editForm.title.trim()) {
@@ -273,7 +340,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
             <table className="w-full min-w-[1000px] text-left text-sm">
               <thead className="bg-ink-50 text-ink-700">
                 {isHomework ? (
-                  <tr>{["作业名称", "作业文件名", "使用对象", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
+                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 ) : (
                   <tr>{["考试名称", "使用对象", "类型", "发布时间", "解锁时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 )}
@@ -287,6 +354,17 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className="max-w-72 break-words px-4 py-3 font-medium text-ink-900">{recordTitle(record)}</td>
                       <td className="max-w-64 break-all px-4 py-3 text-ink-600">{fileName(record)}</td>
                       <td className="max-w-56 px-4 py-3 text-ink-600">{record.item.classIds?.map((id) => classNames.get(id) || id).join("、") || "—"}</td>
+                      <td className="px-4 py-3">
+                        {record.kind === "paper" ? (
+                          <button
+                            type="button"
+                            className="text-teal-700 hover:underline disabled:cursor-wait disabled:opacity-50"
+                            disabled={answerLoadingId === record.item.id}
+                            onClick={() => void openAnswers(record.item)}
+                            aria-label={`查看或编辑「${record.item.title}」选择题答案：${hasChoiceAnswers(record.item) ? "有" : "无"}`}
+                          >{answerLoadingId === record.item.id ? "加载中" : hasChoiceAnswers(record.item) ? "有" : "无"}</button>
+                        ) : <span className="text-ink-500">无</span>}
+                      </td>
                       <td className="px-4 py-3 text-ink-700">{counts?.submitted ?? "—"}</td>
                       <td className="px-4 py-3 text-ink-700">{counts?.missing ?? "—"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
@@ -337,6 +415,44 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           {isHomework && <p className="border-t border-ink-100 px-4 py-3 text-xs text-ink-400">已交/未交来自班级当日作业点名（未交不含请假学生），不区分同日不同作业；未点名、跨日期或尚未布置的文档显示“—”。</p>}
         </Card>
       )}
+      <Modal
+        open={!!answerPaper}
+        onClose={() => { if (!answerSaving) setAnswerPaper(null); }}
+        title={`选择题答案 · ${answerPaper?.title || ""}`}
+        description="查看并编辑试卷的单选题、多选题答案；所有选择题均填写后列表显示“有”。"
+        size="lg"
+        footer={<>
+          <Button variant="outline" disabled={answerSaving} onClick={() => setAnswerPaper(null)}>取消</Button>
+          <Button disabled={answerSaving || !answerPaper || choiceQuestions(answerPaper).length === 0} loading={answerSaving} onClick={() => void saveAnswers()}>保存答案</Button>
+        </>}
+      >
+        {answerPaper && (choiceQuestions(answerPaper).length === 0 ? (
+          <p className="text-sm text-ink-500">该试卷暂无选择题，请在试卷编辑器中添加题目。</p>
+        ) : (
+          <div className="space-y-5">
+            {answerPaper.questions.map((question, index) => {
+              if (question.type !== "single" && question.type !== "multiple") return null;
+              return (
+                <div key={question.id} className="space-y-2 rounded-lg border border-ink-100 p-4">
+                  <p className="break-words text-sm font-medium text-ink-800">第 {index + 1} 题 · {question.type === "single" ? "单选" : "多选"}：{question.stem}</p>
+                  {!!question.options?.length && (
+                    <div className="space-y-1 text-xs text-ink-600">
+                      {question.options.map((option, optionIndex) =>
+                        <p key={optionIndex} className="break-words">{String.fromCharCode(65 + optionIndex)}. {option}</p>)}
+                    </div>
+                  )}
+                  <Input
+                    label={`第 ${index + 1} 题答案`}
+                    placeholder={question.type === "single" ? "如 A" : "如 AC"}
+                    value={answerDraft[question.id] || ""}
+                    onChange={(event) => setAnswerDraft((current) => ({ ...current, [question.id]: event.target.value.toUpperCase() }))}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </Modal>
       <Modal
         open={!!editing && !!editForm}
         onClose={() => { if (!saving) setEditing(null); }}
