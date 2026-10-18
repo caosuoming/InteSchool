@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord } from "@/types";
-import { homeworkStatus, homeworkSubmissionCounts, homeworkTitle, paperHomeworkStatus, publicationStatus } from "./homework-exam-management";
+import { homeworkStatus, homeworkSubmissionDetails, homeworkSubmissionCounts, homeworkTitle, paperHomeworkStatus, publicationStatus } from "./homework-exam-management";
 
 const homework: ClassroomHomework = {
   id: "hw-1", teacherId: "teacher-1", teacherName: "王老师", schoolId: "school-1", subject: "数学",
@@ -32,7 +32,11 @@ describe("作业考试管理展示", () => {
   it("only counts attendance actually recorded for every class and excludes absences", () => {
     const data = new Map([["a", [record("a")]], ["b", [record("b", { submittedStudentIds: ["1", "3"] })]]]);
     expect(homeworkSubmissionCounts(homework, data)).toEqual({ submitted: 3, missing: 1 });
+    expect(homeworkSubmissionDetails(homework, data)).toEqual({ submitted: 3, missing: 1, missingStudents: [
+      { classId: "a", studentId: "3" },
+    ] });
     expect(homeworkSubmissionCounts(homework, new Map([["a", [record("a")]]]))).toBeNull();
+    expect(homeworkSubmissionDetails(homework, new Map([["a", [record("a")]]]))).toBeNull();
     expect(homeworkSubmissionCounts(homework, new Map([["a", [record("a")]], ["b", [record("b", { attendanceTaken: false })]]]))).toBeNull();
     expect(homeworkSubmissionCounts({ ...homework, assignedEndDate: "2026-10-13" }, data)).toBeNull();
   });

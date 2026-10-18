@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { BookCheck, ClipboardList, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/Badge";
@@ -9,15 +10,16 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { classService } from "@/services/class";
+import { extractStoredFile } from "@/services/api";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { examPaperService } from "@/services/examPaper";
 import { examPublishService } from "@/services/examPublish";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass } from "@/types";
+import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Student, ClassroomHomeworkAttachment } from "@/types";
 import {
-  homeworkStatus, homeworkSubmissionCounts, homeworkTitle, paperHomeworkStatus, publicationStatus,
+  homeworkStatus, homeworkSubmissionDetails, homeworkTitle, paperHomeworkStatus, publicationStatus,
 } from "@/lib/homework-exam-management";
 
 type Section = "homework" | "exams";
@@ -53,8 +55,43 @@ function dateRange(start?: string, end?: string): string {
 
 function fileName(record: ManagedRecord): string {
   return record.kind === "paper"
-    ? record.item.originalFileName || "—"
+    ? record.item.originalFileName || record.item.title || "—"
     : record.item.attachments?.map((attachment) => attachment.name).join("、") || "—";
+}
+
+function paperPreviewUrl(paper: ExamPaper): string {
+  return paper.originalFileUrl
+    ? `/resources/preview/${encodeURIComponent(paper.id)}?type=examPaper`
+    : `/exam-papers/${encodeURIComponent(paper.id)}/preview`;
+}
+
+function AttachmentPreview({ attachment }: { attachment: ClassroomHomeworkAttachment }) {
+  const [html, setHtml] = useState("");
+  const [error, setError] = useState("");
+  const isWord = /\.docx$/i.test(attachment.name);
+
+  useEffect(() => {
+    if (!isWord) return;
+    let cancelled = false;
+    void extractStoredFile(attachment.url).then((result) => {
+      if (!cancelled) setHtml(result.html);
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : "预览失败");
+    });
+    return () => { cancelled = true; };
+  }, [attachment.url, isWord]);
+
+  if (isWord) {
+    return error ? <p role="alert" className="text-sm text-red-600">{error}</p>
+      : html ? <OfficeDocumentHtml html={html} /> : <Spinner size={24} />;
+  }
+  if (/\.(png|jpe?g|gif|webp)$/i.test(attachment.name)) {
+    return <img src={attachment.url} alt={attachment.name} className="mx-auto max-h-[70vh] max-w-full object-contain" />;
+  }
+  if (/\.pdf$/i.test(attachment.name)) {
+    return <iframe title={attachment.name} src={attachment.url} className="h-[70vh] w-full" />;
+  }
+  return <p className="text-sm text-ink-600">此格式不支持在线预览，可打开原文件查看。</p>;
 }
 
 function recordTitle(record: ManagedRecord): string {
@@ -74,6 +111,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [publications, setPublications] = useState<ExamPublication[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, HomeworkClassOverviewRecord[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -83,11 +121,15 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const [editing, setEditing] = useState<ManagedRecord | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [saving, setSaving] = useState(false);
+  const [missingList, setMissingList] = useState<{ title: string; students: { classId: string; studentId: string }[] } | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<ClassroomHomeworkAttachment | null>(null);
 
   useEffect(() => {
     setQuery("");
     setStatusFilter("all");
     setEditing(null);
+    setMissingList(null);
+    setPreviewAttachment(null);
   }, [section]);
 
   useEffect(() => {
@@ -96,6 +138,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     setError("");
     setHomeworks([]);
     setPapers([]);
+    setStudents([]);
     setPublications([]);
     setAttendance(new Map());
     if (!schoolId || !teacherId) {
@@ -104,11 +147,12 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     }
     const load = async () => {
       try {
-        const [classItems, homeworkItems, paperItems, publicationItems] = await Promise.all([
+        const [classItems, homeworkItems, paperItems, publicationItems, studentResult] = await Promise.all([
           classService.listSchoolClasses(schoolId),
           classroomHomeworkService.listHomeworks({ schoolId, teacherId }),
           examPaperService.listPapers({ schoolId, teacherId }),
           section === "exams" ? examPublishService.listPublications(schoolId) : Promise.resolve([]),
+          section === "homework" ? classService.listMyStudents(schoolId, teacherId).catch(() => [] as Student[]) : Promise.resolve([]),
         ]);
         const classIds = section === "homework"
           ? [...new Set(homeworkItems.filter((item) => item.managementCategory !== "exam"
@@ -118,6 +162,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           homeworkRecordService.listClassOverviews(id)));
         if (cancelled) return;
         setClasses(classItems);
+        setStudents(studentResult);
         setHomeworks(homeworkItems);
         setPapers(paperItems);
         setPublications(publicationItems.filter((item) =>
@@ -140,6 +185,16 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     item.id, `${item.grade} · ${item.name}`,
   ])), [classes]);
 
+  const studentNames = useMemo(() => new Map(students.map((item) => [item.id, item])), [students]);
+  const audienceLabel = (record: ManagedRecord) => {
+    const classIds = record.item.classIds || [];
+    if (classIds.length) return `班级：${classIds.map((id) => classNames.get(id) || id).join("、")}`;
+    if (record.kind === "paper" && record.item.studentIds?.length) {
+      return `个人：${record.item.studentIds.map((id) => studentNames.get(id)?.name || `学生（${id}）`).join("、")}`;
+    }
+    return "未指定";
+  };
+
   const isHomework = section === "homework";
   const now = new Date();
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -148,7 +203,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     const searchText = [
       recordTitle(record), fileName(record),
       record.kind === "classroom" ? record.item.content : record.item.description || "",
-      record.item.classIds?.map((id) => classNames.get(id) || id).join(" ") || "",
+      audienceLabel(record),
     ].join(" ").toLocaleLowerCase();
     return (statusFilter === "all" || status === statusFilter) && searchText.includes(normalizedQuery);
   };
@@ -273,7 +328,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
             <table className="w-full min-w-[1000px] text-left text-sm">
               <thead className="bg-ink-50 text-ink-700">
                 {isHomework ? (
-                  <tr>{["作业名称", "作业文件名", "使用对象", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
+                  <tr>{["作业名称", "作业文件名", "使用对象", "未交", "作业时间", "发布时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 ) : (
                   <tr>{["考试名称", "使用对象", "类型", "发布时间", "解锁时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 )}
@@ -281,14 +336,23 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
               <tbody className="divide-y divide-ink-100">
                 {isHomework ? visibleRecords.map((record) => {
                   const status = recordStatus(record, now);
-                  const counts = record.kind === "classroom" ? homeworkSubmissionCounts(record.item, attendance) : null;
+                  const counts = record.kind === "classroom" ? homeworkSubmissionDetails(record.item, attendance) : null;
                   return (
                     <tr key={`${record.kind}-${record.item.id}`} className="align-top hover:bg-mist/40">
                       <td className="max-w-72 break-words px-4 py-3 font-medium text-ink-900">{recordTitle(record)}</td>
-                      <td className="max-w-64 break-all px-4 py-3 text-ink-600">{fileName(record)}</td>
-                      <td className="max-w-56 px-4 py-3 text-ink-600">{record.item.classIds?.map((id) => classNames.get(id) || id).join("、") || "—"}</td>
-                      <td className="px-4 py-3 text-ink-700">{counts?.submitted ?? "—"}</td>
-                      <td className="px-4 py-3 text-ink-700">{counts?.missing ?? "—"}</td>
+                      <td className="max-w-64 break-all px-4 py-3 text-ink-600">
+                        {record.kind === "paper" ? (
+                          <Link className="text-teal-700 hover:underline" to={paperPreviewUrl(record.item)}>{fileName(record)}</Link>
+                        ) : record.item.attachments?.length ? (
+                          <div className="flex flex-col gap-1">{record.item.attachments.map((attachment) => (
+                            <button type="button" key={attachment.id} className="text-left text-teal-700 hover:underline" onClick={() => setPreviewAttachment(attachment)}>{attachment.name}</button>
+                          ))}</div>
+                        ) : "—"}
+                      </td>
+                      <td className="max-w-56 px-4 py-3 text-ink-600">{audienceLabel(record)}</td>
+                      <td className="px-4 py-3 text-ink-700">{counts && counts.missing > 0 ? (
+                        <button type="button" className="text-teal-700 underline-offset-2 hover:underline" onClick={() => setMissingList({ title: recordTitle(record), students: counts.missingStudents })}>{counts.missing}</button>
+                      ) : counts?.missing ?? "—"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "classroom" ? record.item.publishAt : record.item.createdAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
@@ -334,9 +398,23 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           {(visibleRecords.length + displayedPublications.length) === 0 && (
             <p className="px-4 py-12 text-center text-sm text-ink-500">{query || statusFilter !== "all" ? "没有符合筛选条件的记录" : isHomework ? "暂无作业" : "暂无已管理的考试"}</p>
           )}
-          {isHomework && <p className="border-t border-ink-100 px-4 py-3 text-xs text-ink-400">已交/未交来自班级当日作业点名（未交不含请假学生），不区分同日不同作业；未点名、跨日期或尚未布置的文档显示“—”。</p>}
+          {isHomework && <p className="border-t border-ink-100 px-4 py-3 text-xs text-ink-400">未交人数来自班级当日作业点名（未交不含请假学生），不区分同日不同作业；点击未交人数可查看名单。未点名、跨日期或尚未布置的文档显示“—”。</p>}
         </Card>
       )}
+      <Modal open={!!missingList} onClose={() => setMissingList(null)} title={`未交作业名单 · ${missingList?.title || ""}`} description={`共 ${missingList?.students.length || 0} 人，已排除请假学生`}>
+        <div className="divide-y divide-ink-100">
+          {missingList?.students.map(({ classId, studentId }) => {
+            const student = studentNames.get(studentId);
+            return <div key={`${classId}-${studentId}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <span className="text-ink-900">{student?.name || `学生（${studentId}）`}{student?.studentNo ? `（${student.studentNo}）` : ""}</span>
+              <span className="text-ink-500">{classNames.get(classId) || classId}</span>
+            </div>;
+          })}
+        </div>
+      </Modal>
+      <Modal open={!!previewAttachment} onClose={() => setPreviewAttachment(null)} title={previewAttachment?.name || "文件预览"} size="xl" footer={previewAttachment && <a className="text-sm text-teal-700 hover:underline" href={previewAttachment.url} target="_blank" rel="noopener noreferrer">打开原文件</a>}>
+        {previewAttachment && <AttachmentPreview key={previewAttachment.id} attachment={previewAttachment} />}
+      </Modal>
       <Modal
         open={!!editing && !!editForm}
         onClose={() => { if (!saving) setEditing(null); }}
