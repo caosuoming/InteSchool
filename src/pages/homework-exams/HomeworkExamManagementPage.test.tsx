@@ -14,7 +14,7 @@ import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOvervi
 vi.mock("@/services/class", () => ({ classService: { listSchoolClasses: vi.fn(), listMyStudents: vi.fn() } }));
 vi.mock("@/services/api", () => ({ extractStoredFile: vi.fn() }));
 vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn(), updateHomework: vi.fn() } }));
-vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn(), updatePaper: vi.fn() } }));
+vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn(), getPaper: vi.fn(), updatePaper: vi.fn() } }));
 vi.mock("@/services/examPublish", () => ({ examPublishService: { listPublications: vi.fn() } }));
 vi.mock("@/services/homeworkRecord", () => ({ homeworkRecordService: { listClassOverviews: vi.fn() } }));
 
@@ -66,6 +66,7 @@ describe("作业考试管理页面", () => {
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([homework]);
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([attendance]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
+    vi.mocked(examPaperService.getPaper).mockResolvedValue(paper);
     vi.mocked(examPublishService.listPublications).mockResolvedValue([
       publication, { ...publication, id: "pub-2", title: "其他人的试卷", publisherId: "teacher-2" },
     ]);
@@ -141,6 +142,67 @@ describe("作业考试管理页面", () => {
     fireEvent.click(within(row).getByRole("button", { name: "1" }));
     expect(screen.getByText("王五（003）")).toBeInTheDocument();
     expect(screen.queryByText("李四（002）")).not.toBeInTheDocument();
+  });
+
+  it("shows answer availability and saves only choice answers from the modal", async () => {
+    const questions = [
+      { id: "q-1", type: "single", stem: "第一题", options: ["甲", "乙", "丙"], answer: "", analysis: "", score: 2 },
+      { id: "q-2", type: "multiple", stem: "第二题", options: ["甲", "乙", "丙"], answer: "AC", analysis: "", score: 3 },
+      { id: "q-3", type: "short", stem: "第三题", answer: "其他答案", analysis: "", score: 5 },
+    ] as ExamPaper["questions"];
+    const paperWithChoices = { ...paper, questions };
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([paperWithChoices]);
+    vi.mocked(examPaperService.getPaper).mockResolvedValue(paperWithChoices);
+    vi.mocked(examPaperService.updatePaper).mockImplementation(async (_id, patch) =>
+      ({ ...paperWithChoices, ...patch }));
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    expect(screen.getByRole("columnheader", { name: "答案" })).toBeInTheDocument();
+    const status = within(row).getByRole("button", { name: /选择题答案：无/ });
+    expect(status).toHaveTextContent("无");
+    fireEvent.click(status);
+    expect(await screen.findByRole("heading", { name: /选择题答案 · 资源篮函数练习/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("第 1 题答案")).toHaveValue("");
+    expect(screen.getByLabelText("第 2 题答案")).toHaveValue("AC");
+    expect(screen.queryByLabelText("第 3 题答案")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("第 1 题答案"), { target: { value: "b" } });
+    fireEvent.change(screen.getByLabelText("第 2 题答案"), { target: { value: "c,a" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存答案" }));
+    await waitFor(() => expect(examPaperService.updatePaper).toHaveBeenCalledWith("paper-1", {
+      questions: [
+        { ...questions[0], answer: "B" },
+        { ...questions[1], answer: "AC" },
+        questions[2],
+      ],
+    }));
+    await waitFor(() => expect(within(row).getByRole("button", { name: /选择题答案：有/ })).toHaveTextContent("有"));
+  });
+
+  it("rejects invalid choice answers without changing the paper", async () => {
+    const withChoices = { ...paper, questions: [
+      { id: "q-1", type: "single", stem: "只有两个选项", options: ["甲", "乙"], answer: "", analysis: "", score: 2 },
+    ] as ExamPaper["questions"] };
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([withChoices]);
+    vi.mocked(examPaperService.getPaper).mockResolvedValue(withChoices);
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    fireEvent.click(within(row).getByRole("button", { name: /选择题答案：无/ }));
+    await screen.findByLabelText("第 1 题答案");
+    fireEvent.change(screen.getByLabelText("第 1 题答案"), { target: { value: "C" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存答案" }));
+    expect(examPaperService.updatePaper).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("第 1 题答案")).toBeInTheDocument();
+  });
+
+  it("displays no answer for classroom homework and empty papers", async () => {
+    mount("homework");
+    const classroom = await screen.findByRole("row", { name: /函数专题作业/ });
+    expect(within(classroom).getByText("无")).toBeInTheDocument();
+    expect(within(classroom).queryByRole("button", { name: /选择题答案/ })).not.toBeInTheDocument();
+    const paperRow = screen.getByRole("row", { name: /资源篮函数练习/ });
+    fireEvent.click(within(paperRow).getByRole("button", { name: /选择题答案：无/ }));
+    expect(await screen.findByText("该试卷暂无选择题，请在试卷编辑器中添加题目。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存答案" })).toBeDisabled();
   });
 
   it("edits document metadata and moves it into exam management without deleting the document", async () => {

@@ -31,7 +31,7 @@ function samePaperQuestionStructure(
       && question.questionId === next.questionId
       && question.stem === next.stem
       && sameStringArray(question.options, next.options)
-      && question.answer === next.answer
+      && ((question.type === "single" || question.type === "multiple") || question.answer === next.answer)
       && question.analysis === next.analysis
       && question.type === next.type;
   });
@@ -72,6 +72,9 @@ export function sanitizeExamPaperPatch(
     safePatch.questions = current.questions.map((question, index) => ({
       ...question,
       score: patch.questions![index].score,
+      ...((question.type === "single" || question.type === "multiple")
+        ? { answer: patch.questions![index].answer }
+        : {}),
     }));
     safePatch.totalScore = safePatch.questions.reduce((sum, question) => sum + question.score, 0);
   } else if (patch.totalScore !== undefined && patch.totalScore !== current.totalScore) {
