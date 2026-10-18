@@ -349,6 +349,74 @@
   object-fit: contain;
 }
 
+.answer-sheet-question-content > .question-rich-content {
+  display: flow-root;
+}
+
+.answer-sheet-inline-image {
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 45%;
+  margin: 4px 6px 6px 0;
+  text-align: center;
+  vertical-align: top;
+}
+
+.answer-sheet-inline-image[data-wrap="left"] { float: left; }
+.answer-sheet-inline-image[data-wrap="right"] { float: right; margin: 4px 0 6px 6px; }
+.answer-sheet-inline-image[data-wrap="none"] { float: none; clear: both; max-width: 100%; margin: 6px auto; }
+
+.answer-sheet-inline-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.answer-sheet-image-controls {
+  display: block;
+  text-align: center;
+  margin-top: 3px;
+}
+
+.answer-sheet-image-controls select {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 65px;
+  padding: 1px 2px;
+  border: 1px solid #94a3b8;
+  border-radius: 3px;
+  background: white;
+  font-size: 10px;
+}
+
+.answer-sheet-image-caption-input,
+.answer-sheet-image-caption {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 3px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.answer-sheet-image-caption-input {
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px dashed #94a3b8;
+  background: transparent;
+}
+
+.answer-sheet-image-caption-print { display: none; }
+
 .answer-sheet-answer-box {
   min-width: 0;
 }
@@ -469,6 +537,7 @@
 
 /* ===== 打印样式 ===== */
 @media print {
+  .answer-sheet-image-caption-print { display: block !important; }
   .no-print { display: none !important; }
   .print-content-shell { margin-left: 0 !important; }
   .print-content { padding: 0 !important; }

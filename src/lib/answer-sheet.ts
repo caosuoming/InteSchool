@@ -13,6 +13,15 @@ export interface AnswerSheetImageLayout {
   x: number;
   y: number;
   width: number;
+  wrap?: "left" | "right" | "none";
+  caption?: string;
+}
+
+export interface AnswerSheetInlineImageLayout {
+  x: number;
+  y: number;
+  wrap: "left" | "right" | "none";
+  caption?: string;
 }
 
 export interface AnswerSheetSettings {
@@ -29,6 +38,7 @@ export interface AnswerSheetSettings {
   answerBoxWidths?: Record<string, number>;
   choiceOptionBreaks?: Record<string, Record<number, AnswerSheetOptionBreak>>;
   essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
+  questionImageLayouts?: Record<string, Record<string, AnswerSheetInlineImageLayout[]>>;
 }
 
 export interface AnswerSheetQuestion {

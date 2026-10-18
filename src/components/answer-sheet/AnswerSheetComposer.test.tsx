@@ -497,6 +497,95 @@ describe("AnswerSheetComposer", () => {
     expect(savedBox.querySelector('[aria-label="第3题评分框"]')).toHaveTextContent("得分");
   });
 
+  it("positions, wraps, and captions images in choice stems, options, and fill questions", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [
+        {
+          id: "choice-image", type: "single", score: 5,
+          stem: '观察图示 <img src="/stem.png" alt="题干图"> 然后选择',
+          options: ['<img src="/option.png" alt="选项图">', "B", "C", "D"],
+        },
+        { id: "fill-image", type: "short", stem: '填空 ___ <img src="/fill.png" alt="填空图">' },
+      ],
+      initialSettings: { mode: "with-questions", choiceLayout: "inline" },
+      onSettingsChange,
+    });
+
+    const stemWrap = screen.getByAltText("题干图").closest("[data-image-index]") as HTMLElement;
+    expect(stemWrap).toHaveAttribute("data-wrap", "left");
+    const stemImage = screen.getByAltText("题干图");
+    fireEvent.pointerDown(stemImage, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(stemImage, { pointerId: 1, clientX: 36, clientY: 25 });
+    fireEvent.pointerUp(stemImage, { pointerId: 1, clientX: 36, clientY: 25 });
+    expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveStyle({ left: "26px", top: "15px" });
+
+    fireEvent.input(screen.getByRole("combobox", { name: "第1题题干第1张图片环绕模式" }), { target: { value: "right" } });
+    const optionImage = screen.getByAltText("选项图");
+    fireEvent.input(optionImage.closest("[data-image-index]")!.querySelector("select")!, { target: { value: "none" } });
+    const fillQuestion = screen.getByAltText("填空图").closest("[data-answer-sheet-question]")!;
+    expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
+    const fillInput = screen.getByAltText("填空图").closest("[data-image-index]")!.querySelector("input")!;
+    fireEvent.change(fillInput, { target: { value: "图1 函数示意图" } });
+    fireEvent.blur(fillInput);
+    expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
+
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      questionImageLayouts: {
+        "choice-image": {
+          stem: [{ x: 26, y: 15, wrap: "right", caption: "" }],
+          "option-0": [{ x: 0, y: 0, wrap: "none", caption: "" }],
+        },
+        "fill-image": {
+          stem: [{ x: 0, y: 0, wrap: "left", caption: "图1 函数示意图" }],
+        },
+      },
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "right");
+    expect(screen.getByAltText("选项图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "none");
+    expect(screen.getByText("图1 函数示意图")).toHaveClass("answer-sheet-image-caption");
+    expect(screen.queryByRole("combobox", { name: "第1题题干第1张图片环绕模式" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "第2题题干第1张图片备注" })).not.toBeInTheDocument();
+  });
+
+  it("loads saved image captions and wrap modes without editing", () => {
+    renderComposer({
+      questions: [{ id: "q-img", type: "short", stem: '文字 <img src="/saved.png" alt="存档图">' }],
+      initialSettings: {
+        mode: "with-questions",
+        questionImageLayouts: { "q-img": { stem: [{ x: 11, y: 9, wrap: "right", caption: "存档备注" }] } },
+      },
+      initialViewMode: "preview",
+    });
+    const wrapper = screen.getByAltText("存档图").closest("[data-image-index]");
+    expect(wrapper).toHaveStyle({ left: "11px", top: "9px" });
+    expect(wrapper).toHaveAttribute("data-wrap", "right");
+    expect(screen.getByText("存档备注")).toHaveClass("answer-sheet-image-caption");
+  });
+
+  it("allows essay image wrapping and centered captions while preserving drag and resize", () => {
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [{ id: "essay-image", type: "essay", stem: '<img src="/essay.png" alt="解答图">' }],
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "第1题第1张图片环绕模式" }), { target: { value: "left" } });
+    const caption = screen.getByRole("textbox", { name: "第1题第1张图片备注" });
+    fireEvent.change(caption, { target: { value: "图2 结构图" } });
+    fireEvent.blur(caption);
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      essayImageLayouts: { "essay-image": [{ x: 8, y: 10, width: 120, wrap: "left", caption: "图2 结构图" }] },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByTestId("essay-image")).toHaveAttribute("data-wrap", "left");
+    expect(screen.getByText("图2 结构图")).toHaveClass("answer-sheet-image-caption");
+    expect(screen.queryByRole("textbox", { name: "第1题第1张图片备注" })).not.toBeInTheDocument();
+  });
+
   it("moves essay images into the answer box and removes empty stem lines", () => {
     renderComposer({
       questions: [{

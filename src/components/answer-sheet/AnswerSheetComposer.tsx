@@ -16,7 +16,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
-import { MathHtml } from "@/components/ui/MathHtml";
 import {
   buildAnswerSheetQrPayload,
   DEFAULT_ANSWER_SHEET_SETTINGS,
@@ -29,6 +28,7 @@ import {
   type AnswerSheetChoiceLayout,
   type AnswerSheetChoiceDirection,
   type AnswerSheetPaperSize,
+  type AnswerSheetInlineImageLayout,
   type AnswerSheetQuestion,
   type AnswerSheetResourceType,
   type AnswerSheetSettings,
@@ -38,6 +38,7 @@ import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
 import { layoutChoiceOptions } from "@/lib/answer-sheet-choice-options";
 import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
 import { EssayImages } from "./EssayImages";
+import { QuestionImages } from "./QuestionImages";
 
 const PAGE_PADDING_MM = 8;
 const COLUMN_GAP_MM = 6;
@@ -379,7 +380,7 @@ function AnswerBox({
     >
       {!hideNumber && <div className="font-mono text-xs font-semibold text-ink-800">{number}.</div>}
       {children && (
-        <div className="min-h-0 pr-[14mm] pb-[9mm]" data-testid="answer-box-content">
+        <div className="min-h-0 flow-root pr-[14mm] pb-[9mm]" data-testid="answer-box-content">
           {children}
         </div>
       )}
@@ -394,69 +395,44 @@ function AnswerBox({
   );
 }
 
+interface QuestionImageProps {
+  imageLayouts?: Record<string, AnswerSheetInlineImageLayout[]>;
+  onImageLayoutChange: (part: string, index: number, layout: AnswerSheetInlineImageLayout) => void;
+}
+
 function DraggableQuestionContent({
   children,
   className,
   editable,
+  number,
+  part,
+  imageLayouts,
+  onImageLayoutChange,
 }: {
   children: string;
   className?: string;
   editable: boolean;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return undefined;
-
-    const cleanups: Array<() => void> = [];
-    root.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
-      image.draggable = editable;
-      image.classList.add("answer-sheet-floating-image");
-      image.title = editable ? "拖动图片可调整其在答题区域中的左右浮动位置" : "";
-
-      if (!editable) return;
-      const handleDragEnd = (event: DragEvent) => {
-        const question = image.closest<HTMLElement>("[data-answer-sheet-question]");
-        if (!question) return;
-        const rect = question.getBoundingClientRect();
-        const side = event.clientX >= rect.left + rect.width / 2 ? "right" : "left";
-        image.style.float = side;
-        image.style.marginLeft = side === "right" ? "6px" : "0";
-        image.style.marginRight = side === "left" ? "6px" : "0";
-
-        if (event.clientY > rect.top) {
-          const maxOffset = Math.max(0, rect.height - image.getBoundingClientRect().height);
-          const offset = Math.min(maxOffset, Math.max(0, event.clientY - rect.top - 16));
-          image.style.marginTop = `${Math.round(offset)}px`;
-        }
-      };
-      image.addEventListener("dragend", handleDragEnd);
-      cleanups.push(() => image.removeEventListener("dragend", handleDragEnd));
-    });
-
-    root.querySelectorAll<HTMLElement>(".answer-sheet-inline-blank").forEach((blank, index) => {
-      blank.dataset.answerSheetInlineBlank = String(index);
-      blank.dataset.answerSheetEditable = editable ? "true" : "false";
-      blank.title = editable ? "拖动右下角可调整填空区域的长度和高度" : "";
-      blank.style.resize = editable ? "both" : "none";
-    });
-
-    return () => cleanups.forEach((cleanup) => cleanup());
-  }, [children, editable]);
-
+  number: number | string;
+  part: string;
+} & QuestionImageProps) {
   return (
     <div
-      ref={rootRef}
       className={`answer-sheet-question-content ${className || ""}`}
       data-answer-sheet-editable={editable ? "true" : "false"}
     >
-      <MathHtml>{children}</MathHtml>
+      <QuestionImages
+        markup={children}
+        editable={editable}
+        number={number}
+        part={part}
+        layouts={imageLayouts?.[part]}
+        onLayoutChange={(index, layout) => onImageLayoutChange(part, index, layout)}
+      />
     </div>
   );
 }
 
-interface ChoiceQuestionProps extends NumberedQuestion {
+interface ChoiceQuestionProps extends NumberedQuestion, QuestionImageProps {
   editable: boolean;
   breaks?: Record<number, AnswerSheetOptionBreak>;
 }
@@ -464,9 +440,12 @@ interface ChoiceQuestionProps extends NumberedQuestion {
 /** Measures rendered option widths, including rich text and mathematical notation. */
 function ChoiceOptions({
   question,
+  number,
   editable,
   breaks,
   labelStyle,
+  imageLayouts,
+  onImageLayoutChange,
 }: ChoiceQuestionProps & { labelStyle: "brackets" | "dots" }) {
   const options = useMemo(
     () => question.options?.length ? question.options : (labelStyle === "brackets" ? Array(4).fill("") as string[] : []),
@@ -541,7 +520,8 @@ function ChoiceOptions({
                     {labelStyle === "brackets" ? `[${label}]` : `${label}.`}
                   </span>
                   {options[index] && (
-                    <DraggableQuestionContent className="answer-sheet-choice-option-content min-w-0" editable={editable}>
+                    <DraggableQuestionContent className="answer-sheet-choice-option-content min-w-0 max-w-full" editable={editable}
+                      number={question.label || number} part={`option-${index}`} imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
                       {options[index]}
                     </DraggableQuestionContent>
                   )}
@@ -556,12 +536,13 @@ function ChoiceOptions({
 }
 
 function InlineChoiceQuestion(props: ChoiceQuestionProps) {
-  const { question, number, editable } = props;
+  const { question, number, editable, imageLayouts, onImageLayoutChange } = props;
   return (
     <div className="space-y-2" data-testid="inline-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-0 text-xs text-ink-800">
         <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
-        <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+        <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
           {question.stem}
         </DraggableQuestionContent>
       </div>
@@ -571,12 +552,13 @@ function InlineChoiceQuestion(props: ChoiceQuestionProps) {
 }
 
 function ChoiceQuestionText(props: ChoiceQuestionProps) {
-  const { question, number, editable } = props;
+  const { question, number, editable, imageLayouts, onImageLayoutChange } = props;
   return (
     <div className="space-y-1.5" data-testid="concentrated-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-0 text-xs text-ink-800">
         <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
-        <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+        <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
           {question.stem}
         </DraggableQuestionContent>
       </div>
@@ -585,7 +567,7 @@ function ChoiceQuestionText(props: ChoiceQuestionProps) {
   );
 }
 
-function FillQuestionInline({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
+function FillQuestionInline({ question, number, editable, imageLayouts, onImageLayoutChange }: NumberedQuestion & { editable: boolean } & QuestionImageProps) {
   const decoratedStem = useMemo(
     () => decorateFillBlankAnswerAreas(question.stem),
     [question.stem],
@@ -594,18 +576,20 @@ function FillQuestionInline({ question, number, editable }: NumberedQuestion & {
   return (
     <div className="flex items-start gap-0 text-xs text-ink-800" data-testid="inline-fill-question" data-answer-sheet-question>
       <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
-      <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+      <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
         {decoratedStem}
       </DraggableQuestionContent>
     </div>
   );
 }
 
-function QuestionStemOnly({ question, number, editable }: NumberedQuestion & { editable: boolean }) {
+function QuestionStemOnly({ question, number, editable, imageLayouts, onImageLayoutChange }: NumberedQuestion & { editable: boolean } & QuestionImageProps) {
   return (
     <div className="flex items-start gap-0 text-xs text-ink-800" data-testid="concentrated-fill-question" data-answer-sheet-question>
       <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
-      <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+      <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
         {question.stem}
       </DraggableQuestionContent>
     </div>
@@ -671,6 +655,8 @@ function QuestionWithAnswer({
   onHeightChange,
   imageLayouts,
   onImageLayoutChange,
+  stemImageLayouts,
+  onStemImageLayoutChange,
 }: NumberedQuestion & {
   boxStyle: AnswerSheetBoxStyle;
   editable: boolean;
@@ -678,6 +664,8 @@ function QuestionWithAnswer({
   onHeightChange?: (height: number) => void;
   imageLayouts?: AnswerSheetImageLayout[];
   onImageLayoutChange: (index: number, layout: AnswerSheetImageLayout) => void;
+  stemImageLayouts?: Record<string, AnswerSheetInlineImageLayout[]>;
+  onStemImageLayoutChange: (part: string, index: number, layout: AnswerSheetInlineImageLayout) => void;
 }) {
   const essayContent = question.type === "essay"
     ? splitEssayStemContent(question.stem)
@@ -692,7 +680,8 @@ function QuestionWithAnswer({
           data-testid={question.type === "essay" ? "essay-question-stem" : undefined}
         >
           <span className="shrink-0 font-mono font-semibold text-ink-800">{question.label || number}.</span>
-          <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}>
+          <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
+        number={question.label || number} part="stem" imageLayouts={stemImageLayouts} onImageLayoutChange={onStemImageLayoutChange}>
             {displayStem}
           </DraggableQuestionContent>
         </div>
@@ -880,6 +869,22 @@ export function AnswerSheetComposer({
     });
   };
 
+  const updateQuestionImageLayout = (questionId: string, part: string, index: number, layout: AnswerSheetInlineImageLayout) => {
+    if (published) return;
+    setSettings((current) => {
+      const questionLayouts = { ...current.questionImageLayouts?.[questionId] };
+      const partLayouts = [...(questionLayouts[part] || [])];
+      partLayouts[index] = layout;
+      questionLayouts[part] = partLayouts;
+      const next = {
+        ...current,
+        questionImageLayouts: { ...current.questionImageLayouts, [questionId]: questionLayouts },
+      };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
   const updateEssayImageLayout = (questionId: string, index: number, layout: AnswerSheetImageLayout) => {
     if (published) return;
     setSettings((current) => {
@@ -1003,7 +1008,8 @@ export function AnswerSheetComposer({
   }, [
     columnWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle,
     settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits,
-    settings.choiceOptionBreaks, settings.concentratedChoiceDirection, settings.stemFontSize, viewMode,
+    settings.choiceOptionBreaks, settings.concentratedChoiceDirection, settings.stemFontSize,
+    settings.questionImageLayouts, settings.essayImageLayouts, viewMode,
   ]);
 
   useEffect(() => {
@@ -1113,17 +1119,25 @@ export function AnswerSheetComposer({
     if (isChoiceQuestion(question)) {
       if (settings.choiceLayout === "inline") {
         return <InlineChoiceQuestion {...item} editable={!isPreview}
+          imageLayouts={settings.questionImageLayouts?.[question.id]}
+          onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)}
           breaks={settings.choiceOptionBreaks?.[question.id]} />;
       }
       return <ChoiceQuestionText {...item} editable={!isPreview}
+        imageLayouts={settings.questionImageLayouts?.[question.id]}
+        onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)}
         breaks={settings.choiceOptionBreaks?.[question.id]} />;
     }
 
     if (isFillQuestion(question)) {
       if (settings.choiceLayout === "inline") {
-        return <FillQuestionInline {...item} editable={!isPreview} />;
+        return <FillQuestionInline {...item} editable={!isPreview}
+          imageLayouts={settings.questionImageLayouts?.[question.id]}
+          onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)} />;
       }
-      return <QuestionStemOnly {...item} editable={!isPreview} />;
+      return <QuestionStemOnly {...item} editable={!isPreview}
+        imageLayouts={settings.questionImageLayouts?.[question.id]}
+        onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)} />;
     }
 
     return (
@@ -1135,6 +1149,8 @@ export function AnswerSheetComposer({
         onHeightChange={(height) => updateAnswerBoxHeight(question.id, height)}
         imageLayouts={settings.essayImageLayouts?.[question.id]}
         onImageLayoutChange={(index, layout) => updateEssayImageLayout(question.id, index, layout)}
+        stemImageLayouts={settings.questionImageLayouts?.[question.id]}
+        onStemImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)}
       />
     );
   };
