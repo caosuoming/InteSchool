@@ -14,6 +14,7 @@ interface LessonSlideContentProps {
   editable?: boolean;
   selectedTextRegion?: LessonSlideTextRegion | null;
   onSelectTextRegion?: (region: LessonSlideTextRegion) => void;
+  onExtractInlineImage?: (region: "title" | "content", image: HTMLImageElement, root: HTMLElement) => void;
   className?: string;
 }
 
@@ -23,6 +24,7 @@ export function LessonSlideContent({
   editable = false,
   selectedTextRegion,
   onSelectTextRegion,
+  onExtractInlineImage,
   className,
 }: LessonSlideContentProps) {
   const visibility = {
@@ -31,12 +33,22 @@ export function LessonSlideContent({
   };
 
   const textRegionProps = (region: LessonSlideTextRegion) => ({
-    onClick: editable ? (event: MouseEvent) => {
+    onClick: editable ? (event: MouseEvent<HTMLElement>) => {
       event.stopPropagation();
+      if ((region === "title" || region === "content")
+        && event.target instanceof HTMLImageElement
+        && onExtractInlineImage) {
+        const root = event.target.closest<HTMLElement>(".question-rich-content");
+        if (root) {
+          event.preventDefault();
+          onExtractInlineImage(region, event.target, root);
+          return;
+        }
+      }
       onSelectTextRegion?.(region);
     } : undefined,
     className: cn(
-      editable && "cursor-text select-text rounded outline-none transition-shadow",
+      editable && "cursor-text select-text rounded outline-none transition-shadow [&_img]:cursor-move",
       editable && selectedTextRegion === region && "ring-2 ring-gold-400 ring-offset-2",
     ),
     style: slide.textStyles?.[region]?.fontSize
