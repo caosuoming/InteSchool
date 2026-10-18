@@ -43,6 +43,11 @@ const PAGE_PADDING_MM = 8;
 const COLUMN_GAP_MM = 6;
 const WIDE_COLUMN_PAGE_NUMBER_MM = 6;
 const MM_TO_CSS_PX = 96 / 25.4;
+const CHOICE_GROUP_SIZE = 5;
+const CHOICE_GROUP_GAP_MM = 5;
+const CHOICE_VERTICAL_GROUP_WIDTH_MM = 48;
+const CHOICE_NUMBER_WIDTH_MM = 8;
+const CHOICE_OPTION_WIDTH_MM = 6;
 
 const paperSizeConfig: Record<AnswerSheetPaperSize, {
   physicalWidthMm: number;
@@ -97,6 +102,31 @@ interface NumberedQuestion {
   number: number;
 }
 
+function choiceOptionCount(question: AnswerSheetQuestion): number {
+  return Math.min(8, Math.max(2, question.options?.length || 4));
+}
+
+function groupChoiceRows(
+  choices: NumberedQuestion[],
+  direction: AnswerSheetChoiceDirection,
+  widthMm: number,
+): NumberedQuestion[][][] {
+  const rows: NumberedQuestion[][][] = [];
+  let usedWidth = 0;
+  for (let index = 0; index < choices.length; index += CHOICE_GROUP_SIZE) {
+    const group = choices.slice(index, index + CHOICE_GROUP_SIZE);
+    const width = direction === "vertical"
+      ? CHOICE_VERTICAL_GROUP_WIDTH_MM
+      : CHOICE_NUMBER_WIDTH_MM + Math.max(...group.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
+    const gap = usedWidth > 0 ? CHOICE_GROUP_GAP_MM : 0;
+    if (usedWidth > 0 && usedWidth + gap + width > widthMm) usedWidth = 0;
+    if (usedWidth === 0) rows.push([]);
+    rows[rows.length - 1].push(group);
+    usedWidth += (usedWidth > 0 ? CHOICE_GROUP_GAP_MM : 0) + width;
+  }
+  return rows;
+}
+
 interface QuestionGroup {
   type: string;
   label: string;
@@ -129,6 +159,7 @@ interface FlowItem {
     | "question"
     | "footer";
   item?: NumberedQuestion;
+  choiceGroups?: NumberedQuestion[][];
   group?: QuestionGroup;
   groupIndex?: number;
   first?: boolean;
@@ -220,26 +251,68 @@ function splitEssayStemContent(stem: string): EssayStemContent {
   };
 }
 
-function ChoiceAnswer({ number, optionCount, direction = "horizontal" }: {
+function ChoiceAnswer({ number, optionCount, direction = "horizontal", grouped = false }: {
   number: number | string;
   optionCount: number;
   direction?: AnswerSheetChoiceDirection;
+  grouped?: boolean;
 }) {
   const count = Math.min(8, Math.max(2, optionCount || 4));
+  const vertical = direction === "vertical";
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-7 shrink-0 font-mono text-xs font-semibold text-ink-800">{number}.</span>
+    <div
+      className={vertical ? "flex w-[8mm] flex-col items-center gap-1" : "flex items-center"}
+      style={!vertical && !grouped ? { width: `${CHOICE_NUMBER_WIDTH_MM + count * CHOICE_OPTION_WIDTH_MM}mm` } : undefined}
+      data-testid="choice-answer"
+    >
+      <span className={vertical
+        ? "font-mono text-xs font-semibold text-ink-800"
+        : "w-[8mm] shrink-0 font-mono text-xs font-semibold text-ink-800"}>{number}.</span>
       <div
-        className={direction === "vertical" ? "flex flex-col items-start gap-1" : "flex flex-wrap gap-2"}
+        className={vertical ? "flex flex-col items-center gap-[1mm]" : "flex min-w-0 flex-1 items-center"}
         data-testid="choice-answer-options"
         data-direction={direction}
       >
         {Array.from({ length: count }, (_, index) => (
-          <span key={index} className="font-mono text-xs text-ink-900">
+          <span
+            key={index}
+            className={vertical
+              ? "font-mono text-xs text-ink-900"
+              : "min-w-0 flex-1 whitespace-nowrap text-center font-mono text-xs text-ink-900"}
+          >
             [{String.fromCharCode(65 + index)}]
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ChoiceAnswerGroup({ items, direction }: {
+  items: NumberedQuestion[];
+  direction: AnswerSheetChoiceDirection;
+}) {
+  const width = direction === "vertical"
+    ? CHOICE_VERTICAL_GROUP_WIDTH_MM
+    : CHOICE_NUMBER_WIDTH_MM + Math.max(...items.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
+  return (
+    <div
+      className={direction === "vertical"
+        ? "flex shrink-0 items-start justify-between"
+        : "flex shrink-0 flex-col gap-[1mm]"}
+      style={{ width: `${width}mm` }}
+      data-testid="choice-answer-group"
+      data-direction={direction}
+    >
+      {items.map(({ question, number }) => (
+        <ChoiceAnswer
+          key={question.id}
+          number={question.label || number}
+          optionCount={choiceOptionCount(question)}
+          direction={direction}
+          grouped
+        />
+      ))}
     </div>
   );
 }
@@ -446,7 +519,12 @@ function ChoiceOptions({
     <div className="pl-7">
       <div ref={rootRef} className="space-y-1.5" data-testid="choice-option-layout">
         {rows.map((row) => (
-          <div key={row[0]} className="flex min-w-0 items-start gap-2" data-testid="choice-option-row">
+          <div
+            key={row[0]}
+            className="grid min-w-0 items-start gap-2"
+            style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+            data-testid="choice-option-row"
+          >
             {row.map((index) => {
               const label = String.fromCharCode(65 + index);
               return (
@@ -456,14 +534,14 @@ function ChoiceOptions({
                     if (element) optionRefs.current.set(index, element);
                     else optionRefs.current.delete(index);
                   }}
-                  className="answer-sheet-choice-option inline-flex w-max shrink-0 items-start gap-1.5 text-xs text-ink-800"
+                  className="answer-sheet-choice-option inline-flex min-w-0 items-start gap-1.5 text-xs text-ink-800"
                   data-testid="choice-option"
                 >
                   <span className="shrink-0 font-mono font-semibold">
                     {labelStyle === "brackets" ? `[${label}]` : `${label}.`}
                   </span>
                   {options[index] && (
-                    <DraggableQuestionContent className="answer-sheet-choice-option-content w-max" editable={editable}>
+                    <DraggableQuestionContent className="answer-sheet-choice-option-content min-w-0" editable={editable}>
                       {options[index]}
                     </DraggableQuestionContent>
                   )}
@@ -733,6 +811,10 @@ export function AnswerSheetComposer({
   const pageContentHeightPx = (paperSize.heightMm - PAGE_PADDING_MM * 2) * MM_TO_CSS_PX;
   const isPreview = viewMode === "preview" || published;
   const wideEditor = !isPreview && isWidePaper;
+  const choiceRows = useMemo(
+    () => groupChoiceRows(choiceItems, settings.concentratedChoiceDirection, columnWidthMm - 7),
+    [choiceItems, columnWidthMm, settings.concentratedChoiceDirection],
+  );
 
   const changePublication = async (publish: boolean, print = false) => {
     if (!onPublicationChange || publishing) return;
@@ -823,13 +905,13 @@ export function AnswerSheetComposer({
           label: "选择题填涂区",
           testId: "concentrated-choice-area",
         });
-        choiceItems.forEach((item, index) => {
+        choiceRows.forEach((choiceGroups, index) => {
           items.push({
-            key: `zone-choice-${item.question.id}`,
+            key: `zone-choice-${index}`,
             kind: "zone-choice",
-            item,
+            choiceGroups,
             first: index === 0,
-            last: index === choiceItems.length - 1,
+            last: index === choiceRows.length - 1,
           });
         });
       }
@@ -875,7 +957,7 @@ export function AnswerSheetComposer({
 
     items.push({ key: "footer", kind: "footer" });
     return items;
-  }, [choiceItems, fillItems, groups, settings.choiceLayout, settings.mode]);
+  }, [choiceItems, choiceRows, fillItems, groups, settings.choiceLayout, settings.mode]);
 
   const recalculatePagination = useCallback(() => {
     if (flowItems.length === 0 || pageContentHeightPx <= 0) return;
@@ -1066,17 +1148,20 @@ export function AnswerSheetComposer({
       );
     }
 
-    if (flowItem.kind === "zone-choice" && flowItem.item) {
+    if (flowItem.kind === "zone-choice" && flowItem.choiceGroups) {
       return (
         <div
-          className={`border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          className={`flex flex-wrap gap-[5mm] border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
+          data-testid="choice-answer-row"
         >
-          <ChoiceAnswer
-            number={flowItem.item.question.label || flowItem.item.number}
-            optionCount={flowItem.item.question.options?.length || 4}
-            direction={settings.concentratedChoiceDirection}
-          />
+          {flowItem.choiceGroups.map((items) => (
+            <ChoiceAnswerGroup
+              key={items[0].question.id}
+              items={items}
+              direction={settings.concentratedChoiceDirection}
+            />
+          ))}
         </div>
       );
     }
