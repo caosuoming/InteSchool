@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
 import { LessonSlideCanvas } from "./LessonSlideCanvas";
 
+vi.mock("@/components/courseware/GeoGebraEmbed", () => ({
+  GeoGebraEmbed: ({ fileUrl, title, backgroundColor }: { fileUrl: string; title: string; backgroundColor?: string }) => (
+    <div data-testid="embedded-ggb" data-src={fileUrl} style={{ backgroundColor }}>{title}</div>
+  ),
+}));
+
 const elements: LessonSlideElement[] = [
   {
     id: "text-1",
@@ -39,6 +45,19 @@ beforeEach(() => {
 });
 
 describe("LessonSlideCanvas", () => {
+  it("embeds GeoGebra elements with the current slide background", () => {
+    render(
+      <LessonSlideCanvas
+        elements={[{ id: "ggb-1", kind: "geogebra", src: "/api/ggb", title: "圆", x: 10, y: 10, width: 65, height: 60 }]}
+        canvasStyle={{ backgroundColor: "#F1F7FF" }}
+      >
+        <div>课堂内容</div>
+      </LessonSlideCanvas>,
+    );
+    expect(screen.getByTestId("embedded-ggb")).toHaveStyle({ backgroundColor: "#F1F7FF" });
+    expect(screen.getByTestId("embedded-ggb")).toHaveAttribute("data-src", "/api/ggb");
+  });
+
   it("scales fixed-size slide content to match the fullscreen reference size", async () => {
     render(
       <LessonSlideCanvas

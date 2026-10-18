@@ -10,9 +10,10 @@ interface CoursewareEmbedProps {
   title: string;
   className?: string;
   preferWps?: boolean;
+  backgroundColor?: string;
 }
 
-export function CoursewareEmbed({ courseware, title, className = "h-[70vh]", preferWps = false }: CoursewareEmbedProps) {
+export function CoursewareEmbed({ courseware, title, className = "h-[70vh]", preferWps = false, backgroundColor }: CoursewareEmbedProps) {
   const type = getCoursewareType(courseware);
   const fileUrl = getCoursewareFileUrl(courseware);
   const previewUrl = getCoursewarePreviewUrl(courseware);
@@ -53,7 +54,7 @@ export function CoursewareEmbed({ courseware, title, className = "h-[70vh]", pre
   }
 
   if (type === "ggb") {
-    return <GeoGebraEmbed fileUrl={fileUrl} title={title} className={className} />;
+    return <GeoGebraEmbed fileUrl={fileUrl} title={title} className={className} backgroundColor={backgroundColor} />;
   }
 
   if (type === "image") {

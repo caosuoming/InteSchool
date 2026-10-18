@@ -2786,8 +2786,15 @@ export interface LessonSlideVideoElement extends LessonSlideMediaElementBase {
 
 export type LessonSlideMediaElement = LessonSlideAudioElement | LessonSlideVideoElement;
 
+export interface LessonSlideGeoGebraElement extends LessonSlideElementBase {
+  kind: "geogebra";
+  src: string;
+  title: string;
+  coursewareId?: string;
+}
+
 /** 可在课件画布中自由移动、缩放的元素。 */
-export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement;
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement;
 
 /** 导入外部课件时尚未分配本地 ID 的自由画布元素。 */
 export type PptSlideImportElement =

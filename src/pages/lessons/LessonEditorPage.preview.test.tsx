@@ -159,6 +159,35 @@ describe("LessonEditorPage preview query", () => {
     });
   });
 
+  it("inserts a GGB element into the active slide without creating another page", async () => {
+    mocks.getCourseware.mockResolvedValue({
+      ...courseware,
+      slides: [
+        { id: "slide-1", type: "knowledge", title: "第一页", backgroundColor: "#F1F7FF" },
+        { id: "slide-2", type: "question", title: "第二页" },
+      ],
+    });
+    mocks.listLibraryCoursewares.mockResolvedValue([{
+      id: "ggb-courseware", type: "ggb", teacherId: teacher.id, title: "交互圆",
+      fileUrl: "/api/files/circle", onlineAccessToken: "token-123",
+      fileName: "circle.ggb", content: "圆", tags: [],
+    }]);
+    renderPage("/my-lessons/lesson-courseware-1/edit");
+    fireEvent.click(await screen.findByRole("button", { name: "插入 GGB" }));
+    fireEvent.click(await screen.findByRole("button", { name: "插入" }));
+    expect(screen.getByText("第 1 页，共 2 页")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalled());
+    const slides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
+    expect(slides).toHaveLength(2);
+    expect(slides[0]).toMatchObject({
+      backgroundColor: "#F1F7FF",
+      elements: [{ kind: "geogebra", title: "交互圆", coursewareId: "ggb-courseware", x: 12, y: 12, width: 68, height: 68 }],
+    });
+    expect(slides[0].elements?.[0]).toHaveProperty("src", `${window.location.origin}/api/courseware-files/token-123`);
+    expect(slides[1].elements).toBeUndefined();
+  });
+
   it("disables save while clean and can undo unsaved courseware changes", async () => {
     mocks.listMyClasses.mockResolvedValue([{ id: "class-1", type: "school", schoolId: teacher.schoolId, grade: "高一", name: "1班" }]);
     renderPage(`/my-lessons/${courseware.id}/edit`);
