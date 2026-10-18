@@ -43,9 +43,10 @@ describe("AnswerSheetComposer", () => {
     expect(originalRows[2]).toContain("3.");
     expect(originalRows[3]).toContain("4.");
     const choices = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-choice"]'), (item) => item.textContent || "");
-    expect(choices).toHaveLength(2);
+    expect(choices).toHaveLength(1);
     expect(choices[0]).toContain("2.");
-    expect(choices[1]).toContain("4.");
+    expect(choices[0]).toContain("4.");
+    expect(screen.getAllByTestId("choice-answer-group")).toHaveLength(1);
     expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
   });
 
@@ -458,6 +459,7 @@ describe("AnswerSheetComposer", () => {
     const savedBox = screen.getByTestId("concentrated-fill-area").closest('[data-answer-sheet-flow-item="zone-heading"]')!.nextElementSibling!
       .querySelector<HTMLElement>('[data-testid="answer-box"]')!;
     expect(savedBox).toHaveStyle({ width: "220px", height: "130px", resize: "none" });
+    expect(savedBox.querySelector('[aria-label="第3题评分框"]')).toHaveTextContent("得分");
   });
 
   it("moves essay images into the answer box and removes empty stem lines", () => {
@@ -667,6 +669,8 @@ describe("AnswerSheetComposer", () => {
     expect(controls).toContainElement(screen.getByLabelText("选择题号"));
     expect(screen.getByLabelText("选择题号")).toHaveValue("q1");
     expect(controls.querySelectorAll("select")).toHaveLength(4);
+    expect(screen.getAllByTestId("choice-option-row")[0]).toHaveClass("grid");
+    expect(screen.getAllByTestId("choice-option-row")[0]).toHaveStyle({ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" });
     expect(container.querySelector('[data-testid="inline-choice-question"] select')).toBeNull();
 
     fireEvent.change(screen.getByLabelText("第1题选项B排列方式"), { target: { value: "new-line" } });
@@ -695,13 +699,19 @@ describe("AnswerSheetComposer", () => {
     const direction = screen.getByLabelText("选择题填涂方向");
     expect(direction).toHaveValue("horizontal");
     expect(screen.getAllByTestId("choice-answer-options")).toHaveLength(2);
-    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-wrap");
+    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-1");
+    expect(screen.getAllByTestId("choice-answer-options")[0].children).toHaveLength(4);
+    expect(screen.getAllByTestId("choice-answer-options")[0].firstElementChild).toHaveClass("flex-1", "text-center");
 
     fireEvent.change(direction, { target: { value: "vertical" } });
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
       concentratedChoiceDirection: "vertical",
     }));
     expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-col");
+    expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveClass("justify-between");
+    expect(screen.getAllByTestId("choice-answer")[0].firstElementChild).toHaveTextContent("1.");
+    expect(screen.getAllByTestId("choice-answer")[0].firstElementChild?.nextElementSibling)
+      .toHaveAttribute("data-direction", "vertical");
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveAttribute("data-direction", "vertical");
@@ -712,6 +722,64 @@ describe("AnswerSheetComposer", () => {
     expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "concentrated" } });
     expect(screen.getByLabelText("选择题填涂方向")).toHaveValue("vertical");
+  });
+
+  it("groups choices by five, wraps groups to the next row and retains the order in both directions", () => {
+    const manyChoices = Array.from({ length: 22 }, (_, index) => ({
+      id: "choice-" + index,
+      type: "single" as const,
+      stem: "题目" + (index + 1),
+      options: ["甲", "乙", "丙", "丁"],
+      score: 2,
+    }));
+    const { container } = renderComposer({
+      questions: manyChoices,
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+    });
+    const groupNumbers = () => screen.getAllByTestId("choice-answer-group").map(
+      (group) => Array.from(group.querySelectorAll('[data-testid="choice-answer"]'), (item) => item.firstElementChild?.textContent),
+    );
+    const rowGroups = () => Array.from(container.querySelectorAll('[data-testid="choice-answer-row"]'), (row) =>
+      row.querySelectorAll('[data-testid="choice-answer-group"]').length,
+    );
+
+    expect(groupNumbers()).toEqual([
+      ["1.", "2.", "3.", "4.", "5."],
+      ["6.", "7.", "8.", "9.", "10."],
+      ["11.", "12.", "13.", "14.", "15."],
+      ["16.", "17.", "18.", "19.", "20."],
+      ["21.", "22."],
+    ]);
+    expect(rowGroups()).toEqual([5]);
+
+    fireEvent.change(screen.getByLabelText("选择题填涂方向"), { target: { value: "vertical" } });
+    expect(rowGroups()).toEqual([3, 2]);
+    expect(groupNumbers()).toHaveLength(5);
+    expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveAttribute("data-direction", "vertical");
+    expect(screen.getAllByTestId("choice-answer")[0]).toHaveClass("flex-col");
+
+    fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
+    expect(rowGroups()).toEqual([1, 1, 1, 1, 1]);
+    fireEvent.change(screen.getByLabelText("选择题填涂方向"), { target: { value: "horizontal" } });
+    expect(rowGroups()).toEqual([2, 2, 1]);
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(rowGroups()).toEqual([2, 2, 1]);
+    expect(groupNumbers()[4]).toEqual(["21.", "22."]);
+  });
+
+  it("provides equal option columns and a score box for concentrated fill blanks", () => {
+    const { container } = renderComposer({
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+    });
+    const choices = screen.getAllByTestId("choice-option-row");
+    expect(choices[0]).toHaveClass("grid");
+    expect(choices[0]).toHaveStyle({ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" });
+
+    const fillBox = container.querySelector('[data-answer-sheet-flow-item="zone-fill"] [data-testid="answer-box"]');
+    expect(fillBox?.querySelector('[aria-label="第3题评分框"]')).toHaveTextContent("得分");
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"] [aria-label="第3题评分框"]'))
+      .toHaveTextContent("得分");
   });
 
   it("saves per-option line break choices and reproduces them in preview", () => {
