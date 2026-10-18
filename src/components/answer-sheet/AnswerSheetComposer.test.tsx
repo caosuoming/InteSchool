@@ -43,9 +43,10 @@ describe("AnswerSheetComposer", () => {
     expect(originalRows[2]).toContain("3.");
     expect(originalRows[3]).toContain("4.");
     const choices = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-choice"]'), (item) => item.textContent || "");
-    expect(choices).toHaveLength(2);
+    expect(choices).toHaveLength(1);
     expect(choices[0]).toContain("2.");
-    expect(choices[1]).toContain("4.");
+    expect(choices[0]).toContain("4.");
+    expect(screen.getAllByTestId("choice-answer-group")).toHaveLength(1);
     expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
   });
 
@@ -105,7 +106,7 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toHaveClass("w-[75mm]");
     expect(studentNumberColumn).toHaveClass("w-[52mm]");
     expect(qrPosition).toHaveClass("w-[24mm]");
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[20mm]", "h-[13mm]", "shrink-0");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[26.67mm]", "h-[13mm]", "shrink-0");
     expect(screen.getByTestId("student-number-grid")).toHaveClass("w-[46mm]", "shrink-0");
     expect(screen.getAllByTestId("student-number-row")[0].firstElementChild).toHaveClass("w-[4mm]", "h-[4mm]", "shrink-0");
     expect(screen.getByLabelText("试卷答题卡二维码")).toHaveStyle({ width: "20mm", height: "20mm" });
@@ -130,18 +131,20 @@ describe("AnswerSheetComposer", () => {
     expect(fields.nextElementSibling?.firstElementChild).toHaveAttribute("aria-hidden", "true");
     expect(fields.nextElementSibling?.children[1]).toBe(student);
     expect(student.nextElementSibling).toBe(qr);
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
     expect(screen.getByLabelText("姓名签名填写区").parentElement).toHaveClass("flex-col");
     // 38 + 49 + 24 = 111 mm, less than the 114 mm usable width of an 8K three-column page.
     expect(38 + 49 + 24).toBeLessThan((370 - 2 * 8 - 2 * 6) / 3);
     expect(screen.getByTestId("answer-sheet-page-header")).not.toHaveTextContent("高一 · 2026-2027学年");
 
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "16K" } });
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A3" } });
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
   });
 
   it("controls and persists question stem font size without spacing after question numbers", () => {
@@ -232,6 +235,39 @@ describe("AnswerSheetComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(paper()).toHaveAttribute("data-paper-columns", "2");
     expect(paper().style.width).toBe("210mm");
+  });
+
+  it("uses the A4 layout for 16K with correctly sized portrait pages and persistent columns", () => {
+    const onSettingsChange = vi.fn();
+    const { container } = renderComposer({ onSettingsChange });
+    const paper = () => container.querySelector<HTMLElement>(".answer-sheet-paper")!;
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "16K" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ paperSize: "16K" }));
+    expect(paper()).toHaveAttribute("data-paper-size", "16K");
+    expect(paper()).toHaveClass("answer-sheet-paper-16k");
+    expect(paper().style.width).toBe("185mm");
+    expect(paper().style.height).toBe("260mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "1");
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("1");
+    expect(screen.getByTestId("answer-sheet-page-header")).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
+    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("pt-[4mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
+
+    fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ a4Columns: 2 }));
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    expect(screen.getByTestId("answer-sheet-column-flow").children).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(paper().style.width).toBe("185mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
+    expect(paper().style.width).toBe("210mm");
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "16K" } });
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
   });
 
   it("flows the A4 content left to right without mixing it with the identity header", () => {
@@ -458,6 +494,96 @@ describe("AnswerSheetComposer", () => {
     const savedBox = screen.getByTestId("concentrated-fill-area").closest('[data-answer-sheet-flow-item="zone-heading"]')!.nextElementSibling!
       .querySelector<HTMLElement>('[data-testid="answer-box"]')!;
     expect(savedBox).toHaveStyle({ width: "220px", height: "130px", resize: "none" });
+    expect(savedBox.querySelector('[aria-label="第3题评分框"]')).toHaveTextContent("得分");
+  });
+
+  it("positions, wraps, and captions images in choice stems, options, and fill questions", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [
+        {
+          id: "choice-image", type: "single", score: 5,
+          stem: '观察图示 <img src="/stem.png" alt="题干图"> 然后选择',
+          options: ['<img src="/option.png" alt="选项图">', "B", "C", "D"],
+        },
+        { id: "fill-image", type: "short", stem: '填空 ___ <img src="/fill.png" alt="填空图">' },
+      ],
+      initialSettings: { mode: "with-questions", choiceLayout: "inline" },
+      onSettingsChange,
+    });
+
+    const stemWrap = screen.getByAltText("题干图").closest("[data-image-index]") as HTMLElement;
+    expect(stemWrap).toHaveAttribute("data-wrap", "left");
+    const stemImage = screen.getByAltText("题干图");
+    fireEvent.pointerDown(stemImage, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(stemImage, { pointerId: 1, clientX: 36, clientY: 25 });
+    fireEvent.pointerUp(stemImage, { pointerId: 1, clientX: 36, clientY: 25 });
+    expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveStyle({ left: "26px", top: "15px" });
+
+    fireEvent.input(screen.getByRole("combobox", { name: "第1题题干第1张图片环绕模式" }), { target: { value: "right" } });
+    const optionImage = screen.getByAltText("选项图");
+    fireEvent.input(optionImage.closest("[data-image-index]")!.querySelector("select")!, { target: { value: "none" } });
+    const fillQuestion = screen.getByAltText("填空图").closest("[data-answer-sheet-question]")!;
+    expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
+    const fillInput = screen.getByAltText("填空图").closest("[data-image-index]")!.querySelector("input")!;
+    fireEvent.change(fillInput, { target: { value: "图1 函数示意图" } });
+    fireEvent.blur(fillInput);
+    expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
+
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      questionImageLayouts: {
+        "choice-image": {
+          stem: [{ x: 26, y: 15, wrap: "right", caption: "" }],
+          "option-0": [{ x: 0, y: 0, wrap: "none", caption: "" }],
+        },
+        "fill-image": {
+          stem: [{ x: 0, y: 0, wrap: "left", caption: "图1 函数示意图" }],
+        },
+      },
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "right");
+    expect(screen.getByAltText("选项图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "none");
+    expect(screen.getByText("图1 函数示意图")).toHaveClass("answer-sheet-image-caption");
+    expect(screen.queryByRole("combobox", { name: "第1题题干第1张图片环绕模式" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "第2题题干第1张图片备注" })).not.toBeInTheDocument();
+  });
+
+  it("loads saved image captions and wrap modes without editing", () => {
+    renderComposer({
+      questions: [{ id: "q-img", type: "short", stem: '文字 <img src="/saved.png" alt="存档图">' }],
+      initialSettings: {
+        mode: "with-questions",
+        questionImageLayouts: { "q-img": { stem: [{ x: 11, y: 9, wrap: "right", caption: "存档备注" }] } },
+      },
+      initialViewMode: "preview",
+    });
+    const wrapper = screen.getByAltText("存档图").closest("[data-image-index]");
+    expect(wrapper).toHaveStyle({ left: "11px", top: "9px" });
+    expect(wrapper).toHaveAttribute("data-wrap", "right");
+    expect(screen.getByText("存档备注")).toHaveClass("answer-sheet-image-caption");
+  });
+
+  it("allows essay image wrapping and centered captions while preserving drag and resize", () => {
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [{ id: "essay-image", type: "essay", stem: '<img src="/essay.png" alt="解答图">' }],
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "第1题第1张图片环绕模式" }), { target: { value: "left" } });
+    const caption = screen.getByRole("textbox", { name: "第1题第1张图片备注" });
+    fireEvent.change(caption, { target: { value: "图2 结构图" } });
+    fireEvent.blur(caption);
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      essayImageLayouts: { "essay-image": [{ x: 8, y: 10, width: 120, wrap: "left", caption: "图2 结构图" }] },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByTestId("essay-image")).toHaveAttribute("data-wrap", "left");
+    expect(screen.getByText("图2 结构图")).toHaveClass("answer-sheet-image-caption");
+    expect(screen.queryByRole("textbox", { name: "第1题第1张图片备注" })).not.toBeInTheDocument();
   });
 
   it("moves essay images into the answer box and removes empty stem lines", () => {
@@ -642,7 +768,7 @@ describe("AnswerSheetComposer", () => {
 
   it("keeps the signature below the name and identity sections aligned on all paper sizes", () => {
     const { container } = renderComposer();
-    for (const paperSize of ["A4", "8K", "A3"] as const) {
+    for (const paperSize of ["A4", "16K", "8K", "A3"] as const) {
       fireEvent.change(screen.getByLabelText("纸张"), { target: { value: paperSize } });
       const signature = screen.getByLabelText("姓名签名填写区");
       const nameLabel = signature.previousElementSibling;
@@ -667,6 +793,8 @@ describe("AnswerSheetComposer", () => {
     expect(controls).toContainElement(screen.getByLabelText("选择题号"));
     expect(screen.getByLabelText("选择题号")).toHaveValue("q1");
     expect(controls.querySelectorAll("select")).toHaveLength(4);
+    expect(screen.getAllByTestId("choice-option-row")[0]).toHaveClass("grid");
+    expect(screen.getAllByTestId("choice-option-row")[0]).toHaveStyle({ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" });
     expect(container.querySelector('[data-testid="inline-choice-question"] select')).toBeNull();
 
     fireEvent.change(screen.getByLabelText("第1题选项B排列方式"), { target: { value: "new-line" } });
@@ -695,13 +823,19 @@ describe("AnswerSheetComposer", () => {
     const direction = screen.getByLabelText("选择题填涂方向");
     expect(direction).toHaveValue("horizontal");
     expect(screen.getAllByTestId("choice-answer-options")).toHaveLength(2);
-    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-wrap");
+    expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-1");
+    expect(screen.getAllByTestId("choice-answer-options")[0].children).toHaveLength(4);
+    expect(screen.getAllByTestId("choice-answer-options")[0].firstElementChild).toHaveClass("flex-1", "text-center");
 
     fireEvent.change(direction, { target: { value: "vertical" } });
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
       concentratedChoiceDirection: "vertical",
     }));
     expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-col");
+    expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveClass("justify-between");
+    expect(screen.getAllByTestId("choice-answer")[0].firstElementChild).toHaveTextContent("1.");
+    expect(screen.getAllByTestId("choice-answer")[0].firstElementChild?.nextElementSibling)
+      .toHaveAttribute("data-direction", "vertical");
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveAttribute("data-direction", "vertical");
@@ -712,6 +846,64 @@ describe("AnswerSheetComposer", () => {
     expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "concentrated" } });
     expect(screen.getByLabelText("选择题填涂方向")).toHaveValue("vertical");
+  });
+
+  it("groups choices by five, wraps groups to the next row and retains the order in both directions", () => {
+    const manyChoices = Array.from({ length: 22 }, (_, index) => ({
+      id: "choice-" + index,
+      type: "single" as const,
+      stem: "题目" + (index + 1),
+      options: ["甲", "乙", "丙", "丁"],
+      score: 2,
+    }));
+    const { container } = renderComposer({
+      questions: manyChoices,
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+    });
+    const groupNumbers = () => screen.getAllByTestId("choice-answer-group").map(
+      (group) => Array.from(group.querySelectorAll('[data-testid="choice-answer"]'), (item) => item.firstElementChild?.textContent),
+    );
+    const rowGroups = () => Array.from(container.querySelectorAll('[data-testid="choice-answer-row"]'), (row) =>
+      row.querySelectorAll('[data-testid="choice-answer-group"]').length,
+    );
+
+    expect(groupNumbers()).toEqual([
+      ["1.", "2.", "3.", "4.", "5."],
+      ["6.", "7.", "8.", "9.", "10."],
+      ["11.", "12.", "13.", "14.", "15."],
+      ["16.", "17.", "18.", "19.", "20."],
+      ["21.", "22."],
+    ]);
+    expect(rowGroups()).toEqual([5]);
+
+    fireEvent.change(screen.getByLabelText("选择题填涂方向"), { target: { value: "vertical" } });
+    expect(rowGroups()).toEqual([3, 2]);
+    expect(groupNumbers()).toHaveLength(5);
+    expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveAttribute("data-direction", "vertical");
+    expect(screen.getAllByTestId("choice-answer")[0]).toHaveClass("flex-col");
+
+    fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
+    expect(rowGroups()).toEqual([1, 1, 1, 1, 1]);
+    fireEvent.change(screen.getByLabelText("选择题填涂方向"), { target: { value: "horizontal" } });
+    expect(rowGroups()).toEqual([2, 2, 1]);
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(rowGroups()).toEqual([2, 2, 1]);
+    expect(groupNumbers()[4]).toEqual(["21.", "22."]);
+  });
+
+  it("provides equal option columns and a score box for concentrated fill blanks", () => {
+    const { container } = renderComposer({
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+    });
+    const choices = screen.getAllByTestId("choice-option-row");
+    expect(choices[0]).toHaveClass("grid");
+    expect(choices[0]).toHaveStyle({ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" });
+
+    const fillBox = container.querySelector('[data-answer-sheet-flow-item="zone-fill"] [data-testid="answer-box"]');
+    expect(fillBox?.querySelector('[aria-label="第3题评分框"]')).toHaveTextContent("得分");
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"] [aria-label="第3题评分框"]'))
+      .toHaveTextContent("得分");
   });
 
   it("saves per-option line break choices and reproduces them in preview", () => {

@@ -512,6 +512,7 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   lessons: LessonCourseware[];
   homeworks: ClassroomHomework[];
   homeworkHistory: ClassroomHomework[];
+  homeworkRecords: HomeworkClassOverviewRecord[];
   notices: ClassroomNotice[];
   students: Array<Pick<Student, "id" | "name">>;
   studentAttentionByTeacherId?: Record<string, {
@@ -1665,7 +1666,7 @@ export interface ExamPaper {
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
-    paperSize: "A4" | "A3" | "8K";
+    paperSize: "A4" | "16K" | "A3" | "8K";
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
@@ -1677,7 +1678,8 @@ export interface ExamPaper {
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
-    essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
+    essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
+    questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
   };
   createdAt: string;
   updatedAt: string;
@@ -2275,7 +2277,7 @@ export interface Lecture {
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
-    paperSize: "A4" | "A3" | "8K";
+    paperSize: "A4" | "16K" | "A3" | "8K";
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
@@ -2287,7 +2289,8 @@ export interface Lecture {
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
-    essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
+    essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
+    questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
   };
   /** 排版设置 */
   layoutSettings?: {
@@ -2785,8 +2788,15 @@ export interface LessonSlideVideoElement extends LessonSlideMediaElementBase {
 
 export type LessonSlideMediaElement = LessonSlideAudioElement | LessonSlideVideoElement;
 
+export interface LessonSlideGeoGebraElement extends LessonSlideElementBase {
+  kind: "geogebra";
+  src: string;
+  title: string;
+  coursewareId?: string;
+}
+
 /** 可在课件画布中自由移动、缩放的元素。 */
-export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement;
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement;
 
 /** 导入外部课件时尚未分配本地 ID 的自由画布元素。 */
 export type PptSlideImportElement =
@@ -3290,6 +3300,10 @@ export interface HomeworkClassOverviewRecord {
   submittedStudentIds: string[];
   /** 当天请假的学生；请假学生不会被视为未交作业。 */
   absentStudentIds: string[];
+  /** 点名时的学生姓名快照，用于历史记录。 */
+  studentNames?: Record<string, string>;
+  /** 当天作业图片。 */
+  images?: StudentInteractionAttachment[];
   /** 是否已经保存过本次作业点名。 */
   attendanceTaken: boolean;
   createdAt: string;

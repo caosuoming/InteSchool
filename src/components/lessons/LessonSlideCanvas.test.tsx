@@ -4,6 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LessonSlideElement } from "@/types";
 import { LessonSlideCanvas } from "./LessonSlideCanvas";
 
+vi.mock("@/components/courseware/GeoGebraEmbed", () => ({
+  GeoGebraEmbed: ({ fileUrl, title, backgroundColor }: { fileUrl: string; title: string; backgroundColor?: string }) => (
+    <div data-testid="embedded-ggb" data-src={fileUrl} style={{ backgroundColor }}>{title}</div>
+  ),
+}));
+
 const elements: LessonSlideElement[] = [
   {
     id: "text-1",
@@ -39,6 +45,19 @@ beforeEach(() => {
 });
 
 describe("LessonSlideCanvas", () => {
+  it("embeds GeoGebra elements with the current slide background", () => {
+    render(
+      <LessonSlideCanvas
+        elements={[{ id: "ggb-1", kind: "geogebra", src: "/api/ggb", title: "圆", x: 10, y: 10, width: 65, height: 60 }]}
+        canvasStyle={{ backgroundColor: "#F1F7FF" }}
+      >
+        <div>课堂内容</div>
+      </LessonSlideCanvas>,
+    );
+    expect(screen.getByTestId("embedded-ggb")).toHaveStyle({ backgroundColor: "#F1F7FF" });
+    expect(screen.getByTestId("embedded-ggb")).toHaveAttribute("data-src", "/api/ggb");
+  });
+
   it("scales fixed-size slide content to match the fullscreen reference size", async () => {
     render(
       <LessonSlideCanvas
@@ -437,6 +456,65 @@ describe("LessonSlideCanvas", () => {
     fireEvent.pointerMove(imageElement!, { pointerId: 2, clientX: 600, clientY: 1000 });
     expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
       expect.objectContaining({ id: "image-1", y: 120 }),
+    ]));
+  });
+
+  it("converts images embedded in knowledge-block text into movable, resizable elements", () => {
+    const onElementsChange = vi.fn();
+    const onSelectElement = vi.fn();
+    const text: LessonSlideElement = {
+      id: "knowledge-text", kind: "text",
+      content: '知识文字 <img src="/api/files/embedded.png" alt="图示" /> 和公式 $x^2$',
+      x: 10, y: 15, width: 60, height: 30, autoHeight: true,
+    };
+    const { container, rerender } = render(
+      <LessonSlideCanvas elements={[text]} editable onSelectElement={onSelectElement} onElementsChange={onElementsChange}>
+        <div />
+      </LessonSlideCanvas>,
+    );
+    const canvas = container.querySelector<HTMLElement>("[data-lesson-slide-canvas]")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width: 1000, height: 500,
+      right: 1000, bottom: 500, x: 0, y: 0, toJSON: () => ({}),
+    });
+    const embedded = screen.getByAltText("图示");
+    vi.spyOn(embedded, "getBoundingClientRect").mockReturnValue({
+      left: 320, top: 140, width: 260, height: 150,
+      right: 580, bottom: 290, x: 320, y: 140, toJSON: () => ({}),
+    });
+    fireEvent.click(embedded);
+    const updated = onElementsChange.mock.lastCall![0] as LessonSlideElement[];
+    expect(updated).toHaveLength(2);
+    expect(updated[0]).toMatchObject({ id: "knowledge-text", kind: "text" });
+    if (updated[0].kind !== "text") throw Error("Expected text");
+    expect(updated[0].content).toContain("$x^2$");
+    expect(updated[0].content).not.toContain("embedded.png");
+    expect(updated[1]).toMatchObject({
+      kind: "image", src: "/api/files/embedded.png", alt: "图示",
+      x: 32, width: 26, height: 30,
+    });
+    expect(updated[1].y).toBeCloseTo(28);
+    expect(onSelectElement).toHaveBeenCalledWith(updated[1].id);
+
+    rerender(
+      <LessonSlideCanvas elements={updated} editable selectedElementId={updated[1].id}
+        onSelectElement={onSelectElement} onElementsChange={onElementsChange}>
+        <div />
+      </LessonSlideCanvas>,
+    );
+    const floating = screen.getByAltText("图示").closest<HTMLElement>(".absolute")!;
+    expect(floating).toHaveStyle({ left: "32%", top: "28%", width: "26%", height: "30%" });
+    fireEvent.pointerDown(floating, { pointerId: 1, clientX: 320, clientY: 140 });
+    fireEvent.pointerMove(floating, { pointerId: 1, clientX: 420, clientY: 190 });
+    expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: updated[1].id, x: 42, y: 38 }),
+    ]));
+    fireEvent.pointerUp(floating, { pointerId: 1 });
+    const handle = screen.getByTitle("拖动调整大小");
+    fireEvent.pointerDown(handle, { pointerId: 2, clientX: 320, clientY: 140 });
+    fireEvent.pointerMove(handle, { pointerId: 2, clientX: 420, clientY: 190 });
+    expect(onElementsChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ id: updated[1].id, width: 36, height: 40 }),
     ]));
   });
 

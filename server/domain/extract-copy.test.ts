@@ -310,6 +310,21 @@ describe("document extract copies", () => {
         rescoredQuestions.reduce((sum, question) => sum + question.score, 0),
       );
 
+      const choiceCopy = await examPaperService.updatePaper(copy.id, {
+        questions: rescored.questions.map((question, index) => (
+          index === 0 && (question.type === "single" || question.type === "multiple")
+            ? { ...question, answer: "B" }
+            : question
+        )),
+      });
+      expect(rescored.questions[0].type).toBe("single");
+      expect(choiceCopy.questions[0].answer).toBe("B");
+      expect(choiceCopy.questions[1].answer).toBe(rescored.questions[1].answer);
+      await expect(examPaperService.updatePaper(copy.id, {
+        questions: choiceCopy.questions.map((question, index) =>
+          index === 1 ? { ...question, answer: "篡改主观题答案" } : question),
+      })).rejects.toThrow("不能换题、删除题目或调整题目顺序");
+
       await expect(examPaperService.updatePaper(copy.id, {
         questions: [...rescored.questions].reverse(),
       })).rejects.toThrow("不能换题、删除题目或调整题目顺序");

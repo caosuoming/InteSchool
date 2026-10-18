@@ -1,7 +1,7 @@
 import type { QuestionType } from "@/types";
 
 export type AnswerSheetResourceType = "exam-paper" | "lecture";
-export type AnswerSheetPaperSize = "A4" | "A3" | "8K";
+export type AnswerSheetPaperSize = "A4" | "16K" | "A3" | "8K";
 export type AnswerSheetMode = "blank" | "with-questions";
 export type AnswerSheetChoiceLayout = "inline" | "concentrated";
 export type AnswerSheetChoiceDirection = "horizontal" | "vertical";
@@ -13,6 +13,15 @@ export interface AnswerSheetImageLayout {
   x: number;
   y: number;
   width: number;
+  wrap?: "left" | "right" | "none";
+  caption?: string;
+}
+
+export interface AnswerSheetInlineImageLayout {
+  x: number;
+  y: number;
+  wrap: "left" | "right" | "none";
+  caption?: string;
 }
 
 export interface AnswerSheetSettings {
@@ -29,6 +38,7 @@ export interface AnswerSheetSettings {
   answerBoxWidths?: Record<string, number>;
   choiceOptionBreaks?: Record<string, Record<number, AnswerSheetOptionBreak>>;
   essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
+  questionImageLayouts?: Record<string, Record<string, AnswerSheetInlineImageLayout[]>>;
 }
 
 export interface AnswerSheetQuestion {

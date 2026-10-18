@@ -49,13 +49,14 @@ import { genId } from "@/lib/service-utils";
 import { PresentationMode } from "./PresentationMode";
 import { WpsFormulaEditor } from "@/components/editor/WpsFormulaEditor";
 import { CoursewareEmbed } from "@/components/courseware/CoursewareEmbed";
-import { getCoursewareEditorUrl } from "@/lib/courseware-online";
+import { getCoursewareEditorUrl, getCoursewareFileUrl } from "@/lib/courseware-online";
 import { downloadOfflineLessonCourseware } from "@/lib/lesson-courseware-offline";
 import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
 import { QuickEditModal } from "@/components/question/QuickEditModal";
 import { createLessonQuestionSlide } from "@/lib/lesson-courseware-create";
+import { detachLessonInlineImage } from "@/lib/lesson-inline-image";
 import {
   basketAudienceLabel,
   preferredBasketForClassIds,
@@ -149,6 +150,7 @@ export function LessonEditorPage() {
   const [basketQuestions, setBasketQuestions] = useState<Question[]>([]);
   const [basketQuestionsLoading, setBasketQuestionsLoading] = useState(false);
   const [geogebraPickerOpen, setGeogebraPickerOpen] = useState(false);
+  const [geogebraInsertMode, setGeogebraInsertMode] = useState<"slide" | "element">("slide");
   const [geogebraCoursewares, setGeogebraCoursewares] = useState<Courseware[]>([]);
   const [geogebraPickerLoading, setGeogebraPickerLoading] = useState(false);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
@@ -327,6 +329,28 @@ export function LessonEditorPage() {
   const updateCurrentElements = (elements: LessonSlideElement[]) => {
     setSlides((previous) => previous.map((slide, index) =>
       index === currentIndex ? { ...slide, elements } : slide));
+  };
+
+  const extractContentImage = (
+    region: "title" | "content",
+    image: HTMLImageElement,
+    root: HTMLElement,
+  ) => {
+    if (!currentSlide) return;
+    const canvas = root.closest<HTMLElement>("[data-lesson-slide-canvas]");
+    if (!canvas) return;
+    const extracted = detachLessonInlineImage(image, root, canvas, genId("element"));
+    if (!extracted) return;
+    const slideId = currentSlide.id;
+    setSlides((previous) => previous.map((slide) => slide.id === slideId
+      ? {
+          ...slide,
+          [region]: extracted.content,
+          elements: [...(slide.elements || []), extracted.element],
+        }
+      : slide));
+    setSelectedElementId(extracted.element.id);
+    setSelectedTextRegion(null);
   };
 
   const visibleCurrentElements = currentSlide?.elements || [];
@@ -1039,13 +1063,14 @@ export function LessonEditorPage() {
     toast.success("已合并");
   };
 
-  const openGeoGebraPicker = async () => {
+  const openGeoGebraPicker = async (mode: "slide" | "element" = "slide") => {
     if (!teacher) return;
+    setGeogebraInsertMode(mode);
     setGeogebraPickerOpen(true);
     setGeogebraPickerLoading(true);
     try {
       const available = await coursewareService.listCoursewares({ teacherId: teacher.id });
-      setGeogebraCoursewares(available.filter((item) => item.type === "ggb" && Boolean(item.fileUrl)));
+      setGeogebraCoursewares(available.filter((item) => item.type === "ggb" && Boolean(getCoursewareFileUrl(item))));
     } catch (error) {
       toast.error("加载 GGB 课件失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -1054,6 +1079,26 @@ export function LessonEditorPage() {
   };
 
   const insertGeoGebraCourseware = (source: Courseware) => {
+    if (geogebraInsertMode === "element" && currentSlide?.type !== "courseware") {
+      if (!currentSlide) return;
+      const element: LessonSlideElement = {
+        id: genId("element"),
+        kind: "geogebra",
+        src: getCoursewareFileUrl(source)!,
+        title: source.title,
+        coursewareId: source.id,
+        x: 12,
+        y: 12,
+        width: 68,
+        height: 68,
+      };
+      updateCurrentElements([...(currentSlide.elements || []), element]);
+      setSelectedElementId(element.id);
+      setSelectedTextRegion(null);
+      setGeogebraPickerOpen(false);
+      toast.success("已在当前页插入 GeoGebra 课件");
+      return;
+    }
     const slide: LessonSlide = {
       id: genId("slide"),
       type: "courseware",
@@ -1254,7 +1299,7 @@ export function LessonEditorPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void openGeoGebraPicker()}
+                    onClick={() => void openGeoGebraPicker("slide")}
                     className="rounded p-1 text-ink-500 hover:bg-ink-200/50 hover:text-ink-800"
                     title="插入 GGB 课件"
                     aria-label="插入 GGB 课件"
@@ -1383,7 +1428,7 @@ export function LessonEditorPage() {
             <div className="flex-1 p-4 lg:p-6">
               <div className="mx-auto w-full max-w-[1120px]">
                 <div className="mb-3 text-xs text-ink-500">
-                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入，也可直接粘贴剪贴板图片。
+                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入，点击知识块中的图片可单独移动和缩放，也可直接粘贴剪贴板图片。
                 </div>
 
                 {currentSlide.type === "courseware" ? (
@@ -1391,7 +1436,7 @@ export function LessonEditorPage() {
                     className="overflow-hidden rounded-xl bg-paper shadow-lg"
                     style={currentSlide.backgroundColor ? { backgroundColor: currentSlide.backgroundColor } : undefined}
                   >
-                    <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[64vh]" />
+                    <CoursewareEmbed courseware={currentSlide} title={currentSlide.title} className="h-[64vh]" backgroundColor={currentSlide.backgroundColor || "#FFFFFF"} />
                     <div className="flex items-center gap-2 border-t border-ink-100 px-4 py-3">
                       {getCoursewareEditorUrl(currentSlide) && (
                         <Button
@@ -1429,6 +1474,7 @@ export function LessonEditorPage() {
                         setSelectedTextRegion(region);
                         setSelectedElementId(null);
                       }}
+                      onExtractInlineImage={extractContentImage}
                     />
                   </LessonSlideCanvas>
                 )}
@@ -1537,6 +1583,7 @@ export function LessonEditorPage() {
                     onAddImage={addImageElement}
                     onAddLink={addLinkElement}
                     onAddMaterial={openMaterialPicker}
+                    onAddGeoGebra={() => void openGeoGebraPicker("element")}
                     onAddQuestion={openQuestionPicker}
                     onAddSlide={addNewSlide}
                     onSplitSlide={splitSlide}
@@ -1767,7 +1814,9 @@ export function LessonEditorPage() {
         open={geogebraPickerOpen}
         onClose={() => setGeogebraPickerOpen(false)}
         title="插入 GGB 课件"
-        description="选择课件库中的 GeoGebra 课件，在当前页之后插入一个可交互的课件页面。"
+        description={geogebraInsertMode === "element" && currentSlide?.type !== "courseware"
+          ? "选择课件库中的 GeoGebra 课件，插入当前页面。可拖动、缩放并在上课时交互。"
+          : "选择课件库中的 GeoGebra 课件，在当前页之后插入一个可交互的课件页面。"}
         size="lg"
       >
         {geogebraPickerLoading ? (

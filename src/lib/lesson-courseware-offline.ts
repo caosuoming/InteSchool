@@ -496,6 +496,11 @@ function renderSlide(){
         else appendRich(node,element.content);
       } else if(element.kind==="image"){
         var img=document.createElement("img");img.src=element.src;img.alt=element.alt||"";node.appendChild(img);
+      } else if(element.kind==="geogebra"){
+        var link=document.createElement("a");link.href=element.src;link.download=(element.title||"GeoGebra")+".ggb";
+        link.textContent="下载 GeoGebra 课件："+(element.title||"GeoGebra");
+        link.style.cssText="display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:12px;text-align:center;color:#1d4ed8;text-decoration:underline";
+        node.appendChild(link);
       } else if(element.kind==="video"){
         var video=document.createElement("video");video.src=element.src;video.controls=true;video.preload="metadata";node.appendChild(video);
       } else if(element.kind==="audio"){

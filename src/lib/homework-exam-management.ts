@@ -28,15 +28,15 @@ export function publicationStatus(publication: ExamPublication, now = new Date()
 }
 
 /** 点名按班级和日期记录，不区分同一天发布的不同作业。 */
-export function homeworkSubmissionCounts(
+export function homeworkSubmissionDetails(
   homework: ClassroomHomework,
   recordsByClass: Map<string, HomeworkClassOverviewRecord[]>,
-): { submitted: number; missing: number } | null {
+): { submitted: number; missing: number; missingStudents: { classId: string; studentId: string }[] } | null {
   if (!homework.classIds.length || (homework.assignedEndDate || homework.assignedDate) !== homework.assignedDate) {
     return null;
   }
   let submitted = 0;
-  let missing = 0;
+  const missingStudents: { classId: string; studentId: string }[] = [];
   for (const classId of new Set(homework.classIds)) {
     const record = recordsByClass.get(classId)?.find((item) =>
       item.homeworkDate === homework.assignedDate && item.attendanceTaken);
@@ -45,9 +45,21 @@ export function homeworkSubmissionCounts(
     const handedIn = new Set(record.submittedStudentIds.filter((id) => students.has(id)));
     const absent = new Set(record.absentStudentIds);
     submitted += handedIn.size;
-    missing += [...students].filter((id) => !handedIn.has(id) && !absent.has(id)).length;
+    for (const studentId of students) {
+      if (!handedIn.has(studentId) && !absent.has(studentId)) {
+        missingStudents.push({ classId, studentId });
+      }
+    }
   }
-  return { submitted, missing };
+  return { submitted, missing: missingStudents.length, missingStudents };
+}
+
+export function homeworkSubmissionCounts(
+  homework: ClassroomHomework,
+  recordsByClass: Map<string, HomeworkClassOverviewRecord[]>,
+): { submitted: number; missing: number } | null {
+  const details = homeworkSubmissionDetails(homework, recordsByClass);
+  return details ? { submitted: details.submitted, missing: details.missing } : null;
 }
 
 /** 未排期的试卷文档只是待布置资源，不应被显示为已开始的作业。 */
