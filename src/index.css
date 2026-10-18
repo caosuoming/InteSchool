@@ -443,11 +443,17 @@
 }
 
 .answer-sheet-paper-a4 { page: answer-sheet-a4; }
+.answer-sheet-paper-16k { page: answer-sheet-16k; }
 .answer-sheet-paper-a3 { page: answer-sheet-a3; }
 .answer-sheet-paper-8k { page: answer-sheet-8k; }
 
 @page answer-sheet-a4 {
   size: A4 portrait;
+  margin: 0;
+}
+
+@page answer-sheet-16k {
+  size: 185mm 260mm;
   margin: 0;
 }
 

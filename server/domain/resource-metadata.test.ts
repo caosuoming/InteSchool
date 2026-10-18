@@ -37,7 +37,7 @@ describe("document resource metadata", () => {
       });
 
       const settings = {
-        paperSize: "A3" as const,
+        paperSize: "16K" as const,
         mode: "with-questions" as const,
         studentNumberDigits: 8,
         choiceLayout: "concentrated" as const,

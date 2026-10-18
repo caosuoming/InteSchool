@@ -105,7 +105,7 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toHaveClass("w-[75mm]");
     expect(studentNumberColumn).toHaveClass("w-[52mm]");
     expect(qrPosition).toHaveClass("w-[24mm]");
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[20mm]", "h-[13mm]", "shrink-0");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[26.67mm]", "h-[13mm]", "shrink-0");
     expect(screen.getByTestId("student-number-grid")).toHaveClass("w-[46mm]", "shrink-0");
     expect(screen.getAllByTestId("student-number-row")[0].firstElementChild).toHaveClass("w-[4mm]", "h-[4mm]", "shrink-0");
     expect(screen.getByLabelText("试卷答题卡二维码")).toHaveStyle({ width: "20mm", height: "20mm" });
@@ -130,18 +130,20 @@ describe("AnswerSheetComposer", () => {
     expect(fields.nextElementSibling?.firstElementChild).toHaveAttribute("aria-hidden", "true");
     expect(fields.nextElementSibling?.children[1]).toBe(student);
     expect(student.nextElementSibling).toBe(qr);
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
     expect(screen.getByLabelText("姓名签名填写区").parentElement).toHaveClass("flex-col");
     // 38 + 49 + 24 = 111 mm, less than the 114 mm usable width of an 8K three-column page.
     expect(38 + 49 + 24).toBeLessThan((370 - 2 * 8 - 2 * 6) / 3);
     expect(screen.getByTestId("answer-sheet-page-header")).not.toHaveTextContent("高一 · 2026-2027学年");
 
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "16K" } });
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A3" } });
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
-    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[20mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
   });
 
   it("controls and persists question stem font size without spacing after question numbers", () => {
@@ -232,6 +234,39 @@ describe("AnswerSheetComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(paper()).toHaveAttribute("data-paper-columns", "2");
     expect(paper().style.width).toBe("210mm");
+  });
+
+  it("uses the A4 layout for 16K with correctly sized portrait pages and persistent columns", () => {
+    const onSettingsChange = vi.fn();
+    const { container } = renderComposer({ onSettingsChange });
+    const paper = () => container.querySelector<HTMLElement>(".answer-sheet-paper")!;
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "16K" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ paperSize: "16K" }));
+    expect(paper()).toHaveAttribute("data-paper-size", "16K");
+    expect(paper()).toHaveClass("answer-sheet-paper-16k");
+    expect(paper().style.width).toBe("185mm");
+    expect(paper().style.height).toBe("260mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "1");
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("1");
+    expect(screen.getByTestId("answer-sheet-page-header")).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
+    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("pt-[4mm]");
+    expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[26.67mm]");
+
+    fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({ a4Columns: 2 }));
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    expect(screen.getByTestId("answer-sheet-column-flow").children).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(paper().style.width).toBe("185mm");
+    expect(paper()).toHaveAttribute("data-paper-columns", "2");
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "A4" } });
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
+    expect(paper().style.width).toBe("210mm");
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "16K" } });
+    expect(screen.getByLabelText("题目栏数")).toHaveValue("2");
   });
 
   it("flows the A4 content left to right without mixing it with the identity header", () => {
@@ -642,7 +677,7 @@ describe("AnswerSheetComposer", () => {
 
   it("keeps the signature below the name and identity sections aligned on all paper sizes", () => {
     const { container } = renderComposer();
-    for (const paperSize of ["A4", "8K", "A3"] as const) {
+    for (const paperSize of ["A4", "16K", "8K", "A3"] as const) {
       fireEvent.change(screen.getByLabelText("纸张"), { target: { value: paperSize } });
       const signature = screen.getByLabelText("姓名签名填写区");
       const nameLabel = signature.previousElementSibling;

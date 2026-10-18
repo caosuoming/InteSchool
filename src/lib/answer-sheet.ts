@@ -1,7 +1,7 @@
 import type { QuestionType } from "@/types";
 
 export type AnswerSheetResourceType = "exam-paper" | "lecture";
-export type AnswerSheetPaperSize = "A4" | "A3" | "8K";
+export type AnswerSheetPaperSize = "A4" | "16K" | "A3" | "8K";
 export type AnswerSheetMode = "blank" | "with-questions";
 export type AnswerSheetChoiceLayout = "inline" | "concentrated";
 export type AnswerSheetChoiceDirection = "horizontal" | "vertical";
