@@ -1665,7 +1665,7 @@ export interface ExamPaper {
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
-    paperSize: "A4" | "A3" | "8K";
+    paperSize: "A4" | "16K" | "A3" | "8K";
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";
@@ -2275,7 +2275,7 @@ export interface Lecture {
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
   answerSheetSettings?: {
-    paperSize: "A4" | "A3" | "8K";
+    paperSize: "A4" | "16K" | "A3" | "8K";
     mode: "blank" | "with-questions";
     studentNumberDigits: number;
     choiceLayout: "inline" | "concentrated";

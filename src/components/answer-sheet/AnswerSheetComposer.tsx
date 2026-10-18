@@ -54,6 +54,11 @@ const paperSizeConfig: Record<AnswerSheetPaperSize, {
     heightMm: 297,
     className: "answer-sheet-paper-a4",
   },
+  "16K": {
+    physicalWidthMm: 185,
+    heightMm: 260,
+    className: "answer-sheet-paper-16k",
+  },
   A3: {
     physicalWidthMm: 420,
     heightMm: 297,
@@ -722,11 +727,11 @@ export function AnswerSheetComposer({
   );
 
   const paperSize = paperSizeConfig[settings.paperSize];
-  const paperColumns = settings.paperSize === "A4" ? settings.a4Columns : settings.widePaperColumns;
+  const isWidePaper = settings.paperSize === "A3" || settings.paperSize === "8K";
+  const paperColumns = isWidePaper ? settings.widePaperColumns : settings.a4Columns;
   const columnWidthMm = (paperSize.physicalWidthMm - PAGE_PADDING_MM * 2 - COLUMN_GAP_MM * (paperColumns - 1)) / paperColumns;
   const pageContentHeightPx = (paperSize.heightMm - PAGE_PADDING_MM * 2) * MM_TO_CSS_PX;
   const isPreview = viewMode === "preview" || published;
-  const isWidePaper = settings.paperSize !== "A4";
   const wideEditor = !isPreview && isWidePaper;
 
   const changePublication = async (publish: boolean, print = false) => {
@@ -960,7 +965,7 @@ export function AnswerSheetComposer({
         data-testid="answer-sheet-identity-area"
       >
         <div
-          className={isWidePaper ? "w-[38mm] shrink-0 p-[1mm]" : "w-[75mm] shrink-0 p-2.5"}
+          className={isWidePaper ? "w-[38mm] shrink-0 px-[1mm] pb-[1mm] pt-[2.5mm]" : "w-[75mm] shrink-0 px-2.5 pb-2.5 pt-[4mm]"}
           data-testid="answer-sheet-identity-fields"
         >
           <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
@@ -970,7 +975,7 @@ export function AnswerSheetComposer({
           <div className={isWidePaper ? "flex flex-col items-start gap-1 text-xs" : "flex flex-col items-start gap-1 text-sm"}>
             <div>姓名：</div>
             <span
-              className="block h-[13mm] w-[20mm] shrink-0 border border-dashed border-ink-700"
+              className="block h-[13mm] w-[26.67mm] shrink-0 border border-dashed border-ink-700"
               aria-label="姓名签名填写区"
               data-answer-sheet-field="signature"
               data-signature-history-limit="10"
@@ -1250,6 +1255,7 @@ export function AnswerSheetComposer({
                   onChange={(event) => updateSettings({ paperSize: event.target.value as AnswerSheetPaperSize })}
                   options={[
                     { value: "A4", label: "A4" },
+                    { value: "16K", label: "16K" },
                     { value: "8K", label: "8K" },
                     { value: "A3", label: "A3" },
                   ]}
@@ -1257,10 +1263,10 @@ export function AnswerSheetComposer({
                 <Select
                   label="题目栏数"
                   value={String(paperColumns)}
-                  onChange={(event) => settings.paperSize === "A4"
+                  onChange={(event) => !isWidePaper
                     ? updateSettings({ a4Columns: Number(event.target.value) as 1 | 2 })
                     : updateSettings({ widePaperColumns: Number(event.target.value) as AnswerSheetWideColumns })}
-                  options={settings.paperSize === "A4" ? [
+                  options={!isWidePaper ? [
                     { value: "1", label: "单栏" },
                     { value: "2", label: "双栏" },
                   ] : [
