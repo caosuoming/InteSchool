@@ -417,8 +417,6 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                         ) : "—"}
                       </td>
                       <td className="max-w-56 px-4 py-3 text-ink-600">{audienceLabel(record)}</td>
-                      <td className="px-4 py-3 text-ink-700">{counts && counts.missing > 0 ? (
-                        <button type="button" className="text-teal-700 underline-offset-2 hover:underline" onClick={() => setMissingList({ title: recordTitle(record), students: counts.missingStudents })}>{counts.missing}</button>
                       <td className="px-4 py-3">
                         {record.kind === "paper" ? (
                           <button type="button" className="text-teal-700 hover:underline disabled:cursor-wait disabled:opacity-50"
@@ -429,6 +427,8 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                         ) : <span className="text-ink-500">无</span>}
                       </td>
                       <td className="px-4 py-3 text-ink-700">{counts?.submitted ?? "—"}</td>
+                      <td className="px-4 py-3 text-ink-700">{counts && counts.missing > 0 ? (
+                        <button type="button" className="text-teal-700 underline-offset-2 hover:underline" onClick={() => setMissingList({ title: recordTitle(record), students: counts.missingStudents })}>{counts.missing}</button>
                       ) : counts?.missing ?? "—"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "classroom" ? record.item.publishAt : record.item.createdAt)}</td>

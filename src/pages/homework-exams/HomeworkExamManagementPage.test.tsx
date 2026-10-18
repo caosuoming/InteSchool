@@ -82,7 +82,7 @@ describe("作业考试管理页面", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("columnheader", { name: "作业名称" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "作业文件名" })).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "已交" })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "已交" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "出作业" })).toHaveAttribute("href", "/my-resources/exam-papers?create=homework");
     fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
     expect(screen.getByRole("link", { name: "编辑作业内容与附件" })).toHaveAttribute("href", "/my-lessons?tab=homework&edit=homework-1");
