@@ -59,6 +59,7 @@ function MovableEssayImage({
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!editable || event.button !== 0) return;
+    if ((event.target as Element).closest("[data-essay-image-controls], [data-essay-image-caption]")) return;
     const resizing = (event.target as Element).closest("[data-essay-image-resize]") !== null;
     gesture.current = {
       pointerId: event.pointerId,
@@ -108,14 +109,19 @@ function MovableEssayImage({
     }
   };
 
+  const wrap = layout.wrap || "none";
+
   return (
     <div
       className="answer-sheet-essay-image"
+      data-wrap={wrap}
       style={{
         left: layout.x,
         top: layout.y,
         width: layout.width,
         cursor: editable ? "grab" : "default",
+        position: wrap === "none" ? "absolute" : "relative",
+        float: wrap === "none" ? undefined : wrap,
         touchAction: editable ? "none" : "auto",
       }}
       data-testid="essay-image"
@@ -126,6 +132,44 @@ function MovableEssayImage({
       onPointerCancel={finishGesture}
     >
       <img src={image.src} alt={image.alt} draggable={false} />
+      {editable && (
+        <div className="answer-sheet-image-controls no-print" data-essay-image-controls>
+          <select
+            aria-label={`第${number}题第${index + 1}张图片环绕模式`}
+            value={wrap}
+            onChange={(event) => {
+              const next = { ...currentLayout.current, wrap: event.target.value as AnswerSheetImageLayout["wrap"] };
+              updateLayout(next);
+              onCommit(next);
+            }}
+          >
+            <option value="none">自由定位</option>
+            <option value="left">左侧环绕</option>
+            <option value="right">右侧环绕</option>
+          </select>
+        </div>
+      )}
+      {editable && (
+        <input
+          className="answer-sheet-image-caption-input no-print"
+          data-essay-image-caption
+          aria-label={`第${number}题第${index + 1}张图片备注`}
+          placeholder="图片备注"
+          defaultValue={layout.caption || ""}
+          onBlur={(event) => {
+            const caption = event.target.value.trim();
+            if (caption === (currentLayout.current.caption || "")) return;
+            const next = { ...currentLayout.current, caption };
+            updateLayout(next);
+            onCommit(next);
+          }}
+        />
+      )}
+      {layout.caption && (
+        <span className={`answer-sheet-image-caption ${editable ? "answer-sheet-image-caption-print" : ""}`}>
+          {layout.caption}
+        </span>
+      )}
       {editable && (
         <button
           type="button"

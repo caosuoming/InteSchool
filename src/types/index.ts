@@ -1677,7 +1677,8 @@ export interface ExamPaper {
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
-    essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
+    essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
+    questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
   };
   createdAt: string;
   updatedAt: string;
@@ -2287,7 +2288,8 @@ export interface Lecture {
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
-    essayImageLayouts?: Record<string, { x: number; y: number; width: number }[]>;
+    essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
+    questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
   };
   /** 排版设置 */
   layoutSettings?: {
