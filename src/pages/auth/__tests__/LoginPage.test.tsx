@@ -39,6 +39,7 @@ function renderLogin(props: Parameters<typeof LoginPage>[0] = {}) {
         <Route path="/" element={<LoginPage {...props} />} />
         <Route path="/login" element={<div>标准个人登录页</div>} />
         <Route path="/classroom-login" element={<div>课堂登录页</div>} />
+        <Route path="/scanner" element={<div>扫描页</div>} />
         <Route path="/prep-login" element={<div>集体研讨登录页</div>} />
       </Routes>
     </MemoryRouter>,
@@ -68,6 +69,7 @@ describe("LoginPage", () => {
 
     expect(authState.login).toHaveBeenCalledWith("13800138000", "StrongPass123");
     expect(screen.getByRole("button", { name: "我要上课" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "我要扫描" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "集体研讨" })).toBeInTheDocument();
   });
 
