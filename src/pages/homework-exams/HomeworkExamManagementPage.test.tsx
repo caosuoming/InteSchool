@@ -4,13 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import HomeworkExamManagementPage from "./HomeworkExamManagementPage";
 import { useAuthStore } from "@/stores/auth";
 import { classService } from "@/services/class";
+import { extractStoredFile } from "@/services/api";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { examPublishService } from "@/services/examPublish";
 import { examPaperService } from "@/services/examPaper";
 import { homeworkRecordService } from "@/services/homeworkRecord";
-import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Teacher } from "@/types";
+import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Teacher, Student } from "@/types";
 
-vi.mock("@/services/class", () => ({ classService: { listSchoolClasses: vi.fn() } }));
+vi.mock("@/services/class", () => ({ classService: { listSchoolClasses: vi.fn(), listMyStudents: vi.fn() } }));
+vi.mock("@/services/api", () => ({ extractStoredFile: vi.fn() }));
 vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn(), updateHomework: vi.fn() } }));
 vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn(), updatePaper: vi.fn() } }));
 vi.mock("@/services/examPublish", () => ({ examPublishService: { listPublications: vi.fn() } }));
@@ -56,6 +58,11 @@ describe("作业考试管理页面", () => {
       getCurrentAffiliation: () => null,
     });
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([one]);
+    vi.mocked(classService.listMyStudents).mockResolvedValue([
+      { id: "s1", name: "张三", studentNo: "001" },
+      { id: "s2", name: "李四", studentNo: "002" },
+      { id: "s3", name: "王五", studentNo: "003" },
+    ] as Student[]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([homework]);
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([attendance]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
@@ -67,11 +74,14 @@ describe("作业考试管理页面", () => {
   it("lists each homework with its name, audience, status, and recorded attendance", async () => {
     mount("homework");
     const row = await screen.findByRole("row", { name: /函数专题作业/ });
-    expect(within(row).getByText("高二 · 一班")).toBeInTheDocument();
-    expect(within(row).getByText("2")).toBeInTheDocument();
-    expect(within(row).getByText("1")).toBeInTheDocument();
+    expect(within(row).getByText("班级：高二 · 一班")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "1" }));
+    expect(screen.getByText("王五（003）")).toBeInTheDocument();
+    expect(screen.queryByText("张三（001）")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("columnheader", { name: "作业名称" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "作业文件名" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "已交" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "出作业" })).toHaveAttribute("href", "/my-resources/exam-papers?create=homework");
     fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
     expect(screen.getByRole("link", { name: "编辑作业内容与附件" })).toHaveAttribute("href", "/my-lessons?tab=homework&edit=homework-1");
@@ -87,11 +97,50 @@ describe("作业考试管理页面", () => {
     ]);
     mount("homework");
     const first = await screen.findByRole("row", { name: /资源篮函数练习/ });
-    expect(within(first).getByText("函数练习.pdf")).toBeInTheDocument();
+    expect(within(first).getByRole("link", { name: "函数练习.pdf" })).toHaveAttribute("href", "/exam-papers/paper-1/preview");
     const copied = screen.getByRole("row", { name: /函数练习（副本）/ });
-    expect(within(copied).getAllByText("—").length).toBeGreaterThan(0);
+    expect(within(copied).getByRole("link", { name: "函数练习（副本）" })).toHaveAttribute("href", "/exam-papers/copy-1/preview");
     expect(within(copied).getByText("草稿")).toBeInTheDocument();
     expect(examPaperService.listPapers).toHaveBeenCalledWith({ schoolId: "school-1", teacherId: "teacher-1" });
+  });
+
+  it("opens uploaded paper originals and renders individual recipients by name", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([{
+      ...paper, classIds: [], studentIds: ["s2"], originalFileUrl: "/api/files/original-1",
+    }]);
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    expect(within(row).getByText("个人：李四")).toBeInTheDocument();
+    expect(within(row).getByRole("link", { name: "函数练习.pdf" })).toHaveAttribute("href", "/resources/preview/paper-1?type=examPaper");
+  });
+
+  it("previews classroom homework attachments, including Word documents", async () => {
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([{
+      ...homework, attachments: [
+        { id: "a1", name: "习题.pdf", url: "/api/files/a1", mimeType: "application/pdf", size: 10 },
+        { id: "a2", name: "答案.docx", url: "/api/files/a2", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 20 },
+      ],
+    }]);
+    vi.mocked(extractStoredFile).mockResolvedValue({ html: "<p>答案正文</p>" } as Awaited<ReturnType<typeof extractStoredFile>>);
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /函数专题作业/ });
+    fireEvent.click(within(row).getByRole("button", { name: "习题.pdf" }));
+    expect(screen.getByTitle("习题.pdf")).toHaveAttribute("src", "/api/files/a1");
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(within(row).getByRole("button", { name: "答案.docx" }));
+    await waitFor(() => expect(extractStoredFile).toHaveBeenCalledWith("/api/files/a2"));
+    expect(await screen.findByText("答案正文")).toBeInTheDocument();
+  });
+
+  it("omits absent students from the clickable missing-homework roster", async () => {
+    vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([{
+      ...attendance, absentStudentIds: ["s2"], submittedStudentIds: ["s1"],
+    }]);
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /函数专题作业/ });
+    fireEvent.click(within(row).getByRole("button", { name: "1" }));
+    expect(screen.getByText("王五（003）")).toBeInTheDocument();
+    expect(screen.queryByText("李四（002）")).not.toBeInTheDocument();
   });
 
   it("edits document metadata and moves it into exam management without deleting the document", async () => {
@@ -161,6 +210,6 @@ describe("作业考试管理页面", () => {
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([]);
     mount("homework");
     const row = await screen.findByRole("row", { name: /函数专题作业/ });
-    expect(within(row).getAllByText("—")).toHaveLength(3);
+    expect(within(row).getAllByText("—")).toHaveLength(2);
   });
 });
