@@ -470,7 +470,7 @@ describe("AnswerSheetComposer", () => {
           stem: '观察图示 <img src="/stem.png" alt="题干图"> 然后选择',
           options: ['<img src="/option.png" alt="选项图">', "B", "C", "D"],
         },
-        { id: "fill-image", type: "short", stem: '填空 <img src="/fill.png" alt="填空图">' },
+        { id: "fill-image", type: "short", stem: '填空 ___ <img src="/fill.png" alt="填空图">' },
       ],
       initialSettings: { mode: "with-questions", choiceLayout: "inline" },
       onSettingsChange,
@@ -487,9 +487,12 @@ describe("AnswerSheetComposer", () => {
     fireEvent.input(screen.getByRole("combobox", { name: "第1题题干第1张图片环绕模式" }), { target: { value: "right" } });
     const optionImage = screen.getByAltText("选项图");
     fireEvent.input(optionImage.closest("[data-image-index]")!.querySelector("select")!, { target: { value: "none" } });
+    const fillQuestion = screen.getByAltText("填空图").closest("[data-answer-sheet-question]")!;
+    expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
     const fillInput = screen.getByAltText("填空图").closest("[data-image-index]")!.querySelector("input")!;
     fireEvent.change(fillInput, { target: { value: "图1 函数示意图" } });
     fireEvent.blur(fillInput);
+    expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
 
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
       questionImageLayouts: {

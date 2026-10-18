@@ -16,6 +16,12 @@ interface QuestionImagesProps {
 function buildImageMarkup(markup: string, editable: boolean, number: number | string, part: string, layouts: AnswerSheetInlineImageLayout[] = []) {
   const template = document.createElement("template");
   template.innerHTML = renderMathHtml(markup);
+  template.content.querySelectorAll<HTMLElement>(".answer-sheet-inline-blank").forEach((blank, index) => {
+    blank.dataset.answerSheetInlineBlank = String(index);
+    blank.dataset.answerSheetEditable = editable ? "true" : "false";
+    blank.title = editable ? "拖动右下角可调整填空区域的长度和高度" : "";
+    blank.style.resize = editable ? "both" : "none";
+  });
   const partLabel = part === "stem" ? "题干" : `选项${String.fromCharCode(65 + Number(part.split("-")[1]))}`;
   Array.from(template.content.querySelectorAll("img")).forEach((image, index) => {
     const layout = layouts[index];

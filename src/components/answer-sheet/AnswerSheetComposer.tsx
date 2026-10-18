@@ -302,7 +302,7 @@ function AnswerBox({
     >
       {!hideNumber && <div className="font-mono text-xs font-semibold text-ink-800">{number}.</div>}
       {children && (
-        <div className="min-h-0 pr-[14mm] pb-[9mm]" data-testid="answer-box-content">
+        <div className="min-h-0 flow-root pr-[14mm] pb-[9mm]" data-testid="answer-box-content">
           {children}
         </div>
       )}
@@ -337,22 +337,8 @@ function DraggableQuestionContent({
   number: number | string;
   part: string;
 } & QuestionImageProps) {
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    root.querySelectorAll<HTMLElement>(".answer-sheet-inline-blank").forEach((blank, index) => {
-      blank.dataset.answerSheetInlineBlank = String(index);
-      blank.dataset.answerSheetEditable = editable ? "true" : "false";
-      blank.title = editable ? "拖动右下角可调整填空区域的长度和高度" : "";
-      blank.style.resize = editable ? "both" : "none";
-    });
-  }, [children, editable]);
-
   return (
     <div
-      ref={rootRef}
       className={`answer-sheet-question-content ${className || ""}`}
       data-answer-sheet-editable={editable ? "true" : "false"}
     >
