@@ -12,6 +12,8 @@ import type { LessonSlideElement, LessonSlideMediaElement, LessonSlideTextElemen
 import { cn } from "@/lib/utils";
 import { renderMathHtml, serializeMathHtml } from "@/lib/math-html";
 import { hasLessonElementAnimation } from "@/lib/lesson-animation";
+import { detachLessonInlineImage } from "@/lib/lesson-inline-image";
+import { genId } from "@/lib/service-utils";
 import { MathHtml } from "@/components/ui/MathHtml";
 
 interface LessonSlideCanvasProps {
@@ -121,12 +123,14 @@ function EditableLessonText({
   registerRef,
   onSelect,
   onChange,
+  onExtractImage,
 }: {
   element: LessonSlideTextElement;
   style: CSSProperties;
   registerRef: (node: HTMLDivElement | null) => void;
   onSelect: () => void;
   onChange: (content: string) => void;
+  onExtractImage: (image: HTMLImageElement, editor: HTMLDivElement) => boolean;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -158,13 +162,20 @@ function EditableLessonText({
       suppressContentEditableWarning
       data-placeholder="直接输入文字"
       className={cn(
-        "w-full whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none",
+        "w-full whitespace-pre-wrap rounded-md bg-white/85 px-2 py-1 text-ink-900 outline-none [&_img]:cursor-move",
         element.autoHeight ? "overflow-visible" : "h-full overflow-hidden",
         "empty:before:pointer-events-none empty:before:text-ink-300 empty:before:content-[attr(data-placeholder)]",
         element.href && "text-gold-700 underline decoration-gold-300 underline-offset-4",
       )}
       style={style}
       onClick={(event) => {
+        if (event.target instanceof HTMLImageElement
+          && editorRef.current
+          && onExtractImage(event.target, editorRef.current)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         event.stopPropagation();
         onSelect();
       }}
@@ -324,6 +335,7 @@ export function LessonSlideCanvas({
   return (
     <div
       ref={canvasRef}
+      data-lesson-slide-canvas
       className={cn(
         "relative aspect-video w-full overflow-hidden rounded-lg bg-paper shadow-lg",
         className,
@@ -454,6 +466,21 @@ export function LessonSlideCanvas({
                     else textElementRefs.current.delete(element.id);
                   }}
                   onSelect={() => onSelectElement?.(element.id)}
+                  onExtractImage={(image, editor) => {
+                    const canvas = canvasRef.current;
+                    if (!canvas || !onElementsChange) return false;
+                    const extracted = detachLessonInlineImage(image, editor, canvas, genId("element"));
+                    if (!extracted) return false;
+                    editor.innerHTML = renderMathHtml(extracted.content);
+                    onElementsChange([
+                      ...elements.map((item) => item.id === element.id && item.kind === "text"
+                        ? { ...item, content: extracted.content }
+                        : item),
+                      extracted.element,
+                    ]);
+                    onSelectElement?.(extracted.element.id);
+                    return true;
+                  }}
                   onChange={(content) => {
                     if (!onElementsChange) return;
                     onElementsChange(elements.map((item) => (

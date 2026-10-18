@@ -45,6 +45,28 @@ describe("LessonSlideContent", () => {
     expect(container.querySelector('[data-latex="a_n=(-1)^n"]')).not.toBeNull();
   });
 
+  it("allows extracting images from legacy knowledge slide content", async () => {
+    const user = userEvent.setup();
+    const onExtractInlineImage = vi.fn();
+    const onSelectTextRegion = vi.fn();
+    render(
+      <LessonSlideContent
+        slide={{
+          id: "legacy-knowledge", type: "knowledge", title: "知识块",
+          content: '结论 <img src="/api/files/chart.png" alt="示意图" />',
+        }}
+        editable
+        onExtractInlineImage={onExtractInlineImage}
+        onSelectTextRegion={onSelectTextRegion}
+      />,
+    );
+    await user.click(screen.getByAltText("示意图"));
+    expect(onExtractInlineImage).toHaveBeenCalledWith(
+      "content", expect.any(HTMLImageElement), expect.any(HTMLElement),
+    );
+    expect(onSelectTextRegion).not.toHaveBeenCalled();
+  });
+
   it("shows only the full question stem by default", () => {
     render(<LessonSlideContent slide={slide} />);
 

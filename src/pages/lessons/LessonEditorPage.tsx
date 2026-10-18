@@ -56,6 +56,7 @@ import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { LessonEditorInspector } from "@/components/lessons/LessonEditorInspector";
 import { QuickEditModal } from "@/components/question/QuickEditModal";
 import { createLessonQuestionSlide } from "@/lib/lesson-courseware-create";
+import { detachLessonInlineImage } from "@/lib/lesson-inline-image";
 import {
   basketAudienceLabel,
   preferredBasketForClassIds,
@@ -327,6 +328,28 @@ export function LessonEditorPage() {
   const updateCurrentElements = (elements: LessonSlideElement[]) => {
     setSlides((previous) => previous.map((slide, index) =>
       index === currentIndex ? { ...slide, elements } : slide));
+  };
+
+  const extractContentImage = (
+    region: "title" | "content",
+    image: HTMLImageElement,
+    root: HTMLElement,
+  ) => {
+    if (!currentSlide) return;
+    const canvas = root.closest<HTMLElement>("[data-lesson-slide-canvas]");
+    if (!canvas) return;
+    const extracted = detachLessonInlineImage(image, root, canvas, genId("element"));
+    if (!extracted) return;
+    const slideId = currentSlide.id;
+    setSlides((previous) => previous.map((slide) => slide.id === slideId
+      ? {
+          ...slide,
+          [region]: extracted.content,
+          elements: [...(slide.elements || []), extracted.element],
+        }
+      : slide));
+    setSelectedElementId(extracted.element.id);
+    setSelectedTextRegion(null);
   };
 
   const visibleCurrentElements = currentSlide?.elements || [];
@@ -1383,7 +1406,7 @@ export function LessonEditorPage() {
             <div className="flex-1 p-4 lg:p-6">
               <div className="mx-auto w-full max-w-[1120px]">
                 <div className="mb-3 text-xs text-ink-500">
-                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入，也可直接粘贴剪贴板图片。
+                  页面内容均为自由元素，可拖动或缩放；单击文本即可直接输入，点击知识块中的图片可单独移动和缩放，也可直接粘贴剪贴板图片。
                 </div>
 
                 {currentSlide.type === "courseware" ? (
@@ -1429,6 +1452,7 @@ export function LessonEditorPage() {
                         setSelectedTextRegion(region);
                         setSelectedElementId(null);
                       }}
+                      onExtractInlineImage={extractContentImage}
                     />
                   </LessonSlideCanvas>
                 )}
