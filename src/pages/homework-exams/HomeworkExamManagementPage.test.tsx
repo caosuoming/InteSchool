@@ -272,6 +272,6 @@ describe("作业考试管理页面", () => {
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([]);
     mount("homework");
     const row = await screen.findByRole("row", { name: /函数专题作业/ });
-    expect(within(row).getAllByText("—")).toHaveLength(2);
+    expect(within(row).getAllByText("—")).toHaveLength(3);
   });
 });
