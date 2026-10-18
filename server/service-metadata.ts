@@ -1,4 +1,5 @@
 export const serviceParameters = {
+  "scanner": { "listPublishedAnswerSheets": ["schoolId"] },
   "help": {
     "getBoard": [
       "teacher"

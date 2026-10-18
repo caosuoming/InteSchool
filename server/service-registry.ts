@@ -26,6 +26,7 @@ import { questionService } from "./domain/question.js";
 import { quotaService } from "./domain/quota.js";
 import { reflectionService } from "./domain/reflection.js";
 import { resourceFolderService } from "./domain/resourceFolder.js";
+import { scannerService } from "./domain/scanner.js";
 import { schoolService } from "./domain/school.js";
 import { schoolBackupService } from "./domain/schoolBackup.js";
 import { settingsService } from "./domain/settings.js";
@@ -61,6 +62,7 @@ export const serviceRegistry = {
   quota: quotaService,
   reflection: reflectionService,
   resourceFolder: resourceFolderService,
+  scanner: scannerService,
   school: schoolService,
   schoolBackup: schoolBackupService,
   settings: settingsService,

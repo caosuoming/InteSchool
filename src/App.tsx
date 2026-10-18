@@ -12,6 +12,7 @@ const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const ParentRegisterPage = lazy(() => import("@/pages/auth/ParentRegisterPage"));
 const ParentPortalPage = lazy(() => import("@/pages/parent/ParentPortalPage"));
 const ClassroomLoginPage = lazy(() => import("@/pages/auth/ClassroomLoginPage"));
+const ScannerPage = lazy(() => import("@/pages/scanner/ScannerPage"));
 const SchoolAuthPage = lazy(() => import("@/pages/auth/SchoolAuthPage"));
 const DashboardPage = lazy(() => import("@/pages/dashboard/DashboardPage"));
 const LectureEditorPage = lazy(() => import("@/pages/lectures/LectureEditorPage"));
@@ -208,6 +209,7 @@ export default function App() {
             }
           />
           <Route path="/classroom-login" element={<ClassroomLoginPage />} />
+          <Route path="/scanner" element={<ScannerPage />} />
           <Route path="/classroom-device" element={<ClassroomPage deviceMode />} />
           <Route path="/grade-reports/:token" element={<PublishedGradeReportPage />} />
           <Route path="/changelog/:token" element={<SharedChangelogPage />} />

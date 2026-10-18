@@ -1,7 +1,7 @@
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, BookOpen, GraduationCap, Lock, Mail, Plus, School, Search, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
+import { ArrowLeft, BookOpen, ScanLine, GraduationCap, Lock, Mail, Plus, School, Search, Smartphone, Sparkles, User as UserIcon, Users } from "lucide-react";
 import { Button, Input, Select, Textarea } from "@/components/ui";
 import { authService } from "@/services/auth";
 import { parentService } from "@/services/parent";
@@ -448,7 +448,8 @@ export default function LoginPage({
                 </div>
               )}
               {!loginOnly && (
-                <div className="mt-4 grid grid-cols-2 gap-3" aria-label="快捷登录入口">
+                <>
+                  <div className="mt-4 grid grid-cols-2 gap-3" aria-label="快捷登录入口">
                   <Button type="button" variant="outline" onClick={() => openPage("/classroom-login")}>
                     <BookOpen className="w-4 h-4" />我要上课
                   </Button>
@@ -459,7 +460,11 @@ export default function LoginPage({
                   >
                     <Users className="w-4 h-4" />集体研讨
                   </Button>
-                </div>
+                  </div>
+                  <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => openPage("/scanner")}>
+                    <ScanLine className="w-4 h-4" />我要扫描
+                  </Button>
+                </>
               )}
             </>
           )}
