@@ -86,5 +86,11 @@ export function canClassroomDeviceReadFile(
     && typeof item.publishAt === "string"
     && new Date(item.publishAt).getTime() <= now
   ));
-  return [...lessons, ...homeworks].some((record) => referencesStoredFile(record, fileId));
+  const homeworkImages = ((state.homeworkClassOverviewRecords || []) as Array<Record<string, unknown>>)
+    .filter((item) => item.schoolId === device.schoolId && assignedToDevice([item.classId]))
+    .flatMap((item) => Array.isArray(item.images) ? item.images : []);
+  return [...lessons, ...homeworks].some((record) => referencesStoredFile(record, fileId))
+    || homeworkImages.some((image) => image && typeof image === "object"
+      && (image as { id?: unknown }).id === fileId
+      && (image as { url?: unknown }).url === `/api/files/${fileId}`);
 }

@@ -36,6 +36,7 @@ import { classService } from "@/services/class";
 import { CLASSROOM_DEVICE_TOKEN_KEY, classroomDeviceService } from "@/services/classroomDevice";
 import { ApiError } from "@/services/api";
 import { classroomHomeworkService } from "@/services/classroomHomework";
+import { homeworkRecordService } from "@/services/homeworkRecord";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { studentInteractionService } from "@/services/studentInteraction";
@@ -44,6 +45,7 @@ import { toast } from "@/stores/ui";
 import type {
   ClassroomDeviceSnapshot,
   ClassroomHomework,
+  HomeworkClassOverviewRecord,
   ClassroomNotice,
   LessonCourseware,
   LessonSlide,
@@ -285,6 +287,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
   const [notices, setNotices] = useState<ClassroomNotice[]>([]);
   const [historyHomeworks, setHistoryHomeworks] = useState<ClassroomHomework[]>([]);
+  const [classHomeworkRecords, setClassHomeworkRecords] = useState<HomeworkClassOverviewRecord[]>([]);
   const [students, setStudents] = useState<Array<Pick<Student, "id" | "name">>>([]);
   const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
   const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
@@ -319,6 +322,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     setAllLessonsOpen(false);
     setSelectedLessonSubject("");
     setHistoryHomeworks([]);
+    setClassHomeworkRecords([]);
   }, [selectedClassId]);
 
   const loadClasses = useCallback(async () => {
@@ -347,6 +351,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         setLessons(snapshot.lessons);
         setStudents(snapshot.students);
         setHomeworks(snapshot.homeworks);
+        setClassHomeworkRecords(snapshot.homeworkRecords || []);
         setNotices(snapshot.notices);
         return;
       }
@@ -355,9 +360,10 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         setHomeworks([]);
         setNotices([]);
         setStudents([]);
+        setClassHomeworkRecords([]);
         return;
       }
-      const [lessonData, studentData, homeworkData, noticeData, followedIds, ignoredIds] = await Promise.all([
+      const [lessonData, studentData, homeworkData, noticeData, followedIds, ignoredIds, homeworkRecords] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           schoolId: teacher.schoolId,
           classId: selectedClassId,
@@ -377,10 +383,12 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         }),
         studentInteractionService.listFollowedStudentIds().catch(() => []),
         studentInteractionService.listIgnoredStudentIds().catch(() => []),
+        homeworkRecordService.listClassOverviews(selectedClassId).catch(() => []),
       ]);
       setLessons(lessonData);
       setStudents(studentData);
       setHomeworks(homeworkData);
+      setClassHomeworkRecords(homeworkRecords);
       setNotices(noticeData);
       setFollowedStudentIds(new Set(followedIds));
       setIgnoredStudentIds(new Set(ignoredIds));
@@ -697,6 +705,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
           : BLANK_CLASSROOM_SLIDES}
         initialIndex={0}
         students={students}
+        homeworkRecords={classHomeworkRecords}
         followedStudentIds={presentationFollowedStudentIds}
         ignoredStudentIds={presentationIgnoredStudentIds}
         relatedQuestionsById={{}}

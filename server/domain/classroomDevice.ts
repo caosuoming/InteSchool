@@ -9,6 +9,7 @@ import type {
   ClassroomDeviceSnapshot,
   ClassroomDeviceTimeRange,
   ClassroomHomework,
+  HomeworkClassOverviewRecord,
   ClassroomNotice,
   LessonCourseware,
   SchoolClass,
@@ -337,6 +338,10 @@ function currentClassroomContent(
     item.assignedDate <= today && (item.assignedEndDate || item.assignedDate) >= today
   ));
   const homeworkHistory = allHomeworks.filter((item) => (item.assignedEndDate || item.assignedDate) < today);
+  const homeworkRecords = ((db.read("homeworkClassOverviewRecords") || []) as HomeworkClassOverviewRecord[])
+    .filter((item) => item.schoolId === device.schoolId && item.classId === classId
+      && (item.attendanceTaken || Boolean(item.summary?.trim()) || Boolean(item.images?.length)))
+    .sort((a, b) => b.homeworkDate.localeCompare(a.homeworkDate));
   const notices = (db.read("classroomNotices") as ClassroomNotice[])
     .filter((item) => (
       item.schoolId === device.schoolId
@@ -364,7 +369,7 @@ function currentClassroomContent(
     followedStudentIds: followedByTeacherId.get(teacherId) || [],
     ignoredStudentIds: ignoredByTeacherId.get(teacherId) || [],
   }]));
-  return { lessons, homeworks, homeworkHistory, notices, students, studentAttentionByTeacherId };
+  return { lessons, homeworks, homeworkHistory, homeworkRecords, notices, students, studentAttentionByTeacherId };
 }
 
 function availableClassroomsForDevice(device: StoredClassroomDevice): SchoolClass[] {

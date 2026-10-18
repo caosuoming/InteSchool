@@ -250,6 +250,28 @@ describe("homeworkRecordService", () => {
     });
   });
 
+  it("stores validated homework pictures without resetting attendance or summary", async () => {
+    await runWithState(state(), async () => {
+      const image = { id: "img-1", name: "作业.png", url: "/api/files/img-1", mimeType: "image/png", size: 128 };
+      const saved = await homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08", summary: "优秀", images: [image],
+      }, teacher);
+      expect(saved.images).toEqual([image]);
+      expect(await homeworkRecordService.listClassOverviews("class-1", teacher)).toHaveLength(1);
+      const next = await homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08", submittedStudentIds: ["student-1"],
+      }, teacher);
+      expect(next.images).toEqual([image]);
+      expect(next.summary).toBe("优秀");
+      await expect(homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08", images: [{ ...image, url: "https://evil.example/img" }],
+      }, teacher)).rejects.toThrow("作业图片格式不正确");
+      await expect(homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08", images: Array(7).fill(image),
+      }, teacher)).rejects.toThrow("作业图片最多 6 张");
+    });
+  });
+
   it("persists class homework attendance and derives missing records while excluding leave", async () => {
     const appState = state();
     await runWithState(appState, async () => {
@@ -275,6 +297,7 @@ describe("homeworkRecordService", () => {
         absentStudentIds: [],
         attendanceTaken: true,
       }, teacher);
+      expect(attendance.studentNames).toEqual({ "student-1": "甲同学" });
       expect(attendance).toMatchObject({
         id: summaryOnly.id,
         studentIds: ["student-1"],

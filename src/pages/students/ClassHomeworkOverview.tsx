@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronDown, ChevronUp, ClipboardCheck, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarDays, Check, ChevronDown, ChevronUp, ClipboardCheck, ImagePlus, Trash2, Users } from "lucide-react";
 import type {
   AnyClass,
   ClassroomHomework,
   HomeworkClassOverviewRecord,
   Student,
+  StudentInteractionAttachment,
 } from "@/types";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { homeworkRecordService } from "@/services/homeworkRecord";
@@ -13,6 +14,8 @@ import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
+import { uploadFile } from "@/services/api";
+import type { ClipboardEvent, ChangeEvent } from "react";
 
 function localToday(): string {
   const now = new Date();
@@ -50,9 +53,23 @@ export function ClassHomeworkOverview({
   const [loading, setLoading] = useState(true);
   const [summaryPending, setSummaryPending] = useState(false);
   const [attendancePending, setAttendancePending] = useState(false);
+  const [images, setImages] = useState<StudentInteractionAttachment[]>([]);
+  const savedImagesRef = useRef<StudentInteractionAttachment[]>([]);
+  const [imagesPending, setImagesPending] = useState(false);
+  const attendanceDraft = useRef({ submitted: new Set<string>(), absent: new Set<string>() });
+  const pendingAttendance = useRef<{
+    classId: string; date: string; submitted: string[]; absent: string[]; version: number;
+  } | null>(null);
+  const savingAttendance = useRef(false);
+  const attendanceVersion = useRef(0);
+  const currentKey = `${classInfo.id}:${homeworkDate}`;
+  const currentKeyRef = useRef(currentKey);
+  currentKeyRef.current = currentKey;
+  const loadVersion = useRef(0);
   const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     try {
       const [current, records, assigned] = await Promise.all([
@@ -64,17 +81,25 @@ export function ClassHomeworkOverview({
           assignedDate: homeworkDate,
         }),
       ]);
+      if (version !== loadVersion.current) return;
       setRecord(current);
       setHistory(records);
       setSummary(current?.summary || "");
       setSavedSummary(current?.summary || "");
-      setSubmittedStudentIds(new Set(current?.submittedStudentIds || []));
-      setAbsentStudentIds(new Set(current?.absentStudentIds || []));
+      const submitted = new Set<string>(current?.submittedStudentIds || []);
+      const absent = new Set<string>(current?.absentStudentIds || []);
+      attendanceDraft.current = { submitted, absent };
+      setSubmittedStudentIds(submitted);
+      setAbsentStudentIds(absent);
+      savedImagesRef.current = current?.images || [];
+      setImages(savedImagesRef.current);
+      setImagesPending(false);
+      setAttendancePending(false);
       setHomeworks(assigned);
     } catch (error) {
-      toast.error("加载班级作业总览失败", error instanceof Error ? error.message : undefined);
+      if (version === loadVersion.current) toast.error("加载班级作业总览失败", error instanceof Error ? error.message : undefined);
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, [classInfo.id, homeworkDate, teacherId]);
 
@@ -104,60 +129,137 @@ export function ClassHomeworkOverview({
     }
   };
 
-  const toggleSubmitted = (studentId: string) => {
-    if (attendancePending) return;
-    setSubmittedStudentIds((current) => {
-      const next = new Set(current);
-      if (next.has(studentId)) next.delete(studentId);
-      else next.add(studentId);
-      return next;
-    });
-    setAbsentStudentIds((current) => {
-      if (!current.has(studentId)) return current;
-      const next = new Set(current);
-      next.delete(studentId);
-      return next;
-    });
+  const flushAttendance = async () => {
+    if (savingAttendance.current) return;
+    savingAttendance.current = true;
+    while (pendingAttendance.current) {
+      const pending = pendingAttendance.current;
+      pendingAttendance.current = null;
+      try {
+        const saved = await homeworkRecordService.saveClassOverview({
+          classId: pending.classId,
+          homeworkDate: pending.date,
+          submittedStudentIds: pending.submitted,
+          absentStudentIds: pending.absent,
+          attendanceTaken: true,
+        });
+        if (currentKeyRef.current === `${pending.classId}:${pending.date}`) {
+          setRecord((record) => record ? {
+            ...record,
+            submittedStudentIds: saved.submittedStudentIds,
+            absentStudentIds: saved.absentStudentIds,
+            studentIds: saved.studentIds,
+            studentNames: saved.studentNames,
+            attendanceTaken: true,
+            updatedAt: saved.updatedAt,
+          } : saved);
+          setHistory((records) => {
+            const current = records.find((item) => item.id === saved.id);
+            return [{ ...saved, summary: current?.summary ?? saved.summary, images: current?.images ?? saved.images },
+              ...records.filter((item) => item.id !== saved.id)]
+              .sort((a, b) => b.homeworkDate.localeCompare(a.homeworkDate));
+          });
+        }
+      } catch (error) {
+        toast.error("自动保存作业点名失败，请重试", error instanceof Error ? error.message : undefined);
+      }
+      if (attendanceVersion.current === pending.version
+        && currentKeyRef.current === `${pending.classId}:${pending.date}`) {
+        setAttendancePending(false);
+      }
+    }
+    savingAttendance.current = false;
   };
 
-  const toggleAbsent = (studentId: string) => {
-    if (attendancePending) return;
-    setAbsentStudentIds((current) => {
-      const next = new Set(current);
-      if (next.has(studentId)) next.delete(studentId);
-      else next.add(studentId);
-      return next;
-    });
-    setSubmittedStudentIds((current) => {
-      if (!current.has(studentId)) return current;
-      const next = new Set(current);
-      next.delete(studentId);
-      return next;
-    });
-  };
-
-  const saveAttendance = async () => {
-    if (attendancePending) return;
+  const toggleAttendance = (studentId: string, field: "submitted" | "absent") => {
+    const submitted = new Set(attendanceDraft.current.submitted);
+    const absent = new Set(attendanceDraft.current.absent);
+    const target = field === "submitted" ? submitted : absent;
+    const other = field === "submitted" ? absent : submitted;
+    if (target.has(studentId)) target.delete(studentId);
+    else {
+      target.add(studentId);
+      other.delete(studentId);
+    }
+    attendanceDraft.current = { submitted, absent };
+    setSubmittedStudentIds(submitted);
+    setAbsentStudentIds(absent);
     setAttendancePending(true);
+    pendingAttendance.current = {
+      classId: classInfo.id,
+      date: homeworkDate,
+      submitted: [...submitted],
+      absent: [...absent],
+      version: ++attendanceVersion.current,
+    };
+    void flushAttendance();
+  };
+
+  const saveImages = async (next: StudentInteractionAttachment[]) => {
+    setImagesPending(true);
+    const key = currentKey;
     try {
       const saved = await homeworkRecordService.saveClassOverview({
-        classId: classInfo.id,
-        homeworkDate,
-        submittedStudentIds: [...submittedStudentIds],
-        absentStudentIds: [...absentStudentIds],
-        attendanceTaken: true,
+        classId: classInfo.id, homeworkDate, images: next,
       });
-      setRecord(saved);
-      setSubmittedStudentIds(new Set(saved.submittedStudentIds));
-      setAbsentStudentIds(new Set(saved.absentStudentIds));
-      setHistory((current) => [saved, ...current.filter((item) => item.id !== saved.id)]
-        .sort((a, b) => b.homeworkDate.localeCompare(a.homeworkDate)));
-      toast.success("作业点名已保存");
+      if (currentKeyRef.current === key) {
+        savedImagesRef.current = saved.images || [];
+        setImages(savedImagesRef.current);
+        setRecord((record) => record ? { ...record, images: saved.images, updatedAt: saved.updatedAt } : saved);
+        setHistory((records) => {
+          const current = records.find((item) => item.id === saved.id);
+          return [{ ...saved, ...current, images: saved.images }, ...records.filter((item) => item.id !== saved.id)]
+            .sort((a, b) => b.homeworkDate.localeCompare(a.homeworkDate));
+        });
+      }
     } catch (error) {
-      toast.error("保存作业点名失败", error instanceof Error ? error.message : undefined);
+      if (currentKeyRef.current === key) setImages(savedImagesRef.current);
+      toast.error("保存作业图片失败", error instanceof Error ? error.message : undefined);
     } finally {
-      setAttendancePending(false);
+      if (currentKeyRef.current === key) setImagesPending(false);
     }
+  };
+
+  const addImages = async (files: File[]) => {
+    const valid = files.filter((file) => file.type.startsWith("image/"));
+    if (valid.length !== files.length) {
+      toast.error("只能上传图片文件");
+      return;
+    }
+    if (images.length + valid.length > 6) {
+      toast.error("作业图片最多 6 张");
+      return;
+    }
+    if (!valid.length || imagesPending) return;
+    const key = currentKey;
+    setImagesPending(true);
+    try {
+      const uploaded = await Promise.all(valid.map(uploadFile));
+      const next = [...images, ...uploaded.map((file) => ({
+        id: file.id, name: file.originalName, url: file.url, mimeType: file.mimeType, size: file.size,
+      }))];
+      if (currentKeyRef.current === key) setImages(next);
+      await saveImages(next);
+    } catch (error) {
+      toast.error("上传作业图片失败", error instanceof Error ? error.message : undefined);
+      setImagesPending(false);
+    }
+  };
+
+  const onPasteImages = (event: ClipboardEvent<HTMLDivElement>) => {
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (files.length) {
+      event.preventDefault();
+      void addImages(files);
+    }
+  };
+
+  const onChooseImages = (event: ChangeEvent<HTMLInputElement>) => {
+    void addImages(Array.from(event.target.files || []));
+    event.target.value = "";
   };
 
   const currentMissingCount = useMemo(() => students.filter((student) => (
@@ -169,6 +271,17 @@ export function ClassHomeworkOverview({
     [history, homeworkDate],
   );
   const visibleHistory = historyExpanded ? previousRecords : previousRecords.slice(0, 3);
+  const missingCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of history) {
+      if (!item.attendanceTaken) continue;
+      const excluded = new Set([...item.submittedStudentIds, ...item.absentStudentIds]);
+      for (const id of item.studentIds) {
+        if (!excluded.has(id)) counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [history]);
 
   if (loading) {
     return <div className="flex justify-center py-20"><Spinner size={24} /></div>;
@@ -307,7 +420,7 @@ export function ClassHomeworkOverview({
                       type="checkbox"
                       className="sr-only"
                       checked={submitted}
-                      onChange={() => toggleSubmitted(student.id)}
+                      onChange={() => toggleAttendance(student.id, "submitted")}
                       aria-label={`${student.name}已交作业`}
                     />
                     <span className="truncate text-sm font-medium text-ink-800">{student.name}</span>
@@ -317,7 +430,7 @@ export function ClassHomeworkOverview({
                     <input
                       type="checkbox"
                       checked={absent}
-                      onChange={() => toggleAbsent(student.id)}
+                      onChange={() => toggleAttendance(student.id, "absent")}
                       aria-label={`${student.name}请假`}
                       className="rounded border-ink-300 text-amber-600 focus:ring-amber-400"
                     />
@@ -328,20 +441,38 @@ export function ClassHomeworkOverview({
             })}
           </div>
         )}
-        <div className="flex items-center justify-between gap-3 border-t border-ink-100 px-4 py-3 lg:px-5">
-          <span className="text-[11px] text-ink-400">
-            {record?.attendanceTaken ? "本次点名已保存，可继续修改后再次保存" : "尚未保存本次点名"}
-          </span>
-          <Button
-            variant="gold"
-            size="sm"
-            onClick={() => void saveAttendance()}
-            loading={attendancePending}
-            disabled={attendancePending || students.length === 0}
-          >
-            保存作业点名
-          </Button>
+        <div className="border-t border-ink-100 px-4 py-3 text-[11px] text-ink-500 lg:px-5" role="status">
+          {attendancePending ? "作业点名正在自动保存..."
+            : record?.attendanceTaken ? "作业点名已自动保存，修改后将再次自动保存" : "勾选后自动保存作业点名"}
         </div>
+      </section>
+
+      <section className="border-b border-ink-100 p-4 lg:p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-ink-900">
+            <ImagePlus className="h-4 w-4 text-gold-600" />作业图片
+          </h3>
+          <label className="cursor-pointer rounded-lg border border-ink-200 px-3 py-1.5 text-xs hover:border-gold-400">
+            上传图片
+            <input type="file" accept="image/*" multiple className="sr-only" onChange={onChooseImages} disabled={imagesPending} aria-label="上传作业图片" />
+          </label>
+        </div>
+        <div role="textbox" aria-label="粘贴作业图片" tabIndex={0} onPaste={onPasteImages}
+          className="rounded-lg border border-dashed border-ink-200 px-3 py-3 text-xs text-ink-500 focus:border-gold-400 focus:outline-none">
+          点击此区域后可直接粘贴截图或图片（最多 6 张）{imagesPending && " · 正在保存..."}
+        </div>
+        {images.length > 0 && <div className="mt-3 flex flex-wrap gap-3">
+          {images.map((image) => <div key={image.id} className="relative">
+            <a href={image.url} target="_blank" rel="noreferrer" title="点击查看大图">
+              <img src={image.url} alt={image.name} className="h-24 w-28 rounded-lg border border-ink-100 object-cover" />
+            </a>
+            <button type="button" aria-label={`删除作业图片${image.name}`} disabled={imagesPending}
+              onClick={() => { const next = images.filter((item) => item.id !== image.id); setImages(next); void saveImages(next); }}
+              className="absolute -right-1.5 -top-1.5 rounded-full bg-ink-800 p-1 text-white disabled:opacity-40">
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>)}
+        </div>}
       </section>
 
       <section className="p-4 lg:p-5">
@@ -366,6 +497,15 @@ export function ClassHomeworkOverview({
                   <div className="mt-1.5 whitespace-pre-wrap text-sm text-ink-600">
                     {item.summary || "未填写作业概况"}
                   </div>
+                  {item.attendanceTaken && <div className="mt-2 text-xs text-ink-600">
+                    未交名单：{item.studentIds.filter((id) => !item.submittedStudentIds.includes(id) && !item.absentStudentIds.includes(id))
+                      .map((id) => `${item.studentNames?.[id] || students.find((student) => student.id === id)?.name || id}（${missingCounts.get(id) || 1}次）`).join("、") || "无"}
+                  </div>}
+                  {(item.images?.length || 0) > 0 && <div className="mt-2 flex flex-wrap gap-2">
+                    {item.images?.map((image) => <a key={image.id} href={image.url} target="_blank" rel="noreferrer" title="点击查看大图">
+                      <img src={image.url} alt={image.name} className="h-20 w-24 rounded border border-ink-100 object-cover" />
+                    </a>)}
+                  </div>}
                 </div>
               );
             })}

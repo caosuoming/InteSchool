@@ -86,6 +86,30 @@ describe("classroom device authorization", () => {
     expect(canClassroomDeviceReadFile(snapshot, TOKEN, "file-1")).toBe(false);
   });
 
+  it("lets a classroom device read its own class homework pictures without exposing other classes", () => {
+    const snapshot = state();
+    snapshot.homeworkClassOverviewRecords = [{
+      id: "record-1", schoolId: "school-1", classId: "class-1",
+      images: [{ id: "image-1", url: "/api/files/image-1" }],
+    }, {
+      id: "record-2", schoolId: "school-1", classId: "class-2",
+      images: [{ id: "image-2", url: "/api/files/image-2" }],
+    }, {
+      id: "record-3", schoolId: "school-2", classId: "class-3",
+      images: [{ id: "image-3", url: "/api/files/image-3" }],
+    }, {
+      id: "record-4", schoolId: "school-1", classId: "class-1",
+      images: [{ id: "image-4", url: "/api/files/image-other" }],
+    }] as AppState["homeworkClassOverviewRecords"];
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "image-1")).toBe(true);
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "image-2")).toBe(false);
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "image-3")).toBe(false);
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "image-4")).toBe(false);
+    (snapshot.classroomDevices as Array<Record<string, unknown>>)[0].publicClassroom = true;
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "image-2")).toBe(true);
+    expect(canClassroomDeviceReadFile(snapshot, TOKEN, "image-3")).toBe(false);
+  });
+
   it("allows a public classroom device to read published content from other classes in the same school only", () => {
     const snapshot = state();
     (snapshot.classroomDevices as Array<Record<string, unknown>>)[0].publicClassroom = true;

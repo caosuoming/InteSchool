@@ -911,6 +911,9 @@ describe("PresentationMode", () => {
     expect(screen.queryByText("保存板书")).not.toBeInTheDocument();
     expect(screen.queryByText("临时板书")).not.toBeInTheDocument();
     expect(screen.queryByText("第一页")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "左侧作业记录" })).toHaveTextContent("作");
+    expect(screen.getByRole("button", { name: "右侧作业记录" })).toHaveTextContent("作");
+    expect(screen.getByRole("button", { name: "左侧显示内容" })).toHaveTextContent("答");
     expect(screen.getByRole("button", { name: "左侧显示内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "右侧显示内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "左侧提问学生" })).toBeInTheDocument();
