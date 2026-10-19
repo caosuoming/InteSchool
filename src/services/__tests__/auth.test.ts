@@ -1,4 +1,4 @@
-import type { SchoolApplication, Teacher, TeacherAffiliation, TeacherRoleApplication } from "@/types";
+import type { SchoolApplication, Teacher, TeacherAffiliation, TeacherPermissionApplication, TeacherPermissionFields, TeacherRoleApplication } from "@/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
@@ -276,6 +276,54 @@ describe("auth service", () => {
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/admin-applications/admin%20%2F%20application/review", {
       method: "POST",
       body: JSON.stringify({ approved: false }),
+    }, true);
+  });
+
+  it("submits, reads, approves adjusted permissions, and rejects without adjustments", async () => {
+    const fields: TeacherPermissionFields = {
+      roles: ["teacher", "gradeLeader"],
+      teachingClassIds: ["class-1"],
+      homeroomClassIds: [],
+      position: "年级负责人",
+    };
+    const adjusted: TeacherPermissionFields = {
+      ...fields,
+      teachingClassIds: ["class-2"],
+      homeroomClassIds: ["class-2"],
+    };
+    const application = {
+      id: "permission-1", teacherId: "teacher-1", teacherName: "测试教师",
+      schoolId: "school-1", schoolName: "测试学校",
+      requestedRoles: fields.roles,
+      requestedTeachingClassIds: fields.teachingClassIds,
+      requestedHomeroomClassIds: fields.homeroomClassIds,
+      requestedPosition: fields.position,
+      previous: { roles: ["teacher"], teachingClassIds: [], homeroomClassIds: [], position: "" },
+      reason: "更新教学职责权限", status: "pending", createdAt: "2026-10-19T00:00:00.000Z",
+    } as TeacherPermissionApplication;
+    apiMocks.apiRequest
+      .mockResolvedValueOnce(application)
+      .mockResolvedValueOnce([application])
+      .mockResolvedValueOnce([application])
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true });
+
+    await expect(authService.applyTeacherPermissions(fields, "更新教学职责权限")).resolves.toEqual(application);
+    await expect(authService.getMyTeacherPermissionApplications()).resolves.toEqual([application]);
+    await expect(authService.getPendingTeacherPermissionApplications()).resolves.toEqual([application]);
+    await authService.reviewTeacherPermissionApplication("permission / 1", true, adjusted);
+    await authService.reviewTeacherPermissionApplication("permission / 2", false);
+
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/permission-applications", {
+      method: "POST", body: JSON.stringify({ ...fields, reason: "更新教学职责权限" }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/permission-applications/mine");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/permission-applications/pending");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/permission-applications/permission%20%2F%201/review", {
+      method: "POST", body: JSON.stringify({ approved: true, adjustments: adjusted }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(5, "/api/auth/permission-applications/permission%20%2F%202/review", {
+      method: "POST", body: JSON.stringify({ approved: false }),
     }, true);
   });
 
