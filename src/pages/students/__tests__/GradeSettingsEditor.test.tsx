@@ -134,11 +134,12 @@ describe("GradeSettingsEditor", () => {
       <GradeSettingsEditor settings={settings} subjects={["数学"]} context={teacherContext}
         onChange={onChange} section="settings" />,
     );
-    const buttons = screen.getAllByRole("button", { name: "数学老师" });
-    expect(buttons).toHaveLength(2);
-    expect(buttons.every((button) => !button.querySelector("svg"))).toBe(true);
+    const class2Dropdown = screen.getByRole("combobox", { name: "高三(2)班数学任课教师下拉选择" });
+    const class10Dropdown = screen.getByRole("combobox", { name: "高三(10)班数学任课教师下拉选择" });
+    expect(within(class2Dropdown).getByRole("option", { name: "数学老师" })).toBeInTheDocument();
+    expect(within(class10Dropdown).getByRole("option", { name: "数学老师" })).toBeInTheDocument();
 
-    await user.click(buttons[0]);
+    await user.selectOptions(class2Dropdown, "teacher-math");
     const next = onChange.mock.lastCall?.[0];
     expect(next.classSubjectTeacherIds["class-2"].数学).toEqual(["teacher-math"]);
     expect(next.classSubjectTeacherIds["class-10"].数学).toEqual([]);
@@ -147,9 +148,70 @@ describe("GradeSettingsEditor", () => {
       <GradeSettingsEditor settings={next} subjects={["数学"]} context={teacherContext}
         onChange={onChange} section="settings" />,
     );
-    const updated = screen.getAllByRole("button", { name: "数学老师" });
-    expect(updated[0].querySelector("svg")).not.toBeNull();
-    expect(updated[1].querySelector("svg")).toBeNull();
+    expect(within(class2Dropdown).queryByRole("option", { name: "数学老师" })).not.toBeInTheDocument();
+    expect(within(class10Dropdown).getByRole("option", { name: "数学老师" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除高三(2)班数学任课教师下拉选择：数学老师" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "移除高三(2)班数学任课教师下拉选择：数学老师" }));
+    expect(onChange.mock.lastCall?.[0].classSubjectTeacherIds["class-2"].数学).toEqual([]);
+    expect(onChange.mock.lastCall?.[0].subjectTeacherIds.数学).toEqual([]);
+  });
+
+  it("selects a homeroom teacher from school accounts and preserves manual editing", async () => {
+    const user = userEvent.setup();
+    const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));
+    const teacherContext = {
+      ...context,
+      teachers: [
+        { id: "teacher-1", name: "王老师", subject: "数学" },
+        { id: "teacher-2", name: "陈老师", subject: "语文" },
+      ],
+    };
+    const onChange = vi.fn();
+    const view = render(<GradeSettingsEditor settings={settings} subjects={["数学"]}
+      context={teacherContext} onChange={onChange} section="settings" />);
+
+    const dropdown = screen.getByRole("combobox", { name: "高三(2)班班主任下拉选择" });
+    expect(within(dropdown).getByRole("option", { name: "王老师" })).toBeInTheDocument();
+    expect(within(dropdown).getByRole("option", { name: "陈老师" })).toBeInTheDocument();
+    await user.selectOptions(dropdown, "王老师");
+    const selectedSettings = onChange.mock.lastCall?.[0];
+    expect(selectedSettings.classHomeroomTeacherNames["class-2"]).toEqual(["王老师"]);
+
+    view.rerender(<GradeSettingsEditor settings={selectedSettings} subjects={["数学"]}
+      context={teacherContext} onChange={onChange} section="settings" />);
+    expect(screen.getByRole("textbox", { name: "高三(2)班班主任" })).toHaveValue("王老师");
+    await user.click(screen.getByRole("button", { name: "移除高三(2)班班主任下拉选择：王老师" }));
+    expect(onChange.mock.lastCall?.[0].classHomeroomTeacherNames["class-2"]).toEqual([]);
+  });
+
+  it("supports multiple dropdown teachers without dropping manual teachers", async () => {
+    const user = userEvent.setup();
+    const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));
+    settings.classSubjectTeacherNames = { "class-2": { 数学: ["校外老师"] } };
+    const teacherContext = {
+      ...context,
+      teachers: [
+        { id: "math-1", name: "王老师", subject: "数学" },
+        { id: "math-2", name: "陈老师", subject: "数学" },
+        { id: "chinese-1", name: "刘老师", subject: "语文" },
+      ],
+    };
+    const onChange = vi.fn();
+    const view = render(<GradeSettingsEditor settings={settings} subjects={["数学"]}
+      context={teacherContext} onChange={onChange} section="settings" />);
+    const dropdown = screen.getByRole("combobox", { name: "高三(2)班数学任课教师下拉选择" });
+    expect(within(dropdown).queryByRole("option", { name: "刘老师" })).not.toBeInTheDocument();
+    await user.selectOptions(dropdown, "math-1");
+    const first = onChange.mock.lastCall?.[0];
+    view.rerender(<GradeSettingsEditor settings={first} subjects={["数学"]}
+      context={teacherContext} onChange={onChange} section="settings" />);
+    await user.selectOptions(dropdown, "math-2");
+    const next = onChange.mock.lastCall?.[0];
+    expect(next.classSubjectTeacherIds["class-2"].数学).toEqual(["math-1", "math-2"]);
+    expect(next.subjectTeacherIds.数学).toEqual(["math-1", "math-2"]);
+    expect(next.classSubjectTeacherNames["class-2"].数学).toEqual(["校外老师"]);
+    expect(screen.getByRole("textbox", { name: "高三(2)班数学手动任课教师" })).toHaveValue("校外老师");
   });
 
   it("allows manually editing the grade-bound homeroom teacher", async () => {
