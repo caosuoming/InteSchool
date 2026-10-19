@@ -851,6 +851,58 @@ describe("document block parser", () => {
     ]);
   });
 
+  it("splits numbered knowledge-point sections into independent knowledge blocks", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "第一章 集合",
+        "知识点一：集合的概念",
+        "集合中的元素具有确定性。",
+        "知识点二、集合的表示",
+        "列举法和描述法均可表示集合。",
+        "知识点三",
+        "集合元素不能重复。",
+        "例1 求集合 A 的元素个数。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "groupTitle", "knowledge", "knowledge", "knowledge", "question",
+    ]);
+    expect(blocks[0].content).toBe("第一章 集合");
+    expect(blocks.slice(1, 4).map((block) => block.content)).toEqual([
+      "知识点一：集合的概念\n集合中的元素具有确定性。",
+      "知识点二、集合的表示\n列举法和描述法均可表示集合。",
+      "知识点三\n集合元素不能重复。",
+    ]);
+  });
+
+  it.each([
+    "知识点1 基本概念",
+    "知 识 点 ２：基本性质",
+    "知识点第十、综合应用",
+    "【知识点三】集合运算",
+    "［知识点４］集合关系",
+  ])("recognizes numbered knowledge-point marker %s", (marker) => {
+    const blocks = parseDocumentBlocks(
+      ["引入 基础说明。", "概念介绍。", marker, "后续内容。"].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual(["knowledge", "knowledge"]);
+    expect(blocks[1].content).toBe(`${marker}\n后续内容。`);
+  });
+
+  it("does not split ordinary sentences mentioning knowledge points", () => {
+    const blocks = parseDocumentBlocks(
+      ["知识点一共有三类，需要依次学习。", "本段说明知识点一的含义。"].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "knowledge" });
+  });
+
   it("splits numbered 考法 sections into separate knowledge blocks between questions", () => {
     const blocks = parseDocumentBlocks(
       [
