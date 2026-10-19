@@ -192,6 +192,12 @@ export default function KnowledgeTreePage() {
     setAddToBasketFor(null);
   };
 
+  const openAddChildNode = (parent: TreeNode) => {
+    setParentNode(parent);
+    setNewNodeName("");
+    setAddNodeOpen(true);
+  };
+
   const handleAddNode = async () => {
     if (!teacher || !parentNode || !newNodeName.trim()) return;
     const name = newNodeName.trim();
@@ -742,10 +748,7 @@ export default function KnowledgeTreePage() {
                 size="sm"
                 className="w-full"
                 disabled={!activeAddParent}
-                onClick={() => {
-                  setParentNode(activeAddParent);
-                  setAddNodeOpen(true);
-                }}
+                onClick={() => activeAddParent && openAddChildNode(activeAddParent)}
               >
                 <Plus className="w-3.5 h-3.5" />
                 添加节点
@@ -789,6 +792,15 @@ export default function KnowledgeTreePage() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => openAddChildNode(selectedNode)}
+                          className="h-7 px-2.5"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          增加子节点
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={handleRename}
                           className="h-7 px-2.5"
                         >
@@ -799,6 +811,15 @@ export default function KnowledgeTreePage() {
                     )}
                     {selectedNode.id !== "root" && (
                       <div className="flex items-center gap-0.5 mb-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openAddChildNode(selectedNode)}
+                          className="h-7 px-2.5"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          增加子节点
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
