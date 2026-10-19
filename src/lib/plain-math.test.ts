@@ -66,6 +66,27 @@ describe("normalizePlainMathText", () => {
     expect(normalized).toContain("D. {a|a>1}");
   });
 
+  it("formats plain equations with caret exponents from imported documents", () => {
+    expect(normalizePlainMathText(
+      "若直线y=kx+2与圆(x-2)^2+(y-3)^2=1有两个不同的交点",
+    )).toBe("若直线$y=kx+2$与圆$(x-2)^2+(y-3)^2=1$有两个不同的交点");
+  });
+
+  it("formats circle names, point labels, and chord lengths in prose", () => {
+    expect(normalizePlainMathText(
+      "已知圆C的圆心是直线x+y+1=0与直线x-y-1=0的交点,圆C与直线相交于A,B两点,且|AB|=6。",
+    )).toBe(
+      "已知圆$C$的圆心是直线$x+y+1=0$与直线$x-y-1=0$的交点,圆$C$与直线相交于$A,B$两点,且$|AB|=6$。",
+    );
+    expect(normalizePlainMathText("点A, B两点"))
+      .toBe("点$A, B$两点");
+  });
+
+  it("does not style unrelated Latin text or option letters", () => {
+    expect(normalizePlainMathText("圆ABC、DNA=RNA、函数C语言、A. 1 B. 2"))
+      .toBe("圆ABC、DNA=RNA、函数C语言、A. 1 B. 2");
+  });
+
   it("keeps bare multiple-choice labels outside normalized comparison formulas", () => {
     const normalized = normalizePlainMathText(
       "A {x|x≤1} B {x|x≥2} C {x|x<3} D {x|x>4}",

@@ -1,3 +1,5 @@
+import type { GradeClassStatisticsOptions } from "../lib/grade-class-statistics.js";
+
 // ============ 核心实体类型 ============
 
 export type TeacherStatus = "pending" | "active" | "rejected";
@@ -1237,6 +1239,10 @@ export interface GradeExam {
   /** 当前有效的成绩发布；撤回后清空，重新发布会生成新链接。 */
   publication?: GradeExamPublication;
   settings: GradeExamSettings;
+  /** 保存本次成绩统计后，配置与同届公共配置独立。 */
+  statisticsSavedAt?: string;
+  /** 本次统计表六的独立显示与比较选项。 */
+  classStatisticsOptions?: GradeClassStatisticsOptions;
   /** 软删除时间；存在时仅学校管理员可在回收站中恢复。 */
   deletedAt?: string;
   createdAt: string;

@@ -55,6 +55,7 @@ import type {
   ResourceSemester,
 } from "@/types";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { normalizeQuestionTypeForSubject } from "@/lib/question-types";
 import {
   QuestionDuplicateReviewModal,
   type QuestionDuplicateResolution,
@@ -286,6 +287,12 @@ export function ExtractReviewModal({
   useOfficeMetafileImages(previewRootRef);
   const { teacher } = useAuthStore();
   const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId);
+  const subject = teacher?.subject;
+  const availableQuestionTypes = subject?.trim() === "数学"
+    ? questionTypeOptions.filter((option) => option.value !== "comprehensive")
+    : questionTypeOptions;
+  const subjectDefaultQuestionType = availableQuestionTypes[0]?.value
+    || normalizeQuestionTypeForSubject(defaultQuestionType, subject);
   const extractConfig = useExtractConfigStore();
   const [phase, setPhase] = useState<Phase>(initialBlocks ? "review" : "extracting");
   const [progress, setProgress] = useState(initialBlocks ? 100 : 0);
@@ -351,10 +358,10 @@ export function ExtractReviewModal({
       const extracted = await extractStoredFile(resource.originalFileUrl, { textOnly: true });
       setProgress(60);
       setProgressMsg("正在分析文档结构...");
-      let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, extractConfig);
+      let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, { ...extractConfig, subject });
 
       if (blocks.length === 0) {
-        blocks = parseDocumentBlocks("文档内容为空，请检查文档是否包含题目或知识块内容。", extractConfig);
+        blocks = parseDocumentBlocks("文档内容为空，请检查文档是否包含题目或知识块内容。", { ...extractConfig, subject });
       }
 
       setProgress(80);
@@ -371,7 +378,7 @@ export function ExtractReviewModal({
       setError(message);
       setPhase("review");
     }
-  }, [extractConfig, resourceId, resourceType, teacher]);
+  }, [extractConfig, resourceId, resourceType, subject, teacher]);
 
   useEffect(() => {
     if (!open) return;
@@ -380,7 +387,9 @@ export function ExtractReviewModal({
       setProgress(100);
       setProgressMsg("拆解完成，等待审阅");
       setError(null);
-      setBlocks(initialBlocks);
+      setBlocks(initialBlocks.map((block) => (block.type === "question" && block.questionType
+        ? { ...block, questionType: normalizeQuestionTypeForSubject(block.questionType, subject) }
+        : block)));
       setPreservedScoreLabelBlockIds(new Set());
       setEditingBlockId(null);
       setMergeTargets({});
@@ -388,7 +397,7 @@ export function ExtractReviewModal({
       return;
     }
     runExtraction();
-  }, [initialBlocks, open, runExtraction]);
+  }, [initialBlocks, open, runExtraction, subject]);
 
   // 拖动处理函数
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -703,7 +712,7 @@ export function ExtractReviewModal({
       const summaryKeywords = [...extractConfig.summaryKeywords];
 
       const extractedQuestions = questionBlocks.map((b) => {
-        const type = b.questionType || defaultQuestionType;
+        const type = normalizeQuestionTypeForSubject(b.questionType || subjectDefaultQuestionType, subject);
         const answer = normalizeQuestionField(
           removeKeywords(b.answer || "", answerKeywords),
           ["待教师补充"],
@@ -834,7 +843,7 @@ export function ExtractReviewModal({
             type: "question",
             content,
             ...(customLabel ? { customLabel } : {}),
-            questionType: item?.type || block.questionType || defaultQuestionType,
+            questionType: item?.type || block.questionType || subjectDefaultQuestionType,
             questionId: questionIdByItemId[block.id],
           };
         }
@@ -1083,9 +1092,9 @@ export function ExtractReviewModal({
               {block.type === "question" && (
                 <Select
                   label="题型选择"
-                  value={block.questionType || defaultQuestionType}
+                  value={normalizeQuestionTypeForSubject(block.questionType || subjectDefaultQuestionType, subject)}
                   className="h-9 py-0 text-sm"
-                  options={includeCurrentQuestionType(questionTypeOptions, block.questionType)}
+                  options={includeCurrentQuestionType(availableQuestionTypes, normalizeQuestionTypeForSubject(block.questionType || subjectDefaultQuestionType, subject))}
                   onChange={(e) =>
                     updateBlockField(block.id, {
                       questionType: e.target.value as QuestionType,

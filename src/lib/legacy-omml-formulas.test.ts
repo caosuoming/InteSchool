@@ -43,6 +43,23 @@ describe("normalizeLegacyOmmlMathText", () => {
     );
   });
 
+  it("repairs missing delimiters on multiline systems from a legacy Word import", () => {
+    const input = String.raw`联立 $\left\begin{cases}
+n\cdot\overrightarrow{AE}=3\sqrt{3}x+y+\frac{3}{2}z=0, \\
+n\cdot\overrightarrow{AB}=4\sqrt{3}x=0,
+\end{cases}\right.$。`;
+    const expected = input.replace(String.raw`\left\begin{cases}`, String.raw`\begin{cases}`)
+      .replace(String.raw`\end{cases}\right.`, String.raw`\end{cases}`);
+
+    expect(normalizeLegacyOmmlMathText(input)).toBe(expected);
+    expect(normalizeLegacyOmmlMathText(expected)).toBe(expected);
+  });
+
+  it("preserves correctly delimited braces around equation arrays", () => {
+    const input = String.raw`$\left\{\begin{aligned}x=1\\y=2\end{aligned}\right.$`;
+    expect(normalizeLegacyOmmlMathText(input)).toBe(input);
+  });
+
   it("repairs legacy arc formulas only in explicit arc context", () => {
     expect(normalizeLegacyOmmlMathText("圆弧 $\\vec{AB}$ 的长度为 2。"))
       .toBe("圆弧 $\\overgroup{AB}$ 的长度为 2。");

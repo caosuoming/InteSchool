@@ -261,6 +261,73 @@ describe("KnowledgeTreePage", () => {
     expect(knowledgeService.listChapters).not.toHaveBeenCalled();
   });
 
+  it("adds a child chapter from the selected node's detail actions", async () => {
+    vi.mocked(knowledgeService.listChapters).mockResolvedValue([]);
+    vi.mocked(knowledgeService.addChapter).mockResolvedValue({
+      id: "chapter-new",
+      schoolId: "school-1",
+      parentId: "chapter-course",
+      name: "新的子章节",
+      order: 1,
+      level: 1,
+    });
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("章节课"));
+    const addChild = screen.getByRole("button", { name: "增加子节点" });
+    const rename = screen.getByRole("button", { name: "改名" });
+    expect(addChild.compareDocumentPosition(rename) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(addChild);
+    expect(screen.getByText("父节点：章节课")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("节点名称"), { target: { value: "新的子章节" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(knowledgeService.addChapter).toHaveBeenCalledWith(
+        "school-1", "chapter-course", "新的子章节",
+      );
+    });
+  });
+
+  it("adds a child knowledge point from the selected node's detail actions", async () => {
+    vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue({
+      ...knowledgeTree,
+      children: [{
+        id: "point-parent",
+        name: "函数",
+        type: "knowledge",
+        count: 0,
+        children: [],
+      }],
+    });
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "知识点" }));
+    fireEvent.click(await screen.findByText("函数"));
+    fireEvent.click(screen.getByRole("button", { name: "增加子节点" }));
+    expect(screen.getByText("父节点：函数")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("节点名称"), { target: { value: "一次函数" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await waitFor(() => {
+      expect(knowledgeService.addKnowledgePoint).toHaveBeenCalledWith(
+        "school-1", "point-parent", "一次函数", undefined,
+      );
+    });
+  });
+
   it("moves a chapter by dragging it onto the new parent", async () => {
     render(
       <MemoryRouter>

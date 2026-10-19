@@ -29,6 +29,7 @@ import {
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
 import { averageGradeValues } from "../../src/lib/grade-reports.js";
+import type { GradeClassStatisticsOptions } from "../../src/lib/grade-class-statistics.js";
 import {
   buildGradePublishedReportBundle,
   type GradePublishedReportBundle,
@@ -116,7 +117,16 @@ function examForViewer(exam: GradeExam, actor?: Teacher, token?: string): GradeE
   return {
     ...exam,
     records: accessible ? exam.records : [],
+    subjects: accessible ? exam.subjects : [],
+    sourceFileName: accessible ? exam.sourceFileName : "",
+    sourceSheetName: accessible ? exam.sourceSheetName : "",
     scoreAdjustments: accessible ? exam.scoreAdjustments : [],
+    settings: accessible ? exam.settings : {
+      subjectTeacherIds: {}, classSubjectTeacherIds: {}, classSubjectTeacherNames: {},
+      classHomeroomTeacherNames: {}, assignmentRules: {}, classSubjects: [], templates: [],
+    },
+    statisticsSavedAt: accessible ? exam.statisticsSavedAt : undefined,
+    classStatisticsOptions: accessible ? exam.classStatisticsOptions : undefined,
     accessControl: {
       passwordProtected: Boolean(access?.passwordHash),
       locked: !accessible,
@@ -428,7 +438,7 @@ function recalculateCohortExams(
   db.update("gradeExams", (value: GradeExam[] | undefined) => {
     const exams = Array.isArray(value) ? value : [];
     return exams.map((exam) => {
-      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey || exam.deletedAt) return exam;
+      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey || exam.deletedAt || exam.statisticsSavedAt) return exam;
       const canModify = actor
         ? canModifyExamRecord(exam.teacherId, exam.schoolId, actor)
         : exam.teacherId === teacherId;
@@ -459,7 +469,7 @@ function persistCohortSettings(
 ): GradeCohortSettings {
   const publishedExam = readList<GradeExam>("gradeExams")
     .find((exam) => {
-      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey || exam.deletedAt || !exam.publication) return false;
+      if (exam.schoolId !== schoolId || exam.cohortKey !== cohortKey || exam.deletedAt || exam.statisticsSavedAt || !exam.publication) return false;
       return actor ? canModifyExamRecord(exam.teacherId, exam.schoolId, actor) : exam.teacherId === teacherId;
     });
   if (publishedExam) {
@@ -725,7 +735,18 @@ export const gradeService = {
       .filter((item) => item.schoolId === schoolId && item.cohortKey === cohortKey && !item.deletedAt)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     return latest && actor && !checkExamAccess(latest, actor)
-      ? { ...context, sampleRecords: [] }
+      ? {
+          ...context,
+          sampleRecords: [],
+          classProfiles: Object.fromEntries(context.classes.map((item) => [item.id, {
+            subjectSelections: [...new Set(context.students
+              .filter((student) => student.classId === item.id)
+              .map((student) => student.subjectSelection?.trim())
+              .filter((value): value is string => Boolean(value)))],
+            scoreSubjects: [],
+            hasImportedScores: false,
+          }])),
+        }
       : context;
   },
 
@@ -1119,12 +1140,67 @@ export const gradeService = {
     return exam;
   },
 
+  async saveExamStatistics(
+    examId: string,
+    settings: GradeExamSettings,
+    classStatisticsOptions: GradeClassStatisticsOptions | undefined,
+    actor: Teacher,
+  ): Promise<GradeExam> {
+    await delay(200);
+    maybeThrowError();
+    const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
+    if (!current || current.deletedAt) throw new Error("成绩考试不存在");
+    if (!canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的成绩统计");
+    if (current.publication) throw new Error("请先撤回成绩发布后再修改本次成绩统计配置");
+    const context = requireContext(current.schoolId, current.cohortKey);
+    const normalized = normalizeGradeSettings(
+      settings,
+      current.subjects,
+      context.classes.map((item) => item.id),
+      context.teachers.map((item) => item.id),
+    );
+    if (classStatisticsOptions !== undefined && (
+      !classStatisticsOptions || typeof classStatisticsOptions !== "object"
+      || ["showSubjectClassRanks", "showSubjectGradeRanks", "showRawSubjectScores",
+        "showAssignedSubjectScores", "showRawTotal", "showAssignedTotal"].some(
+        (key) => typeof classStatisticsOptions[key as keyof GradeClassStatisticsOptions] !== "boolean",
+      )
+      || !Array.isArray(classStatisticsOptions.comparisonExamIds)
+      || classStatisticsOptions.comparisonExamIds.length > 50
+      || classStatisticsOptions.comparisonExamIds.some((id) => typeof id !== "string")
+    )) throw new Error("成绩统计显示配置无效");
+    const permittedComparisons = new Set(readList<GradeExam>("gradeExams")
+      .filter((exam) => exam.schoolId === current.schoolId && exam.cohortKey === current.cohortKey
+        && exam.id !== examId && !exam.deletedAt && checkExamAccess(exam, actor))
+      .map((exam) => exam.id));
+    const options = classStatisticsOptions && {
+      ...structuredClone(classStatisticsOptions),
+      comparisonExamIds: [...new Set(classStatisticsOptions.comparisonExamIds)]
+        .filter((id) => permittedComparisons.has(id)),
+    };
+    const now = new Date().toISOString();
+    const updated: GradeExam = {
+      ...current,
+      settings: normalized,
+      records: calculateGradeRecords(examBaseRecords(current.records), current.subjects, normalized),
+      statisticsSavedAt: now,
+      classStatisticsOptions: options,
+      updatedAt: now,
+    };
+    db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));
+    return secureExamMutationResult(updated, actor);
+  },
+
   async updateExamSettings(examId: string, settings: GradeExamSettings, actor?: Teacher): Promise<GradeExam> {
     await delay(200);
     maybeThrowError();
     const current = readList<GradeExam>("gradeExams").find((item) => item.id === examId);
     if (!current || current.deletedAt) throw new Error("成绩考试不存在");
     if (actor && !canModifyExamRecord(current.teacherId, current.schoolId, actor)) throw new Error("无权修改其他教师的成绩统计");
+    if (current.statisticsSavedAt) {
+      if (!actor) throw new Error("需要登录后修改本次成绩统计");
+      return this.saveExamStatistics(examId, settings, current.classStatisticsOptions, actor);
+    }
     persistCohortSettings(
       current.schoolId,
       current.teacherId,
