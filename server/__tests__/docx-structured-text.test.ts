@@ -293,6 +293,40 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves a nested exponent encoded as a superscript EQ field result", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>所以2</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq 2\\s\\up0(n－1)－1</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2n-1-1</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "所以2${}^{2{}^{n-1}-1}$",
+    );
+  });
+
+  it("does not invent an outer exponent for mixed-alignment EQ field results", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq 2\\s\\up0(n)</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:r><w:t>2</w:t></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>n</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`$2{}^{n}$`,
+    );
+  });
+
   it("keeps the displayed result of non-equation Word fields", async () => {
     const data = await makeDocx(`
       <w:p>

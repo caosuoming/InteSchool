@@ -436,6 +436,7 @@ function extractParagraph(
     instruction: WordEqInstructionRun[];
     result: string;
     phase: "instruction" | "result";
+    resultAlignment: string | null;
   } | null = null;
   const content: string[] = [];
 
@@ -450,7 +451,15 @@ function extractParagraph(
   const finishField = () => {
     if (!field) return;
     const latex = wordEqFieldRunsToLatex(field.instruction);
-    content.push(latex ? `$${latex}$` : field.result);
+    // A Word field may supply an entire (possibly nested) exponent as the
+    // displayed result of an EQ field. Its w:vertAlign is not encoded in the
+    // EQ instruction, so preserve that outer script when using the instruction.
+    const alignedLatex = latex && field.resultAlignment === "superscript"
+      ? `{}^{${latex}}`
+      : latex && field.resultAlignment === "subscript"
+        ? `{}_{${latex}}`
+        : latex;
+    content.push(alignedLatex ? `$${alignedLatex}$` : field.result);
     field = null;
   };
 
@@ -463,7 +472,13 @@ function extractParagraph(
     }
 
     if (!field) {
-      field = { depth: beginCount, instruction: [], result: "", phase: "instruction" };
+      field = {
+        depth: beginCount,
+        instruction: [],
+        result: "",
+        phase: "instruction",
+        resultAlignment: null,
+      };
     } else {
       field.depth += beginCount;
     }
@@ -471,7 +486,16 @@ function extractParagraph(
     if (field.phase === "instruction") {
       field.instruction.push(...instructionRuns(child));
     } else {
-      field.result += extractInlineContent(child, imageUrl);
+      const resultPart = extractInlineContent(child, imageUrl);
+      if (resultPart.trim()) {
+        const alignment = child.namespaceURI === WORD_NS && child.localName === "r"
+          ? wordRunVerticalAlign(child)
+          : "";
+        field.resultAlignment = field.resultAlignment === null
+          ? alignment
+          : field.resultAlignment === alignment ? alignment : "mixed";
+      }
+      field.result += resultPart;
     }
 
     if (fieldTypes.includes("separate")) field.phase = "result";
