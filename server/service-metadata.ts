@@ -756,6 +756,12 @@ export const serviceParameters = {
       "teacherId",
       "input"
     ],
+    "saveExamStatistics": [
+      "examId",
+      "settings",
+      "classStatisticsOptions",
+      "teacher"
+    ],
     "updateExamSettings": [
       "examId",
       "settings",

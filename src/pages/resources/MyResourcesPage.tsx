@@ -287,6 +287,7 @@ function lessonDocumentBlocks(blocks: DocumentBlock[]): LessonDocumentBlock[] {
 async function fallbackLessonBlocks(
   resource: ExamPaper | Lecture,
   resourceType: "examPaper" | "lecture",
+  subject?: string,
 ): Promise<LessonDocumentBlock[]> {
   const hasBody = resourceType === "examPaper"
     ? ((resource as ExamPaper).questions.length > 0
@@ -296,7 +297,7 @@ async function fallbackLessonBlocks(
   if (hasBody || !resource.originalFileUrl) return [];
 
   const extracted = await extractStoredFile(resource.originalFileUrl);
-  const blocks = lessonDocumentBlocks(parseDocumentBlocks(extracted.text, currentParseConfig()));
+  const blocks = lessonDocumentBlocks(parseDocumentBlocks(extracted.text, currentParseConfig(subject)));
   if (!blocks.some((block) => block.type === "question" || block.type === "knowledge")) {
     throw new Error("文档中未识别出题目或知识块，请先进行文档拆解");
   }
@@ -693,6 +694,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       resourceId: resource.id,
       resourceType: type,
       resourceTitle: resource.title,
+      subject: teacher?.subject,
       chapterIds: resource.chapterIds,
       knowledgePointIds: resource.knowledgePointIds,
       grade: resource.grade,
@@ -3718,7 +3720,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       onAddToLesson={async () => {
                         if (!teacher) return;
                         try {
-                          const documentBlocks = await fallbackLessonBlocks(mainLecture, "lecture");
+                          const documentBlocks = await fallbackLessonBlocks(mainLecture, "lecture", teacher?.subject);
                           const cw = await lessonCoursewareService.createFromLecture(
                             teacher.id,
                             teacher.schoolId!,
@@ -3830,7 +3832,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         onAddToLesson={async () => {
                           if (!teacher) return;
                           try {
-                            const documentBlocks = await fallbackLessonBlocks(copy, "examPaper");
+                            const documentBlocks = await fallbackLessonBlocks(copy, "examPaper", teacher?.subject);
                             const cw = await lessonCoursewareService.createFromExamPaper(
                               teacher.id,
                               teacher.schoolId!,
@@ -3941,7 +3943,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           onAddToLesson={async () => {
                             if (!teacher) return;
                             try {
-                              const documentBlocks = await fallbackLessonBlocks(item, "examPaper");
+                              const documentBlocks = await fallbackLessonBlocks(item, "examPaper", teacher?.subject);
                               const cw = await lessonCoursewareService.createFromExamPaper(
                                 teacher.id,
                                 teacher.schoolId!,

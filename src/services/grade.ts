@@ -1,4 +1,5 @@
 import { rpcCall } from "./api";
+import type { GradeClassStatisticsOptions } from "@/lib/grade-class-statistics";
 import type { GradePublishedReportBundle } from "@/lib/grade-published-report";
 import type {
   GradeCohort,
@@ -103,6 +104,14 @@ export const gradeService = {
 
   async importExam(schoolId: string, teacherId: string, input: GradeExamImportInput): Promise<GradeExam> {
     return rpcCall("grade", "importExam", [schoolId, teacherId, input]) as Promise<GradeExam>;
+  },
+
+  async saveExamStatistics(
+    examId: string,
+    settings: GradeExamSettings,
+    classStatisticsOptions: GradeClassStatisticsOptions,
+  ): Promise<GradeExam> {
+    return rpcCall("grade", "saveExamStatistics", [examId, settings, classStatisticsOptions]) as Promise<GradeExam>;
   },
 
   async updateExamSettings(examId: string, settings: GradeExamSettings): Promise<GradeExam> {

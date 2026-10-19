@@ -5,7 +5,7 @@ const PROTECTED_CONTENT_PATTERN = new RegExp(
 );
 
 const PLAIN_MATH_CHUNK_PATTERN =
-  /[A-Za-z0-9\u0370-\u03ffℓ₀-₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾()[\]{}+\-−－*/×÷·⋅=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌∪∩∅|:：,.， \t]+/g;
+  /[A-Za-z0-9\u0370-\u03ffℓ₀-₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾()[\]{}^+\-−－*/×÷·⋅=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌∪∩∅|:：,.， \t]+/g;
 
 const SUBSCRIPT_CHARACTERS: Record<string, string> = {
   "₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
@@ -26,7 +26,7 @@ const SUPERSCRIPT_CHARACTERS: Record<string, string> = {
 const RELATION_PATTERN = /[=＝<>≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌]/;
 const STRONG_RELATION_PATTERN = /[=＝≤≥≠≈≡⊥∥∈∉∋⊂⊃⊆⊇⊊⊋⫋⫌]/;
 const EXTRA_MATH_STRUCTURE_PATTERN =
-  /[+\-−－*/×÷·⋅()[\]{}₀-₉₊₋₌₍₎⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾⊥∥∪∩∅]/;
+  /[+\-−－*/×÷·⋅()[\]{}^₀-₉₊₋₌₍₎⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾⊥∥∪∩∅]/;
 const COORDINATE_PATTERN =
   /(?:^|[,，\s])(?:[A-Z]|[A-Z][₀-₉0-9]+)\s*[（(]\s*[A-Za-z0-9+\-−－₀-₉.]+\s*[,，]\s*[A-Za-z0-9+\-−－₀-₉.]+\s*[)）]/;
 
@@ -103,9 +103,21 @@ function isLikelyPlainMath(candidate: string): boolean {
   if (!STRONG_RELATION_PATTERN.test(candidate)) return false;
 
   if (EXTRA_MATH_STRUCTURE_PATTERN.test(candidate)) return true;
+  // A chord/segment length such as |AB|=6 is mathematical notation even
+  // though the expression has no arithmetic operator or parentheses.
+  if (/\|[A-Za-z]{1,3}\|/.test(candidate)) return true;
 
   const sides = compact.split(RELATION_PATTERN).filter(Boolean);
   return sides.some((side) => /^(?:[a-z]{1,2}|[A-Z]|[\u0370-\u03ffℓ])(?:[₀-₉0-9])?$/.test(side));
+}
+
+function normalizeProseMathLabels(value: string): string {
+  return value
+    // Names of geometric objects are variables, not upright prose letters.
+    .replace(/(圆|点)([A-Z])(?!\s*[，,、]\s*[A-Z])(?=[\u4e00-\u9fff，,。；;:]|$)/g, "$1$$$2$")
+    // A list of named intersections/points occurs outside an equation.
+    .replace(/([A-Z](?:[，,、]\s*[A-Z]){1,3})(?=(?:两点|三点|四点|各点))/g,
+      (labels) => `$${labels.replace(/[，、]/g, ",")}$`);
 }
 
 function normalizePlainChunk(value: string): string {
@@ -113,7 +125,7 @@ function normalizePlainChunk(value: string): string {
   // Leave the whole chunk alone so the dedicated formula repair path can handle it.
   if (value.includes("$")) return value;
 
-  return value.replace(PLAIN_MATH_CHUNK_PATTERN, (candidate) => {
+  const mathNormalized = value.replace(PLAIN_MATH_CHUNK_PATTERN, (candidate) => {
     const leading = candidate.match(/^\s*/)?.[0] || "";
     const trailing = candidate.match(/\s*$/)?.[0] || "";
     let core = candidate.slice(leading.length, candidate.length - trailing.length);
@@ -129,6 +141,8 @@ function normalizePlainChunk(value: string): string {
 
     return `${leading}$${normalizeLatexCandidate(core)}$${suffix}${trailing}`;
   });
+
+  return normalizeProseMathLabels(mathNormalized);
 }
 
 /**

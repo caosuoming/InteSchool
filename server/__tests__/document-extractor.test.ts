@@ -321,6 +321,26 @@ describe("document extractor", () => {
     expect(result.warnings).toEqual(["kept warning"]);
   });
 
+  it("renders multiline equation systems in DOCX preview without dropping formulas", async () => {
+    const filePath = join(workDir, "multiline-systems.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "联立", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>联立</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(String.raw`联立 $\left\begin{cases}
+PM: y-y_{1}=-\sqrt{3}(x-x_{1}), \\
+QM: y-y_{2}=\sqrt{3}(x-x_{2}),
+\end{cases}\right.$。`);
+
+    const result = await extractDocument(filePath);
+
+    expect(result.text).not.toContain(String.raw`\left\begin{cases}`);
+    expect(result.text).toContain(String.raw`\begin{cases}`);
+    expect(result.html).toContain('class="katex"');
+    expect(result.html).not.toContain("katex-error");
+    expect(result.html).toContain("PM");
+    expect(result.html).toContain("QM");
+  });
+
   it("normalizes decomposed not-equal signs in DOCX preview HTML", async () => {
     const filePath = join(workDir, "not-equal.docx");
     await writeFile(filePath, "fake docx");

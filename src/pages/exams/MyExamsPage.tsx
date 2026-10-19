@@ -200,7 +200,9 @@ function GradePreprocessing({
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const [subjects, setSubjects] = useState<string[]>([]);
-  const [draft, setDraft] = useState<GradeExamSettings | null>(null);
+  const [cohortDraft, setCohortDraft] = useState<GradeExamSettings | null>(null);
+  const [examDraft, setExamDraft] = useState<GradeExamSettings | null>(null);
+  const [settingsScope, setSettingsScope] = useState<"cohort" | "exam">("cohort");
   const [copySource, setCopySource] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -211,6 +213,7 @@ function GradePreprocessing({
     comparisonExamIds: [],
   });
   const autoSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const lastSelectedExam = useRef("");
 
   const load = useCallback(async () => {
     if (!cohortKey) {
@@ -220,7 +223,8 @@ function GradePreprocessing({
       setRecycleBin([]);
       setSelectedExamId("");
       setSubjects([]);
-      setDraft(null);
+      setCohortDraft(null);
+      setExamDraft(null);
       return;
     }
     setLoading(true);
@@ -261,7 +265,7 @@ function GradePreprocessing({
         nextExams.some((item) => item.id === current) ? current : nextExams[0]?.id || ""
       ));
       setSubjects(nextSubjects);
-      setDraft(nextSettings);
+      setCohortDraft(nextSettings);
       setCopySource("");
     } catch (error) {
       toast.error("加载年级预处理配置失败", error instanceof Error ? error.message : undefined);
@@ -282,10 +286,30 @@ function GradePreprocessing({
     () => exams.find((item) => item.id === selectedExamId) || exams[0] || null,
     [exams, selectedExamId],
   );
+  const useExamSettings = settingsScope === "exam" && Boolean(selectedExam?.statisticsSavedAt);
+  const draft = useExamSettings ? (examDraft || selectedExam?.settings || null) : cohortDraft;
+  const setDraft = (settings: GradeExamSettings) => {
+    if (useExamSettings) setExamDraft(settings);
+    else setCohortDraft(settings);
+  };
   const canEditSelected = Boolean(
     canManageExams && selectedExam && (selectedExam.teacherId === teacherId || isSchoolAdmin),
   );
   const readOnly = !canManageExams || Boolean(selectedExam && !canEditSelected);
+  useEffect(() => {
+    const key = `${cohortKey}:${selectedExam?.id || ""}:${Boolean(selectedExam?.accessControl?.locked)}`;
+    if (lastSelectedExam.current === key) return;
+    lastSelectedExam.current = key;
+    setExamDraft(selectedExam && !selectedExam.accessControl?.locked
+      ? structuredClone(selectedExam.settings) : null);
+    setSettingsScope(selectedExam?.statisticsSavedAt && !selectedExam.accessControl?.locked ? "exam" : "cohort");
+    setClassStatisticsOptions({
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      ...selectedExam?.classStatisticsOptions,
+      comparisonExamIds: [...(selectedExam?.classStatisticsOptions?.comparisonExamIds || [])],
+    });
+  }, [cohortKey, selectedExam]);
+
   const previousExams = useMemo(() => {
     if (!selectedExam) return [];
     const selectedTimestamp = gradeExamTimestamp(selectedExam);
@@ -359,7 +383,7 @@ function GradePreprocessing({
   }, []);
 
   const toggleSubject = (subject: string) => {
-    if (!context || !draft || readOnly) return;
+    if (!context || !cohortDraft || readOnly || settingsScope === "exam") return;
     const selected = subjects.includes(subject);
     const nextSubjects = selected
       ? subjects.filter((item) => item !== subject)
@@ -368,9 +392,9 @@ function GradePreprocessing({
       toast.error("至少保留一个成绩科目");
       return;
     }
-    const expanded = selected ? draft : addSubject(draft, subject, context);
+    const expanded = selected ? cohortDraft : addSubject(cohortDraft, subject, context);
     setSubjects(nextSubjects);
-    setDraft(normalizeGradeSettings(
+    setCohortDraft(normalizeGradeSettings(
       expanded,
       nextSubjects,
       context.classes.map((item) => item.id),
@@ -379,7 +403,7 @@ function GradePreprocessing({
   };
 
   const save = async () => {
-    if (!draft || !cohortKey || readOnly) return;
+    if (!cohortDraft || !cohortKey || readOnly || settingsScope === "exam") return;
     setSaving(true);
     try {
       const saved = await gradeService.saveCohortSettings(
@@ -387,7 +411,7 @@ function GradePreprocessing({
         teacherId,
         cohortKey,
         subjects,
-        draft,
+        cohortDraft,
       );
       const refreshedExams = await gradeService.listExams(schoolId, cohortKey);
       setRecord(saved);
@@ -396,8 +420,8 @@ function GradePreprocessing({
         refreshedExams.some((item) => item.id === current) ? current : refreshedExams[0]?.id || ""
       ));
       setSubjects(saved.subjects);
-      setDraft(structuredClone(saved.settings));
-      toast.success("年级预处理配置已保存", "该年级已有考试已按新配置重新计算");
+      setCohortDraft(structuredClone(saved.settings));
+      toast.success("同届配置已保存", "未单独保存配置的考试将使用新配置；已保存的统计保持不变");
     } catch (error) {
       toast.error("保存失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -405,48 +429,73 @@ function GradePreprocessing({
     }
   };
 
-  const saveTeacherImport = useCallback(async (nextDraft: GradeExamSettings): Promise<GradeExamSettings> => {
-    if (!cohortKey || readOnly) return draft ? structuredClone(draft) : nextDraft;
+  const saveExamStatistics = useCallback(async (
+    exam: GradeExam,
+    nextDraft: GradeExamSettings,
+    options: GradeClassStatisticsOptions,
+  ): Promise<GradeExam> => {
+    const updated = await gradeService.saveExamStatistics(exam.id, nextDraft, options);
+    handleExamUpdated(updated);
+    setExamDraft(structuredClone(updated.settings));
+    setSettingsScope("exam");
+    setClassStatisticsOptions(updated.classStatisticsOptions || options);
+    return updated;
+  }, [handleExamUpdated]);
+
+  const saveCurrentStatistics = useCallback(async () => {
+    if (!selectedExam || !draft || !canEditSelected || selectedExam.publication) return;
     setSaving(true);
     try {
+      await autoSaveQueue.current;
+      await saveExamStatistics(selectedExam, draft, classStatisticsOptions);
+      toast.success("本次成绩统计配置已保存", "任课教师、排名、赋分与表格配置已独立保存，不受同届配置修改影响");
+    } catch (error) {
+      toast.error("保存本次成绩统计失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSaving(false);
+    }
+  }, [selectedExam, draft, canEditSelected, classStatisticsOptions, saveExamStatistics]);
+
+  const saveTeacherImport = useCallback(async (nextDraft: GradeExamSettings): Promise<GradeExamSettings> => {
+    if (!cohortKey || readOnly || selectedExam?.publication) return draft ? structuredClone(draft) : nextDraft;
+    setSaving(true);
+    try {
+      if (useExamSettings && selectedExam) {
+        const updated = await saveExamStatistics(selectedExam, nextDraft, classStatisticsOptions);
+        return structuredClone(updated.settings);
+      }
       const saved = await gradeService.saveCohortSettings(
-        schoolId,
-        teacherId,
-        cohortKey,
-        subjects,
-        nextDraft,
+        schoolId, teacherId, cohortKey, subjects, nextDraft,
       );
       const refreshedExams = await gradeService.listExams(schoolId, cohortKey);
       setRecord(saved);
       setExams(refreshedExams);
-      setSelectedExamId((current) => (
-        refreshedExams.some((item) => item.id === current) ? current : refreshedExams[0]?.id || ""
-      ));
       setSubjects(saved.subjects);
+      setCohortDraft(structuredClone(saved.settings));
       return structuredClone(saved.settings);
     } finally {
       setSaving(false);
     }
-  }, [cohortKey, draft, readOnly, schoolId, subjects, teacherId]);
+  }, [cohortKey, classStatisticsOptions, draft, readOnly, schoolId, selectedExam, subjects, teacherId, useExamSettings, saveExamStatistics]);
 
   const autoSaveSegmentSettings = useCallback((nextDraft: GradeExamSettings) => {
-    if (!cohortKey || readOnly) return Promise.resolve();
+    if (!cohortKey || readOnly || selectedExam?.publication) return Promise.resolve();
     autoSaveQueue.current = autoSaveQueue.current.then(async () => {
       try {
-        const saved = await gradeService.saveCohortSettings(
-          schoolId,
-          teacherId,
-          cohortKey,
-          subjects,
-          nextDraft,
-        );
-        setRecord(saved);
+        if (useExamSettings && selectedExam) {
+          await saveExamStatistics(selectedExam, nextDraft, classStatisticsOptions);
+        } else {
+          const saved = await gradeService.saveCohortSettings(
+            schoolId, teacherId, cohortKey, subjects, nextDraft,
+          );
+          setRecord(saved);
+        }
       } catch (error) {
         toast.error("目标与达线标准自动保存失败", error instanceof Error ? error.message : undefined);
       }
     });
     return autoSaveQueue.current;
-  }, [cohortKey, readOnly, schoolId, subjects, teacherId]);
+  }, [cohortKey, classStatisticsOptions, readOnly, schoolId, selectedExam, subjects, teacherId, useExamSettings, saveExamStatistics]);
 
   const downloadTablesOneToFive = useCallback(async () => {
     if (!selectedExam || !classAverageTemplate || !totalScoreSegmentTemplate) {
@@ -483,7 +532,7 @@ function GradePreprocessing({
   }, [classStatisticsOptions, previousExams, selectedExam, teacherId]);
 
   const copy = async () => {
-    if (!copySource || !cohortKey || readOnly) return;
+    if (!copySource || !cohortKey || readOnly || settingsScope === "exam") return;
     setCopying(true);
     try {
       const copied = await gradeService.copyCohortSettings(
@@ -494,7 +543,7 @@ function GradePreprocessing({
       );
       setRecord(copied);
       setSubjects(copied.subjects);
-      setDraft(structuredClone(copied.settings));
+      setCohortDraft(structuredClone(copied.settings));
       setCopySource("");
       toast.success("已复制年级配置", "班级配置已按目标年级重新对应，可继续修改后保存");
     } catch (error) {
@@ -556,7 +605,7 @@ function GradePreprocessing({
               placeholder="选择已有配置的年级"
               options={otherCohorts.map((item) => ({ value: item.key, label: item.label }))}
             />
-            <Button variant="outline" onClick={copy} disabled={!copySource || readOnly} loading={copying}>
+            <Button variant="outline" onClick={copy} disabled={!copySource || readOnly || settingsScope === "exam"} loading={copying}>
               <Copy className="h-4 w-4" />复制并适配
             </Button>
           </div>}
@@ -564,14 +613,14 @@ function GradePreprocessing({
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" />导入成绩
             </Button>
-            <Button variant="gold" onClick={save} loading={saving} disabled={readOnly}>
-              <Save className="h-4 w-4" />保存年级配置
+            <Button variant="gold" onClick={save} loading={saving} disabled={readOnly || settingsScope === "exam" || Boolean(selectedExam?.publication)}>
+              <Save className="h-4 w-4" />保存同届配置以复用
             </Button>
           </div>}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-4 text-xs text-ink-500">
           <Badge variant={record ? "green" : "amber"}>{record ? "已保存" : "尚未保存"}</Badge>
-          <span>同一年级的所有考试共享任课教师、赋分表、班级科目和成绩模板。</span>
+          <span>按毕业届别复用配置，升入新年级仍可沿用；已保存的单次成绩统计不会被同届配置覆盖。</span>
           {record && <span>最后更新：{new Date(record.updatedAt).toLocaleString("zh-CN")}</span>}
           <Link to="/my-students/grades" className="ml-auto inline-flex items-center gap-1 text-gold-700 hover:text-gold-800">
             查看已导入成绩<ArrowRight className="h-3.5 w-3.5" />
@@ -583,7 +632,7 @@ function GradePreprocessing({
         <div className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
           <div className="rounded-lg bg-emerald-50 p-2 text-emerald-700"><ClipboardList className="h-4 w-4" /></div>
           <div>
-            <div className="font-medium text-ink-900">年级考试科目</div>
+            <div className="font-medium text-ink-900">同届考试科目</div>
             <div className="mt-0.5 text-xs text-ink-500">导入具体考试时会按实际 Excel 科目自动裁剪；此处维护年级可复用的完整科目集合。</div>
           </div>
         </div>
@@ -632,7 +681,7 @@ function GradePreprocessing({
       ) : (
         <>
           <Card className="p-4">
-            <div className="grid gap-3 md:grid-cols-[minmax(0,26rem)_1fr] md:items-end">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,26rem)_minmax(0,18rem)_1fr] md:items-end">
               <Select
                 label="统计数据来源"
                 value={selectedExam?.id || ""}
@@ -642,8 +691,18 @@ function GradePreprocessing({
                   label: `${exam.name}${exam.examDate ? `（${exam.examDate}）` : ""}`,
                 }))}
               />
+              <Select
+                label="配置编辑范围"
+                value={settingsScope}
+                onChange={(event) => setSettingsScope(event.target.value as "cohort" | "exam")}
+                options={[
+                  { value: "cohort", label: "同届复用配置" },
+                  ...(selectedExam?.statisticsSavedAt && !selectedExam.accessControl?.locked
+                    ? [{ value: "exam", label: "本次成绩统计独立配置" }] : []),
+                ]}
+              />
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500 md:pb-2">
-                <span>已上传 {exams.length} 次考试；切换考试只更换统计数据，表格布局和教师配置仍按当前年级配置复用。</span>
+                <span>已上传 {exams.length} 次考试；未单独保存时沿用同届配置，保存后可独立调整本次统计。</span>
                 <span className="flex items-center gap-2">
                   {readOnly && <Badge variant="amber">只读</Badge>}
                   {selectedExam && canEditSelected && (
@@ -673,6 +732,10 @@ function GradePreprocessing({
             <GradeExamAdjustmentPanel
               exam={selectedExam}
               onExamUpdated={handleExamUpdated}
+              onSaveStatistics={canEditSelected && !selectedExam.publication && (!selectedExam.statisticsSavedAt || useExamSettings)
+                ? saveCurrentStatistics : undefined}
+              statisticsSavedAt={selectedExam.statisticsSavedAt}
+              statisticsSaving={saving}
               onDownloadTablesOneToFive={canManageExams ? downloadTablesOneToFive : undefined}
               onDownloadClassStatistics={canManageExams ? downloadClassStatistics : undefined}
               onPrintTablesOneToFive={classAverageTemplate && totalScoreSegmentTemplate
@@ -690,7 +753,7 @@ function GradePreprocessing({
                 settings={draft}
                 template={classAverageTemplate}
                 context={context}
-                onChange={readOnly ? () => {} : setDraft}
+                onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
               />
             )}
             {selectedExam && totalScoreSegmentTemplate && (
@@ -701,8 +764,8 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={readOnly ? () => {} : setDraft}
-                onAutoSave={autoSaveSegmentSettings}
+                onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
+                onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               <GradeSubjectScoreSegmentTable
                 exam={selectedExam}
@@ -710,8 +773,8 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={readOnly ? () => {} : setDraft}
-                onAutoSave={autoSaveSegmentSettings}
+                onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
+                onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               <GradeElectiveScoreSegmentTable
                 exam={selectedExam}
@@ -719,8 +782,8 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={readOnly ? () => {} : setDraft}
-                onAutoSave={autoSaveSegmentSettings}
+                onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
+                onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               <GradeTotalScoreRankingTable
                 exam={selectedExam}
@@ -728,8 +791,8 @@ function GradePreprocessing({
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
                 context={context}
-                onChange={readOnly ? () => {} : setDraft}
-                onAutoSave={autoSaveSegmentSettings}
+                onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
+                onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               </>
             )}
@@ -774,12 +837,12 @@ function GradePreprocessing({
         </Card>
       )}
 
-      {canManageExams && <GradeSettingsEditor
+      {canManageExams && !selectedExam?.accessControl?.locked && <GradeSettingsEditor
         settings={draft}
         subjects={subjects}
         context={context}
-        onChange={readOnly ? () => {} : setDraft}
-        onTeacherImport={saveTeacherImport}
+        onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
+        onTeacherImport={selectedExam?.publication ? undefined : saveTeacherImport}
         section="settings"
         records={selectedExam?.records || []}
       />}
