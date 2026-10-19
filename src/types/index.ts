@@ -275,6 +275,32 @@ export interface TeacherRoleApplication {
   reviewedBy?: string;
 }
 
+export interface TeacherPermissionFields {
+  roles: TeacherRole[];
+  teachingClassIds: string[];
+  homeroomClassIds: string[];
+  position: string;
+}
+
+export interface TeacherPermissionApplication {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  schoolId: string;
+  schoolName: string;
+  requestedRoles: TeacherRole[];
+  requestedTeachingClassIds: string[];
+  requestedHomeroomClassIds: string[];
+  requestedPosition: string;
+  previous: TeacherPermissionFields;
+  approvedPermissions?: TeacherPermissionFields;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
 export interface SchoolCreationApplication {
   id: string;
   requesterId: string;

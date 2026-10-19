@@ -72,6 +72,7 @@ describe("AdminPage", () => {
     const personal = screen.getByRole("region", { name: "个人用户管理" });
     expect(within(personal).getByText("知识树管理")).toBeInTheDocument();
     expect(within(personal).getByText("系统设置")).toBeInTheDocument();
+    expect(within(personal).getByText("我的权限申请")).toBeInTheDocument();
     expect(within(personal).queryByText("班级与学生")).not.toBeInTheDocument();
 
     const school = screen.getByRole("region", { name: "校管理员管理" });
@@ -79,7 +80,7 @@ describe("AdminPage", () => {
     expect(within(school).getByText("组织架构管理")).toBeInTheDocument();
     expect(within(school).getByText("教师权限申请与管理")).toBeInTheDocument();
     expect(within(school).queryByText("教师权限与教学资料")).not.toBeInTheDocument();
-    expect(screen.queryByText("申请教师职务权限")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "个人用户管理" })).getByText("我的权限申请")).toBeInTheDocument();
     expect(within(school).getByText("教师入校审核")).toBeInTheDocument();
 
     const platform = screen.getByRole("region", { name: "平台管理员管理" });
@@ -89,14 +90,6 @@ describe("AdminPage", () => {
     expect(within(platform).queryByText("新用户和新建校审核")).not.toBeInTheDocument();
   });
 
-  it("shows application access but no management entry for ordinary teachers", () => {
-    renderForRole("teacher");
-
-    expect(screen.getByText("申请教师职务权限")).toBeInTheDocument();
-    expect(screen.queryByText("教师权限申请与管理")).not.toBeInTheDocument();
-    expect(screen.queryByText("教师权限与教学资料")).not.toBeInTheDocument();
-  });
-
   it("keeps platform-only review entries in the platform-admin group", () => {
     renderForRole("platform_admin");
 
@@ -104,8 +97,6 @@ describe("AdminPage", () => {
     expect(within(platform).getByText("用户与密码管理")).toBeInTheDocument();
     expect(within(platform).getByText("学校管理员审核")).toBeInTheDocument();
     expect(within(platform).getByText("新用户和新建校审核")).toBeInTheDocument();
-    expect(screen.queryByText("教师权限申请与管理")).not.toBeInTheDocument();
-    expect(screen.queryByText("申请教师职务权限")).not.toBeInTheDocument();
 
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
       "个人用户管理",
