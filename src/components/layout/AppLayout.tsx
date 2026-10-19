@@ -57,7 +57,7 @@ const allNavItems: NavItem[] = [
   { path: "/my-classrooms", label: "我的教室", icon: Monitor },
   { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
   { path: "/platform-resources", label: "平台资源", icon: Cloud },
-  { path: "/prep", label: "集体备课", icon: Users, schoolOnly: true },
+  { path: "/prep", label: "集智教研", icon: Users, schoolOnly: true },
   { path: "/my-exams/grades", label: "成绩统计", icon: FileSpreadsheet, schoolOnly: true, examViewerOnly: true },
   {
     path: "/my-exams",
