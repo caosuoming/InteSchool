@@ -115,6 +115,63 @@ function addSecondCohort(appState: AppState): void {
 }
 
 describe("grade service", () => {
+  it("freezes per-exam settings across cohort changes and allows only editing the saved exam", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const actor = appState.teachers[0] as unknown as Teacher;
+      const context = await gradeService.getImportContext("school-1", "grad-2026");
+      const settings = buildDefaultGradeSettings(["数学"], context.classes.map((item) => item.id));
+      settings.classSubjectTeacherNames = { "class-1": { 数学: ["张老师"] } };
+      settings.classSubjects[0].separateRankSubjects = ["数学"];
+      const importOne = (name: string) => gradeService.importExam("school-1", "teacher-1", {
+        cohortKey: "grad-2026", name, subjects: ["数学"], sourceFileName: "scores.xlsx", sourceSheetName: "成绩",
+        rows: [{ rowKey: `row-${name}`, sourceRowNumber: 2, sourceName: "旧姓名",
+          sourceStudentNo: "202601", sourceClassName: "高三(1)班", studentId: "student-1",
+          scores: { 数学: 90 } }],
+      });
+      const first = await importOne("期中");
+      const second = await importOne("期末");
+      const options = {
+        showSubjectClassRanks: true, showSubjectGradeRanks: false,
+        showRawSubjectScores: false, showAssignedSubjectScores: true,
+        showRawTotal: true, showAssignedTotal: true, comparisonExamIds: [],
+      };
+      const otherTeacher: Teacher = { ...actor, id: "unrelated", role: "teacher" };
+      await expect(gradeService.saveExamStatistics(first.id, settings, options, otherTeacher))
+        .rejects.toThrow("无权修改其他教师的成绩统计");
+      const frozen = await gradeService.saveExamStatistics(first.id, settings, options, actor);
+      expect(frozen.statisticsSavedAt).toEqual(expect.any(String));
+      expect(frozen.classStatisticsOptions).toEqual(options);
+      expect(frozen.settings.classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["张老师"]);
+      expect(frozen.settings.classSubjects[0].separateRankSubjects).toEqual(["数学"]);
+      const shared = structuredClone(settings);
+      shared.classSubjects[0].statisticSubjects = [];
+      shared.classSubjects[0].separateRankSubjects = [];
+      shared.classSubjectTeacherNames = { "class-1": { 数学: ["李老师"] } };
+      await gradeService.saveCohortSettings("school-1", "teacher-1", "grad-2026", ["数学"], shared, actor);
+      const currentFirst = await gradeService.getExam(first.id, undefined, actor);
+      const currentSecond = await gradeService.getExam(second.id, undefined, actor);
+      expect(currentFirst?.settings.classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["张老师"]);
+      expect(currentFirst?.settings.classSubjects[0].separateRankSubjects).toEqual(["数学"]);
+      expect(currentFirst?.records[0].rawTotal).toBe(90);
+      expect(currentFirst?.classStatisticsOptions).toEqual(options);
+      expect(currentSecond?.settings.classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["李老师"]);
+      expect(currentSecond?.records[0].rawTotal).toBe(0);
+      const changed = structuredClone(currentFirst!.settings);
+      changed.classSubjectTeacherNames = { "class-1": { 数学: ["王老师"] } };
+      const savedAgain = await gradeService.saveExamStatistics(first.id, changed, options, actor);
+      expect(savedAgain.settings.classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["王老师"]);
+      expect((await gradeService.getCohortSettings("school-1", "grad-2026"))?.settings
+        .classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["李老师"]);
+      (appState.schoolClasses as Array<{ grade: string; name: string }>).forEach((item) => {
+        item.grade = "大学预科";
+      });
+      expect((await gradeService.getCohortSettings("school-1", "grad-2026"))?.settings
+        .classSubjectTeacherNames?.["class-1"]?.数学).toEqual(["李老师"]);
+    });
+  });
+
+
   it("updates existing unpublished score statistics when editing a student's eligibility", async () => {
     const appState = state();
     await runWithState(appState, async () => {

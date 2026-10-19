@@ -37,9 +37,26 @@ describe("grade exam access control", () => {
     await runWithState(state, async () => {
       await expect(gradeService.setExamAccess("exam-1", { password: "password123" }, teacher("guest")))
         .rejects.toThrow("仅上传者");
+      const storedExam = (state.gradeExams as Array<Record<string, unknown>>)[0];
+      storedExam.statisticsSavedAt = "2026-09-02T00:00:00Z";
+      storedExam.classStatisticsOptions = {
+        showSubjectClassRanks: true, showSubjectGradeRanks: false,
+        showRawSubjectScores: false, showAssignedSubjectScores: true,
+        showRawTotal: true, showAssignedTotal: false, comparisonExamIds: [],
+      };
+      (storedExam.settings as { classSubjectTeacherNames?: unknown }).classSubjectTeacherNames = {
+        c1: { 数学: ["私密教师姓名"] },
+      };
       await gradeService.setExamAccess("exam-1", { password: "password123" }, teacher("owner"));
       const masked = (await gradeService.listExams("school-1", undefined, teacher("guest")))[0];
       expect(masked.records).toEqual([]);
+      expect(masked.subjects).toEqual([]);
+      expect(masked.sourceFileName).toBe("");
+      expect(masked.settings.classSubjectTeacherNames).toEqual({});
+      expect(masked.settings.templates).toEqual([]);
+      expect(masked.classStatisticsOptions).toBeUndefined();
+      expect(masked.statisticsSavedAt).toBeUndefined();
+      expect(JSON.stringify(masked)).not.toContain("私密教师姓名");
       expect(masked.accessControl?.locked).toBe(true);
       expect(JSON.stringify(masked)).not.toContain("password123");
       await expect(gradeService.getExam("exam-1", undefined, teacher("guest"))).rejects.toThrow("访问密码");
@@ -47,6 +64,8 @@ describe("grade exam access control", () => {
       await expect(gradeService.unlockExam("exam-1", "wrong", teacher("guest"))).rejects.toThrow("密码错误");
       const token = await gradeService.unlockExam("exam-1", "password123", teacher("guest"));
       expect((await gradeService.getExam("exam-1", token, teacher("guest")))?.records[0].scores.数学).toBe(88);
+      expect((await gradeService.getExam("exam-1", token, teacher("guest")))?.settings.classSubjectTeacherNames?.c1?.数学)
+        .toEqual(["私密教师姓名"]);
       await expect(gradeService.getExam("exam-1", token, teacher("exempt"))).rejects.toThrow();
       await gradeService.setExamAccess("exam-1", { exemptTeacherIds: ["exempt"] }, teacher("owner"));
       expect((await gradeService.listExams("school-1", undefined, teacher("exempt")))[0].records).toHaveLength(1);
@@ -113,7 +132,7 @@ describe("grade exam access control", () => {
   });
 
   it("injects authenticated actors into all new private grade RPC methods", () => {
-    for (const method of ["listExams", "getExam", "getImportContext", "setExamAccess", "unlockExam", "createExamOneTimePassword"] as const) {
+    for (const method of ["listExams", "getExam", "getImportContext", "setExamAccess", "unlockExam", "createExamOneTimePassword", "saveExamStatistics"] as const) {
       expect(serviceParameters.grade[method].at(-1)).toBe("teacher");
     }
   });
