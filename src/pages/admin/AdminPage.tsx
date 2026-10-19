@@ -34,6 +34,7 @@ interface AdminItem {
   rosterOnly?: boolean;
   teachingProfileOnly?: boolean;
   personalOnly?: boolean;
+  schoolAdminOnly?: boolean;
 }
 
 type AdminGroupKey = "personal" | "school" | "platform";
@@ -110,11 +111,20 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: UsersRound,
-    title: "教师权限申请",
-    description: "申请新的校内职务权限；学校管理员同时审核本校教师申请",
+    title: "我的权限申请",
+    description: "查看当前职务、任课及班主任班级，向本校管理员申请权限调整",
     href: "/admin/permission-applications",
+    group: "personal",
+    schoolOnly: true,
+  },
+  {
+    icon: ShieldCheck,
+    title: "教师权限申请与管理",
+    description: "审核权限调整申请并统一管理本校教师职务、任课与班主任权限",
+    href: "/admin/permission-applications#pending",
     group: "school",
     schoolOnly: true,
+    schoolAdminOnly: true,
   },
   {
     icon: UsersRound,
@@ -175,6 +185,7 @@ export function AdminPage() {
   const activeRole = currentAffiliation?.role;
   const isPlatformAdmin = isPlatformAdminAccount(teacher);
   const isAdmin = activeRole === "school_admin" || isPlatformAdmin;
+  const isSchoolAdmin = activeRole === "school_admin" && !isPlatformAdmin;
   const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
   const canManageProfiles = teacher ? canManageTeachingProfiles(teacher, currentAffiliation) : false;
 
@@ -182,9 +193,10 @@ export function AdminPage() {
     if (item.schoolOnly && isPersonal) return false;
     if (item.personalOnly && !isPersonal) return false;
     if (item.adminOnly && !isAdmin) return false;
+    if (item.schoolAdminOnly && !isSchoolAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
     if (item.rosterOnly && !canManageRoster) return false;
-    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin)) return false;
+    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin || isSchoolAdmin)) return false;
     return true;
   });
 

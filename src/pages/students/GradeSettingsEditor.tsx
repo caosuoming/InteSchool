@@ -10,6 +10,7 @@ import {
   Trash2,
   Upload,
   UsersRound,
+  X,
 } from "lucide-react";
 import type {
   GradeExamSettings,
@@ -163,6 +164,50 @@ function ManualTeacherInput({
   );
 }
 
+function TeacherDropdown({
+  label,
+  options,
+  selected,
+  onSelect,
+  onRemove,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: { value: string; label: string }[];
+  onSelect: (value: string) => void;
+  onRemove?: (value: string) => void;
+}) {
+  const available = options.filter((option) => !selected.some((item) => item.value === option.value));
+  return (
+    <div className="min-w-40">
+      <select
+        aria-label={label}
+        value=""
+        onChange={(event) => { if (event.target.value) onSelect(event.target.value); }}
+        className="w-full rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-800 outline-none focus:border-teal-400"
+      >
+        <option value="">{available.length > 0 ? "下拉选择教师" : "暂无可选教师"}</option>
+        {available.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      {selected.length > 0 && (
+        <div className="mt-2 flex max-w-64 flex-wrap gap-1.5">
+          {selected.map((item) => (
+            <span key={item.value} className="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-1 text-teal-800">
+              {item.label}
+              {onRemove && (
+                <button type="button" aria-label={`移除${label}：${item.label}`} onClick={() => onRemove(item.value)}
+                  className="rounded p-0.5 hover:bg-teal-100">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function updateClassTeacherSelection(
   settings: GradeExamSettings,
   classId: string,
@@ -297,7 +342,7 @@ function TeacherSettings({
           <div>
             <div className="font-medium text-ink-900">配置1、班级任课教师</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              模板包含班主任和各科任课教师；上传后直接覆盖当前年级名单，名单会在同一年级后续成绩导入中复用，也可继续手动修改。
+              模板包含班主任和各科任课教师；可从下拉名单中选择或手动输入，也可批量上传表格覆盖当前年级名单，之后的成绩导入会复用此配置。
             </div>
           </div>
         </div>
@@ -341,12 +386,30 @@ function TeacherSettings({
               const homeroomNames = configuredHomeroom
                 ? settings.classHomeroomTeacherNames?.[classItem.id] || []
                 : linkedHomeroomNames;
+              const homeroomOptions = [...new Set(context.teachers.map((teacher) => teacher.name).filter(Boolean))]
+                .sort((left, right) => left.localeCompare(right, "zh-CN"))
+                .map((name) => ({ value: name, label: name }));
               return (
                 <tr key={classItem.id} className="align-top">
                   <td className="sticky left-0 z-10 border-r border-ink-100 bg-paper px-4 py-3 font-medium text-ink-800">
                     <ClassSummary classItem={classItem} context={context} />
                   </td>
                   <td className="px-4 py-3">
+                    <TeacherDropdown
+                      label={`${classItem.name}班主任下拉选择`}
+                      options={homeroomOptions}
+                      selected={homeroomNames.map((name) => ({ value: name, label: name }))}
+                      onSelect={(name) => persistTeacherChange(updateClassHomeroomTeacherNames(
+                        settings,
+                        classItem.id,
+                        [...homeroomNames, name],
+                      ))}
+                      onRemove={(name) => persistTeacherChange(updateClassHomeroomTeacherNames(
+                        settings,
+                        classItem.id,
+                        homeroomNames.filter((value) => value !== name),
+                      ))}
+                    />
                     <ManualTeacherInput
                       names={homeroomNames}
                       label={`${classItem.name}班主任`}
@@ -364,23 +427,26 @@ function TeacherSettings({
                     const manualNames = settings.classSubjectTeacherNames?.[classItem.id]?.[subject] || [];
                     return (
                       <td key={subject} className="px-4 py-3">
-                        <div className="flex max-w-64 flex-wrap gap-1.5">
-                          {teachers.length === 0 ? (
-                            <span className="text-ink-400">暂无该科教师</span>
-                          ) : teachers.map((teacher) => (
-                            <CheckboxPill
-                              key={teacher.id}
-                              checked={selected.includes(teacher.id)}
-                              label={teacher.name}
-                              onChange={() => persistTeacherChange(updateClassTeacherSelection(
-                                settings,
-                                classItem.id,
-                                subject,
-                                toggleValue(selected, teacher.id),
-                              ))}
-                            />
+                        <TeacherDropdown
+                          label={`${classItem.name}${subject}任课教师下拉选择`}
+                          options={teachers.map((teacher) => ({ value: teacher.id, label: teacher.name }))}
+                          selected={selected.map((id) => ({
+                            value: id,
+                            label: context.teachers.find((teacher) => teacher.id === id)?.name || id,
+                          }))}
+                          onSelect={(id) => persistTeacherChange(updateClassTeacherSelection(
+                            settings,
+                            classItem.id,
+                            subject,
+                            [...selected, id],
                           ))}
-                        </div>
+                          onRemove={(id) => persistTeacherChange(updateClassTeacherSelection(
+                            settings,
+                            classItem.id,
+                            subject,
+                            selected.filter((value) => value !== id),
+                          ))}
+                        />
                         <ManualTeacherInput
                           names={manualNames}
                           label={`${classItem.name}${subject}手动任课教师`}

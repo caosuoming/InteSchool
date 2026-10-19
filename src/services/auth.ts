@@ -8,6 +8,8 @@ import type {
   Teacher,
   TeacherAffiliation,
   TeacherRoleApplication,
+  TeacherPermissionApplication,
+  TeacherPermissionFields,
   TeacherRole,
 } from "@/types";
 import { apiRequest, setCsrfToken } from "./api";
@@ -256,6 +258,26 @@ export const authService = {
     await apiRequest(`/api/auth/admin-applications/${encodeURIComponent(id)}/review`, {
       method: "POST",
       body: JSON.stringify({ approved }),
+    }, true);
+  },
+
+  async applyTeacherPermissions(fields: TeacherPermissionFields, reason: string): Promise<TeacherPermissionApplication> {
+    return apiRequest<TeacherPermissionApplication>("/api/auth/permission-applications", {
+      method: "POST", body: JSON.stringify({ ...fields, reason }),
+    }, true);
+  },
+
+  async getMyTeacherPermissionApplications(): Promise<TeacherPermissionApplication[]> {
+    return apiRequest<TeacherPermissionApplication[]>("/api/auth/permission-applications/mine");
+  },
+
+  async getPendingTeacherPermissionApplications(): Promise<TeacherPermissionApplication[]> {
+    return apiRequest<TeacherPermissionApplication[]>("/api/auth/permission-applications/pending");
+  },
+
+  async reviewTeacherPermissionApplication(id: string, approved: boolean, adjustments?: TeacherPermissionFields): Promise<void> {
+    await apiRequest(`/api/auth/permission-applications/${encodeURIComponent(id)}/review`, {
+      method: "POST", body: JSON.stringify({ approved, ...(adjustments ? { adjustments } : {}) }),
     }, true);
   },
 
