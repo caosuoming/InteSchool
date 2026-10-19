@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   createLectureExtractCopy: vi.fn(),
   createExamExtractCopy: vi.fn(),
   authState: {
-    teacher: { id: "teacher-1", schoolId: "school-1" },
+    teacher: { id: "teacher-1", schoolId: "school-1", subject: "物理" },
   },
   extractConfig: {
     questionKeywords: ["题目"],
@@ -96,6 +96,7 @@ vi.mock("@/lib/document-block-parser", () => ({
 describe("ExtractReviewModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.authState.teacher.subject = "物理";
     mocks.extractConfig.questionKeywords = ["题目"];
     mocks.getLecture.mockResolvedValue({
       id: "lecture-1",
@@ -175,6 +176,36 @@ describe("ExtractReviewModal", () => {
 
     expect(screen.getAllByRole("button", { name: /关键字与重新拆解/ })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
+  });
+
+  it("does not offer or save comprehensive for a math document", async () => {
+    mocks.authState.teacher.subject = "数学";
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="数学试题"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{
+          id: "block-question", type: "question", content: "例题",
+          questionType: "comprehensive", order: 0, status: "new",
+        }]}
+      />,
+    );
+
+    const questionTypeSelect = screen.getByLabelText("题型选择");
+    expect(questionTypeSelect).toHaveValue("essay");
+    expect(within(questionTypeSelect).queryByRole("option", { name: "综合题" })).not.toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].type).toBe("essay");
   });
 
   it.each([
