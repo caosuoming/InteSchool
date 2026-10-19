@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock3, ShieldCheck, UserCheck } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Spinner, Textarea } from "@/components/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
+import TeacherProfilesPage from "./TeacherProfilesPage";
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
 import { TEACHER_ROLES } from "@/lib/teacher-roles";
 import { authService } from "@/services/auth";
 import { roleLabels } from "@/services/organization";
@@ -24,7 +26,8 @@ export default function PermissionApplicationsPage() {
     [affiliation?.roles, teacher?.roles],
   );
   const schoolAdmin = activeRole === "school_admin";
-  const platformAdmin = activeRole === "platform_admin";
+  const platformAdmin = isPlatformAdminAccount(teacher);
+  const [view, setView] = useState<"applications" | "management">("applications");
   const [mine, setMine] = useState<TeacherRoleApplication[]>([]);
   const [pending, setPending] = useState<TeacherRoleApplication[]>([]);
   const [requestedRoles, setRequestedRoles] = useState<TeacherRole[]>([]);
@@ -106,7 +109,7 @@ export default function PermissionApplicationsPage() {
     return (
       <div>
         <PageHeader
-          title="教师权限申请"
+          title="教师权限申请与管理"
           description="教师职务权限由各学校管理员审核；平台超级管理员仅查看权限并指定学校管理员"
           icon={<ShieldCheck className="w-5 h-5" />}
         />
@@ -120,11 +123,18 @@ export default function PermissionApplicationsPage() {
   return (
     <div>
       <PageHeader
-        title="教师权限申请"
-        description={schoolAdmin ? "申请本人职务权限，并审核本校教师提交的权限申请" : "申请新的校内职务权限，由本校管理员审核"}
+        title={schoolAdmin ? "教师权限申请与管理" : "教师权限申请"}
+        description={schoolAdmin ? "审核本校教师权限申请，直接配置教师职务、任教与班主任权限" : "申请新的校内职务权限，由本校管理员审核"}
         icon={<ShieldCheck className="w-5 h-5" />}
       />
 
+      {schoolAdmin && <nav aria-label="教师权限申请与管理" className="mb-6 flex flex-wrap gap-2">
+        <Button variant={view === "applications" ? "gold" : "outline"} onClick={() => setView("applications")}>权限申请与审核</Button>
+        <Button variant={view === "management" ? "gold" : "outline"} onClick={() => setView("management")}>本校教师权限管理</Button>
+      </nav>}
+
+      {schoolAdmin && view === "management" && <TeacherProfilesPage embedded />}
+      {(!schoolAdmin || view === "applications") && <>
       <Card className="mb-6 p-6 space-y-5">
         <div>
           <h2 className="font-serif text-lg font-semibold text-ink-900">申请职务权限</h2>
@@ -220,6 +230,7 @@ export default function PermissionApplicationsPage() {
           )}
         </>
       )}
+      </>}
     </div>
   );
 }
