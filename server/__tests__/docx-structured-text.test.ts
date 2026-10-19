@@ -71,6 +71,16 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("normalizes plain geometry formulas in extracted DOCX paragraphs", async () => {
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>圆C与直线相交于A,B两点，且|AB|=6，圆的方程(x-2)^2+(y-3)^2=1。</w:t></w:r></w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "圆$C$与直线相交于$A,B$两点，且$|AB|=6$，圆的方程$(x-2)^2+(y-3)^2=1$。",
+    );
+  });
+
   it("preserves comparison choices without treating angle brackets as HTML", async () => {
     const data = await makeDocx(`
       <w:p>

@@ -13,6 +13,20 @@ describe("renderMathHtml", () => {
     expect(container.textContent).not.toContain("$");
   });
 
+  it("renders imported plain geometry notation as Times-style math variables", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      "圆C与直线相交于A,B两点，且|AB|=6，圆的方程(x-2)^2+(y-3)^2=1。",
+    );
+    const formulas = Array.from(container.querySelectorAll<HTMLElement>(".katex-formula"));
+    expect(formulas.map((formula) => formula.dataset.latex)).toEqual([
+      "C", "A,B", "|AB|=6", "(x-2)^2+(y-3)^2=1",
+    ]);
+    expect(formulas.every((formula) => formula.querySelector(".katex .mathnormal")))
+      .toBe(true);
+    expect(container.querySelector(".katex-error")).toBeNull();
+  });
+
   it("preserves rich HTML while rendering formulas in its text nodes", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml("<p><strong>计算</strong> $\\frac{1}{2}$。</p>");
