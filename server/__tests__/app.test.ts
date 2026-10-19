@@ -922,6 +922,125 @@ describe("production backend", () => {
     expect(JSON.stringify(current.json())).not.toContain(password);
   });
 
+  it("keeps requested teaching permissions pending until same-school admin approves an adjusted scope", async () => {
+    await built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
+    const applicant = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
+    const admin = await login(built.app);
+    const requested = {
+      roles: ["teacher", "gradeLeader"],
+      teachingClassIds: ["cls-1"],
+      homeroomClassIds: ["cls-2"],
+      position: "年级教学负责人",
+      reason: "本学期调整任课和班主任班级",
+    };
+    const invalid = await built.app.inject({
+      method: "POST", url: "/api/auth/permission-applications",
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: { ...requested, teachingClassIds: ["cls-5"] },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const submission = await built.app.inject({
+      method: "POST", url: "/api/auth/permission-applications",
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: requested,
+    });
+    expect(submission.statusCode, submission.body).toBe(200);
+    const application = submission.json<{ id: string }>();
+
+    const unapprovedTeacher = built.store.loadState().teachers.find((item) => item.id === "tch-2");
+    expect(unapprovedTeacher?.affiliations.find((item) => item.schoolId === "sch-1")?.teachingClassIds).not.toEqual(["cls-1"]);
+    const duplicate = await built.app.inject({
+      method: "POST", url: "/api/auth/permission-applications",
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: requested,
+    });
+    expect(duplicate.statusCode).toBe(400);
+
+    const mine = await built.app.inject({
+      method: "GET", url: "/api/auth/permission-applications/mine",
+      headers: { cookie: applicant.cookie },
+    });
+    expect(mine.json<Array<{ id: string }>>().map((item) => item.id)).toContain(application.id);
+    const pending = await built.app.inject({
+      method: "GET", url: "/api/auth/permission-applications/pending",
+      headers: { cookie: admin.cookie },
+    });
+    expect(pending.json<Array<{ id: string }>>().map((item) => item.id)).toContain(application.id);
+    const unauthorized = await built.app.inject({
+      method: "GET", url: "/api/auth/permission-applications/pending",
+      headers: { cookie: applicant.cookie },
+    });
+    expect(unauthorized.statusCode).toBe(400);
+    await built.store.createUser("tch-3", "hua.liu@shsy.edu.cn", "TeacherPass123");
+    const crossSchool = await login(built.app, "hua.liu@shsy.edu.cn", "TeacherPass123");
+    const foreignReview = await built.app.inject({
+      method: "POST", url: `/api/auth/permission-applications/${application.id}/review`,
+      headers: { cookie: crossSchool.cookie, "x-inteschool-csrf": crossSchool.csrfToken },
+      payload: { approved: true },
+    });
+    expect(foreignReview.statusCode).toBe(403);
+
+    const fields = {
+      roles: ["teacher", "subjectLeader"],
+      teachingClassIds: ["cls-2"],
+      homeroomClassIds: ["cls-1"],
+      position: "学科教研组负责人",
+    };
+    const approved = await built.app.inject({
+      method: "POST", url: `/api/auth/permission-applications/${application.id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: true, adjustments: fields },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const updated = built.store.loadState().teachers.find((item) => item.id === "tch-2");
+    expect(updated?.affiliations.find((item) => item.schoolId === "sch-1")).toMatchObject({
+      assignedRoles: ["teacher", "subjectLeader", "headTeacher"],
+      teachingClassIds: ["cls-2"],
+      homeroomClassIds: ["cls-1"],
+      position: "学科教研组负责人",
+    });
+    const historical = await built.app.inject({
+      method: "GET", url: "/api/auth/permission-applications/mine",
+      headers: { cookie: applicant.cookie },
+    });
+    expect(historical.json<Array<Record<string, unknown>>>().find((item) => item.id === application.id)).toMatchObject({
+      status: "approved",
+      requestedTeachingClassIds: ["cls-1"],
+      approvedPermissions: { teachingClassIds: ["cls-2"], homeroomClassIds: ["cls-1"] },
+    });
+    const repeatReview = await built.app.inject({
+      method: "POST", url: `/api/auth/permission-applications/${application.id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: true },
+    });
+    expect(repeatReview.statusCode).toBe(403);
+  });
+
+  it("rejects permission adjustments without changing the teacher profile", async () => {
+    await built.store.createUser("tch-2", "min.wang@bj04.edu.cn", "TeacherPass123");
+    const applicant = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
+    const admin = await login(built.app);
+    const before = built.store.loadState().teachers.find((item) => item.id === "tch-2");
+    const submission = await built.app.inject({
+      method: "POST", url: "/api/auth/permission-applications",
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: {
+        roles: ["teacher", "principal"], teachingClassIds: [],
+        homeroomClassIds: [], position: "校长", reason: "申请新的行政职务权限",
+      },
+    });
+    expect(submission.statusCode, submission.body).toBe(200);
+    const { id } = submission.json<{ id: string }>();
+    const review = await built.app.inject({
+      method: "POST", url: `/api/auth/permission-applications/${id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: false },
+    });
+    expect(review.statusCode, review.body).toBe(200);
+    expect(built.store.loadState().teachers.find((item) => item.id === "tch-2")).toEqual(before);
+  });
+
   it("lets new users join directly while extra roles and new schools follow their review policies", async () => {
     const phone = nextPhone();
     const registered = await built.app.inject({

@@ -142,6 +142,79 @@ const roleApplicationSchema = z.object({
   reason: z.string().trim().min(5).max(300),
 }).transform((input) => ({ ...input, roles: normalizeTeacherRoles(input.roles) }));
 
+const permissionFieldsBaseSchema = z.object({
+  roles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length),
+  teachingClassIds: z.array(z.string().min(1).max(100)).max(100),
+  homeroomClassIds: z.array(z.string().min(1).max(100)).max(20),
+  position: z.string().trim().max(50),
+});
+
+const permissionFieldsSchema = permissionFieldsBaseSchema.transform((input) => ({ ...input, roles: normalizeTeacherRoles(input.roles) }));
+
+const permissionApplicationSchema = permissionFieldsBaseSchema.extend({
+  reason: z.string().trim().min(5).max(300),
+}).transform((input) => ({ ...input, roles: normalizeTeacherRoles(input.roles) }));
+
+const permissionReviewSchema = z.object({
+  approved: z.boolean(),
+  adjustments: permissionFieldsSchema.optional(),
+});
+
+type PermissionFields = z.infer<typeof permissionFieldsSchema>;
+
+function permissionFieldsFor(teacher: TeacherRecord, schoolId: string): PermissionFields {
+  const affiliation = teacher.affiliations.find((item) => item.schoolId === schoolId);
+  if (!affiliation) throw new Error("教师已不属于该学校");
+  const roles = Array.isArray(affiliation.assignedRoles) && affiliation.assignedRoles.length
+    ? affiliation.assignedRoles : affiliation.roles;
+  return {
+    roles: normalizeTeacherRoles((Array.isArray(roles) ? roles : ["teacher"])
+      .filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))),
+    teachingClassIds: Array.isArray(affiliation.teachingClassIds) ? affiliation.teachingClassIds as string[] : [],
+    homeroomClassIds: Array.isArray(affiliation.homeroomClassIds) ? affiliation.homeroomClassIds as string[] : [],
+    position: typeof affiliation.position === "string" ? affiliation.position : "",
+  };
+}
+
+function normalizedPermissionFields(fields: PermissionFields): PermissionFields {
+  return {
+    ...fields,
+    roles: normalizeTeacherRoles([
+      ...fields.roles,
+      ...(fields.homeroomClassIds.length > 0 ? ["headTeacher" as TeacherRole] : []),
+    ]),
+    teachingClassIds: [...new Set(fields.teachingClassIds)],
+    homeroomClassIds: [...new Set(fields.homeroomClassIds)],
+  };
+}
+
+function applyPermissionFields(state: AppState, teacherIndex: number, schoolId: string, fields: PermissionFields): void {
+  const teacher = state.teachers[teacherIndex];
+  const inheritedRoles = (state.organizationDepartments as Array<{
+    schoolId: string; leaderId?: string; roles?: TeacherRole[];
+  }> || []).filter((item) => item.schoolId === schoolId && item.leaderId === teacher.id)
+    .flatMap((item) => item.roles || []);
+  const roles = normalizeTeacherRoles([...fields.roles, ...inheritedRoles]);
+  const affiliations = teacher.affiliations.map((item) => item.schoolId === schoolId
+    ? {
+      ...item, assignedRoles: fields.roles, roles,
+      teachingClassIds: fields.teachingClassIds,
+      homeroomClassIds: fields.homeroomClassIds,
+      position: fields.position,
+    } : item);
+  const active = affiliations.find((item) => item.id === teacher.currentAffiliationId)
+    || affiliations.find((item) => item.isCurrent);
+  state.teachers[teacherIndex] = {
+    ...teacher, affiliations,
+    ...(active?.schoolId === schoolId ? {
+      roles,
+      teachingClassIds: fields.teachingClassIds,
+      homeroomClassIds: fields.homeroomClassIds,
+      position: fields.position,
+    } : {}),
+  };
+}
+
 const managedTeachingProfileSchema = z.object({
   subject: z.string().trim().min(1).max(50).optional(),
   teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
@@ -1057,6 +1130,124 @@ export async function registerAuthRoutes(
           ? `你在 ${String(application.schoolName || "当前学校")} 的学校管理员申请已通过。`
           : `你在 ${String(application.schoolName || "当前学校")} 的学校管理员申请未通过。`,
         actionUrl: approved ? "/admin" : "/profile",
+      });
+      return { ok: true };
+    });
+  });
+
+  app.post("/api/auth/permission-applications", async (request) => {
+    const session = await requireSession(request, store);
+    requireCsrf(request, session);
+    const input = permissionApplicationSchema.parse(request.body);
+    return withSerializedState(store, (state) => {
+      const teacher = state.teachers.find((item) => item.id === session.teacherId);
+      if (!teacher || teacher.status !== "active" || isPlatformAdminAccount(teacher)) {
+        throw new Error("请使用已认证的学校身份申请权限");
+      }
+      const affiliation = activeAffiliation(teacher);
+      const schoolId = typeof affiliation?.schoolId === "string" ? affiliation.schoolId : null;
+      if (!schoolId || affiliation?.status !== "active") throw new Error("请先切换到有效的学校身份");
+      const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === schoolId);
+      if (!school) throw new Error("学校不存在");
+      const requested = normalizedPermissionFields(input);
+      validateTeachingClassIds(state, schoolId, [...requested.teachingClassIds, ...requested.homeroomClassIds]);
+      const current = normalizedPermissionFields(permissionFieldsFor(teacher, schoolId));
+      const same = (left: PermissionFields, right: PermissionFields) =>
+        left.position === right.position
+        && left.roles.length === right.roles.length && left.roles.every((role) => right.roles.includes(role))
+        && left.teachingClassIds.length === right.teachingClassIds.length
+        && left.teachingClassIds.every((id) => right.teachingClassIds.includes(id))
+        && left.homeroomClassIds.length === right.homeroomClassIds.length
+        && left.homeroomClassIds.every((id) => right.homeroomClassIds.includes(id));
+      if (same(current, requested)) throw new Error("申请内容与当前权限相同");
+      const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+      if (applications.some((item) => item.kind === "teacher_permissions"
+        && item.teacherId === teacher.id && item.schoolId === schoolId && item.status === "pending")) {
+        throw new Error("已有待审核的权限调整申请");
+      }
+      const application = {
+        id: randomUUID(), kind: "teacher_permissions",
+        teacherId: teacher.id, teacherName: teacher.name,
+        schoolId, schoolName: school.name,
+        requestedRoles: requested.roles,
+        requestedTeachingClassIds: requested.teachingClassIds,
+        requestedHomeroomClassIds: requested.homeroomClassIds,
+        requestedPosition: requested.position,
+        previous: current,
+        reason: input.reason, status: "pending", createdAt: new Date().toISOString(),
+      };
+      applications.push(application);
+      notifySchoolReviewers(state, schoolId, teacher.id, {
+        title: "新的权限调整申请",
+        content: `${teacher.name} 提交了校内权限调整申请，请及时审核。`,
+        actionUrl: "/admin/permission-applications",
+      }, false);
+      return application;
+    });
+  });
+
+  app.get("/api/auth/permission-applications/mine", async (request) => {
+    const session = await requireSession(request, store);
+    return (store.loadState().schoolAdminApplications as Array<Record<string, unknown>>)
+      .filter((item) => item.kind === "teacher_permissions" && item.teacherId === session.teacherId)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  });
+
+  app.get("/api/auth/permission-applications/pending", async (request) => {
+    const session = await requireSession(request, store);
+    const reviewer = sessionTeacher(store, session);
+    if (activeRole(reviewer) !== "school_admin") throw new Error("仅本校管理员可审核权限申请");
+    const schoolId = activeAffiliation(reviewer)?.schoolId;
+    return (store.loadState().schoolAdminApplications as Array<Record<string, unknown>>)
+      .filter((item) => item.kind === "teacher_permissions"
+        && item.status === "pending" && item.schoolId === schoolId
+        && item.teacherId !== reviewer.id)
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  });
+
+  app.post("/api/auth/permission-applications/:id/review", async (request) => {
+    const session = await requireSession(request, store);
+    requireCsrf(request, session);
+    const id = z.string().uuid().parse((request.params as { id?: string }).id);
+    const input = permissionReviewSchema.parse(request.body);
+    return withSerializedState(store, (state) => {
+      const reviewer = state.teachers.find((item) => item.id === session.teacherId);
+      const schoolId = reviewer && activeAffiliation(reviewer)?.schoolId;
+      if (!reviewer || activeRole(reviewer) !== "school_admin" || typeof schoolId !== "string") {
+        throw new Error("仅本校管理员可审核权限申请");
+      }
+      const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
+      const application = applications.find((item) => item.id === id && item.kind === "teacher_permissions");
+      if (!application || application.status !== "pending" || application.schoolId !== schoolId
+        || application.teacherId === reviewer.id) {
+        throw new Error("权限申请不存在或无权审核");
+      }
+      if (!input.approved && input.adjustments) throw new Error("拒绝申请时不能修改审核内容");
+      if (input.approved) {
+        const teacherIndex = state.teachers.findIndex((item) => item.id === application.teacherId);
+        if (teacherIndex < 0 || !state.teachers[teacherIndex].affiliations.some(
+          (item) => item.schoolId === schoolId && item.status === "active",
+        )) throw new Error("申请教师已不属于该学校");
+        const requested = input.adjustments ?? {
+          roles: application.requestedRoles,
+          teachingClassIds: application.requestedTeachingClassIds,
+          homeroomClassIds: application.requestedHomeroomClassIds,
+          position: application.requestedPosition,
+        };
+        const fields = normalizedPermissionFields(permissionFieldsSchema.parse(requested));
+        validateTeachingClassIds(state, schoolId, [...fields.teachingClassIds, ...fields.homeroomClassIds]);
+        applyPermissionFields(state, teacherIndex, schoolId, fields);
+        application.approvedPermissions = fields;
+      }
+      application.status = input.approved ? "approved" : "rejected";
+      application.reviewedAt = new Date().toISOString();
+      application.reviewedBy = reviewer.id;
+      createNotificationInState(state, {
+        recipientTeacherId: String(application.teacherId),
+        type: "approval",
+        title: input.approved ? "权限调整申请已通过" : "权限调整申请未通过",
+        content: input.approved ? "本校管理员已审核并更新你的权限，请查看审核结果。" : "本校管理员未通过你的权限调整申请。",
+        actionUrl: "/admin/permission-applications",
       });
       return { ok: true };
     });

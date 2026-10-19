@@ -110,11 +110,20 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: UsersRound,
-    title: "教师权限申请",
-    description: "申请新的校内职务权限；学校管理员同时审核本校教师申请",
+    title: "我的权限申请",
+    description: "查看当前职务、任课及班主任班级，向本校管理员申请权限调整",
     href: "/admin/permission-applications",
+    group: "personal",
+    schoolOnly: true,
+  },
+  {
+    icon: ShieldCheck,
+    title: "权限申请审核",
+    description: "审核本校教师提交的权限调整申请，可修改权限后通过",
+    href: "/admin/permission-applications#pending",
     group: "school",
     schoolOnly: true,
+    adminOnly: true,
   },
   {
     icon: UsersRound,

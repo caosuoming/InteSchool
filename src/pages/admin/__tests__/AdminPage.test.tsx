@@ -72,12 +72,13 @@ describe("AdminPage", () => {
     const personal = screen.getByRole("region", { name: "个人用户管理" });
     expect(within(personal).getByText("知识树管理")).toBeInTheDocument();
     expect(within(personal).getByText("系统设置")).toBeInTheDocument();
+    expect(within(personal).getByText("我的权限申请")).toBeInTheDocument();
     expect(within(personal).queryByText("班级与学生")).not.toBeInTheDocument();
 
     const school = screen.getByRole("region", { name: "校管理员管理" });
     expect(within(school).getByText("班级与学生")).toBeInTheDocument();
     expect(within(school).getByText("组织架构管理")).toBeInTheDocument();
-    expect(within(school).getByText("教师权限申请")).toBeInTheDocument();
+    expect(within(school).getByText("权限申请审核")).toBeInTheDocument();
     expect(within(school).getByText("教师权限与教学资料")).toBeInTheDocument();
     expect(within(school).getByText("教师入校审核")).toBeInTheDocument();
 
