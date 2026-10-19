@@ -519,8 +519,8 @@ describe("MyResourcesPage batch actions", () => {
     expect(knowledgeService.getChapterTree).not.toHaveBeenCalled();
     expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
     expect(basketService.listBaskets).not.toHaveBeenCalled();
-    expect(classService.listMyClasses).not.toHaveBeenCalled();
-    expect(classService.listMyStudents).not.toHaveBeenCalled();
+    expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1");
+    expect(classService.listMyStudents).toHaveBeenCalledWith("school-1", "teacher-1");
   });
 
   it("lazy-loads the knowledge tree and appends a shared knowledge point to selected questions", async () => {

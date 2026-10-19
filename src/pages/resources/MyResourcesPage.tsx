@@ -58,6 +58,8 @@ import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { questionStemSimilarity } from "@/lib/question-similarity";
 import { subjectAwareDefaultQuestionScore } from "@/lib/question-default-score";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
+import { StudentPickerModal } from "@/components/student/StudentPickerModal";
+import { documentStudentProgressLabel } from "@/lib/document-student-progress";
 import {
   QuestionDuplicateReviewModal,
   type QuestionDuplicateResolution,
@@ -795,6 +797,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [newBasketStudentIds, setNewBasketStudentIds] = useState<string[]>([]);
   const [audienceClasses, setAudienceClasses] = useState<AnyClass[]>([]);
   const [audienceStudents, setAudienceStudents] = useState<Student[]>([]);
+  const [resourceStudents, setResourceStudents] = useState<Student[]>([]);
+  const [resourceStudentClasses, setResourceStudentClasses] = useState<AnyClass[]>([]);
+  const [selectedResourceStudentIds, setSelectedResourceStudentIds] = useState<string[]>([]);
+  const [resourceStudentPickerOpen, setResourceStudentPickerOpen] = useState(false);
+  const [resourceStudentQuery, setResourceStudentQuery] = useState<{
+    key: string;
+    status: "loading" | "success" | "error";
+    records: AnswerRecord[];
+  } | null>(null);
+  const selectedResourceStudentKey = selectedResourceStudentIds.join(",");
   const [resourceAudienceClasses, setResourceAudienceClasses] = useState<AnyClass[]>([]);
   const [usedDocumentIds, setUsedDocumentIds] = useState<Set<string>>(new Set());
   const [editingBasketAudience, setEditingBasketAudience] = useState(false);
@@ -1098,6 +1110,57 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     window.addEventListener("extract-task-confirmed", handleExtractConfirmed);
     return () => window.removeEventListener("extract-task-confirmed", handleExtractConfirmed);
   }, [loadAll]);
+
+  useEffect(() => {
+    if (!teacher) return;
+    let cancelled = false;
+    Promise.all([
+      classService.listMyClasses(teacher.schoolId || null, teacher.id),
+      classService.listMyStudents(teacher.schoolId || null, teacher.id),
+    ]).then(([classes, students]) => {
+      if (cancelled) return;
+      setResourceStudentClasses(classes);
+      setResourceStudents(students);
+    }).catch(() => {
+      if (!cancelled) {
+        setResourceStudentClasses([]);
+        setResourceStudents([]);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [teacher]);
+
+  useEffect(() => {
+    if (!selectedResourceStudentIds.length || (activeTab !== "examPaper" && activeTab !== "lecture")) {
+      setResourceStudentQuery(null);
+      return;
+    }
+    let cancelled = false;
+    const key = selectedResourceStudentKey;
+    setResourceStudentQuery({ key, status: "loading", records: [] });
+    analyticsService.listAnswerRecordsByStudents(selectedResourceStudentIds)
+      .then((records) => {
+        if (!cancelled) setResourceStudentQuery({ key, status: "success", records });
+      })
+      .catch(() => {
+        if (!cancelled) setResourceStudentQuery({ key, status: "error", records: [] });
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, selectedResourceStudentIds, selectedResourceStudentKey]);
+
+  const studentProgressDescription = (document: ExamPaper | Lecture): string => {
+    if (!selectedResourceStudentIds.length) return "";
+    if (!resourceStudentQuery || resourceStudentQuery.key !== selectedResourceStudentKey
+      || resourceStudentQuery.status === "loading") return "学生题目统计加载中...";
+    if (resourceStudentQuery.status === "error") return "学生题目统计加载失败";
+    return documentStudentProgressLabel(document, selectedResourceStudentIds, resourceStudentQuery.records);
+  };
+
+  const documentDescription = (document: ExamPaper | Lecture): string => {
+    const usage = documentResourceUsageSummary(document, resourceAudienceClasses, usedDocumentIds);
+    const progress = studentProgressDescription(document);
+    return progress ? `${usage} · ${progress}` : usage;
+  };
 
   // 资源篮加载逻辑
   useEffect(() => {
@@ -2765,7 +2828,28 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       <PageHeader
         title="我的资源"
         description="统一管理我的题库、试卷库、讲义库、课件库、素材库、题卡库"
+        titleAction={(
+          <Button variant="outline" size="sm" onClick={() => setResourceStudentPickerOpen(true)}>
+            <Users className="w-3.5 h-3.5" />
+            {selectedResourceStudentIds.length
+              ? (resourceStudents.filter((item) => selectedResourceStudentIds.includes(item.id))
+                .map((item) => item.name).slice(0, 2).join("、")
+                + (selectedResourceStudentIds.length > 2 ? `等 ${selectedResourceStudentIds.length} 人` : ""))
+              : "选择学生"}
+            {selectedResourceStudentIds.length > 0 && <span>({selectedResourceStudentIds.length}人)</span>}
+          </Button>
+        )}
         icon={<Library className="w-5 h-5" />}
+      />
+
+      <StudentPickerModal
+        open={resourceStudentPickerOpen}
+        onClose={() => setResourceStudentPickerOpen(false)}
+        selectedStudentIds={selectedResourceStudentIds}
+        onChange={setSelectedResourceStudentIds}
+        students={resourceStudents}
+        classes={resourceStudentClasses}
+        description="选择学生后，题库显示训练关联，试卷库与讲义库显示每份文档的已做、待做题目数量"
       />
 
       {/* Tab 切换 */}
@@ -2823,6 +2907,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       {/* 题库 Tab：渲染完整的题库管理/使用页面 */}
       {activeTab === "question" ? (
         <QuestionBankPage
+          studentIds={selectedResourceStudentIds}
+          onStudentIdsChange={setSelectedResourceStudentIds}
+          hideStudentPicker
           selectedQuestionIds={new Set(
             [...resourceSelections]
               .filter((key) => key.startsWith("question:"))
@@ -3591,7 +3678,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
                       remark={mainLecture.description}
-                      description={documentResourceUsageSummary(mainLecture, resourceAudienceClasses, usedDocumentIds)}
+                      description={documentDescription(mainLecture)}
                       titleIcon={item.originalFileUrl ? (
                         <DocumentFormatIcon
                           fileType={item.originalFileType}
@@ -3732,7 +3819,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
                         remark={copy.description}
-                        description={documentResourceUsageSummary(copy, resourceAudienceClasses, usedDocumentIds)}
+                        description={documentDescription(copy)}
                         titleActions={hasCompletedLesson("examPaper", copy.id)
                           || hasCompletedLesson("examPaper", item.id)
                           ? <Badge variant="green">已上课</Badge>
@@ -3799,7 +3886,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
                           remark={item.description}
-                          description={documentResourceUsageSummary(item, resourceAudienceClasses, usedDocumentIds)}
+                          description={documentDescription(item)}
                           titleIcon={item.originalFileUrl ? (
                             <DocumentFormatIcon
                               fileType={item.originalFileType}

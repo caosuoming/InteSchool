@@ -6,10 +6,11 @@ interface PageHeaderProps {
   description?: string;
   icon?: ReactNode;
   action?: ReactNode;
+  titleAction?: ReactNode;
   className?: string;
 }
 
-export function PageHeader({ title, description, icon, action, className }: PageHeaderProps) {
+export function PageHeader({ title, description, icon, action, titleAction, className }: PageHeaderProps) {
   return (
     <div className={cn("flex items-start justify-between gap-4 mb-6", className)}>
       <div className="flex items-start gap-3 min-w-0">
@@ -19,7 +20,10 @@ export function PageHeader({ title, description, icon, action, className }: Page
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="font-serif text-2xl font-bold text-ink-900 truncate">{title}</h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="font-serif text-2xl font-bold text-ink-900 truncate">{title}</h1>
+            {titleAction}
+          </div>
           {description && <p className="text-sm text-ink-500 mt-0.5">{description}</p>}
         </div>
       </div>
