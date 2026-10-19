@@ -20,6 +20,7 @@ export interface ExtractTaskInput {
   resourceId: string;
   resourceType: "examPaper" | "lecture";
   resourceTitle: string;
+  subject?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
   grade: string;
@@ -58,9 +59,10 @@ function taskId(input: Pick<ExtractTaskInput, "resourceId" | "resourceType">): s
   return `${input.resourceType}:${input.resourceId}`;
 }
 
-export function currentParseConfig(): DocumentParseConfig {
+export function currentParseConfig(subject?: string): DocumentParseConfig {
   const config = useExtractConfigStore.getState();
   return {
+    subject,
     headingKeywords: [...config.headingKeywords],
     questionKeywords: [...config.questionKeywords],
     answerKeywords: [...config.answerKeywords],
@@ -117,11 +119,11 @@ export const useExtractTasksStore = create<ExtractTaskState>((set, get) => {
         progress: 75,
         progressMessage: "正在分析文档结构...",
       });
-      let blocks = parseDocumentBlocks(extracted.text, currentParseConfig());
+      let blocks = parseDocumentBlocks(extracted.text, currentParseConfig(task.subject));
       if (blocks.length === 0) {
         blocks = parseDocumentBlocks(
           "文档内容为空，请检查文档是否包含题目或知识块内容。",
-          currentParseConfig(),
+          currentParseConfig(task.subject),
         );
       }
 

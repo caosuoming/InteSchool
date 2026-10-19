@@ -1330,6 +1330,49 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    ["数学", "essay"],
+    ["物理", "comprehensive"],
+  ])("uses %s subject-specific type for mixed shared-stem sub-questions", (subject, expectedType) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "3. 阅读材料并完成下面两个小题。",
+        "（1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）（多选）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "答案：（1）A （2）BC",
+      ].join("\n"),
+      { ...config, subject },
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: expectedType,
+      answer: "（1）A （2）BC",
+    });
+  });
+
+  it("keeps math mixed-type extension questions intact without comprehensive labeling", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例2 如图所示，已知正四面体 ABCD 的棱长为 1。",
+        "延伸探究1 BC 与 CD 的夹角等于（ ） A. 30° B. 60° C. 150° D. 120°",
+        "延伸探究2 计算该正四面体的体积。",
+        "答案：D",
+        "1/6",
+      ].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: "essay",
+      answer: "D\n1/6",
+    });
+    expect(blocks[0].content).toContain("延伸探究2");
+  });
+
   it("treats 延伸探究 sub-questions after a shared stem as one comprehensive question", () => {
     const blocks = parseDocumentBlocks(
       [

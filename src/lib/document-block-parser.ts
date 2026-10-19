@@ -1,4 +1,5 @@
 import type { Material, Question, QuestionType } from "@/types";
+import { normalizeQuestionTypeForSubject } from "@/lib/question-types";
 import {
   ensureFillBlankAnswerArea,
   hasFillBlankAnswerArea,
@@ -32,6 +33,7 @@ export interface DocumentBlock {
 }
 
 export interface DocumentParseConfig {
+  subject?: string;
   headingKeywords: string[];
   questionKeywords: string[];
   answerKeywords: string[];
@@ -1708,8 +1710,11 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   return blocks;
 }
 
-function normalizeFillBlankAreas(blocks: DocumentBlock[]): DocumentBlock[] {
+function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
   for (const block of blocks) {
+    if (block.type === "question" && block.questionType) {
+      block.questionType = normalizeQuestionTypeForSubject(block.questionType, subject);
+    }
     if (
       block.type !== "question"
       || block.questionType !== "short"
@@ -1740,8 +1745,8 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
       allowPositionalFallback: kind !== "answer",
     });
     const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return normalizeFillBlankAreas(blocks);
+    if (merged >= requiredMatches) return normalizeFillBlankAreas(blocks, config.subject);
   }
 
-  return normalizeFillBlankAreas(parseDocumentBlocksCore(content, config));
+  return normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject);
 }

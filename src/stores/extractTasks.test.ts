@@ -110,6 +110,12 @@ describe("extract task store", () => {
     );
   });
 
+  it("passes the task subject to the document parser", async () => {
+    expect(useExtractTasksStore.getState().startTask({ ...taskInput(1), subject: "数学" })).toBe(true);
+    await waitFor(() => expect(mocks.parseDocumentBlocks).toHaveBeenCalled());
+    expect(mocks.parseDocumentBlocks.mock.calls[0][1]).toMatchObject({ subject: "数学" });
+  });
+
   it("completes extraction in the background and opens the review result", async () => {
     expect(useExtractTasksStore.getState().startTask(taskInput(1))).toBe(true);
 
