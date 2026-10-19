@@ -1,4 +1,5 @@
 import { decodeWordSymbol, normalizeWordSymbolText } from "./word-symbol.js";
+import { normalizeOmmlLatexStructures } from "./legacy-omml-formulas.js";
 
 /**
  * OMML (Office Math Markup Language) 到 LaTeX 的转换器
@@ -44,7 +45,7 @@ export function ommlToLatex(mathEl: Element | string): string {
     element = mathEl;
   }
   
-  const latex = stretchMatrixDelimiters(convertNode(element).trim());
+  const latex = normalizeOmmlLatexStructures(stretchMatrixDelimiters(convertNode(element).trim()));
   return latex || "";
 }
 

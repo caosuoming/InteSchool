@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { extname, posix } from "node:path";
 import { ommlToLatex } from "../../src/lib/omml-to-latex.js";
+import { normalizeLegacyOmmlMathText } from "../../src/lib/legacy-omml-formulas.js";
 import { normalizePlainMathText } from "../../src/lib/plain-math.js";
 import { decodeWordSymbol, normalizeWordSymbolText } from "../../src/lib/word-symbol.js";
 import {
@@ -480,7 +481,7 @@ function extractParagraph(
   if (field) content.push(field.result);
 
   return normalizeText(
-    normalizePlainMathText(markScriptedMathVariables(content.join(""))),
+    normalizePlainMathText(normalizeLegacyOmmlMathText(markScriptedMathVariables(content.join("")))),
   ).trim();
 }
 

@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { containsMathDelimiter, renderMathHtml, serializeMathHtml } from "./math-html";
 
 describe("renderMathHtml", () => {
+  it("renders multiline systems with a legacy missing left delimiter", () => {
+    const source = String.raw`联立 $\left\begin{cases}x=1\\y=2\end{cases}\right.$。`;
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(source);
+
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex-formula[data-latex]")).toHaveAttribute(
+      "data-latex", String.raw`\begin{cases}x=1\\y=2\end{cases}`,
+    );
+  });
   it("renders inline formulas in plain question text", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml("已知 $x^2+y^2=1$，求 $x+y$。");
