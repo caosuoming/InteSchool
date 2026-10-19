@@ -21,6 +21,8 @@ export interface DocumentBlock {
   content: string;
   order: number;
   questionType?: QuestionType;
+  categories?: string[];
+  suggestedCategories?: string[];
   options?: string[];
   answer?: string;
   analysis?: string;

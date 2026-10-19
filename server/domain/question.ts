@@ -1,3 +1,4 @@
+import { questionCategories } from "../../src/lib/question-category-detection.js";
 import type {
   ExamPaper,
   Lecture,
@@ -40,6 +41,7 @@ export interface QuestionInput {
   semester?: ResourceSemester;
   sourceType?: string;
   category?: string;
+  categories?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   remark?: string;
@@ -203,7 +205,7 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
     if (!q.sourceType || !filter.sourceType.includes(q.sourceType)) return false;
   }
   if (filter.category?.length) {
-    if (!q.category || !filter.category.includes(q.category)) return false;
+    if (!questionCategories(q).some((category) => filter.category!.includes(category))) return false;
   }
   if (filter.excludeQuestionIds?.length) {
     if (filter.excludeQuestionIds.includes(q.id)) return false;
@@ -360,6 +362,7 @@ export const questionService = {
       semester: input.semester || "上学期",
       sourceType: input.sourceType,
       category: input.category,
+      categories: input.categories,
       difficulty: input.difficulty,
       recommendation: input.recommendation,
       usageCount: 0,
@@ -600,6 +603,7 @@ export const questionService = {
       semester: input.semester || "上学期",
       sourceType: input.sourceType,
       category: input.category,
+      categories: input.categories,
       difficulty: input.difficulty,
       recommendation: input.recommendation,
       usageCount: 0,

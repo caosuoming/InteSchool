@@ -34,6 +34,7 @@ import { lectureService } from "@/services/lecture";
 import { renderExtractText } from "@/lib/extract-text-renderer";
 import { ensureFillBlankAnswerArea } from "@/lib/fill-blank";
 import { stripLeadingScoreLabels } from "@/lib/question-text-cleanup";
+import { AUTO_QUESTION_CATEGORIES, detectQuestionCategories } from "@/lib/question-category-detection";
 import {
   parseDocumentBlocks,
   type DocumentBlock as DocBlock,
@@ -126,6 +127,18 @@ const blockTypeLabel: Record<BlockType, string> = {
   question: "题目",
   knowledge: "知识块",
 };
+
+function withDetectedQuestionCategories(blocks: DocBlock[]): DocBlock[] {
+  return blocks.map((block) => {
+    if (block.type !== "question") return block;
+    const suggestedCategories = detectQuestionCategories(block);
+    return {
+      ...block,
+      suggestedCategories,
+      categories: [...new Set([...(block.categories || []), ...suggestedCategories])],
+    };
+  });
+}
 
 const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
 
@@ -291,7 +304,7 @@ export function ExtractReviewModal({
   const [progress, setProgress] = useState(initialBlocks ? 100 : 0);
   const [progressMsg, setProgressMsg] = useState(initialBlocks ? "拆解完成，等待审阅" : "正在初始化...");
   const [error, setError] = useState<string | null>(null);
-  const [blocks, setBlocks] = useState<DocBlock[]>(initialBlocks || []);
+  const [blocks, setBlocks] = useState<DocBlock[]>(withDetectedQuestionCategories(initialBlocks || []));
   const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [mergeTargets, setMergeTargets] = useState<Record<string, MergeTarget>>({});
@@ -363,7 +376,7 @@ export function ExtractReviewModal({
       await new Promise((r) => setTimeout(r, 300));
       
       setProgress(100);
-      setBlocks(blocks);
+      setBlocks(withDetectedQuestionCategories(blocks));
       setPhase("review");
     } catch (e) {
       if (cancelled) return;
@@ -380,7 +393,7 @@ export function ExtractReviewModal({
       setProgress(100);
       setProgressMsg("拆解完成，等待审阅");
       setError(null);
-      setBlocks(initialBlocks);
+      setBlocks(withDetectedQuestionCategories(initialBlocks));
       setPreservedScoreLabelBlockIds(new Set());
       setEditingBlockId(null);
       setMergeTargets({});
@@ -465,6 +478,10 @@ export function ExtractReviewModal({
       list.map((b) => {
         if (b.id !== id) return b;
         const updated: DocBlock = { ...b, type, status: "edited" };
+        if (type === "question" && b.type !== "question") {
+          updated.suggestedCategories = detectQuestionCategories(updated);
+          updated.categories = [...new Set([...(updated.categories || []), ...updated.suggestedCategories])];
+        }
         if (type === "question" && !updated.questionType) {
           updated.questionType = "single";
           updated.options = ["", ""];
@@ -718,6 +735,7 @@ export function ExtractReviewModal({
         return {
           id: b.id,
           type,
+          categories: b.categories || [],
           stem,
           options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
           answer,
@@ -1080,6 +1098,37 @@ export function ExtractReviewModal({
                   { value: "question", label: "题目" },
                 ]}
               />
+              {block.type === "question" && (
+                <div className={cn(
+                  "rounded-lg border p-2.5",
+                  block.suggestedCategories?.length ? "border-amber-200 bg-amber-50/70" : "border-ink-100 bg-paper",
+                )}>
+                  <div className="mb-2 text-xs font-semibold text-ink-800">
+                    {block.suggestedCategories?.length ? "自动识别题类 · 请复核" : "附加题类"}
+                  </div>
+                  <div className="space-y-2">
+                    {AUTO_QUESTION_CATEGORIES.map((category) => (
+                      <label key={category} className="flex cursor-pointer items-center gap-2 text-xs text-ink-700">
+                        <input
+                          type="checkbox"
+                          aria-label={`第${block.order + 1}题：${category}`}
+                          checked={block.categories?.includes(category) || false}
+                          onChange={(event) => updateBlockField(block.id, {
+                            categories: event.target.checked
+                              ? [...new Set([...(block.categories || []), category])]
+                              : (block.categories || []).filter((value) => value !== category),
+                          })}
+                          className="h-4 w-4 rounded border-amber-300 text-amber-700"
+                        />
+                        <span>{category}</span>
+                        {block.suggestedCategories?.includes(category) && (
+                          <span className="rounded bg-amber-200 px-1.5 py-0.5 font-medium text-amber-900">自动识别</span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               {block.type === "question" && (
                 <Select
                   label="题型选择"

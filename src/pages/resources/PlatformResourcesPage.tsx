@@ -1,3 +1,4 @@
+import { questionCategories } from "@/lib/question-category-detection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
@@ -604,7 +605,7 @@ export default function PlatformResourcesPage() {
           (value) => `${value} · ${difficultyLabelText[Number(value)]}`,
         ),
         recommendation: uniqueFilterOptions(questions.map((item) => item.recommendation), (value) => `${value} 星`),
-        category: uniqueFilterOptions(questions.map((item) => item.category), (value) => questionCategoryLabel[value] || value),
+        category: uniqueFilterOptions(questions.flatMap((item) => questionCategories(item)), (value) => questionCategoryLabel[value] || value),
         sourceType: uniqueFilterOptions(questions.map((item) => item.sourceType), (value) => questionSourceLabel[value] || value),
       };
     }
@@ -670,7 +671,7 @@ export default function PlatformResourcesPage() {
         return (!filters.questionType || question.type === filters.questionType)
           && (!filters.difficulty || String(question.difficulty) === filters.difficulty)
           && (!filters.recommendation || String(question.recommendation) === filters.recommendation)
-          && (!filters.category || question.category === filters.category)
+          && (!filters.category || questionCategories(question).includes(filters.category))
           && (!filters.sourceType || question.sourceType === filters.sourceType);
       });
     }

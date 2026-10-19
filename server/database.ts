@@ -124,7 +124,7 @@ function questionSearchWhere(filter: QuestionFilter): { clauses: string[]; param
   const params: unknown[] = [];
   const add = (sql: string, value: unknown) => {
     params.push(value);
-    clauses.push(sql.replace("__PARAM__", `$${params.length}`));
+    clauses.push(sql.replaceAll("__PARAM__", `$${params.length}`));
   };
 
   if (filter.keyword?.trim()) {
@@ -155,7 +155,7 @@ function questionSearchWhere(filter: QuestionFilter): { clauses: string[]; param
   if (filter.schoolYear) add("data_json->>'schoolYear' = __PARAM__", filter.schoolYear);
   if (filter.semester) add("coalesce(data_json->>'semester', '上学期') = __PARAM__", filter.semester);
   if (filter.sourceType?.length) add("data_json->>'sourceType' = ANY(__PARAM__::text[])", filter.sourceType);
-  if (filter.category?.length) add("data_json->>'category' = ANY(__PARAM__::text[])", filter.category);
+  if (filter.category?.length) add("(data_json->>'category' = ANY(__PARAM__::text[]) OR coalesce(data_json->'categories', '[]'::jsonb) ?| __PARAM__::text[])", filter.category);
   if (filter.excludeQuestionIds?.length) add("NOT (id = ANY(__PARAM__::text[]))", filter.excludeQuestionIds);
 
   return { clauses, params };

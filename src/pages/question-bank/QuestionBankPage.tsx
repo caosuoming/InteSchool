@@ -48,6 +48,7 @@ import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useQuestionMetadataOptions } from "@/hooks/useQuestionMetadataOptions";
 import type { Question, TreeNode, Student, SchoolClass, PersonalClass, FilterLogic, AnswerRecord, AnswerScore, Lecture, LectureSection, ExamPaper, ResourceSemester, QuestionSearchField, UserQuotaSnapshot } from "@/types";
 import { cn } from "@/lib/utils";
+import { questionCategories } from "@/lib/question-category-detection";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
@@ -2298,9 +2299,9 @@ function QuestionRow({
                     </span>
                   ) : null;
                 case "category":
-                  return question.category ? (
+                  return questionCategories(question).length ? (
                     <span key="category" className="text-xs text-ink-400">
-                      · {getCategoryLabel(question.category)}
+                      · {questionCategories(question).map(getCategoryLabel).join("、")}
                     </span>
                   ) : null;
                 case "grade":
