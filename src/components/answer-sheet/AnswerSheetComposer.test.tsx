@@ -50,6 +50,65 @@ describe("AnswerSheetComposer", () => {
     expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
   });
 
+  it("consolidates project-layout answers by type without changing original question numbers", () => {
+    const { container } = renderComposer({
+      sourceLayoutMode: "flat",
+      questions: [
+        { id: "fill1", label: "例1", type: "short", stem: "填空一", score: 4 },
+        { id: "multi", type: "multiple", stem: "多选", score: 5 },
+        { id: "essay", type: "essay", stem: "证明", score: 8 },
+        { id: "single1", type: "single", stem: "单选一", score: 5 },
+        { id: "fill2", type: "short", stem: "填空二", score: 4 },
+        { id: "single2", type: "single", stem: "单选二", score: 5 },
+      ],
+    });
+
+    const headings = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="group-heading"]'),
+      (node) => node.textContent || "");
+    expect(headings).toHaveLength(4);
+    expect(headings.map((heading) => heading.match(/、([^（]+)/)?.[1])).toEqual(["单选题", "多选题", "填空题", "解答题"]);
+    const rows = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'),
+      (node) => node.textContent || "");
+    expect(rows).toHaveLength(6);
+    expect(rows.map((row) => row.match(/(?:例1|[1-6])\./)?.[0])).toEqual(["4.", "6.", "2.", "例1.", "5.", "3."]);
+    expect(screen.getByLabelText("不显题干")).toBeChecked();
+    expect(screen.getByLabelText("显题干")).not.toBeChecked();
+  });
+
+  it("groups project-layout concentrated questions but leaves inline question order intact", () => {
+    const { container } = renderComposer({
+      sourceLayoutMode: "flat",
+      questions: [
+        { id: "fill1", type: "short", stem: "填空第一", score: 4 },
+        { id: "multi", type: "multiple", stem: "多选第二", score: 5 },
+        { id: "essay", type: "essay", stem: "解答第三", score: 8 },
+        { id: "single", type: "single", stem: "单选第四", score: 5 },
+        { id: "fill2", type: "short", stem: "填空第五", score: 4 },
+      ],
+      initialSettings: { mode: "with-questions", choiceLayout: "inline" },
+    });
+
+    const questionRows = () => Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'),
+      (node) => node.textContent || "");
+    expect(questionRows().map((row) => row.match(/(填空第一|多选第二|解答第三|单选第四|填空第五)/)?.[1]))
+      .toEqual(["填空第一", "多选第二", "解答第三", "单选第四", "填空第五"]);
+
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "concentrated" } });
+    expect(questionRows().map((row) => row.match(/(填空第一|多选第二|解答第三|单选第四|填空第五)/)?.[1]))
+      .toEqual(["单选第四", "多选第二", "填空第一", "填空第五", "解答第三"]);
+    const choiceZones = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-choice"]'),
+      (node) => node.textContent || "");
+    expect(choiceZones.join(" ")).toMatch(/4\.[\s\S]*2\./);
+    const fillZones = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-fill"]'),
+      (node) => node.textContent || "");
+    expect(fillZones[0]).toContain("1.");
+    expect(fillZones[1]).toContain("5.");
+
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "inline" } });
+    expect(questionRows()[0]).toContain("填空第一");
+    expect(container.querySelector('[data-answer-sheet-flow-item="zone-choice"]')).toBeNull();
+  });
+
   it("publishes before download, prevents editing while published, and supports withdrawal", async () => {
     const onPublicationChange = vi.fn().mockResolvedValue(undefined);
     const print = vi.spyOn(window, "print").mockImplementation(() => {});
@@ -171,7 +230,7 @@ describe("AnswerSheetComposer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
     expect(screen.getByLabelText("题干字号（px）")).toHaveValue(16);
-    fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "concentrated" } });
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "concentrated" } });
     expect(screen.getAllByTestId("concentrated-choice-question")[0].querySelector(".answer-sheet-question-stem")?.parentElement).toHaveClass("gap-0");
   });
 
@@ -351,11 +410,11 @@ describe("AnswerSheetComposer", () => {
   it("supports inline and concentrated choice fill areas while keeping choice options visible", () => {
     renderComposer();
 
-    fireEvent.click(screen.getByLabelText("附题干"));
+    fireEvent.click(screen.getByLabelText("显题干"));
     expect(screen.getAllByTestId("inline-choice-question")).toHaveLength(2);
     expect(screen.queryByTestId("concentrated-choice-area")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("附题干答题区布局"), {
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), {
       target: { value: "concentrated" },
     });
     expect(screen.getByTestId("concentrated-choice-area")).toBeInTheDocument();
@@ -702,7 +761,7 @@ describe("AnswerSheetComposer", () => {
 
     expect(screen.getByLabelText("纸张")).toHaveValue("A3");
     expect(screen.getByLabelText("学号位数")).toHaveValue(9);
-    expect(screen.getByLabelText("附题干答题区布局")).toHaveValue("concentrated");
+    expect(screen.getByLabelText("显题干答题区布局")).toHaveValue("concentrated");
 
     fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "8K" } });
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -733,10 +792,10 @@ describe("AnswerSheetComposer", () => {
     expect(screen.getByTestId("fill-answer-rule").closest('[data-testid="answer-box"]'))
       .toHaveStyle({ height: "200px" });
     fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
-    fireEvent.click(screen.getByLabelText("附题干"));
+    fireEvent.click(screen.getByLabelText("显题干"));
     const inlineBlank = container.querySelector(".answer-sheet-inline-blank");
     expect(inlineBlank).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("附题干答题区布局"), {
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), {
       target: { value: "concentrated" },
     });
     expect(screen.getAllByTestId("fill-answer-rule")).toHaveLength(1);
@@ -842,9 +901,9 @@ describe("AnswerSheetComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
     expect(screen.getByLabelText("选择题填涂方向")).toHaveValue("vertical");
 
-    fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "inline" } });
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "inline" } });
     expect(screen.queryByLabelText("选择题填涂方向")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("附题干答题区布局"), { target: { value: "concentrated" } });
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "concentrated" } });
     expect(screen.getByLabelText("选择题填涂方向")).toHaveValue("vertical");
   });
 
