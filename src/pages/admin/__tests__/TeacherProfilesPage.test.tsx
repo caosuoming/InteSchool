@@ -10,7 +10,6 @@ import type { SchoolClass, Teacher, TeacherAffiliation } from "@/types";
 
 vi.mock("@/services/auth", () => ({
   authService: {
-    listTeachers: vi.fn(),
     updateTeacherTeachingProfile: vi.fn(),
     getCurrentAffiliation: vi.fn(),
   },
@@ -28,6 +27,7 @@ vi.mock("@/services/organization", async (importOriginal) => {
     ...actual,
     organizationService: {
       ...actual.organizationService,
+      listTeachers: vi.fn(),
       updateTeacherRoles: vi.fn(),
     },
   };
@@ -118,7 +118,7 @@ describe("TeacherProfilesPage", () => {
       loading: false,
       error: null,
     });
-    vi.mocked(authService.listTeachers).mockResolvedValue([managedTeacher]);
+    vi.mocked(organizationService.listTeachers).mockResolvedValue([managedTeacher]);
     vi.mocked(authService.updateTeacherTeachingProfile).mockResolvedValue(managedTeacher);
     vi.mocked(authService.getCurrentAffiliation).mockReturnValue(managerAffiliation);
     vi.mocked(organizationService.updateTeacherRoles).mockResolvedValue(undefined);
@@ -129,6 +129,7 @@ describe("TeacherProfilesPage", () => {
     render(<TeacherProfilesPage />);
 
     const teachingClasses = await screen.findByRole("group", { name: "任教班级" });
+    expect(organizationService.listTeachers).toHaveBeenCalledWith("school-1");
     const gradeGroups = within(teachingClasses).getAllByRole("group");
 
     expect(gradeGroups.map((group) => group.getAttribute("aria-label"))).toEqual(["初一", "高一", "高二"]);
@@ -148,12 +149,13 @@ describe("TeacherProfilesPage", () => {
     const teachingClasses = await screen.findByRole("group", { name: "任教班级" });
     const homeroomClasses = screen.getByRole("group", { name: "班主任班级" });
 
+    await user.click(screen.getByRole("checkbox", { name: "教务主任" }));
     await user.click(within(teachingClasses).getByRole("checkbox", { name: "初一（1）班" }));
     await user.click(within(homeroomClasses).getByRole("checkbox", { name: "高一（2）班" }));
     await user.click(screen.getByRole("button", { name: "保存教师权限" }));
 
     await waitFor(() => {
-      expect(organizationService.updateTeacherRoles).toHaveBeenCalledWith("teacher-2", "school-1", ["teacher"]);
+      expect(organizationService.updateTeacherRoles).toHaveBeenCalledWith("teacher-2", "school-1", ["teacher", "dean"]);
       expect(authService.updateTeacherTeachingProfile).toHaveBeenCalledWith("teacher-2", {
         subject: "数学",
         teachingGrades: ["高一"],

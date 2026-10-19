@@ -15,7 +15,7 @@ function affiliationFor(teacher: Teacher, schoolId: string | null): TeacherAffil
   return teacher.affiliations.find((item) => item.schoolId === schoolId) || null;
 }
 
-export default function TeacherProfilesPage() {
+export default function TeacherProfilesPage({ embedded = false }: { embedded?: boolean }) {
   const { teacher: current, getCurrentAffiliation } = useAuthStore();
   const currentAffiliation = getCurrentAffiliation();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -36,7 +36,7 @@ export default function TeacherProfilesPage() {
   const load = useCallback(async () => {
     if (!schoolId) return;
     const [teacherList, classList] = await Promise.all([
-      authService.listTeachers(),
+      organizationService.listTeachers(schoolId),
       classService.listSchoolClasses(schoolId),
     ]);
     setTeachers(teacherList);
@@ -140,11 +140,12 @@ export default function TeacherProfilesPage() {
   };
 
   return <div>
-    <PageHeader
+    {!embedded && <PageHeader
       title="教师权限与教学资料"
       description="按管理层级维护教师角色、任教学科、年级、任教班级和班主任班级"
       icon={<Users className="w-5 h-5" />}
-    />
+    />}
+    {embedded && <div className="mb-4 flex items-center gap-2 text-ink-900"><Users className="h-5 w-5" /><h2 className="font-serif text-lg font-semibold">本校教师权限管理</h2></div>}
     <Card className="max-w-4xl p-6 space-y-5">
       <Select
         label="选择教师"

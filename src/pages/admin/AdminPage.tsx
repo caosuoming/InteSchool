@@ -34,6 +34,8 @@ interface AdminItem {
   rosterOnly?: boolean;
   teachingProfileOnly?: boolean;
   personalOnly?: boolean;
+  schoolAdminOnly?: boolean;
+  nonSchoolAdminOnly?: boolean;
 }
 
 type AdminGroupKey = "personal" | "school" | "platform";
@@ -92,6 +94,15 @@ const allAdminItems: AdminItem[] = [
     schoolOnly: true,
   },
   {
+    icon: ShieldCheck,
+    title: "申请教师职务权限",
+    description: "向本校管理员申请新的教师职务权限，查看自己的申请记录",
+    href: "/admin/permission-applications",
+    group: "personal",
+    schoolOnly: true,
+    nonSchoolAdminOnly: true,
+  },
+  {
     icon: GraduationCap,
     title: "班级与学生",
     description: "按年级管理班级与学生，支持 Excel 批量导入、升学年和回收站",
@@ -110,11 +121,12 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: UsersRound,
-    title: "教师权限申请",
-    description: "申请新的校内职务权限；学校管理员同时审核本校教师申请",
+    title: "教师权限申请与管理",
+    description: "审核本校教师权限申请，配置任课、行政职务与班主任等教师权限",
     href: "/admin/permission-applications",
     group: "school",
     schoolOnly: true,
+    schoolAdminOnly: true,
   },
   {
     icon: UsersRound,
@@ -175,6 +187,7 @@ export function AdminPage() {
   const activeRole = currentAffiliation?.role;
   const isPlatformAdmin = isPlatformAdminAccount(teacher);
   const isAdmin = activeRole === "school_admin" || isPlatformAdmin;
+  const isSchoolAdmin = activeRole === "school_admin" && !isPlatformAdmin;
   const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
   const canManageProfiles = teacher ? canManageTeachingProfiles(teacher, currentAffiliation) : false;
 
@@ -184,7 +197,9 @@ export function AdminPage() {
     if (item.adminOnly && !isAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
     if (item.rosterOnly && !canManageRoster) return false;
-    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin)) return false;
+    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin || isSchoolAdmin)) return false;
+    if (item.schoolAdminOnly && !isSchoolAdmin) return false;
+    if (item.nonSchoolAdminOnly && (isSchoolAdmin || isPlatformAdmin)) return false;
     return true;
   });
 
