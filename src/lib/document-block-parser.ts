@@ -173,24 +173,32 @@ function scanInlineMathRanges(text: string): TextRange[] {
 }
 
 function scanOptionMarkers(text: string, allowBare = false): OptionMarker[] {
-  const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）]|([A-Ha-h])(?=[ \t\u3000]))[ \t\u3000]*/g;
+  const plainPattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）]|([A-Ha-h])(?=[ \t\u3000]))[ \t\u3000]*/g;
+  // Word math variables are extracted as italic HTML runs; OMML labels may
+  // instead appear as standalone LaTeX expressions. Both can denote A-D.
+  const mathLabelPattern = /(^|[\s\u3000])(?:<i\s+class=["']math-(?:variable|vector)["']>([A-Ha-h])<\/i>|\$([A-Ha-h])\$|\$\\(?:mathrm|mathit|mathbf)\{([A-Ha-h])\}\$)(?:([.．、:：)）])|(?=[ \t\u3000]))[ \t\u3000]*/g;
   const inlineMathRanges = scanInlineMathRanges(text);
   const markers: OptionMarker[] = [];
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
+  while ((match = plainPattern.exec(text)) !== null) {
     if (match[4] && !allowBare) continue;
     const label = match[2] || match[3] || match[4];
     if (!label) continue;
     const leading = match[1] || "";
     const start = match.index + leading.length;
     if (inlineMathRanges.some((range) => start > range.start && start < range.end)) continue;
-    markers.push({
-      start,
-      contentStart: pattern.lastIndex,
-      index: optionIndex(label),
-    });
+    markers.push({ start, contentStart: plainPattern.lastIndex, index: optionIndex(label) });
   }
-  return markers;
+  while ((match = mathLabelPattern.exec(text)) !== null) {
+    if (!match[5] && !allowBare) continue;
+    const label = match[2] || match[3] || match[4];
+    const start = match.index + (match[1] || "").length;
+    // A math-delimited label itself is safe; an HTML label embedded inside a
+    // larger formula is not a new choice.
+    if (inlineMathRanges.some((range) => start > range.start && start < range.end)) continue;
+    markers.push({ start, contentStart: mathLabelPattern.lastIndex, index: optionIndex(label) });
+  }
+  return markers.sort((left, right) => left.start - right.start);
 }
 
 function sequentialOptionMarkers(markers: OptionMarker[], expectedStart: number): OptionMarker[] {
