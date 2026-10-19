@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
-import { BookCheck, ClipboardList, Plus, RefreshCw } from "lucide-react";
+import { BookCheck, ClipboardList, FileText, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -361,6 +361,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
         description={isHomework ? "管理班级作业及试卷库中的作业文档、使用对象与时间安排。" : "查看考试试卷、考试发布记录与使用对象。"}
         icon={isHomework ? <BookCheck className="h-5 w-5" /> : <ClipboardList className="h-5 w-5" />}
         action={<>
+          {!isHomework && <Link to="/homework-exams/exams/blank-answer-sheet" className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><FileText className="h-4 w-4" />制作空白答题卡</Link>}
           {isHomework && <Link to="/my-resources/exam-papers?create=homework" className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><Plus className="h-4 w-4" />出作业</Link>}
           <Button variant="outline" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading}><RefreshCw className="h-4 w-4" />刷新</Button>
         </>}

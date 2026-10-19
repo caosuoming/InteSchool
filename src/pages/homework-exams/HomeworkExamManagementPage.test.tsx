@@ -72,6 +72,16 @@ describe("作业考试管理页面", () => {
     ]);
   });
 
+  it("offers a standalone blank answer sheet only from exam management", async () => {
+    const view = mount("exams");
+    expect(await screen.findByRole("link", { name: "制作空白答题卡" })).toHaveAttribute(
+      "href", "/homework-exams/exams/blank-answer-sheet",
+    );
+    view.unmount();
+    mount("homework");
+    expect(screen.queryByRole("link", { name: "制作空白答题卡" })).not.toBeInTheDocument();
+  });
+
   it("lists each homework with its name, audience, status, and recorded attendance", async () => {
     mount("homework");
     const row = await screen.findByRole("row", { name: /函数专题作业/ });
