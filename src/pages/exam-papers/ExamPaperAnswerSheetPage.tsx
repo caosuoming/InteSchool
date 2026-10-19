@@ -75,6 +75,7 @@ export default function ExamPaperAnswerSheetPage() {
       resourceId={paper.id}
       resourceLabel="试卷"
       questions={answerQuestions}
+      sourceLayoutMode={paper.layoutMode}
       totalScore={paper.totalScore}
       initialSettings={paper.answerSheetSettings}
       initialViewMode={initialViewMode}

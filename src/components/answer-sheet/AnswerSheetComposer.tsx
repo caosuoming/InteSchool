@@ -87,6 +87,8 @@ const typeLabels: Record<string, string> = {
   comprehensive: "综合题",
 };
 
+const answerSheetTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
+
 const chineseNumerals = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 
 function chineseSectionNumber(number: number): string {
@@ -177,21 +179,31 @@ function isFillQuestion(question: AnswerSheetQuestion): boolean {
   return question.type === "short" || question.type === "conceptFill";
 }
 
-function groupQuestions(questions: AnswerSheetQuestion[]): QuestionGroup[] {
+function groupQuestions(questions: AnswerSheetQuestion[], consolidateTypes = false): QuestionGroup[] {
   const groups: QuestionGroup[] = [];
+  const byType = new Map<string, QuestionGroup>();
   questions.forEach((question, index) => {
-    const last = groups[groups.length - 1];
     const type = question.type;
-    if (last?.type === type) {
-      last.items.push({ question, number: index + 1 });
+    const existing = consolidateTypes ? byType.get(type) : groups[groups.length - 1];
+    if (existing?.type === type) {
+      existing.items.push({ question, number: index + 1 });
     } else {
-      groups.push({
+      const group = {
         type,
         label: typeLabels[type] || type,
         items: [{ question, number: index + 1 }],
-      });
+      };
+      groups.push(group);
+      if (consolidateTypes) byType.set(type, group);
     }
   });
+  if (consolidateTypes) {
+    const priority = (type: string) => {
+      const index = answerSheetTypeOrder.indexOf(type);
+      return index < 0 ? answerSheetTypeOrder.length : index;
+    };
+    groups.sort((left, right) => priority(left.type) - priority(right.type));
+  }
   return groups;
 }
 
@@ -725,6 +737,7 @@ interface AnswerSheetComposerProps {
   resourceId: string;
   resourceLabel: "试卷" | "讲义";
   questions: AnswerSheetQuestion[];
+  sourceLayoutMode?: "grouped" | "flat";
   totalScore?: number;
   initialSettings?: Partial<AnswerSheetSettings>;
   initialViewMode?: "edit" | "preview";
@@ -761,6 +774,7 @@ export function AnswerSheetComposer({
   resourceId,
   resourceLabel,
   questions,
+  sourceLayoutMode,
   totalScore,
   initialSettings,
   initialViewMode = "edit",
@@ -777,7 +791,9 @@ export function AnswerSheetComposer({
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
 
-  const groups = useMemo(() => groupQuestions(questions), [questions]);
+  const consolidateTypes = sourceLayoutMode === "flat"
+    && (settings.mode === "blank" || settings.choiceLayout === "concentrated");
+  const groups = useMemo(() => groupQuestions(questions, consolidateTypes), [questions, consolidateTypes]);
   const numberedQuestions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const choiceItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isChoiceQuestion(question)),
@@ -1327,7 +1343,7 @@ export function AnswerSheetComposer({
                         checked={settings.mode === "blank"}
                         onChange={() => updateSettings({ mode: "blank" })}
                       />
-                      仅答题区
+                      不显题干
                     </label>
                     <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-600">
                       <input
@@ -1336,12 +1352,12 @@ export function AnswerSheetComposer({
                         checked={settings.mode === "with-questions"}
                         onChange={() => updateSettings({ mode: "with-questions" })}
                       />
-                      附题干
+                      显题干
                     </label>
                   </div>
                 </div>
                 <Select
-                  label="附题干答题区布局"
+                  label="显题干答题区布局"
                   value={settings.choiceLayout}
                   disabled={settings.mode !== "with-questions"}
                   onChange={(event) => updateSettings({ choiceLayout: event.target.value as AnswerSheetChoiceLayout })}
