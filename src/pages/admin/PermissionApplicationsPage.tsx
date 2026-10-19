@@ -87,7 +87,6 @@ function PermissionEditor({
       {fields.homeroomClassIds.length > 0 && !fields.roles.includes("headTeacher") && (
         <p className="text-xs text-ink-500">指定班主任班级后，审核通过时会自动授予班主任角色。</p>
       )}
-      </>}
     </div>
   );
 }

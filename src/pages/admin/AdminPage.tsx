@@ -34,6 +34,7 @@ interface AdminItem {
   rosterOnly?: boolean;
   teachingProfileOnly?: boolean;
   personalOnly?: boolean;
+  schoolAdminOnly?: boolean;
 }
 
 type AdminGroupKey = "personal" | "school" | "platform";
@@ -184,6 +185,7 @@ export function AdminPage() {
   const activeRole = currentAffiliation?.role;
   const isPlatformAdmin = isPlatformAdminAccount(teacher);
   const isAdmin = activeRole === "school_admin" || isPlatformAdmin;
+  const isSchoolAdmin = activeRole === "school_admin" && !isPlatformAdmin;
   const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
   const canManageProfiles = teacher ? canManageTeachingProfiles(teacher, currentAffiliation) : false;
 
@@ -191,9 +193,10 @@ export function AdminPage() {
     if (item.schoolOnly && isPersonal) return false;
     if (item.personalOnly && !isPersonal) return false;
     if (item.adminOnly && !isAdmin) return false;
+    if (item.schoolAdminOnly && !isSchoolAdmin) return false;
     if (item.platformOnly && !isPlatformAdmin) return false;
     if (item.rosterOnly && !canManageRoster) return false;
-    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin)) return false;
+    if (item.teachingProfileOnly && (!canManageProfiles || isPlatformAdmin || isSchoolAdmin)) return false;
     return true;
   });
 
