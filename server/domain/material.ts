@@ -32,6 +32,12 @@ function matchFilter(m: Material, filter: ResourceFilter): boolean {
       if (!filter.knowledgePointIds.some((k) => m.knowledgePointIds.includes(k))) return false;
     }
   }
+  if (filter.thoughtMethodIds?.length) {
+    const ids = m.thoughtMethodIds || [];
+    if ((filter.methodLogic || "or") === "and") {
+      if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.grade && m.grade !== filter.grade) return false;
   if (filter.schoolYear && m.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (m.semester || "上学期") !== filter.semester) return false;

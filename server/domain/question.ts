@@ -187,6 +187,12 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
       if (!filter.knowledgePointIds.some((k) => q.knowledgePointIds.includes(k))) return false;
     }
   }
+  if (filter.thoughtMethodIds?.length) {
+    const ids = q.thoughtMethodIds || [];
+    if ((filter.methodLogic || "or") === "and") {
+      if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.difficulty?.length) {
     if (!filter.difficulty.includes(q.difficulty)) return false;
   }

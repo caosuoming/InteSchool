@@ -94,6 +94,7 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getMethodTree: vi.fn(),
   },
 }));
 vi.mock("@/services/reflection", () => ({
@@ -265,6 +266,7 @@ describe("MyResourcesPage resource basket", () => {
       error: null,
     });
 
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({ ...emptyTree, type: "method" });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(emptyTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue({
       ...emptyTree,

@@ -12,6 +12,9 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getMethodTree: vi.fn(),
+    listThoughtMethods: vi.fn(),
+    addThoughtMethod: vi.fn(),
     listDirectoryCatalogs: vi.fn(),
     getDirectoryCatalog: vi.fn(),
     createDirectoryCatalog: vi.fn(),
@@ -98,6 +101,13 @@ describe("KnowledgeTreePage", () => {
 
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
+      id: "root", name: "全部思想方法", type: "method", count: 0, children: [],
+    });
+    vi.mocked(knowledgeService.listThoughtMethods).mockResolvedValue([]);
+    vi.mocked(knowledgeService.addThoughtMethod).mockResolvedValue({
+      id: "method-new", schoolId: "school-1", parentId: null, name: "数形结合", order: 1, level: 0,
+    });
     vi.mocked(knowledgeService.listDirectoryCatalogs).mockImplementation(async (_teacherId, type) => [{
       id: `current-school-1-${type}`,
       schoolId: "school-1",
@@ -236,6 +246,21 @@ describe("KnowledgeTreePage", () => {
       expect(screen.getByRole("button", { name: "添加节点到「全部知识点」" })).toBeInTheDocument();
     });
     expect(screen.queryByText("章节课")).not.toBeInTheDocument();
+  });
+
+  it("switches to an independent thought-method tree and adds a node", async () => {
+    render(
+      <MemoryRouter>
+        <KnowledgeTreePage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "思想方法" }));
+    expect(await screen.findByRole("button", { name: "添加节点到「全部思想方法」" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "添加节点到「全部思想方法」" }));
+    fireEvent.change(screen.getByLabelText("节点名称"), { target: { value: "数形结合" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    await waitFor(() => expect(knowledgeService.addThoughtMethod)
+      .toHaveBeenCalledWith("school-1", null, "数形结合"));
   });
 
   it("adds a knowledge point without loading or selecting a chapter", async () => {

@@ -122,7 +122,7 @@ import {
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "answerSheet" | "basket";
 type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "basket">;
-type LeftTab = "chapter" | "knowledge";
+type LeftTab = "chapter" | "knowledge" | "method";
 type SortKey = "updated" | "created" | "title";
 
 type DocumentMetadataTarget =
@@ -582,10 +582,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
+  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
+  const [checkedMethods, setCheckedMethods] = useState<string[]>([]);
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
+  const [methodLogic, setMethodLogic] = useState<FilterLogic>("or");
 
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   const [resourcePage, setResourcePage] = useState(1);
@@ -658,7 +661,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [donating, setDonating] = useState(false);
   const [batchWorking, setBatchWorking] = useState(false);
   const [batchMergeQuestions, setBatchMergeQuestions] = useState<{ target: Question; source: Question } | null>(null);
-  const [batchDirectoryMode, setBatchDirectoryMode] = useState<"chapter" | "knowledge" | null>(null);
+  const [batchDirectoryMode, setBatchDirectoryMode] = useState<LeftTab | null>(null);
   const [batchDirectoryIds, setBatchDirectoryIds] = useState<string[]>([]);
   const [batchShareLink, setBatchShareLink] = useState("");
   const [batchShareCount, setBatchShareCount] = useState(0);
@@ -956,6 +959,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       chapterLogic,
       knowledgePointIds: activeTab === "answerSheet" ? [] : checkedKnowledge,
       knowledgeLogic,
+      thoughtMethodIds: activeTab === "answerSheet" ? [] : checkedMethods,
+      methodLogic,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
@@ -1077,8 +1082,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     debouncedKeyword,
     checkedChapters,
     checkedKnowledge,
+    checkedMethods,
     chapterLogic,
     knowledgeLogic,
+    methodLogic,
     schoolId,
     selectedGrade,
     selectedYear,
@@ -1091,6 +1098,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     knowledgeService.getChapterTree(schoolId).then(setChapterTree);
     if (activeTab !== "answerSheet") {
       knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
+      knowledgeService.getMethodTree(schoolId).then(setMethodTree);
     }
   }, [activeTab, schoolId]);
 
@@ -1629,10 +1637,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   const noTreeSelection = checkedChapters.length === 0
-    && (activeTab === "answerSheet" || checkedKnowledge.length === 0);
+    && (activeTab === "answerSheet" || (checkedKnowledge.length === 0 && checkedMethods.length === 0));
   const resetDirectorySelections = useCallback(() => {
     setCheckedChapters([]);
     setCheckedKnowledge([]);
+    setCheckedMethods([]);
   }, []);
 
   const coursewareTypeOptions = useMemo(
@@ -1781,6 +1790,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     return annotateTreeWithResourceCounts(knowledgeTree, directoryCountResources, "knowledge");
   }, [directoryCountResources, knowledgeTree]);
 
+  const displayedMethodTree = useMemo(() => {
+    if (!methodTree || !directoryCountResources) return methodTree;
+    return annotateTreeWithResourceCounts(methodTree, directoryCountResources, "method");
+  }, [directoryCountResources, methodTree]);
+
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
   const directoryLeftTab: LeftTab = activeTab === "answerSheet" ? "chapter" : leftTab;
   const activeResourceQuota = activeTab === "basket" || activeTab === "answerSheet"
@@ -1914,6 +1928,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     activeTab,
     checkedChapters,
     checkedKnowledge,
+    checkedMethods,
     keyword,
     onlyUncategorized,
     onlyPendingDocuments,
@@ -2268,7 +2283,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const updateBatchResource = async (
     { resourceType, resourceId }: BatchResourceRef,
-    patch: { chapterIds?: string[]; knowledgePointIds?: string[] },
+    patch: { chapterIds?: string[]; knowledgePointIds?: string[]; thoughtMethodIds?: string[] },
   ) => {
     switch (resourceType) {
       case "question":
@@ -2404,6 +2419,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       case "knowledge":
         openBatchDirectoryPicker("knowledge");
         break;
+      case "method":
+        openBatchDirectoryPicker("method");
+        break;
       case "folder":
         openCreateFolderFromSelection();
         break;
@@ -2459,7 +2477,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
-  const openBatchDirectoryPicker = (mode: "chapter" | "knowledge") => {
+  const openBatchDirectoryPicker = (mode: LeftTab) => {
     setBatchDirectoryIds([]);
     setBatchDirectoryMode(mode);
 
@@ -2473,6 +2491,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       return;
     }
 
+    if (mode === "method") {
+      if (methodTree) return;
+      void knowledgeService.getMethodTree(schoolId)
+        .then(setMethodTree)
+        .catch((error) => toast.error("加载思想方法目录失败", error instanceof Error ? error.message : undefined));
+      return;
+    }
     if (knowledgeTree) return;
     void knowledgeService.getKnowledgeTree(schoolId)
       .then(setKnowledgeTree)
@@ -2483,7 +2508,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const handleApplyBatchDirectory = async () => {
     if (!batchDirectoryMode || batchDirectoryIds.length === 0) {
-      toast.warning(batchDirectoryMode === "chapter" ? "请选择修改后的章节课" : "请选择要新增的知识点");
+      toast.warning(batchDirectoryMode === "chapter" ? "请选择修改后的章节课" : batchDirectoryMode === "knowledge" ? "请选择要新增的知识点" : "请选择要新增的思想方法");
       return;
     }
 
@@ -2497,6 +2522,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         if (batchDirectoryMode === "chapter") {
           return updateBatchResource(ref, { chapterIds: [...batchDirectoryIds] });
         }
+        if (batchDirectoryMode === "method") {
+          const thoughtMethodIds = appendUniqueIds(resource.thoughtMethodIds || [], batchDirectoryIds);
+          return updateBatchResource(ref, { thoughtMethodIds });
+        }
         const knowledgePointIds = appendUniqueIds(resource.knowledgePointIds, batchDirectoryIds);
         return updateBatchResource(ref, { knowledgePointIds });
       }));
@@ -2509,7 +2538,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         if (batchDirectoryMode === "chapter") {
           toast.success("已统一修改章节课", `已更新 ${succeededCount} 个资源，原章节课关联已替换`);
         } else {
-          toast.success("已新增统一知识点", `已更新 ${succeededCount} 个资源，原有关联保持不变`);
+          toast.success(batchDirectoryMode === "knowledge" ? "已新增统一知识点" : "已新增统一思想方法", `已更新 ${succeededCount} 个资源，原有关联保持不变`);
         }
         setBatchDirectoryMode(null);
         setBatchDirectoryIds([]);
@@ -3369,8 +3398,19 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 </span>
                 知识点
               </button>
+              <button
+                onClick={() => setLeftTab("method")}
+                aria-label="思想方法"
+                className={cn(
+                  "flex-1 px-2 py-1.5 rounded text-sm font-medium transition-colors flex items-center justify-center gap-1.5",
+                  leftTab === "method" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
+                )}
+              >
+                <Lightbulb className="w-3.5 h-3.5" />
+                思想方法
+              </button>
             </div>
-            {(directoryLeftTab === "chapter" ? displayedChapterTree : displayedKnowledgeTree) ? (
+            {(directoryLeftTab === "chapter" ? displayedChapterTree : directoryLeftTab === "knowledge" ? displayedKnowledgeTree : displayedMethodTree) ? (
               directoryLeftTab === "chapter" ? (
                 <SearchableTree
                   data={displayedChapterTree!}
@@ -3386,7 +3426,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   onLogicChange={setChapterLogic}
                   onReset={resetDirectorySelections}
                 />
-              ) : (
+              ) : directoryLeftTab === "knowledge" ? (
                 <SearchableTree
                   data={displayedKnowledgeTree!}
                   title="知识点目录"
@@ -3399,6 +3439,21 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   showLogicSelector
                   logic={knowledgeLogic}
                   onLogicChange={setKnowledgeLogic}
+                  onReset={resetDirectorySelections}
+                />
+              ) : (
+                <SearchableTree
+                  data={displayedMethodTree!}
+                  title="思想方法目录"
+                  showTitle={false}
+                  accent="teal"
+                  checkable
+                  checkedIds={checkedMethods}
+                  onCheck={setCheckedMethods}
+                  searchPlaceholder="搜索思想方法..."
+                  showLogicSelector
+                  logic={methodLogic}
+                  onLogicChange={setMethodLogic}
                   onReset={resetDirectorySelections}
                 />
               )
@@ -4283,6 +4338,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             {resourceSelections.size >= 2 && <option value="folder">创建专辑</option>}
             <option value="chapter">统一修改章节课</option>
             <option value="knowledge">新增统一知识点</option>
+            <option value="method">新增统一的思想方法</option>
           </select>
         </div>
       )}
@@ -4339,7 +4395,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           setBatchDirectoryMode(null);
           setBatchDirectoryIds([]);
         }}
-        title={batchDirectoryMode === "chapter" ? "统一修改章节课" : "新增统一知识点"}
+        title={batchDirectoryMode === "chapter" ? "统一修改章节课" : batchDirectoryMode === "knowledge" ? "新增统一知识点" : "新增统一的思想方法"}
         description={batchDirectoryMode === "chapter"
           ? `所选章节课会替换 ${resourceSelections.size} 个资源原有的章节课关联。`
           : `所选目录会追加到 ${resourceSelections.size} 个资源，原有关联不会被覆盖。`}
@@ -4384,6 +4440,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             ) : (
               <div className="flex justify-center py-10"><Spinner size={20} /></div>
             )
+          ) : batchDirectoryMode === "method" ? (
+            displayedMethodTree ? (
+              <SearchableTree
+                editable
+                data={displayedMethodTree}
+                onDataChange={setMethodTree}
+                title="选择思想方法"
+                accent="teal"
+                checkable
+                checkedIds={batchDirectoryIds}
+                onCheck={setBatchDirectoryIds}
+                searchPlaceholder="搜索思想方法..."
+              />
+            ) : <div className="flex justify-center py-10"><Spinner size={20} /></div>
           ) : displayedKnowledgeTree ? (
             <SearchableTree
               editable

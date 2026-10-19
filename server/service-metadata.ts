@@ -913,6 +913,7 @@ export const serviceParameters = {
     "listKnowledgePoints": [
       "schoolId"
     ],
+    "listThoughtMethods": ["schoolId"],
     "getAliasIds": [
       "knowledgePointId",
       "schoolId"
@@ -923,6 +924,7 @@ export const serviceParameters = {
     "getKnowledgeTree": [
       "schoolId"
     ],
+    "getMethodTree": ["schoolId"],
     "listDirectoryCatalogs": [
       "teacherId",
       "type"
@@ -985,6 +987,7 @@ export const serviceParameters = {
       "name",
       "questionCount"
     ],
+    "addThoughtMethod": ["schoolId", "parentId", "name"],
     "getChapterPath": [
       "chapterId"
     ],

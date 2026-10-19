@@ -57,7 +57,7 @@ import { treeNameMap } from "@/lib/basket-audience";
 
 type Mode = "manage" | "use";
 type SortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
-type LeftTab = "chapter" | "knowledge";
+type LeftTab = "chapter" | "knowledge" | "method";
 type TrainingStatusFilter = "all" | "trained" | "untrained";
 
 const difficultyOptions = [
@@ -194,10 +194,13 @@ export default function QuestionBankPage({
 
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
+  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
+  const [checkedMethods, setCheckedMethods] = useState<string[]>([]);
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
+  const [methodLogic, setMethodLogic] = useState<FilterLogic>("or");
   const [includeDescendants, setIncludeDescendants] = useState(true);
   const [noChapter, setNoChapter] = useState(false);
   const [noKnowledge, setNoKnowledge] = useState(false);
@@ -303,6 +306,7 @@ export default function QuestionBankPage({
   const hasFilter =
     checkedChapters.length > 0 ||
     checkedKnowledge.length > 0 ||
+    checkedMethods.length > 0 ||
     selectedDifficulties.length > 0 ||
     selectedTypes.length > 0 ||
     selectedGrade ||
@@ -339,6 +343,8 @@ export default function QuestionBankPage({
       chapterLogic,
       knowledgePointIds: checkedKnowledge,
       knowledgeLogic,
+      thoughtMethodIds: checkedMethods,
+      methodLogic,
       noChapter,
       noKnowledge,
       difficulty: selectedDifficulties,
@@ -439,7 +445,7 @@ export default function QuestionBankPage({
     setTotalQuestionCount(sorted.length);
     setLoading(false);
   }, [
-    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic,
+    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, chapterLogic, knowledgeLogic, methodLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
@@ -455,15 +461,17 @@ export default function QuestionBankPage({
   useEffect(() => {
     if (!teacher) return;
     const load = async () => {
-      const [ch, kp, bs, allClasses, stus] = await Promise.all([
+      const [ch, kp, methods, bs, allClasses, stus] = await Promise.all([
         knowledgeService.getChapterTree(teacher.schoolId!),
         knowledgeService.getKnowledgeTree(teacher.schoolId!),
+        knowledgeService.getMethodTree(teacher.schoolId!),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
       ]);
       setChapterTree(ch);
       setKnowledgeTree(kp);
+      setMethodTree(methods);
       setBaskets(bs.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })));
       setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
@@ -679,6 +687,7 @@ export default function QuestionBankPage({
     setSearchFields([]);
     setCheckedChapters([]);
     setCheckedKnowledge([]);
+    setCheckedMethods([]);
     setNoChapter(false);
     setNoKnowledge(false);
     setSelectedDifficulties([]);
@@ -845,9 +854,9 @@ export default function QuestionBankPage({
   };
 
   // 获取当前显示的树
-  const displayTree = leftTab === "chapter" ? chapterTree : knowledgeTree;
-  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : checkedKnowledge;
-  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : setCheckedKnowledge;
+  const displayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : methodTree;
+  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : checkedMethods;
+  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : setCheckedMethods;
   const handleIncludeDescendantsChange = (next: boolean) => {
     setIncludeDescendants(next);
     setCheckedChapters((current) =>
@@ -855,6 +864,9 @@ export default function QuestionBankPage({
     );
     setCheckedKnowledge((current) =>
       adjustDirectorySelectionForDescendants(knowledgeTree, current, next),
+    );
+    setCheckedMethods((current) =>
+      adjustDirectorySelectionForDescendants(methodTree, current, next),
     );
   };
 
@@ -931,7 +943,7 @@ export default function QuestionBankPage({
         storageKey="inteschool.question-bank.directory-width"
         defaultWidth={360}
         collapsed={directoryCollapsed}
-        separatorLabel="调整题库章节课与知识点目录宽度"
+        separatorLabel="调整题库章节课、知识点与思想方法目录宽度"
         sidebar={(
           <Card className="p-0 overflow-hidden sticky top-4 h-fit">
               {/* Tab 头 */}
@@ -965,13 +977,27 @@ export default function QuestionBankPage({
                       知识点
                     </span>
                   </button>
+                  <button
+                    onClick={() => setLeftTab("method")}
+                    className={cn(
+                      "flex-1 px-2 py-2.5 text-sm font-medium transition-colors",
+                      leftTab === "method"
+                        ? "bg-teal-50 text-teal-800 border-b-2 border-teal-500"
+                        : "text-ink-500 hover:text-ink-700",
+                    )}
+                  >
+                    <span className="flex items-center justify-center gap-1.5">
+                      <Lightbulb className="w-3.5 h-3.5" />
+                      思想方法
+                    </span>
+                  </button>
                 </div>
                 <button
                   type="button"
                   onClick={() => setDirectoryCollapsed(true)}
                   className="px-3 text-ink-400 hover:text-gold-700 hover:bg-gold-50 transition-colors border-l border-ink-100"
                   title="向左折叠目录"
-                  aria-label="向左折叠章节课与知识点目录"
+                  aria-label="向左折叠章节课、知识点与思想方法目录"
                 >
                   <PanelLeftClose className="w-4 h-4" />
                 </button>
@@ -982,7 +1008,7 @@ export default function QuestionBankPage({
                 <SearchableTree
                   title=""
                   accent={leftTab === "chapter" ? "gold" : "teal"}
-                  data={displayTree ?? { id: "root", name: "", type: leftTab === "chapter" ? "chapter" : "knowledge", count: 0, children: [] }}
+                  data={displayTree ?? { id: "root", name: "", type: leftTab, count: 0, children: [] }}
                   checkable
                   checkedIds={displayCheckedIds}
                   onCheck={setDisplayCheckedIds}
@@ -990,14 +1016,16 @@ export default function QuestionBankPage({
                   includeDescendantCounts={includeDescendants}
                   showDoneCount={selectedStudentIds.length > 0}
                   expandLevel={1}
-                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : "搜索知识点..."}
+                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : leftTab === "knowledge" ? "搜索知识点..." : "搜索思想方法..."}
                   showLogicSelector
-                  logic={leftTab === "chapter" ? chapterLogic : knowledgeLogic}
+                  logic={leftTab === "chapter" ? chapterLogic : leftTab === "knowledge" ? knowledgeLogic : methodLogic}
                   onLogicChange={(logic) => {
                     if (leftTab === "chapter") {
                       setChapterLogic(logic);
-                    } else {
+                    } else if (leftTab === "knowledge") {
                       setKnowledgeLogic(logic);
+                    } else {
+                      setMethodLogic(logic);
                     }
                   }}
                   headerActions={(
@@ -1029,7 +1057,7 @@ export default function QuestionBankPage({
                 title="展开目录"
               >
                 <PanelLeftOpen className="w-3.5 h-3.5" />
-                展开章节课与知识点目录
+                展开章节课、知识点与思想方法目录
               </Button>
             </div>
           )}

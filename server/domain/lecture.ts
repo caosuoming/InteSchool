@@ -86,6 +86,12 @@ function matchFilter(l: Lecture, filter: LectureFilter): boolean {
       if (!filter.knowledgePointIds.some((k) => ids.includes(k))) return false;
     }
   }
+  if (filter.thoughtMethodIds?.length) {
+    const ids = l.thoughtMethodIds || [];
+    if ((filter.methodLogic || "or") === "and") {
+      if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.grade && l.grade !== filter.grade) return false;
   if (filter.schoolYear && l.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (l.semester || "上学期") !== filter.semester) return false;

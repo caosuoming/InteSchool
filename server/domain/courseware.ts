@@ -27,6 +27,12 @@ function matchFilter(c: Courseware, filter: ResourceFilter): boolean {
       if (!filter.knowledgePointIds.some((k) => c.knowledgePointIds.includes(k))) return false;
     }
   }
+  if (filter.thoughtMethodIds?.length) {
+    const ids = c.thoughtMethodIds || [];
+    if ((filter.methodLogic || "or") === "and") {
+      if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.grade && c.grade !== filter.grade) return false;
   if (filter.schoolYear && c.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (c.semester || "上学期") !== filter.semester) return false;
