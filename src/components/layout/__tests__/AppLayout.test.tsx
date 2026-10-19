@@ -153,7 +153,7 @@ describe("AppLayout", () => {
     ]);
   });
 
-  it("shows 我的教务 immediately after 集体备课", () => {
+  it("shows 我的教务 immediately after 集智教研", () => {
     const managerAffiliation: TeacherAffiliation = {
       ...affiliation,
       roles: ["gradeLeader"],
@@ -182,10 +182,12 @@ describe("AppLayout", () => {
     const nav = container.querySelector("nav");
     expect(nav).not.toBeNull();
     const labels = Array.from(nav!.children).map((item) => item.textContent?.trim());
-    const prepIndex = labels.indexOf("集体备课");
+    const prepIndex = labels.indexOf("集智教研");
     const academicsIndex = labels.indexOf("我的教务");
 
     expect(screen.queryByText("我的考试")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "集智教研" })).toHaveAttribute("href", "/prep");
+    expect(screen.queryByRole("link", { name: "集体备课" })).not.toBeInTheDocument();
     expect(prepIndex).toBeGreaterThanOrEqual(0);
     expect(academicsIndex).toBe(prepIndex + 1);
   });
