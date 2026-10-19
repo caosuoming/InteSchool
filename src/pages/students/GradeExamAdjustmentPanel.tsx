@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Download, History, Printer, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
+import { Copy, Download, History, Printer, Save, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
@@ -16,6 +16,9 @@ import type {
 interface GradeExamAdjustmentPanelProps {
   exam: GradeExam;
   onExamUpdated: (exam: GradeExam) => void;
+  onSaveStatistics?: () => Promise<void>;
+  statisticsSavedAt?: string;
+  statisticsSaving?: boolean;
   onDownloadTablesOneToFive?: () => Promise<void>;
   onDownloadClassStatistics?: () => Promise<void>;
   onPrintTablesOneToFive?: () => void;
@@ -134,6 +137,9 @@ function visibleSubjectsForRecord(exam: GradeExam, record: GradeScoreRecord): st
 export function GradeExamAdjustmentPanel({
   exam,
   onExamUpdated,
+  onSaveStatistics,
+  statisticsSavedAt,
+  statisticsSaving = false,
   onDownloadTablesOneToFive,
   onDownloadClassStatistics,
   onPrintTablesOneToFive,
@@ -457,6 +463,12 @@ export function GradeExamAdjustmentPanel({
             </div>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
+            {statisticsSavedAt && <span className="self-center text-xs text-emerald-700">已独立保存：{new Date(statisticsSavedAt).toLocaleString("zh-CN")}</span>}
+            {onSaveStatistics && (
+              <Button variant="gold" disabled={statisticsSaving || readOnly} loading={statisticsSaving} onClick={() => void onSaveStatistics()}>
+                <Save className="h-4 w-4" />保存本次成绩统计
+              </Button>
+            )}
             {onDownloadTablesOneToFive && (
               <Button
                 variant="outline"

@@ -146,6 +146,64 @@ describe("document block parser", () => {
     });
   });
 
+  it("extracts Word math-variable choice labels on consecutive lines", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "1. 过点 $A(1,\\sqrt{3})$、$B(4,2\\sqrt{3})$ 的直线倾斜角为（ ）",
+        '<i class="math-variable">A</i>.30°　<i class="math-variable">B</i>.60°',
+        '<i class="math-variable">C</i>.120°　<i class="math-variable">D</i>.150°',
+        "答案：A",
+        "解析：斜率为 $\\sqrt{3}/3$。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "single",
+      content: "1. 过点 $A(1,\\sqrt{3})$、$B(4,2\\sqrt{3})$ 的直线倾斜角为（ ）",
+      options: ["30°", "60°", "120°", "150°"],
+      answer: "A",
+      analysis: "斜率为 $\\sqrt{3}/3$。",
+    });
+  });
+
+  it("extracts LaTeX-rendered choice labels while keeping option formulas", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "2. 角的大小为（ ） $A$. $30^\\circ$ $B$. $60^\\circ$",
+        "$C$. $120^\\circ$ $\\mathrm{D}$. $150^\\circ$",
+        "答案：B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "2. 角的大小为（ ）",
+      options: ["$30^\\circ$", "$60^\\circ$", "$120^\\circ$", "$150^\\circ$"],
+      answer: "B",
+    });
+  });
+
+  it("does not mistake inline mathematical variables for option labels", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 已知 $A$ 是点、$B$ 是线段且 $C$ 是角，求 $D$ 的值。",
+        "已知 $A$ 和 $B$ 满足上述条件。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      options: [],
+    });
+  });
+
   it("recognizes mixed bare and punctuated inline option labels", () => {
     const blocks = parseDocumentBlocks(
       [
@@ -851,6 +909,58 @@ describe("document block parser", () => {
     ]);
   });
 
+  it("splits numbered knowledge-point sections into independent knowledge blocks", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "第一章 集合",
+        "知识点一：集合的概念",
+        "集合中的元素具有确定性。",
+        "知识点二、集合的表示",
+        "列举法和描述法均可表示集合。",
+        "知识点三",
+        "集合元素不能重复。",
+        "例1 求集合 A 的元素个数。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "groupTitle", "knowledge", "knowledge", "knowledge", "question",
+    ]);
+    expect(blocks[0].content).toBe("第一章 集合");
+    expect(blocks.slice(1, 4).map((block) => block.content)).toEqual([
+      "知识点一：集合的概念\n集合中的元素具有确定性。",
+      "知识点二、集合的表示\n列举法和描述法均可表示集合。",
+      "知识点三\n集合元素不能重复。",
+    ]);
+  });
+
+  it.each([
+    "知识点1 基本概念",
+    "知 识 点 ２：基本性质",
+    "知识点第十、综合应用",
+    "【知识点三】集合运算",
+    "［知识点４］集合关系",
+  ])("recognizes numbered knowledge-point marker %s", (marker) => {
+    const blocks = parseDocumentBlocks(
+      ["引入 基础说明。", "概念介绍。", marker, "后续内容。"].join("\n"),
+      config,
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual(["knowledge", "knowledge"]);
+    expect(blocks[1].content).toBe(`${marker}\n后续内容。`);
+  });
+
+  it("does not split ordinary sentences mentioning knowledge points", () => {
+    const blocks = parseDocumentBlocks(
+      ["知识点一共有三类，需要依次学习。", "本段说明知识点一的含义。"].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ type: "knowledge" });
+  });
+
   it("splits numbered 考法 sections into separate knowledge blocks between questions", () => {
     const blocks = parseDocumentBlocks(
       [
@@ -1328,6 +1438,49 @@ describe("document block parser", () => {
       questionType: "comprehensive",
       answer: "（1）A （2）BC",
     });
+  });
+
+  it.each([
+    ["数学", "essay"],
+    ["物理", "comprehensive"],
+  ])("uses %s subject-specific type for mixed shared-stem sub-questions", (subject, expectedType) => {
+    const blocks = parseDocumentBlocks(
+      [
+        "3. 阅读材料并完成下面两个小题。",
+        "（1）第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+        "（2）（多选）第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+        "答案：（1）A （2）BC",
+      ].join("\n"),
+      { ...config, subject },
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: expectedType,
+      answer: "（1）A （2）BC",
+    });
+  });
+
+  it("keeps math mixed-type extension questions intact without comprehensive labeling", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "例2 如图所示，已知正四面体 ABCD 的棱长为 1。",
+        "延伸探究1 BC 与 CD 的夹角等于（ ） A. 30° B. 60° C. 150° D. 120°",
+        "延伸探究2 计算该正四面体的体积。",
+        "答案：D",
+        "1/6",
+      ].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      questionType: "essay",
+      answer: "D\n1/6",
+    });
+    expect(blocks[0].content).toContain("延伸探究2");
   });
 
   it("treats 延伸探究 sub-questions after a shared stem as one comprehensive question", () => {

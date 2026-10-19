@@ -46,6 +46,14 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("normalizes malformed piecewise LaTeX carried by imported Word text runs", async () => {
+    const data = await makeDocx(String.raw`<w:p><w:r><w:t>联立 $\left\begin{cases}x=1\\y=2\end{cases}\right.$。</w:t></w:r></w:p>`);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`联立 $\begin{cases}x=1\\y=2\end{cases}$。`,
+    );
+  });
+
   it("decodes legacy Symbol-font subsets in multiple-choice questions and solutions", async () => {
     const data = await makeDocx(`
       <w:p><w:r><w:t>A. M</w:t></w:r><w:r><w:sym w:font="Symbol" w:char="F0CC"/></w:r><w:r><w:t>Q</w:t></w:r></w:p>
@@ -68,6 +76,16 @@ describe("DOCX structure-aware text extraction", () => {
 
     await expect(extractDocxStructuredText(data)).resolves.toBe(
       "若直线$l_{1}:ax+(1-a)y=3$与$l_{2}:(a-1)x+(2a+3)y=2$互相垂直，则实数a=。",
+    );
+  });
+
+  it("normalizes plain geometry formulas in extracted DOCX paragraphs", async () => {
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>圆C与直线相交于A,B两点，且|AB|=6，圆的方程(x-2)^2+(y-3)^2=1。</w:t></w:r></w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "圆$C$与直线相交于$A,B$两点，且$|AB|=6$，圆的方程$(x-2)^2+(y-3)^2=1$。",
     );
   });
 
@@ -272,6 +290,40 @@ describe("DOCX structure-aware text extraction", () => {
 
     await expect(extractDocxStructuredText(data)).resolves.toBe(
       "$a{}_{n}+x{}^{2}$",
+    );
+  });
+
+  it("preserves a nested exponent encoded as a superscript EQ field result", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>所以2</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq 2\\s\\up0(n－1)－1</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2n-1-1</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "所以2${}^{2{}^{n-1}-1}$",
+    );
+  });
+
+  it("does not invent an outer exponent for mixed-alignment EQ field results", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+        <w:r><w:instrText>eq 2\\s\\up0(n)</w:instrText></w:r>
+        <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+        <w:r><w:t>2</w:t></w:r>
+        <w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>n</w:t></w:r>
+        <w:r><w:fldChar w:fldCharType="end"/></w:r>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`$2{}^{n}$`,
     );
   });
 
