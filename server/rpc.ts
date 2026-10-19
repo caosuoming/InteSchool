@@ -39,6 +39,7 @@ const EXAM_MANAGER_MUTATIONS = new Set([
   "saveCohortSettings",
   "copyCohortSettings",
   "updateExamSettings",
+  "saveExamStatistics",
   "updateExamMetadata",
   "setExamAccess",
   "createExamOneTimePassword",
