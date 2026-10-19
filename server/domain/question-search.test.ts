@@ -162,3 +162,19 @@ describe("question pagination", () => {
     expect(searchQuestions).not.toHaveBeenCalled();
   });
 });
+
+describe("question category search", () => {
+  it("matches primary legacy categories and additive categories independently", async () => {
+    const questions = [
+      question("legacy", { category: "practice" }),
+      question("multi-method", { category: "exam", categories: ["exam", "一题多解"] }),
+      question("multi-part", { categories: ["一题多问"] }),
+    ];
+    await runWithState(state(questions), async () => {
+      expect((await questionService.listQuestions({ category: ["practice"] })).map((item) => item.id)).toEqual(["legacy"]);
+      expect((await questionService.listQuestions({ category: ["一题多解"] })).map((item) => item.id)).toEqual(["multi-method"]);
+      expect((await questionService.listQuestions({ category: ["一题多问", "exam"] })).map((item) => item.id))
+        .toEqual(["multi-method", "multi-part"]);
+    });
+  });
+});

@@ -1562,8 +1562,10 @@ export interface Question {
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
-  /** 学校“题类”设置中的值。 */
+  /** 学校“题类”设置中的值（旧版单值，兼容已有题目）。 */
   category?: string;
+  /** 可叠加的题类，包括拆解时自动识别并经人工确认的题类。 */
+  categories?: string[];
   isShared: boolean;
   /** 查重哈希：基于题干+选项+答案计算，用于入库查重 */
   duplicateHash?: string;
@@ -2445,6 +2447,7 @@ export interface DuplicateQuestionMergeFields {
 export interface ExtractedQuestionItem {
   id: string;
   type: QuestionType;
+  categories?: string[];
   stem: string;
   options?: string[];
   answer: string;

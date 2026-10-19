@@ -125,6 +125,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     remark: question.remark,
     sourceType: question.sourceType ?? "",
     category: question.category ?? "",
+    categories: (question.categories || []).filter((value) => value !== question.category),
     grade: question.grade ?? "",
     schoolYear: question.schoolYear ?? "",
     semester: question.semester ?? "上学期",
@@ -207,6 +208,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
         remark: form.remark,
         sourceType: form.sourceType,
         category: form.category,
+        categories: [...new Set([form.category, ...form.categories].filter(Boolean))],
         grade: form.grade,
         schoolYear: form.schoolYear,
         semester: form.semester as ResourceSemester,
@@ -281,6 +283,21 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           )}
           onChange={(e) => update("category", e.target.value as any)}
         />
+        <fieldset className="rounded-md border border-ink-200 p-2">
+          <legend className="px-1 text-xs font-medium text-ink-700">附加题类（可多选）</legend>
+          {categoryOptions.filter((option) => option.value !== form.category).map((option) => (
+            <label key={option.value} className="flex items-center gap-1.5 text-xs text-ink-700">
+              <input
+                type="checkbox"
+                checked={form.categories.includes(option.value)}
+                onChange={(event) => update("categories", event.target.checked
+                  ? [...form.categories, option.value]
+                  : form.categories.filter((item) => item !== option.value))}
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
         <Select
           label="来源"
           value={form.sourceType}

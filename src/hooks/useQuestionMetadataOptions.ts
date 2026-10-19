@@ -1,3 +1,4 @@
+import { AUTO_QUESTION_CATEGORIES } from "@/lib/question-category-detection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { settingsService } from "@/services/settings";
 import type { ResourceSelectOption } from "@/hooks/useSchoolResourceOptions";
@@ -25,6 +26,14 @@ function configuredOptions(
   return enabled.length > 0 ? enabled : fallback;
 }
 
+function withAutoQuestionCategories(options: ResourceSelectOption[]): ResourceSelectOption[] {
+  return [
+    ...options,
+    ...AUTO_QUESTION_CATEGORIES.filter((label) => !options.some((option) => option.value === label))
+      .map((label) => ({ value: label, label })),
+  ];
+}
+
 export function includeCurrentMetadataOption(
   options: ResourceSelectOption[],
   currentValue?: string,
@@ -44,7 +53,7 @@ export function useQuestionMetadataOptions(schoolId?: string | null) {
     setReady(false);
     if (!schoolId) {
       setSourceOptions(DEFAULT_SOURCE_OPTIONS);
-      setCategoryOptions(DEFAULT_CATEGORY_OPTIONS);
+      setCategoryOptions(withAutoQuestionCategories(DEFAULT_CATEGORY_OPTIONS));
       setReady(true);
       return () => { cancelled = true; };
     }
@@ -58,12 +67,12 @@ export function useQuestionMetadataOptions(schoolId?: string | null) {
     ]).then(([sources, categories]) => {
       if (cancelled) return;
       setSourceOptions(configuredOptions(sources, DEFAULT_SOURCE_OPTIONS));
-      setCategoryOptions(configuredOptions(categories, DEFAULT_CATEGORY_OPTIONS));
+      setCategoryOptions(withAutoQuestionCategories(configuredOptions(categories, DEFAULT_CATEGORY_OPTIONS)));
       setReady(true);
     }).catch(() => {
       if (cancelled) return;
       setSourceOptions(DEFAULT_SOURCE_OPTIONS);
-      setCategoryOptions(DEFAULT_CATEGORY_OPTIONS);
+      setCategoryOptions(withAutoQuestionCategories(DEFAULT_CATEGORY_OPTIONS));
       setReady(true);
     });
 

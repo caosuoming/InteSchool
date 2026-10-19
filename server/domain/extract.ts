@@ -1,3 +1,4 @@
+import { questionCategories } from "../../src/lib/question-category-detection.js";
 import type {
   DuplicateQuestionFieldChoice,
   DuplicateQuestionMergeFields,
@@ -116,6 +117,7 @@ export const extractService = {
             answer: mergeTextField(target.answer, item.answer, fields.answer, "答案2"),
             analysis: mergeTextField(target.analysis, item.analysis, fields.analysis, "解析2"),
             summary: mergeTextField(target.summary, item.summary, fields.summary, "总结2"),
+            categories: [...new Set([...questionCategories(target), ...(item.categories || [])])],
           },
           "add",
         );
@@ -149,6 +151,7 @@ export const extractService = {
           semester,
           sourceType: questionSourceType,
           category: questionCategory,
+          categories: [...new Set([questionCategory, ...(item.categories || [])].filter((value): value is string => Boolean(value)))],
           difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
           recommendation: 3,
           duplicateDecision:

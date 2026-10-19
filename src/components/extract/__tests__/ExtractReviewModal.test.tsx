@@ -138,6 +138,47 @@ describe("ExtractReviewModal", () => {
     ]);
   });
 
+  it("highlights detected categories, allows rejecting a suggestion and persists the confirmed selection", async () => {
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        questionCategory="practice"
+        initialBlocks={[{
+          id: "block-question",
+          type: "question",
+          content: "（1）计算（2）证明（3）讨论",
+          order: 0,
+          status: "new",
+          questionType: "essay",
+          answer: "答案略",
+          analysis: "解法一：代入计算。解法二：构造辅助线。",
+          difficulty: 3,
+        }]}
+      />,
+    );
+    const multiSolution = screen.getByRole("checkbox", { name: "第1题：一题多解" });
+    const multiPart = screen.getByRole("checkbox", { name: "第1题：一题多问" });
+    expect(multiSolution).toBeChecked();
+    expect(multiPart).toBeChecked();
+    expect(screen.getAllByText("自动识别")).toHaveLength(2);
+    await user.click(multiPart);
+    expect(multiPart).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: /确认入库/ }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).toEqual(["一题多解"]);
+    expect(mocks.confirmExtract.mock.calls[0][10]).toBe("practice");
+  });
+
   it("uses one block column with controls inside each block", async () => {
     render(
       <ExtractReviewModal
