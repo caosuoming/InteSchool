@@ -6,6 +6,7 @@ import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { extractDocxStructuredText } from "./docx-structured-text.js";
 import { convertMathTypeDocxToOmml } from "./mathtype-docx.js";
+import { normalizeLegacyOmmlMathText } from "../../src/lib/legacy-omml-formulas.js";
 import {
   documentImageInlineStyle,
   officeMetafileInlineStyle,
@@ -119,6 +120,18 @@ function documentPreviewWarnings(
 }
 
 function renderMathAwareHtml(text: string): string {
+  const renderLatex = (latex: string): string => katex.renderToString(latex.trim(), {
+    throwOnError: false,
+    strict: false,
+    output: "htmlAndMathml",
+  });
+  // Preserve line breaks *inside* equation systems. Splitting the document
+  // into paragraphs first would split a single $...$ formula across lines.
+  const multilineFormulaHtml: string[] = [];
+  const protectedText = text.replace(/\$([^$]*\n[^$]*)\$/g, (_match, latex: string) => {
+    const index = multilineFormulaHtml.push(renderLatex(latex)) - 1;
+    return `\uE200${index}\uE201`;
+  });
   const renderLine = (line: string): string => {
     const structuredRuns: string[] = [];
     const protectedLine = line.replace(
@@ -140,11 +153,7 @@ function renderMathAwareHtml(text: string): string {
       const latex = match[1]?.trim();
       if (latex) {
         parts.push(
-          katex.renderToString(latex, {
-            throwOnError: false,
-            strict: false,
-            output: "htmlAndMathml",
-          }),
+          renderLatex(latex),
         );
       } else {
         const source = safePreviewImageSource(match[3] || "");
@@ -164,7 +173,7 @@ function renderMathAwareHtml(text: string): string {
     );
   };
 
-  return splitDocumentTableSegments(text)
+  return splitDocumentTableSegments(protectedText)
     .map((segment) => {
       if (segment.type === "table") {
         return serializeDocumentTable(
@@ -177,7 +186,10 @@ function renderMathAwareHtml(text: string): string {
         .map((line) => `<p>${line ? renderLine(line) : "<br>"}</p>`)
         .join("");
     })
-    .join("");
+    .join("")
+    .replace(/\uE200(\d+)\uE201/g, (_match, index: string) =>
+      multilineFormulaHtml[Number(index)] || ""
+    );
 }
 
 export async function extractDocument(
@@ -195,7 +207,7 @@ export async function extractDocument(
       const raw = structuredText
         ? { value: "", messages: [] as Array<{ message: string }> }
         : await mammoth.extractRawText({ buffer: convertedData });
-      const text = (structuredText || raw.value.trim()).normalize("NFC");
+      const text = normalizeLegacyOmmlMathText((structuredText || raw.value.trim()).normalize("NFC"));
       return {
         text,
         html: "",
@@ -222,8 +234,8 @@ export async function extractDocument(
       ),
       extractDocxStructuredText(convertedData, options.docxImageUrl),
     ]);
-    const text = (structuredText || raw.value.trim()).normalize("NFC");
-    const hasRichContent = /\$[^$\n]+\$|!\[[^\]]*\]\([^)]+\)|<(?:sup|sub)>|<i\s+class=["']math-(?:variable|vector)["']>|<table\b[^>]*\bdocument-table\b/i.test(text);
+    const text = normalizeLegacyOmmlMathText((structuredText || raw.value.trim()).normalize("NFC"));
+    const hasRichContent = /\$[^$]+\$|!\[[^\]]*\]\([^)]+\)|<(?:sup|sub)>|<i\s+class=["']math-(?:variable|vector)["']>|<table\b[^>]*\bdocument-table\b/i.test(text);
     const mammothWarnings = documentPreviewWarnings(
       [...raw.messages, ...rendered.messages],
       hasRichContent,

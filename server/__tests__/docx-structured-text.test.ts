@@ -46,6 +46,14 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("normalizes malformed piecewise LaTeX carried by imported Word text runs", async () => {
+    const data = await makeDocx(String.raw`<w:p><w:r><w:t>联立 $\left\begin{cases}x=1\\y=2\end{cases}\right.$。</w:t></w:r></w:p>`);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`联立 $\begin{cases}x=1\\y=2\end{cases}$。`,
+    );
+  });
+
   it("decodes legacy Symbol-font subsets in multiple-choice questions and solutions", async () => {
     const data = await makeDocx(`
       <w:p><w:r><w:t>A. M</w:t></w:r><w:r><w:sym w:font="Symbol" w:char="F0CC"/></w:r><w:r><w:t>Q</w:t></w:r></w:p>
