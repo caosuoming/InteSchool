@@ -279,6 +279,53 @@ describe("auth service", () => {
     }, true);
   });
 
+  it("reads identity and access policies and updates managed teaching and account permissions", async () => {
+    const registrationContext = { mode: "open" };
+    const identityContext = { phone: "13800000000", teacher: true, parent: false };
+    const accessSettings = { registrationMode: "open", schoolCreationMode: "review" } as const;
+    const updated = teacher({ name: "新姓名" });
+    apiMocks.apiRequest
+      .mockResolvedValueOnce(registrationContext)
+      .mockResolvedValueOnce(identityContext)
+      .mockResolvedValueOnce(accessSettings)
+      .mockResolvedValueOnce(accessSettings)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(updated)
+      .mockResolvedValueOnce(updated);
+
+    await expect(authService.getRegistrationContext("138 00000000")).resolves.toEqual(registrationContext);
+    await expect(authService.getIdentityContext("138 00000000")).resolves.toEqual(identityContext);
+    await expect(authService.getAccessSettings()).resolves.toEqual(accessSettings);
+    await expect(authService.updateAccessSettings(accessSettings)).resolves.toEqual(accessSettings);
+    await authService.setTeacherDisabled("teacher / 1", true);
+    await authService.setSchoolAccountsDisabled("school / 1", false);
+    await expect(authService.updateTeacherTeachingProfile("teacher / 1", {
+      teachingClassIds: ["class-1"], homeroomClassIds: ["class-2"],
+    })).resolves.toEqual(updated);
+    await expect(authService.updateProfile({ nickname: "新昵称" })).resolves.toEqual(updated);
+
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/registration-context?phone=138%2000000000");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(2, "/api/auth/identity-context?phone=138%2000000000");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/access-settings");
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/access-settings", {
+      method: "PUT", body: JSON.stringify(accessSettings),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(5, "/api/auth/teachers/teacher%20%2F%201/disabled", {
+      method: "PATCH", body: JSON.stringify({ disabled: true }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(6, "/api/auth/schools/school%20%2F%201/accounts-disabled", {
+      method: "PATCH", body: JSON.stringify({ disabled: false }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(7, "/api/auth/teachers/teacher%20%2F%201/teaching-profile", {
+      method: "PATCH", body: JSON.stringify({ teachingClassIds: ["class-1"], homeroomClassIds: ["class-2"] }),
+    }, true);
+    expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(8, "/api/auth/profile", {
+      method: "PATCH", body: JSON.stringify({ nickname: "新昵称" }),
+    }, true);
+    expect(authService.getCurrentTeacher()).toEqual(updated);
+  });
+
   it("submits, reads, approves adjusted permissions, and rejects without adjustments", async () => {
     const fields: TeacherPermissionFields = {
       roles: ["teacher", "gradeLeader"],
