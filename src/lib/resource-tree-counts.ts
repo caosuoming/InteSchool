@@ -1,11 +1,12 @@
 import type { TreeNode } from "@/types";
 
-type DirectoryType = "chapter" | "knowledge";
+type DirectoryType = "chapter" | "knowledge" | "method";
 
 type DirectoryResource = {
   id: string;
   chapterIds?: string[];
   knowledgePointIds?: string[];
+  thoughtMethodIds?: string[];
 };
 
 /**
@@ -18,7 +19,7 @@ export function annotateTreeWithResourceCounts(
   resources: readonly DirectoryResource[],
   type: DirectoryType,
 ): TreeNode {
-  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
   const resourceIdsByDirectoryId = new Map<string, Set<string>>();
 
   for (const resource of resources) {

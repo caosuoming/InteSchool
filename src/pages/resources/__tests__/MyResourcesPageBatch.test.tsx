@@ -108,7 +108,7 @@ vi.mock("@/components/tree/SearchableTree", () => ({
       <button
         type="button"
         aria-label={title.endsWith("目录") ? `勾选${title}` : undefined}
-        onClick={() => onCheck?.([title.includes("章节") ? "chapter-new" : "knowledge-new"])}
+        onClick={() => onCheck?.([title.includes("章节") ? "chapter-new" : title.includes("思想方法") ? "method-new" : "knowledge-new"])}
       >
         {showTitle ? title : "选择"}
       </button>
@@ -180,6 +180,7 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getMethodTree: vi.fn(),
   },
 }));
 vi.mock("@/services/reflection", () => ({
@@ -419,6 +420,9 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(donationService.donateResources).mockResolvedValue({ created: [], skipped: [] });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
+      id: "root", name: "全部思想方法", type: "method", count: 0, children: [],
+    });
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
     vi.mocked(classService.listAllClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
@@ -547,6 +551,29 @@ describe("MyResourcesPage batch actions", () => {
         knowledgePointIds: ["knowledge-existing", "knowledge-new"],
       });
     });
+  });
+
+  it("appends a shared method to selected questions without overwriting the existing methods", async () => {
+    vi.mocked(questionService.getQuestion).mockResolvedValue({
+      ...batchQuestion,
+      thoughtMethodIds: ["method-existing"],
+    });
+    vi.mocked(questionService.updateQuestion).mockResolvedValue({
+      ...batchQuestion,
+      thoughtMethodIds: ["method-existing", "method-new"],
+    });
+
+    renderPage("question");
+    fireEvent.click(await screen.findByRole("button", { name: "选择题库题目" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "method" },
+    });
+    await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalledWith("school-1"));
+    fireEvent.click(await screen.findByRole("button", { name: "选择思想方法" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
+    await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalledWith(
+      "question-1", { thoughtMethodIds: ["method-existing", "method-new"] },
+    ));
   });
 
   it("replaces existing question chapters when applying a unified chapter change", async () => {

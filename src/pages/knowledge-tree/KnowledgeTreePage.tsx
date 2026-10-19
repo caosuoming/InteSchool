@@ -33,7 +33,7 @@ import type {
 } from "@/types";
 import { cn } from "@/lib/utils";
 
-type TreeKind = "chapter" | "knowledge";
+type TreeKind = "chapter" | "knowledge" | "method";
 
 function directorySnapshotTree(type: TreeKind, nodes: DirectoryCatalogNode[]): TreeNode {
   const childrenOf = (parentId: string | null): TreeNode[] => nodes
@@ -52,7 +52,7 @@ function directorySnapshotTree(type: TreeKind, nodes: DirectoryCatalogNode[]): T
     }));
   return {
     id: "root",
-    name: type === "chapter" ? "全部章节" : "全部知识点",
+    name: type === "chapter" ? "全部章节" : type === "knowledge" ? "全部知识点" : "全部思想方法",
     type,
     count: nodes.length,
     children: childrenOf(null),
@@ -128,7 +128,9 @@ export default function KnowledgeTreePage() {
     const t =
       kind === "chapter"
         ? await knowledgeService.getChapterTree(teacher.schoolId!)
-        : await knowledgeService.getKnowledgeTree(teacher.schoolId!);
+        : kind === "knowledge"
+          ? await knowledgeService.getKnowledgeTree(teacher.schoolId!)
+          : await knowledgeService.getMethodTree(teacher.schoolId!);
     setTree(t);
     setSelectedNode((current) =>
       current ? findTreeNode(t, current.id) : null,
@@ -147,6 +149,14 @@ export default function KnowledgeTreePage() {
     let filter;
     if (kind === "chapter") {
       filter = { schoolId: teacher.schoolId!, chapterIds: [selectedNode.id] };
+    } else if (kind === "method") {
+      const ids = new Set<string>();
+      const collect = (node: TreeNode) => {
+        if (node.id !== "root") ids.add(node.id);
+        node.children.forEach(collect);
+      };
+      collect(selectedNode);
+      filter = { schoolId: teacher.schoolId!, thoughtMethodIds: [...ids] };
     } else {
       // 扩展为所有同名知识点的ID（分身）
       const aliasIds = await knowledgeService.getAliasIds(selectedNode.id, teacher.schoolId!);
@@ -204,6 +214,15 @@ export default function KnowledgeTreePage() {
         return;
       }
       await knowledgeService.addChapter(teacher.schoolId!, parentNode.id === "root" ? null : parentNode.id, name);
+    } else if (kind === "method") {
+      const allMethods = await knowledgeService.listThoughtMethods(teacher.schoolId!);
+      const targetParentId = parentNode.id === "root" ? null : parentNode.id;
+      if (allMethods.some((item) => item.parentId === targetParentId && item.name === name)) {
+        toast.error("同一父节点下已存在同名节点");
+        return;
+      }
+      await knowledgeService.addThoughtMethod(teacher.schoolId!, targetParentId, name);
+      toast.success("节点已添加");
     } else {
       const allPoints = await knowledgeService.listKnowledgePoints(teacher.schoolId!);
       const targetParentId = parentNode.id === "root" ? null : parentNode.id;
@@ -598,7 +617,7 @@ export default function KnowledgeTreePage() {
     <div>
       <PageHeader
         title="知识树"
-        description="以树形结构浏览章节与知识点，每个目录前可复选筛选题目"
+        description="以树形结构浏览章节、知识点与思想方法，每个目录前可复选筛选题目"
         icon={<GitBranch className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-1.5 p-1 rounded-md bg-ink-100">
@@ -620,6 +639,15 @@ export default function KnowledgeTreePage() {
             >
               知识点
             </button>
+            <button
+              onClick={() => handleKindChange("method")}
+              className={cn(
+                "px-3 py-1 rounded text-xs font-medium transition-all",
+                kind === "method" ? "bg-paper text-ink-900 shadow-sm" : "text-ink-600",
+              )}
+            >
+              思想方法
+            </button>
           </div>
         }
       />
@@ -630,14 +658,14 @@ export default function KnowledgeTreePage() {
             <div className="flex items-center gap-2 mb-1.5">
               <Layers3 className="w-4 h-4 text-gold-600" />
               <span className="text-sm font-medium text-ink-800">
-                当前启用的{kind === "chapter" ? "章节课目录" : "知识点目录"}
+                当前启用的{kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}
               </span>
               {activeCatalog && (
                 <Badge variant="ink">{activeCatalog.nodeCount} 个节点</Badge>
               )}
             </div>
             <select
-              aria-label={`当前启用的${kind === "chapter" ? "章节课目录" : "知识点目录"}`}
+              aria-label={`当前启用的${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}`}
               value={activeCatalog?.id || ""}
               disabled={catalogs.length <= 1 || switchingCatalog}
               onChange={(event) => handleActivateCatalog(event.target.value)}
@@ -733,7 +761,7 @@ export default function KnowledgeTreePage() {
             )}
 
             <p className="mt-2 text-[11px] leading-5 text-ink-400">
-              可直接拖动节点到另一个节点下；拖到“{tree?.name || (kind === "chapter" ? "全部章节" : "全部知识点")}”可移到顶级。
+              可直接拖动节点到另一个节点下；拖到“{tree?.name || (kind === "chapter" ? "全部章节" : kind === "knowledge" ? "全部知识点" : "全部思想方法")}”可移到顶级。
             </p>
 
             <div className="mt-3 pt-3 border-t border-ink-100">
@@ -762,7 +790,7 @@ export default function KnowledgeTreePage() {
               <EmptyState
                 icon={<BookOpen className="w-7 h-7" />}
                 title="请选择一个节点"
-                description="点击左侧树节点，查看该章节或知识点下的所有题目"
+                description="点击左侧树节点，查看该章节、知识点或思想方法下的所有题目"
               />
             </Card>
           ) : (
@@ -781,7 +809,7 @@ export default function KnowledgeTreePage() {
                       <Badge variant="ink">
                         {selectedNode.id === "root"
                           ? "目录"
-                          : kind === "chapter" ? "章节" : "知识点"}
+                          : kind === "chapter" ? "章节" : kind === "knowledge" ? "知识点" : "思想方法"}
                       </Badge>
                     </div>
                     {selectedNode.id === "root" && (
@@ -878,7 +906,7 @@ export default function KnowledgeTreePage() {
                       <div className="text-xs text-ink-500 mt-1">{selectedNode.description}</div>
                     )}
                   </div>
-                  <Link to={`/question-bank?${kind === "chapter" ? "chapter" : "point"}=${selectedNode.id}`} target="_blank" rel="noreferrer">
+                  <Link to={`/question-bank?${kind === "chapter" ? "chapter" : kind === "knowledge" ? "point" : "method"}=${selectedNode.id}`} target="_blank" rel="noreferrer">
                     <Button variant="ghost" size="sm">
                       在题库中查看
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -976,7 +1004,7 @@ export default function KnowledgeTreePage() {
         open={addNodeOpen}
         onClose={() => setAddNodeOpen(false)}
         size="sm"
-        title={`添加${kind === "chapter" ? "章节" : "知识点"}节点`}
+        title={`添加${kind === "chapter" ? "章节" : kind === "knowledge" ? "知识点" : "思想方法"}节点`}
         description={parentNode ? `父节点：${parentNode.name}` : undefined}
         footer={
           <>
@@ -1190,8 +1218,8 @@ export default function KnowledgeTreePage() {
         }}
         size="lg"
         title={previewDonation
-          ? `${previewDonation.donorNickname}捐赠的${kind === "chapter" ? "章节课目录" : "知识点目录"}`
-          : `同学科${kind === "chapter" ? "章节课目录" : "知识点目录"}捐赠`}
+          ? `${previewDonation.donorNickname}捐赠的${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}`
+          : `同学科${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}捐赠`}
         description={previewDonation
           ? `学科：${previewDonation.subject} · ${previewDonation.nodes.length} 个节点 · 预览不会修改当前目录`
           : "先预览目录内容，再选择合并到当前目录或新建独立目录体系。"}

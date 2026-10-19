@@ -22,7 +22,7 @@ import { createSqlClient, type SqlClient, type SqlConnection } from "./sql-clien
 
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
-  "schoolGrades", "classTypeCategories", "students", "chapters", "knowledgePoints",
+  "schoolGrades", "classTypeCategories", "students", "chapters", "knowledgePoints", "thoughtMethods",
   "directoryCatalogs", "directoryDonations", "directoryNodeAssociations",
   "schoolChapters", "schoolKnowledgePoints", "questions",
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "resourceFolders", "baskets", "documents",
@@ -145,6 +145,10 @@ function questionSearchWhere(filter: QuestionFilter): { clauses: string[]; param
   if (filter.knowledgePointIds?.length) {
     if ((filter.knowledgeLogic || "or") === "and") add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.knowledgePointIds));
     else add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.knowledgePointIds);
+  }
+  if (filter.thoughtMethodIds?.length) {
+    if ((filter.methodLogic || "or") === "and") add("coalesce(data_json->'thoughtMethodIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.thoughtMethodIds));
+    else add("coalesce(data_json->'thoughtMethodIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.thoughtMethodIds);
   }
   if (filter.difficulty?.length) add("(data_json->>'difficulty')::int = ANY(__PARAM__::int[])", filter.difficulty);
   if (filter.recommendation?.length) add("(data_json->>'recommendation')::int = ANY(__PARAM__::int[])", filter.recommendation);

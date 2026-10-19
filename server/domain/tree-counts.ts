@@ -1,6 +1,6 @@
 import type { KnowledgePoint, Question, TreeNode } from "../../src/types/index.js";
 
-type DirectoryType = "chapter" | "knowledge";
+type DirectoryType = "chapter" | "knowledge" | "method";
 
 function buildKnowledgeAliasMap(points: KnowledgePoint[]): Map<string, Set<string>> {
   const idsByName = new Map<string, Set<string>>();
@@ -34,12 +34,10 @@ export function annotateTreeWithQuestionCounts(
   const aliasesById = type === "knowledge"
     ? buildKnowledgeAliasMap(knowledgePoints)
     : new Map<string, Set<string>>();
-  const field: "chapterIds" | "knowledgePointIds" = type === "chapter"
-    ? "chapterIds"
-    : "knowledgePointIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
   const questionIdsByDirectoryId = new Map<string, Set<string>>();
   for (const question of questions) {
-    for (const directoryId of question[field]) {
+    for (const directoryId of question[field] ?? []) {
       const questionIds = questionIdsByDirectoryId.get(directoryId) ?? new Set<string>();
       questionIds.add(question.id);
       questionIdsByDirectoryId.set(directoryId, questionIds);

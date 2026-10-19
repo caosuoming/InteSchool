@@ -159,7 +159,9 @@ export function SearchableTree({
     const nextTree =
       displayData.type === "chapter"
         ? await knowledgeService.getChapterTree(activeEditableSchoolId)
-        : await knowledgeService.getKnowledgeTree(activeEditableSchoolId);
+        : displayData.type === "knowledge"
+          ? await knowledgeService.getKnowledgeTree(activeEditableSchoolId)
+          : await knowledgeService.getMethodTree(activeEditableSchoolId);
     window.dispatchEvent(new CustomEvent<DirectoryTreeUpdateDetail>(DIRECTORY_TREE_UPDATED_EVENT, {
       detail: { schoolId: activeEditableSchoolId, type: displayData.type, data: nextTree },
     }));
@@ -192,6 +194,14 @@ export function SearchableTree({
             return;
           }
           await knowledgeService.addChapter(activeEditableSchoolId, parentId, name);
+          toast.success("节点已添加");
+        } else if (type === "method") {
+          const methods = await knowledgeService.listThoughtMethods(activeEditableSchoolId);
+          if (methods.some((item) => item.parentId === parentId && item.name === name)) {
+            toast.error("同一父节点下已存在同名节点");
+            return;
+          }
+          await knowledgeService.addThoughtMethod(activeEditableSchoolId, parentId, name);
           toast.success("节点已添加");
         } else {
           const points =

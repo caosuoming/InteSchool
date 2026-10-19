@@ -42,6 +42,12 @@ function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
       if (!filter.knowledgePointIds.some((k) => ids.includes(k))) return false;
     }
   }
+  if (filter.thoughtMethodIds?.length) {
+    const ids = p.thoughtMethodIds || [];
+    if ((filter.methodLogic || "or") === "and") {
+      if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.grade && p.grade !== filter.grade) return false;
   if (filter.schoolYear && p.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (p.semester || "上学期") !== filter.semester) return false;

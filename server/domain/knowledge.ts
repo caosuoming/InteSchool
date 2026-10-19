@@ -8,6 +8,7 @@ import type {
   DirectoryDonationUpsertResult,
   DirectoryNodeAssociation,
   KnowledgePoint,
+  ThoughtMethod,
   Question,
   TreeNode,
   TreeNodeType,
@@ -102,7 +103,7 @@ function moveDirectoryRecord<T extends MovableDirectoryRecord>(
   });
 }
 
-type DirectoryRecord = Chapter | KnowledgePoint;
+type DirectoryRecord = Chapter | KnowledgePoint | ThoughtMethod;
 
 type DirectoryTeacher = {
   id: string;
@@ -116,16 +117,16 @@ type DirectoryTeacher = {
 
 function directoryCollection(
   type: TreeNodeType,
-): "chapters" | "knowledgePoints" {
-  return type === "chapter" ? "chapters" : "knowledgePoints";
+): "chapters" | "knowledgePoints" | "thoughtMethods" {
+  return type === "chapter" ? "chapters" : type === "knowledge" ? "knowledgePoints" : "thoughtMethods";
 }
 
 function directoryLabel(type: TreeNodeType): string {
-  return type === "chapter" ? "章节课目录" : "知识点目录";
+  return type === "chapter" ? "章节课目录" : type === "knowledge" ? "知识点目录" : "思想方法目录";
 }
 
 function defaultDirectoryRootName(type: TreeNodeType): string {
-  return type === "chapter" ? "全部章节" : "全部知识点";
+  return type === "chapter" ? "全部章节" : type === "knowledge" ? "全部知识点" : "全部思想方法";
 }
 
 function directoryTeacher(teacherId: string): DirectoryTeacher {
@@ -221,7 +222,7 @@ function remapTeacherDirectoryReferences(
   replacements: Map<string, string>,
 ): void {
   if (replacements.size === 0) return;
-  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
   for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
     const records = db.read(collection);
     if (!Array.isArray(records)) continue;
@@ -337,7 +338,7 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
             } satisfies Chapter)
           : ({
               ...item,
-              id: genId("kp"),
+              id: genId(type === "knowledge" ? "kp" : "tm"),
               schoolId: storageSchoolId,
               teacherId,
               parentId,
@@ -347,7 +348,7 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
             } satisfies KnowledgePoint);
       personal.push(target);
     } else if (
-      type === "knowledge" &&
+      type !== "chapter" &&
       !(target as KnowledgePoint).description &&
       (item as KnowledgePoint).description
     ) {
@@ -395,7 +396,7 @@ function snapshotDirectoryNodes(
       name: item.name,
       order: item.order,
       level: item.level,
-      ...(type === "knowledge" && (item as KnowledgePoint).description
+      ...(type !== "chapter" && (item as KnowledgePoint).description
         ? { description: (item as KnowledgePoint).description }
         : {}),
     }));
@@ -531,7 +532,7 @@ function cloneDirectoryNodes(
 ): DirectoryCatalogNode[] {
   const idMap = new Map<string, string>();
   for (const node of nodes)
-    idMap.set(node.id, genId(type === "chapter" ? "ch" : "kp"));
+    idMap.set(node.id, genId(type === "chapter" ? "ch" : type === "knowledge" ? "kp" : "tm"));
   return nodes.map((node) => ({
     ...structuredClone(node),
     id: idMap.get(node.id)!,
@@ -571,7 +572,7 @@ function mergeDirectorySnapshots(
         .reduce((maximum, candidate) => Math.max(maximum, candidate.order), 0) +
       1;
     const created: DirectoryCatalogNode = {
-      id: genId(type === "chapter" ? "ch" : "kp"),
+      id: genId(type === "chapter" ? "ch" : type === "knowledge" ? "kp" : "tm"),
       parentId,
       name: node.name,
       order,
@@ -621,7 +622,7 @@ function remapTeacherDirectoryReferencesMany(
   replacements: Map<string, string[]>,
 ): void {
   if (replacements.size === 0) return;
-  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
   for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
     const records = db.read(collection);
     if (!Array.isArray(records)) continue;
@@ -736,7 +737,7 @@ function replaceDirectoryIds(
   const seen = new Set<string>();
   for (const id of ids) {
     const replacement = replacements.get(id) ?? id;
-    if (!seen.has(replacement)) {
+    if (replacement && !seen.has(replacement)) {
       result.push(replacement);
       seen.add(replacement);
     }
@@ -837,10 +838,10 @@ function mergeDirectoryRecords<T extends DirectoryRecord>(
 }
 
 function updateDirectoryReferences(
-  type: "chapter" | "knowledge",
+  type: TreeNodeType,
   replacements: Map<string, string>,
 ): void {
-  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
   for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
     const records = db.read(collection);
     if (!Array.isArray(records)) continue;
@@ -894,6 +895,7 @@ function buildChapterTree(
 function buildKnowledgeTree(
   points: KnowledgePoint[],
   parentId: string | null = null,
+  type: "knowledge" | "method" = "knowledge",
 ): TreeNode[] {
   return points
     .filter((p) => p.parentId === parentId)
@@ -901,12 +903,12 @@ function buildKnowledgeTree(
     .map((p) => ({
       id: p.id,
       name: p.name,
-      type: "knowledge" as const,
+      type,
       count: 0,
       order: p.order,
       parentId: p.parentId,
       level: p.level,
-      children: buildKnowledgeTree(points, p.id),
+      children: buildKnowledgeTree(points, p.id, type),
     }));
 }
 
@@ -934,6 +936,11 @@ export const knowledgeService = {
   async listKnowledgePoints(scopeId: string): Promise<KnowledgePoint[]> {
     await delay(200);
     return directoryRecords(scopeId, "knowledge") as KnowledgePoint[];
+  },
+
+  async listThoughtMethods(scopeId: string): Promise<ThoughtMethod[]> {
+    await delay(200);
+    return directoryRecords(scopeId, "method") as ThoughtMethod[];
   },
 
   // 获取与指定知识点同名的所有知识点ID（分身），供外部查询题目时使用
@@ -977,6 +984,23 @@ export const knowledgeService = {
       children: buildKnowledgeTree(points, null),
     };
     return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "knowledge", points);
+  },
+
+  async getMethodTree(scopeId: string): Promise<TreeNode> {
+    await delay(300);
+    const methods = directoryRecords(scopeId, "method") as ThoughtMethod[];
+    const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
+      (item) => item.id === scopeId,
+    );
+    const active = teacherScope ? ensureDefaultDirectoryCatalog(scopeId, "method") : null;
+    const tree: TreeNode = {
+      id: "root",
+      name: active?.rootName?.trim() || defaultDirectoryRootName("method"),
+      type: "method",
+      count: 0,
+      children: buildKnowledgeTree(methods, null, "method"),
+    };
+    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "method");
   },
 
   async listDirectoryCatalogs(
@@ -1408,6 +1432,33 @@ export const knowledgeService = {
     return newPoint;
   },
 
+  async addThoughtMethod(
+    scopeId: string,
+    parentId: string | null,
+    name: string,
+  ): Promise<ThoughtMethod> {
+    const methods = directoryRecords(scopeId, "method") as ThoughtMethod[];
+    const teacher = ((db.read("teachers") || []) as DirectoryTeacher[]).find((item) => item.id === scopeId);
+    const parent = parentId ? methods.find((item) => item.id === parentId) : undefined;
+    if (parentId && !parent) throw new Error("父思想方法不存在");
+    if (methods.some((item) => item.parentId === parentId && item.name === name.trim())) {
+      throw new Error("同一父节点下已存在同名节点");
+    }
+    if (!name.trim()) throw new Error("名称不能为空");
+    const method: ThoughtMethod = {
+      id: genId("tm"),
+      schoolId: teacher ? personalDirectorySchoolId(scopeId) : scopeId,
+      ...(teacher ? { teacherId: scopeId } : {}),
+      parentId,
+      name: name.trim(),
+      order: methods.reduce((max, item) => item.parentId === parentId ? Math.max(max, item.order) : max, 0) + 1,
+      level: (parent?.level ?? -1) + 1,
+      questionCount: 0,
+    };
+    db.update("thoughtMethods", (items: ThoughtMethod[] = []) => [...items, method]);
+    return method;
+  },
+
   // 获取章节/知识点的全路径名（用于显示）
   getChapterPath(chapterId: string): string {
     const chapters = db.read("chapters");
@@ -1440,7 +1491,7 @@ export const knowledgeService = {
   // 改名
   async renameNode(
     id: string,
-    type: "chapter" | "knowledge",
+    type: TreeNodeType,
     newName: string,
   ): Promise<void> {
     await delay(200);
@@ -1449,14 +1500,14 @@ export const knowledgeService = {
         list.map((c) => (c.id === id ? { ...c, name: newName } : c)),
       );
     } else {
-      db.update("knowledgePoints", (list) =>
-        list.map((p) => (p.id === id ? { ...p, name: newName } : p)),
+      db.update(directoryCollection(type), (list: DirectoryRecord[] = []) =>
+        list.map((item) => (item.id === id ? { ...item, name: newName } : item)),
       );
     }
   },
 
   // 删除节点（级联删除所有子孙节点）
-  async deleteNode(id: string, type: "chapter" | "knowledge"): Promise<void> {
+  async deleteNode(id: string, type: TreeNodeType): Promise<void> {
     await delay(200);
     if (type === "chapter") {
       const list = db.read("chapters");
@@ -1474,6 +1525,15 @@ export const knowledgeService = {
           chapterIds: q.chapterIds.filter((cid) => !toDelete.has(cid)),
         })),
       );
+    } else if (type === "method") {
+      const list = (db.read("thoughtMethods") || []) as ThoughtMethod[];
+      const target = list.find((item) => item.id === id);
+      if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, type);
+      const toDelete = collectSubtree(list, id);
+      if (target?.teacherId) removeDirectoryNodeAssociations(target.teacherId, type, toDelete);
+      db.update("thoughtMethods", (items: ThoughtMethod[] = []) => items.filter((item) => !toDelete.has(item.id)));
+      const replacements = new Map([...toDelete].map((methodId) => [methodId, ""]));
+      updateDirectoryReferences(type, replacements);
     } else {
       const list = db.read("knowledgePoints");
       const target = list.find((item) => item.id === id);
@@ -1533,7 +1593,7 @@ export const knowledgeService = {
   async mergeNodes(
     sourceId: string,
     targetId: string,
-    type: "chapter" | "knowledge",
+    type: TreeNodeType,
   ): Promise<void> {
     await delay(200);
     if (type === "chapter") {
@@ -1550,6 +1610,16 @@ export const knowledgeService = {
       if (source?.teacherId) {
         remapDirectoryNodeAssociations(source.teacherId, type, replacements);
       }
+    } else if (type === "method") {
+      const source = ((db.read("thoughtMethods") || []) as ThoughtMethod[]).find((item) => item.id === sourceId);
+      const { records, replacements } = mergeDirectoryRecords(
+        (db.read("thoughtMethods") || []) as ThoughtMethod[],
+        sourceId,
+        targetId,
+      );
+      db.write("thoughtMethods", records);
+      updateDirectoryReferences(type, replacements);
+      if (source?.teacherId) remapDirectoryNodeAssociations(source.teacherId, type, replacements);
     } else {
       const source = (db.read("knowledgePoints") as KnowledgePoint[]).find(
         (item) => item.id === sourceId,
@@ -1579,7 +1649,7 @@ export const knowledgeService = {
         moveDirectoryRecord(list, id, newParentId),
       );
     } else {
-      db.update("knowledgePoints", (list) =>
+      db.update(directoryCollection(type), (list: DirectoryRecord[]) =>
         moveDirectoryRecord(list, id, newParentId),
       );
     }
@@ -1588,7 +1658,7 @@ export const knowledgeService = {
   // 重排同级节点顺序（按 ids 数组顺序写入 order 1,2,3...）
   async reorderSiblings(
     ids: string[],
-    type: "chapter" | "knowledge",
+    type: TreeNodeType,
   ): Promise<void> {
     await delay(200);
     const orderMap = new Map<string, number>();
@@ -1600,9 +1670,9 @@ export const knowledgeService = {
         ),
       );
     } else {
-      db.update("knowledgePoints", (l) =>
-        l.map((p) =>
-          orderMap.has(p.id) ? { ...p, order: orderMap.get(p.id)! } : p,
+      db.update(directoryCollection(type), (l: DirectoryRecord[]) =>
+        l.map((item) =>
+          orderMap.has(item.id) ? { ...item, order: orderMap.get(item.id)! } : item,
         ),
       );
     }

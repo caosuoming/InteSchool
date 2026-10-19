@@ -1343,7 +1343,7 @@ export interface GradeExamImportInput {
   settings?: GradeExamSettings;
 }
 
-export type TreeNodeType = "chapter" | "knowledge";
+export type TreeNodeType = "chapter" | "knowledge" | "method";
 
 export interface Chapter {
   id: string;
@@ -1371,6 +1371,8 @@ export interface KnowledgePoint {
   level: number;
   questionCount?: number;
 }
+
+export type ThoughtMethod = Omit<KnowledgePoint, "chapterId">;
 
 export interface TreeNode {
   id: string;
@@ -1538,6 +1540,7 @@ export interface Question {
   explanationVideo?: QuestionVideoReference | null;
   chapterIds: string[];
   knowledgePointIds: string[];
+  thoughtMethodIds?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   usageCount: number;
@@ -1641,6 +1644,7 @@ export interface ExamPaper {
   description?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  thoughtMethodIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1723,6 +1727,7 @@ export interface Courseware {
   description?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  thoughtMethodIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1766,6 +1771,7 @@ export interface Material {
   description?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  thoughtMethodIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1796,6 +1802,8 @@ export interface ResourceFilter {
   chapterLogic?: FilterLogic;
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
+  thoughtMethodIds?: string[];
+  methodLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
@@ -2194,6 +2202,8 @@ export interface QuestionFilter {
   chapterLogic?: FilterLogic;
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
+  thoughtMethodIds?: string[];
+  methodLogic?: FilterLogic;
   noChapter?: boolean;
   noKnowledge?: boolean;
   difficulty?: number[];
@@ -2253,6 +2263,7 @@ export interface Lecture {
   description?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  thoughtMethodIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -2335,6 +2346,8 @@ export interface LectureFilter {
   chapterLogic?: FilterLogic;
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
+  thoughtMethodIds?: string[];
+  methodLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;

@@ -9,6 +9,7 @@ import type {
   DirectoryDonationUpsertResult,
   DirectoryNodeAssociation,
   KnowledgePoint,
+  ThoughtMethod,
   TreeNode,
   TreeNodeType,
 } from "@/types";
@@ -20,6 +21,18 @@ export const knowledgeService = {
 
   async listKnowledgePoints(schoolId: string): Promise<KnowledgePoint[]> {
     return rpcCall("knowledge", "listKnowledgePoints", [schoolId]) as any;
+  },
+
+  async listThoughtMethods(schoolId: string): Promise<ThoughtMethod[]> {
+    return rpcCall("knowledge", "listThoughtMethods", [schoolId]) as any;
+  },
+
+  async getMethodTree(schoolId: string): Promise<TreeNode> {
+    return rpcCall("knowledge", "getMethodTree", [schoolId]) as any;
+  },
+
+  async addThoughtMethod(schoolId: string, parentId: string | null, name: string): Promise<ThoughtMethod> {
+    return rpcCall("knowledge", "addThoughtMethod", [schoolId, parentId, name]) as any;
   },
 
   async getAliasIds(knowledgePointId: string, schoolId: string): Promise<string[]> {
@@ -124,23 +137,23 @@ export const knowledgeService = {
     return rpcCall("knowledge", "getKnowledgePath", [knowledgeId]);
   },
 
-  async renameNode(id: string, type: "chapter" | "knowledge", newName: string): Promise<void> {
+  async renameNode(id: string, type: TreeNodeType, newName: string): Promise<void> {
     return rpcCall("knowledge", "renameNode", [id, type, newName]) as any;
   },
 
-  async deleteNode(id: string, type: "chapter" | "knowledge"): Promise<void> {
+  async deleteNode(id: string, type: TreeNodeType): Promise<void> {
     return rpcCall("knowledge", "deleteNode", [id, type]) as any;
   },
 
-  async mergeNodes(sourceId: string, targetId: string, type: "chapter" | "knowledge"): Promise<void> {
+  async mergeNodes(sourceId: string, targetId: string, type: TreeNodeType): Promise<void> {
     return rpcCall("knowledge", "mergeNodes", [sourceId, targetId, type]) as any;
   },
 
-  async moveNode(id: string, type: "chapter" | "knowledge", newParentId: string | null): Promise<void> {
+  async moveNode(id: string, type: TreeNodeType, newParentId: string | null): Promise<void> {
     return rpcCall("knowledge", "moveNode", [id, type, newParentId]) as any;
   },
 
-  async reorderSiblings(ids: string[], type: "chapter" | "knowledge"): Promise<void> {
+  async reorderSiblings(ids: string[], type: TreeNodeType): Promise<void> {
     return rpcCall("knowledge", "reorderSiblings", [ids, type]) as any;
   }
 };
