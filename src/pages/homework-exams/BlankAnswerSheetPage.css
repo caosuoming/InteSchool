@@ -1,0 +1,237 @@
+.blank-answer-sheet-builder {
+  --blank-accent: #ed4598;
+  --blank-line: #f5a4cd;
+  padding: 0.25rem 0;
+}
+.blank-sheet-workspace {
+  display: grid;
+  grid-template-columns: minmax(270px, 320px) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+.blank-sheet-controls {
+  border: 1px solid #e1e8ef;
+  border-radius: 12px;
+  background: var(--color-paper, #fff);
+  overflow: hidden;
+}
+.blank-sheet-control-heading, .blank-sheet-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e1e8ef;
+}
+.blank-sheet-control-heading h2, .blank-sheet-control-section h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-ink-900, #102a43);
+  margin: 0;
+}
+.blank-sheet-control-body { display: grid; gap: 16px; padding: 16px; }
+.blank-sheet-control-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 15px;
+  border-top: 1px solid #e1e8ef;
+}
+.blank-sheet-control-section > p { font-size: 12px; color: #627d98; line-height: 1.5; }
+.blank-sheet-section-table { display: grid; grid-template-columns: 1fr 67px 83px; gap: 8px; align-items: center; }
+.blank-sheet-section-table > span { font-size: 11px; color: #627d98; }
+.blank-sheet-section-row { display: contents; }
+.blank-sheet-section-row > span { font-size: 12px; color: #243b53; white-space: nowrap; }
+.blank-sheet-section-row input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 5px;
+  font-size: 12px;
+  background: #fff;
+  color: #102a43;
+}
+.blank-sheet-total { border-radius: 6px; background: #f3f6fa; padding: 10px; color: #334e68; font-size: 13px; font-weight: 600; }
+.blank-sheet-radio-list { display: flex; flex-wrap: wrap; gap: 14px; }
+.blank-sheet-radio-list label, .blank-sheet-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #334e68;
+  cursor: pointer;
+}
+.blank-sheet-preview { min-width: 0; border-radius: 12px; background: #e9edf3; overflow: hidden; }
+.blank-sheet-preview-bar { background: var(--color-paper, #fff); flex-wrap: wrap; }
+.blank-sheet-preview-bar > div:first-child { display: flex; flex-direction: column; gap: 3px; }
+.blank-sheet-preview-bar strong { font-size: 14px; color: #102a43; }
+.blank-sheet-preview-bar span { font-size: 12px; color: #627d98; }
+.blank-sheet-stack { overflow-x: auto; padding: 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 20px; }
+.blank-sheet-page {
+  --blank-accent: #ed4598;
+  --blank-line: #f5a4cd;
+  box-sizing: border-box;
+  flex: none;
+  position: relative;
+  padding: 8mm;
+  background: #fff !important;
+  color: #1a1a1a !important;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  line-height: 1.25;
+  box-shadow: 0 10px 35px rgb(0 0 0 / 15%);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+.blank-sheet-page * { box-sizing: border-box; }
+.blank-sheet-marker {
+  position: absolute;
+  display: block;
+  width: 7mm;
+  height: 2.2mm;
+  background: #111;
+}
+.blank-sheet-marker.top-left { left: 7mm; top: 3mm; }
+.blank-sheet-marker.top-right { right: 7mm; top: 3mm; }
+.blank-sheet-marker.bottom-left { left: 7mm; bottom: 3mm; }
+.blank-sheet-marker.bottom-right { right: 7mm; bottom: 3mm; }
+.blank-sheet-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3mm;
+  height: 100%;
+}
+.blank-sheet-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  padding: 3mm 2mm 2.5mm;
+  border: .3mm solid var(--blank-line);
+  border-radius: 3mm;
+  overflow: hidden;
+}
+.blank-sheet-heading {
+  min-height: 13mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--blank-accent);
+  text-align: center;
+  gap: .6mm;
+}
+.blank-sheet-heading strong { font-size: 12pt; line-height: 1.2; overflow-wrap: anywhere; }
+.blank-sheet-heading span { font-size: 9pt; }
+.blank-sheet-student-fields {
+  display: flex;
+  gap: 2mm;
+  font-size: 7pt;
+  white-space: nowrap;
+  padding: 2mm 0;
+}
+.blank-sheet-student-fields > span { display: flex; flex: 1; align-items: flex-end; min-width: 0; }
+.blank-sheet-student-fields i { flex: 1; min-width: 3mm; border-bottom: .2mm solid var(--blank-accent); }
+.blank-sheet-notice-grid { display: flex; min-height: 0; gap: 1.5mm; margin-bottom: 2mm; }
+.blank-sheet-instructions {
+  flex: 1;
+  min-width: 0;
+  border: .2mm solid var(--blank-line);
+  padding: 1.5mm;
+  font-size: 6pt;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  height: 25mm;
+  overflow: hidden;
+}
+.blank-sheet-instructions b { display: block; color: var(--blank-accent); font-size: 7pt; margin-bottom: .5mm; }
+.blank-sheet-barcode {
+  min-width: 0;
+  flex: 1;
+  height: 25mm;
+  border: .25mm dashed var(--blank-accent);
+  border-radius: 1mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: var(--blank-accent);
+  font-size: 7pt;
+  text-align: center;
+  gap: 2mm;
+}
+.blank-sheet-barcode small { font-size: 5pt; }
+.blank-sheet-exam-number { flex: 2; min-width: 0; color: var(--blank-accent); }
+.blank-sheet-exam-number > b { display: block; font-size: 6pt; text-align: center; margin-bottom: 1mm; }
+.blank-sheet-number-columns { display: flex; justify-content: space-evenly; align-items: flex-start; gap: .3mm; }
+.blank-sheet-number-column { display: flex; flex-direction: column; gap: .7mm; align-items: center; font-size: 5pt; }
+.blank-sheet-bubble {
+  width: 3.2mm;
+  height: 2.8mm;
+  border: .2mm solid var(--blank-accent);
+  border-radius: 45%;
+  font-size: 5pt;
+  line-height: 2.4mm;
+  text-align: center;
+}
+.blank-sheet-column-warning, .blank-sheet-column-footer {
+  margin: 0;
+  color: var(--blank-accent);
+  font-size: 6pt;
+  text-align: center;
+}
+.blank-sheet-column-warning { min-height: 4.5mm; }
+.blank-sheet-column-footer { margin-top: auto; padding-top: 1mm; }
+.blank-sheet-column-content { min-height: 0; display: flex; flex-direction: column; gap: 1mm; }
+.blank-sheet-question-block { flex: none; min-height: 0; overflow: hidden; border: .2mm solid #acb4ba; }
+.blank-sheet-question-block h3 {
+  margin: 0;
+  padding: 1mm 1.2mm .5mm;
+  font-family: inherit;
+  font-size: 7pt;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #222;
+}
+.blank-sheet-choice-groups { display: flex; gap: 2mm; padding: .5mm 1mm; }
+.blank-sheet-choice-group { display: flex; flex-direction: column; flex: 1; gap: .75mm; min-width: 0; }
+.blank-sheet-choice-row { display: flex; gap: .7mm; align-items: center; font-size: 6pt; height: 3.95mm; white-space: nowrap; }
+.blank-sheet-number { width: 8mm; flex: none; }
+.blank-sheet-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.4mm;
+  height: 3.25mm;
+  border: .25mm solid var(--blank-accent);
+  color: var(--blank-accent);
+  font-size: 6pt;
+  line-height: 1;
+  flex: none;
+}
+.blank-sheet-fill-rows { display: flex; flex-direction: column; gap: 1mm; padding: 1mm 1.5mm; }
+.blank-sheet-fill-row { display: flex; gap: 2mm; align-items: flex-end; font-size: 7pt; height: 8.5mm; }
+.blank-sheet-fill-row i { width: 70%; height: 3mm; border-bottom: .2mm solid var(--blank-accent); }
+.blank-sheet-essay-box { position: relative; padding: 2mm 1.5mm; font-size: 7pt; border-top: .2mm solid #acb4ba; }
+.blank-sheet-page-footer { position: absolute; bottom: 3mm; left: 0; right: 0; text-align: center; font-size: 6pt; color: var(--blank-accent); }
+.blank-sheet-paper-a4 { page: blank-sheet-a4; }
+.blank-sheet-paper-a3 { page: blank-sheet-a3; }
+@page blank-sheet-a4 { size: A4 landscape; margin: 0; }
+@page blank-sheet-a3 { size: A3 landscape; margin: 0; }
+@media (max-width: 1100px) { .blank-sheet-workspace { grid-template-columns: minmax(0, 1fr); } }
+@media print {
+  .blank-answer-sheet-builder > .no-print,
+  .blank-sheet-controls,
+  .blank-sheet-preview-bar,
+  .blank-sheet-preview > .no-print,
+  .no-print { display: none !important; }
+  .blank-answer-sheet-builder, .blank-sheet-workspace, .blank-sheet-preview,
+  .blank-sheet-stack { display: block !important; border: 0 !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; background: #fff !important; }
+  .blank-sheet-page {
+    display: block !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    break-after: page;
+    break-inside: avoid;
+  }
+  .blank-sheet-page:last-child { break-after: auto; }
+}
