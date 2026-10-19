@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { containsMathDelimiter, renderMathHtml, serializeMathHtml } from "./math-html";
 
 describe("renderMathHtml", () => {
+  it("renders multiline systems with a legacy missing left delimiter", () => {
+    const source = String.raw`联立 $\left\begin{cases}x=1\\y=2\end{cases}\right.$。`;
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(source);
+
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex-formula[data-latex]")).toHaveAttribute(
+      "data-latex", String.raw`\begin{cases}x=1\\y=2\end{cases}`,
+    );
+  });
   it("renders inline formulas in plain question text", () => {
     const container = document.createElement("div");
     container.innerHTML = renderMathHtml("已知 $x^2+y^2=1$，求 $x+y$。");
@@ -11,6 +21,20 @@ describe("renderMathHtml", () => {
     expect(formulas[0].dataset.latex).toBe("x^2+y^2=1");
     expect(formulas[1].dataset.latex).toBe("x+y");
     expect(container.textContent).not.toContain("$");
+  });
+
+  it("renders imported plain geometry notation as Times-style math variables", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      "圆C与直线相交于A,B两点，且|AB|=6，圆的方程(x-2)^2+(y-3)^2=1。",
+    );
+    const formulas = Array.from(container.querySelectorAll<HTMLElement>(".katex-formula"));
+    expect(formulas.map((formula) => formula.dataset.latex)).toEqual([
+      "C", "A,B", "|AB|=6", "(x-2)^2+(y-3)^2=1",
+    ]);
+    expect(formulas.every((formula) => formula.querySelector(".katex .mathnormal")))
+      .toBe(true);
+    expect(container.querySelector(".katex-error")).toBeNull();
   });
 
   it("preserves rich HTML while rendering formulas in its text nodes", () => {

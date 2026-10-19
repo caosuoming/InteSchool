@@ -1,13 +1,14 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
+import { buildDefaultGradeSettings } from "@/lib/grade-statistics";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MyExamsPage from "@/pages/exams/MyExamsPage";
 import { examArrangementService } from "@/services/examArrangement";
 import { gradeService } from "@/services/grade";
 import { quotaService } from "@/services/quota";
 import { useAuthStore } from "@/stores/auth";
-import type { ExamArrangement, GradeCohort, Teacher, TeacherAffiliation } from "@/types";
+import type { ExamArrangement, GradeCohort, GradeExam, Teacher, TeacherAffiliation } from "@/types";
 
 vi.mock("@/services/examArrangement", () => ({
   examArrangementService: {
@@ -27,6 +28,7 @@ vi.mock("@/services/grade", () => ({
     getImportContext: vi.fn(),
     getCohortSettings: vi.fn(),
     listExams: vi.fn(),
+    saveExamStatistics: vi.fn(),
   },
 }));
 
@@ -148,6 +150,48 @@ describe("MyExamsPage", () => {
     );
 
     expect(await screen.findByTestId("grade-settings-editor")).toHaveAttribute("data-section", "settings");
+  });
+
+  it("saves this exam independently and switches to its saved configuration", async () => {
+    const user = userEvent.setup();
+    const settings = buildDefaultGradeSettings(["数学"], []);
+    const exam: GradeExam = {
+      id: "exam-1138", schoolId: "school-1", teacherId: "teacher-1",
+      cohortKey: "grad-2026", cohortLabel: "2026届高三", name: "期中",
+      sourceFileName: "scores.xlsx", sourceSheetName: "成绩",
+      subjects: ["数学"], records: [], settings,
+      createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z",
+    };
+    const frozen: GradeExam = { ...exam, statisticsSavedAt: "2026-10-19T09:00:00Z" };
+    vi.mocked(gradeService.listExams).mockResolvedValue([exam]);
+    vi.mocked(gradeService.saveExamStatistics).mockResolvedValue(frozen);
+    render(<MemoryRouter initialEntries={["/my-exams/grades"]}><MyExamsPage section="grades" /></MemoryRouter>);
+    await user.click(await screen.findByRole("button", { name: "保存本次成绩统计" }));
+    await waitFor(() => expect(gradeService.saveExamStatistics).toHaveBeenCalledWith(
+      "exam-1138", expect.objectContaining({ classSubjects: [] }),
+      expect.objectContaining({ comparisonExamIds: [] }),
+    ));
+    expect(await screen.findByText(/已独立保存：/)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "配置编辑范围" })).toHaveValue("exam");
+    expect(screen.getByRole("button", { name: "保存同届配置以复用" })).toBeDisabled();
+    await user.selectOptions(screen.getByRole("combobox", { name: "配置编辑范围" }), "cohort");
+    expect(screen.getByRole("button", { name: "保存同届配置以复用" })).toBeEnabled();
+  });
+
+  it("does not expose the saved settings editor for a locked exam", async () => {
+    const settings = buildDefaultGradeSettings(["数学"], []);
+    vi.mocked(gradeService.listExams).mockResolvedValue([{
+      id: "locked-1138", schoolId: "school-1", teacherId: "teacher-2",
+      cohortKey: "grad-2026", cohortLabel: "2026届高三", name: "期中",
+      sourceFileName: "scores.xlsx", sourceSheetName: "成绩",
+      subjects: ["数学"], records: [], settings, statisticsSavedAt: undefined,
+      accessControl: { locked: true, passwordProtected: true },
+      createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z",
+    }]);
+    render(<MemoryRouter initialEntries={["/my-exams/grades"]}><MyExamsPage section="grades" /></MemoryRouter>);
+    expect(await screen.findByText("成绩统计已设置访问密码")).toBeInTheDocument();
+    expect(screen.queryByTestId("grade-settings-editor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存本次成绩统计" })).not.toBeInTheDocument();
   });
 
   it("allows ordinary school teachers to view grades without exam-management controls", async () => {

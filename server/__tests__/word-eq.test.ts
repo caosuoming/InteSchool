@@ -10,6 +10,9 @@ import {
 describe("legacy Word EQ fields", () => {
   it.each([
     [String.raw`eq \f(2,7)`, String.raw`\frac{2}{7}`],
+    [String.raw`eq \f(n－1，2)`, String.raw`\frac{n-1}{2}`],
+    [String.raw`eq \s\up0(\f(n，2))`, String.raw`{}^{\frac{n}{2}}`],
+    [String.raw`eq \r(3，x＋1)`, String.raw`\sqrt[3]{x+1}`],
     [String.raw`eq \s\up12(n－1)`, String.raw`{}^{n-1}`],
     [String.raw`eq \o\al(2,n＋1)`, String.raw`{}_{n+1}^{2}`],
     [
@@ -63,6 +66,22 @@ describe("legacy Word EQ fields", () => {
     expect(() =>
       katex.renderToString(latex!, { throwOnError: true, strict: false }),
     ).not.toThrow();
+  });
+
+  it("keeps fractional exponents inside piecewise Word EQ arrays", () => {
+    const latex = wordEqFieldToLatex(
+      String.raw`eq \b\lc\{(\a\co1((\f(1,2))\s\up0(\f(n－1，2)),(\f(1,2))\s\up0(\f(n，2))))`,
+    );
+    expect(latex).toContain(String.raw`{}^{\frac{n-1}{2}}`);
+    expect(latex).toContain(String.raw`{}^{\frac{n}{2}}`);
+    expect(latex).not.toContain(String.raw`\frac{n-1,2}{}`);
+    expect(() => katex.renderToString(latex!, { throwOnError: true, strict: false })).not.toThrow();
+  });
+
+  it("keeps nested powers scoped inside a single Word EQ field", () => {
+    const latex = wordEqFieldToLatex(String.raw`eq 2\s\up0(2\s\up0(n－1)－1)`);
+    expect(latex).toBe(String.raw`2{}^{2{}^{n-1}-1}`);
+    expect(() => katex.renderToString(latex!, { throwOnError: true, strict: false })).not.toThrow();
   });
 
   it("ignores unrelated Word fields", () => {

@@ -16,3 +16,10 @@ const DEFAULT_QUESTION_TYPE_LABELS = new Map(
 export function getDefaultQuestionTypeLabel(value: QuestionType): string {
   return DEFAULT_QUESTION_TYPE_LABELS.get(value) || value;
 }
+
+export function normalizeQuestionTypeForSubject(
+  type: QuestionType,
+  subject?: string,
+): QuestionType {
+  return subject?.trim() === "数学" && type === "comprehensive" ? "essay" : type;
+}

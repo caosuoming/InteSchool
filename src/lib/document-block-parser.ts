@@ -1,4 +1,5 @@
 import type { Material, Question, QuestionType } from "@/types";
+import { normalizeQuestionTypeForSubject } from "@/lib/question-types";
 import {
   ensureFillBlankAnswerArea,
   hasFillBlankAnswerArea,
@@ -34,6 +35,7 @@ export interface DocumentBlock {
 }
 
 export interface DocumentParseConfig {
+  subject?: string;
   headingKeywords: string[];
   questionKeywords: string[];
   answerKeywords: string[];
@@ -116,7 +118,7 @@ const builtInQuestionSectionPattern = new RegExp(
 const dottedSectionHeadingPattern = /^\d{1,3}(?:\s*\.\s*\d{1,3}){2,4}\s+\S/;
 
 const knowledgeBlockLabels = ["教学目标", "学习目标", "引入"];
-const numberedKnowledgeBlockLabels = ["角度", "探究", "考法"];
+const numberedKnowledgeBlockLabels = ["角度", "探究", "考法", "知识点"];
 const knowledgeBlockLabelSource = `(?:${knowledgeBlockLabels.map(flexibleLiteralSource).join("|")})`;
 const numberedKnowledgeBlockLabelSource = `(?:${numberedKnowledgeBlockLabels.map(flexibleLiteralSource).join("|")})`;
 const knowledgeBlockIndexSource = "(?:[\\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})";
@@ -175,24 +177,32 @@ function scanInlineMathRanges(text: string): TextRange[] {
 }
 
 function scanOptionMarkers(text: string, allowBare = false): OptionMarker[] {
-  const pattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）]|([A-Ha-h])(?=[ \t\u3000]))[ \t\u3000]*/g;
+  const plainPattern = /(^|[\s\u3000])(?:[（(]([A-Ha-h])[）)]|([A-Ha-h])[.．、:：)）]|([A-Ha-h])(?=[ \t\u3000]))[ \t\u3000]*/g;
+  // Word math variables are extracted as italic HTML runs; OMML labels may
+  // instead appear as standalone LaTeX expressions. Both can denote A-D.
+  const mathLabelPattern = /(^|[\s\u3000])(?:<i\s+class=["']math-(?:variable|vector)["']>([A-Ha-h])<\/i>|\$([A-Ha-h])\$|\$\\(?:mathrm|mathit|mathbf)\{([A-Ha-h])\}\$)(?:([.．、:：)）])|(?=[ \t\u3000]))[ \t\u3000]*/g;
   const inlineMathRanges = scanInlineMathRanges(text);
   const markers: OptionMarker[] = [];
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
+  while ((match = plainPattern.exec(text)) !== null) {
     if (match[4] && !allowBare) continue;
     const label = match[2] || match[3] || match[4];
     if (!label) continue;
     const leading = match[1] || "";
     const start = match.index + leading.length;
     if (inlineMathRanges.some((range) => start > range.start && start < range.end)) continue;
-    markers.push({
-      start,
-      contentStart: pattern.lastIndex,
-      index: optionIndex(label),
-    });
+    markers.push({ start, contentStart: plainPattern.lastIndex, index: optionIndex(label) });
   }
-  return markers;
+  while ((match = mathLabelPattern.exec(text)) !== null) {
+    if (!match[5] && !allowBare) continue;
+    const label = match[2] || match[3] || match[4];
+    const start = match.index + (match[1] || "").length;
+    // A math-delimited label itself is safe; an HTML label embedded inside a
+    // larger formula is not a new choice.
+    if (inlineMathRanges.some((range) => start > range.start && start < range.end)) continue;
+    markers.push({ start, contentStart: mathLabelPattern.lastIndex, index: optionIndex(label) });
+  }
+  return markers.sort((left, right) => left.start - right.start);
 }
 
 function sequentialOptionMarkers(markers: OptionMarker[], expectedStart: number): OptionMarker[] {
@@ -1710,8 +1720,11 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   return blocks;
 }
 
-function normalizeFillBlankAreas(blocks: DocumentBlock[]): DocumentBlock[] {
+function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
   for (const block of blocks) {
+    if (block.type === "question" && block.questionType) {
+      block.questionType = normalizeQuestionTypeForSubject(block.questionType, subject);
+    }
     if (
       block.type !== "question"
       || block.questionType !== "short"
@@ -1742,8 +1755,8 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
       allowPositionalFallback: kind !== "answer",
     });
     const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return normalizeFillBlankAreas(blocks);
+    if (merged >= requiredMatches) return normalizeFillBlankAreas(blocks, config.subject);
   }
 
-  return normalizeFillBlankAreas(parseDocumentBlocksCore(content, config));
+  return normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject);
 }

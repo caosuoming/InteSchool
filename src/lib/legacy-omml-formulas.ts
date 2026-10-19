@@ -2,6 +2,8 @@ const LEGACY_DOUBLE_STRUCK_PATTERN = /\\mathbb\{([CQN])\}/g;
 const LEGACY_UNICODE_DELIMITER_PATTERN = /\\(left|right)([‖∥∣])/g;
 const LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN =
   /\\left\\\{\s*\\begin\{aligned\}\s*(\\begin\{cases\}[\s\S]*?\\end\{cases\})\s*\\end\{aligned\}\s*\\right\./g;
+const LEGACY_MALFORMED_CASES_WRAPPER_PATTERN =
+  /\\left\s*(\\begin\{cases\}[\s\S]*?\\end\{cases\})\s*\\right\./g;
 
 const LEGACY_ARC_VECTOR_PATTERN =
   /((?:圆弧|优弧|劣弧|弧)[^$\n]{0,12})\$(?:\\vec|\\over(?:right|left)arrow)\{([A-Za-z]{2,4})\}\$/g;
@@ -16,8 +18,12 @@ function normalizeLegacyOmmlDelimiters(latex: string): string {
   );
 }
 
-function normalizeLegacyOmmlStructures(latex: string): string {
-  return latex.replace(LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN, "$1");
+export function normalizeOmmlLatexStructures(latex: string): string {
+  return latex
+    .replace(LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN, "$1")
+    // Some Word formulas omit the delimiter after \left. A cases environment
+    // already draws its own brace, so the invalid outer wrapper can be removed.
+    .replace(LEGACY_MALFORMED_CASES_WRAPPER_PATTERN, "$1");
 }
 
 const LABEL_CONTEXT_PATTERN =
@@ -62,7 +68,7 @@ function isLabelUsage(
 }
 
 export function normalizeLegacyOmmlLatex(latex: string, surroundingText: string): string {
-  const normalizedLatex = normalizeLegacyOmmlStructures(normalizeLegacyOmmlDelimiters(latex));
+  const normalizedLatex = normalizeOmmlLatexStructures(normalizeLegacyOmmlDelimiters(latex));
   return normalizedLatex.replace(
     LEGACY_DOUBLE_STRUCK_PATTERN,
     (match, letter: "C" | "Q" | "N", offset: number) => {
@@ -88,6 +94,7 @@ export function normalizeLegacyOmmlMathText(text: string): string {
     !arcNormalized.includes("\\mathbb")
     && !/\\(?:left|right)[‖∥∣]/.test(arcNormalized)
     && !(arcNormalized.includes("\\left\\{") && arcNormalized.includes("\\begin{cases}"))
+    && !/\\left\s*\\begin\{cases\}/.test(arcNormalized)
   ) return arcNormalized;
 
   return arcNormalized.replace(/(\${1,2})([\s\S]+?)\1/g, (full, delimiter: string, latex: string, offset: number) => {

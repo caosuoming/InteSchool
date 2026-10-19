@@ -209,6 +209,19 @@ describe("extract text renderer", () => {
     expect(container.querySelector(".mathbb")).toBeNull();
   });
 
+  it("renders malformed systems from existing extraction records as formulas", () => {
+    const source = String.raw`联立 $\left\begin{cases}
+PM: y-y_{1}=-\sqrt{3}(x-x_{1}), \\
+QM: y-y_{2}=\sqrt{3}(x-x_{2}),
+\end{cases}\right.$。`;
+    const container = asElement(renderExtractText(source, [], false));
+
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex-html")).not.toBeNull();
+    expect(container.textContent).toContain("PM");
+    expect(container.textContent).toContain("QM");
+  });
+
   it("renders stored formulas containing Unicode vertical delimiters", () => {
     const html = renderExtractText(
       "$S=\\left\\{y\\left| y=\\sqrt{{x}^{2}-5}\\right.\\right\\},"

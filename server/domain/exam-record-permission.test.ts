@@ -117,6 +117,7 @@ describe("exam record ownership and recycle bins", () => {
     expect(serviceParameters.examArrangement.restoreInvigilationConfig.at(-1)).toBe("teacher");
     expect(serviceParameters.examArrangement.restoreArrangement.at(-1)).toBe("teacher");
     expect(serviceParameters.grade.saveCohortSettings.at(-1)).toBe("teacher");
+    expect(serviceParameters.grade.saveExamStatistics.at(-1)).toBe("teacher");
     expect(serviceParameters.grade.copyCohortSettings.at(-1)).toBe("teacher");
     expect(serviceParameters.grade.updateExamMetadata.at(-1)).toBe("teacher");
     expect(serviceParameters.grade.deleteExam.at(-1)).toBe("teacher");
