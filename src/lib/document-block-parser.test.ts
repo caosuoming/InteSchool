@@ -146,6 +146,64 @@ describe("document block parser", () => {
     });
   });
 
+  it("extracts Word math-variable choice labels on consecutive lines", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "1. 过点 $A(1,\\sqrt{3})$、$B(4,2\\sqrt{3})$ 的直线倾斜角为（ ）",
+        '<i class="math-variable">A</i>.30°　<i class="math-variable">B</i>.60°',
+        '<i class="math-variable">C</i>.120°　<i class="math-variable">D</i>.150°',
+        "答案：A",
+        "解析：斜率为 $\\sqrt{3}/3$。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      questionType: "single",
+      content: "1. 过点 $A(1,\\sqrt{3})$、$B(4,2\\sqrt{3})$ 的直线倾斜角为（ ）",
+      options: ["30°", "60°", "120°", "150°"],
+      answer: "A",
+      analysis: "斜率为 $\\sqrt{3}/3$。",
+    });
+  });
+
+  it("extracts LaTeX-rendered choice labels while keeping option formulas", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、单项选择题",
+        "2. 角的大小为（ ） $A$. $30^\\circ$ $B$. $60^\\circ$",
+        "$C$. $120^\\circ$ $\\mathrm{D}$. $150^\\circ$",
+        "答案：B",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks[1]).toMatchObject({
+      type: "question",
+      content: "2. 角的大小为（ ）",
+      options: ["$30^\\circ$", "$60^\\circ$", "$120^\\circ$", "$150^\\circ$"],
+      answer: "B",
+    });
+  });
+
+  it("does not mistake inline mathematical variables for option labels", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "1. 已知 $A$ 是点、$B$ 是线段且 $C$ 是角，求 $D$ 的值。",
+        "已知 $A$ 和 $B$ 满足上述条件。",
+      ].join("\n"),
+      config,
+    );
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      options: [],
+    });
+  });
+
   it("recognizes mixed bare and punctuated inline option labels", () => {
     const blocks = parseDocumentBlocks(
       [
