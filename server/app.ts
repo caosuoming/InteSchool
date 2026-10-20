@@ -20,6 +20,7 @@ import {
 import { getSession, registerAuthRoutes, requireCsrf } from "./routes/auth.js";
 import { registerFileRoutes } from "./routes/files.js";
 import { registerParentRoutes } from "./routes/parent.js";
+import { registerScannerRoutes } from "./routes/scanner.js";
 
 const rpcSchema = z.object({
   service: z.string().regex(/^[A-Za-z][A-Za-z0-9]*$/).max(50),
@@ -143,6 +144,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
   await registerAuthRoutes(app, store, config);
   await registerParentRoutes(app, store, config);
   await registerFileRoutes(app, store, config);
+  await registerScannerRoutes(app, store, config);
 
   app.post("/api/rpc", async (request, reply) => {
     const input = rpcSchema.parse(request.body);

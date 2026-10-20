@@ -26,7 +26,7 @@ export const COLLECTIONS = [
   "directoryCatalogs", "directoryDonations", "directoryNodeAssociations",
   "schoolChapters", "schoolKnowledgePoints", "questions",
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "resourceFolders", "baskets", "documents",
-  "recognitions", "answerRecords", "subjectGroups", "prepGroups", "organizationDepartments", "onlineResources",
+  "recognitions", "answerRecords", "scannerPages", "subjectGroups", "prepGroups", "organizationDepartments", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
   "shareRecords", "creditTransactions", "platformCreditSettings", "platformAccessSettings", "examPublications", "lessonCoursewares", "reflections",
   "classroomHomeworks", "classroomNotices", "classroomDevices",
