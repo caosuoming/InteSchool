@@ -270,6 +270,7 @@ export interface TeacherRoleApplication {
   schoolId: string;
   schoolName: string;
   requestedRoles: TeacherRole[];
+  approvedRoles?: TeacherRole[];
   reason: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;

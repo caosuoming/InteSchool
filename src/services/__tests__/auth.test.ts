@@ -396,7 +396,7 @@ describe("auth service", () => {
       .resolves.toEqual(application);
     await expect(authService.getMyTeacherRoleApplications()).resolves.toEqual([application]);
     await expect(authService.getPendingTeacherRoleApplications()).resolves.toEqual([application]);
-    await authService.reviewTeacherRoleApplication("role / application", true);
+    await authService.reviewTeacherRoleApplication("role / application", true, ["subjectLeader"]);
 
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(1, "/api/auth/role-applications", {
       method: "POST",
@@ -406,7 +406,7 @@ describe("auth service", () => {
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(3, "/api/auth/role-applications/pending");
     expect(apiMocks.apiRequest).toHaveBeenNthCalledWith(4, "/api/auth/role-applications/role%20%2F%20application/review", {
       method: "POST",
-      body: JSON.stringify({ approved: true }),
+      body: JSON.stringify({ approved: true, approvedRoles: ["subjectLeader"] }),
     }, true);
   });
 

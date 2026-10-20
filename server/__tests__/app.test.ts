@@ -900,7 +900,7 @@ describe("production backend", () => {
     expect((built.store.loadState().notifications as AppNotification[]).some((notification) =>
       notification.recipientTeacherId === "tch-1"
       && notification.title === "新的教师权限申请"
-      && notification.actionUrl === "/admin/permission-applications"
+      && notification.actionUrl === "/admin/permission-applications#review"
       && notification.readAt === null,
     )).toBe(true);
 
@@ -1063,6 +1063,63 @@ describe("production backend", () => {
       payload: { approved: true },
     });
     expect(repeatReview.statusCode).toBe(403);
+  });
+
+  it("lets a school administrator adjust legacy teacher role requests and records the granted roles", async () => {
+    await built.store.createUser("tch-2", "legacy-roles@example.com", "TeacherPass123");
+    const applicant = await login(built.app, "legacy-roles@example.com", "TeacherPass123");
+    const admin = await login(built.app);
+    const submission = await built.app.inject({
+      method: "POST", url: "/api/auth/role-applications",
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: { roles: ["teacher", "gradeLeader"], reason: "负责高一年级教师团队工作" },
+    });
+    expect(submission.statusCode, submission.body).toBe(200);
+    const { id } = submission.json<{ id: string }>();
+
+    const invalid = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: false, approvedRoles: ["subjectLeader"] },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const denied = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${id}/review`,
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: { approved: true, approvedRoles: ["principal"] },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const approved = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: true, approvedRoles: ["subjectLeader"] },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const target = built.store.loadState().teachers.find((item) => item.id === "tch-2");
+    const roles = target?.affiliations.find((item) => item.schoolId === "sch-1")?.roles;
+    expect(roles).toContain("subjectLeader");
+    expect(roles).not.toContain("gradeLeader");
+    const mine = await built.app.inject({
+      method: "GET", url: "/api/auth/role-applications/mine",
+      headers: { cookie: applicant.cookie },
+    });
+    expect(mine.json<Array<Record<string, unknown>>>().find((item) => item.id === id)).toMatchObject({
+      requestedRoles: ["gradeLeader"], approvedRoles: ["subjectLeader"], status: "approved",
+    });
+    const ownSubmission = await built.app.inject({
+      method: "POST", url: "/api/auth/role-applications",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { roles: ["teacher", "principal"], reason: "申请新的学校管理教学职责" },
+    });
+    expect(ownSubmission.statusCode, ownSubmission.body).toBe(200);
+    const ownId = ownSubmission.json<{ id: string }>().id;
+    const ownReview = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${ownId}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: true },
+    });
+    expect(ownReview.statusCode).toBe(403);
   });
 
   it("rejects permission adjustments without changing the teacher profile", async () => {

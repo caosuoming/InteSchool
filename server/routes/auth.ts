@@ -142,6 +142,14 @@ const roleApplicationSchema = z.object({
   reason: z.string().trim().min(5).max(300),
 }).transform((input) => ({ ...input, roles: normalizeTeacherRoles(input.roles) }));
 
+const roleReviewSchema = z.object({
+  approved: z.boolean(),
+  approvedRoles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length - 1)
+    .refine((roles) => roles.every((role) => role !== "teacher"), "基础教师角色无需申请").optional(),
+}).refine((input) => input.approved || input.approvedRoles === undefined, {
+  message: "拒绝申请时不能修改审核内容",
+});
+
 const permissionFieldsBaseSchema = z.object({
   roles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length),
   subjects: z.array(z.string().trim().min(1).max(50)).min(1).max(20).optional(),
@@ -1201,7 +1209,7 @@ export async function registerAuthRoutes(
       notifySchoolReviewers(state, schoolId, teacher.id, {
         title: "新的权限调整申请",
         content: `${teacher.name} 提交了校内权限调整申请，请及时审核。`,
-        actionUrl: "/admin/permission-applications",
+        actionUrl: "/admin/permission-applications#review",
       }, false);
       return application;
     });
@@ -1313,7 +1321,7 @@ export async function registerAuthRoutes(
       notifySchoolReviewers(state, school.id, teacher.id, {
         title: "新的教师权限申请",
         content: `${teacher.name} 提交了新的校内职务权限申请，请及时审核。`,
-        actionUrl: "/admin/permission-applications",
+        actionUrl: "/admin/permission-applications#review",
       }, false);
       return application;
     });
@@ -1349,25 +1357,26 @@ export async function registerAuthRoutes(
     const platformAdmin = isPlatformAdminAccount(reviewer);
     if (!platformAdmin && !reviewer.schoolId) throw new Error("当前管理员没有学校身份");
     const id = z.string().uuid().parse((request.params as { id?: string }).id);
-    const approved = z.object({ approved: z.boolean() }).parse(request.body).approved;
+    const { approved, approvedRoles } = roleReviewSchema.parse(request.body);
     return withSerializedState(store, (state) => {
       const applications = state.schoolAdminApplications as Array<Record<string, unknown>>;
       const application = applications.find((item) => item.id === id && item.kind === "teacher_roles");
-      if (!application || application.status !== "pending"
+      if (!application || application.status !== "pending" || application.teacherId === reviewer.id
         || (!platformAdmin && application.schoolId !== reviewer.schoolId)) {
-        throw new Error("教师权限申请不存在或已处理");
+        throw new Error("教师权限申请不存在或无权审核");
       }
       const targetSchoolId = String(application.schoolId);
-      application.status = approved ? "approved" : "rejected";
-      application.reviewedAt = new Date().toISOString();
-      application.reviewedBy = reviewer.id;
       if (approved) {
         const teacherIndex = state.teachers.findIndex((item) => item.id === application.teacherId);
         if (teacherIndex < 0) throw new Error("申请教师不存在");
         const target = state.teachers[teacherIndex];
-        const requestedRoles = Array.isArray(application.requestedRoles)
-          ? application.requestedRoles.filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))
-          : [];
+        if (!target.affiliations.some((item) => item.schoolId === targetSchoolId && item.status === "active")) {
+          throw new Error("申请教师已不属于该学校");
+        }
+        const requestedRoles = approvedRoles ?? (Array.isArray(application.requestedRoles)
+          ? application.requestedRoles.filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole) && role !== "teacher")
+          : []);
+        application.approvedRoles = [...new Set(requestedRoles)];
         const affiliations = target.affiliations.map((item) => {
           if (item.schoolId !== targetSchoolId) return item;
           const directRoles = Array.isArray(item.assignedRoles) && item.assignedRoles.length > 0
@@ -1392,6 +1401,9 @@ export async function registerAuthRoutes(
           roles: Array.isArray(current?.roles) ? current.roles as string[] : target.roles,
         };
       }
+      application.status = approved ? "approved" : "rejected";
+      application.reviewedAt = new Date().toISOString();
+      application.reviewedBy = reviewer.id;
       createNotificationInState(state, {
         recipientTeacherId: String(application.teacherId),
         type: "approval",
