@@ -11,7 +11,9 @@ import fastifyStatic from "@fastify/static";
 import { ZodError, z } from "zod";
 import { loadConfig, type ServerConfig } from "./config.js";
 import { DatabaseStore, DuplicateAccountError } from "./database.js";
-import { invokeRpc, isPublicRpcCall } from "./rpc.js";
+import { invokeRpc, isPublicRpcCall, withSerializedState } from "./rpc.js";
+import { runWithState } from "./runtime-db.js";
+import { createThirdPartyCard } from "./domain/scanner.js";
 import {
   CLASSROOM_DEVICE_COOKIE,
   CLASSROOM_DEVICE_COOKIE_MAX_AGE,
@@ -145,6 +147,20 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
   await registerParentRoutes(app, store, config);
   await registerFileRoutes(app, store, config);
   await registerScannerRoutes(app, store, config);
+
+  app.post("/api/scanner/third-party", async (request) => {
+    const session = await getSession(request, store);
+    if (!session) throw new Error("请先登录");
+    requireCsrf(request, session);
+    const teacher = store.getTeacherById(session.teacherId);
+    if (!teacher?.schoolId) throw new Error("请先完成学校认证");
+    const input = z.object({ fileId: z.string().uuid(), fileName: z.string().trim().min(1).max(160) }).parse(request.body);
+    const file = await store.getFile(input.fileId);
+    if (!file || file.ownerId !== teacher.id || file.schoolId !== teacher.schoolId || !["image/png", "image/jpeg", "image/bmp"].includes(file.mimeType)) {
+      throw new Error("扫描图片不存在或无权访问");
+    }
+    return { result: await withSerializedState(store, (state) => runWithState(state, () => createThirdPartyCard(input, teacher), store)) };
+  });
 
   app.post("/api/rpc", async (request, reply) => {
     const input = rpcSchema.parse(request.body);

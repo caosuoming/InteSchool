@@ -23,7 +23,7 @@ interface QuickEditModalProps {
   onSaved: (question: Question) => void;
 }
 
-type DirectoryTab = "chapter" | "knowledge";
+type DirectoryTab = "chapter" | "knowledge" | "method";
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -35,10 +35,12 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
   const { teacher } = useAuthStore();
   const [chapterIds, setChapterIds] = useState<string[]>([]);
   const [knowledgePointIds, setKnowledgePointIds] = useState<string[]>([]);
+  const [thoughtMethodIds, setThoughtMethodIds] = useState<string[]>([]);
   const [remarks, setRemarks] = useState<QuestionRemark[]>([]);
   const [activeDirectoryTab, setActiveDirectoryTab] = useState<DirectoryTab>("chapter");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
+  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
   const [saving, setSaving] = useState(false);
   const [newRemarkContent, setNewRemarkContent] = useState("");
   const [addingRemark, setAddingRemark] = useState(false);
@@ -49,6 +51,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     if (!open || !question) return;
     setChapterIds([...(question.chapterIds || [])]);
     setKnowledgePointIds([...(question.knowledgePointIds || [])]);
+    setThoughtMethodIds([...(question.thoughtMethodIds || [])]);
     setRemarks([...(question.remarks || [])]);
     setActiveDirectoryTab("chapter");
     setNewRemarkContent("");
@@ -60,6 +63,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     if (!teacher || !open) return;
     knowledgeService.getChapterTree(teacher.schoolId!).then(setChapterTree);
     knowledgeService.getKnowledgeTree(teacher.schoolId!).then(setKnowledgeTree);
+    knowledgeService.getMethodTree(teacher.schoolId!).then(setMethodTree);
   }, [teacher, open]);
 
   const handleSave = async () => {
@@ -70,6 +74,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
       const updated = await questionService.updateQuestion(question.id, {
         chapterIds,
         knowledgePointIds,
+        thoughtMethodIds,
         remarks,
         remark: latestRemark,
       });
@@ -127,12 +132,12 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
 
   if (!open || !question) return null;
 
-  const activeTree = activeDirectoryTab === "chapter" ? chapterTree : knowledgeTree;
-  const activeCheckedIds = activeDirectoryTab === "chapter" ? chapterIds : knowledgePointIds;
-  const activeSetCheckedIds = activeDirectoryTab === "chapter" ? setChapterIds : setKnowledgePointIds;
-  const activeSetTree = activeDirectoryTab === "chapter" ? setChapterTree : setKnowledgeTree;
-  const activeTitle = activeDirectoryTab === "chapter" ? "章节课目录" : "知识点目录";
-  const activeSearchPlaceholder = activeDirectoryTab === "chapter" ? "搜索章节课目录..." : "搜索知识点目录...";
+  const activeTree = activeDirectoryTab === "chapter" ? chapterTree : activeDirectoryTab === "knowledge" ? knowledgeTree : methodTree;
+  const activeCheckedIds = activeDirectoryTab === "chapter" ? chapterIds : activeDirectoryTab === "knowledge" ? knowledgePointIds : thoughtMethodIds;
+  const activeSetCheckedIds = activeDirectoryTab === "chapter" ? setChapterIds : activeDirectoryTab === "knowledge" ? setKnowledgePointIds : setThoughtMethodIds;
+  const activeSetTree = activeDirectoryTab === "chapter" ? setChapterTree : activeDirectoryTab === "knowledge" ? setKnowledgeTree : setMethodTree;
+  const activeTitle = activeDirectoryTab === "chapter" ? "章节课目录" : activeDirectoryTab === "knowledge" ? "知识点目录" : "思想方法目录";
+  const activeSearchPlaceholder = activeDirectoryTab === "chapter" ? "搜索章节课目录..." : activeDirectoryTab === "knowledge" ? "搜索知识点目录..." : "搜索思想方法目录...";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -163,7 +168,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
             <div
               role="tablist"
               aria-label="题目目录"
-              className="grid grid-cols-2 border-b border-ink-200 bg-mist/30"
+              className="grid grid-cols-3 border-b border-ink-200 bg-mist/30"
             >
               <button
                 type="button"
@@ -192,7 +197,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 aria-selected={activeDirectoryTab === "knowledge"}
                 onClick={() => setActiveDirectoryTab("knowledge")}
                 className={cn(
-                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "knowledge"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -205,6 +210,27 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                   activeDirectoryTab === "knowledge" ? "bg-teal-100 text-teal-700" : "bg-ink-100 text-ink-500",
                 )}>
                   已选 {knowledgePointIds.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeDirectoryTab === "method"}
+                onClick={() => setActiveDirectoryTab("method")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
+                  activeDirectoryTab === "method"
+                    ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
+                    : "text-ink-500 hover:bg-paper hover:text-ink-800",
+                )}
+              >
+                <Lightbulb className="h-4 w-4" />
+                <span>思想方法目录</span>
+                <span className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[11px]",
+                  activeDirectoryTab === "method" ? "bg-teal-100 text-teal-700" : "bg-ink-100 text-ink-500",
+                )}>
+                  已选 {thoughtMethodIds.length}
                 </span>
               </button>
             </div>

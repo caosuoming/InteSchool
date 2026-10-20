@@ -22,6 +22,7 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [subject, setSubject] = useState("数学");
+  const [subjects, setSubjects] = useState<string[]>(["数学"]);
   const [grades, setGrades] = useState<string[]>([]);
   const [classIds, setClassIds] = useState<string[]>([]);
   const [homeroomClassIds, setHomeroomClassIds] = useState<string[]>([]);
@@ -80,6 +81,7 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
     if (!selected) return;
     const affiliation = affiliationFor(selected, schoolId);
     setSubject(affiliation?.subject || selected.subject || "数学");
+    setSubjects(affiliation?.subjects?.length ? affiliation.subjects : [affiliation?.subject || selected.subject || "数学"]);
     setGrades(affiliation?.teachingGrades || selected.teachingGrades || []);
     setClassIds(affiliation?.teachingClassIds || selected.teachingClassIds || []);
     setHomeroomClassIds(affiliation?.homeroomClassIds || selected.homeroomClassIds || []);
@@ -125,7 +127,8 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
     try {
       await organizationService.updateTeacherRoles(selected.id, schoolId, roles);
       await authService.updateTeacherTeachingProfile(selected.id, {
-        subject,
+        subject: subjects.includes(subject) ? subject : subjects[0],
+        subjects,
         teachingGrades: grades,
         teachingClassIds: classIds,
         homeroomClassIds,
@@ -184,7 +187,13 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
             </div>
           )}
         </fieldset>
-        <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
+        <Choices label="任教学科" values={SUBJECT_OPTIONS} selected={subjects} onToggle={(value) => {
+          const next = subjects.includes(value) ? subjects.filter((item) => item !== value) : [...subjects, value];
+          if (!next.length) return;
+          setSubjects(next);
+          if (!next.includes(subject)) setSubject(next[0]);
+        }} />
+        <Select label="默认学科" value={subjects.includes(subject) ? subject : subjects[0]} onChange={(event) => setSubject(event.target.value)} options={subjects.map((value) => ({ value, label: value }))} />
         <Choices label="任教年级" values={isSchoolAdmin || managerLevel > TEACHER_ROLE_LEVEL.gradeLeader ? GRADE_OPTIONS : [...new Set(currentAffiliation?.teachingGrades || current?.teachingGrades || [])]} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
         <ClassChoices label="任教班级" classes={visibleClasses} selected={classIds} onToggle={(value) => toggle(value, classIds, setClassIds)} />
         <ClassChoices label="班主任班级" classes={visibleClasses} selected={homeroomClassIds} onToggle={(value) => toggle(value, homeroomClassIds, setHomeroomClassIds)} />

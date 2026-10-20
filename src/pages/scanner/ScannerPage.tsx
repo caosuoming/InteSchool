@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowLeft, Download, FileText, RefreshCw, ScanLine, School as SchoolIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useAuthStore } from "@/stores/auth";
 import { Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { readAnswerSheetQr } from "@/lib/scanner-qr";
 import { buildAnswerSheetQrPayload } from "@/lib/answer-sheet";
 import { schoolService } from "@/services/school";
 import { SCANNER_DEVICE_KEY, SCANNER_SCHOOL_KEY, scannerService, type PublishedScannerSheet, type ScannerDevice } from "@/services/scanner";
-import { useAuthStore } from "@/stores/auth";
 import type { School } from "@/types";
 
 interface ScannedImage {
@@ -38,6 +38,13 @@ export default function ScannerPage() {
   const [scans, setScans] = useState<ScannedImage[]>([]);
   const [scanning, setScanning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [gradeFilter, setGradeFilter] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+  const [thirdPartyImage, setThirdPartyImage] = useState<{ blob: Blob; url: string } | null>(null);
+  const [thirdPartyName, setThirdPartyName] = useState("");
+  const [savingThirdParty, setSavingThirdParty] = useState(false);
+  const [savedName, setSavedName] = useState("");
   const [error, setError] = useState("");
   const [changingSchool, setChangingSchool] = useState(false);
   const imageUrls = useRef<string[]>([]);
@@ -111,6 +118,57 @@ export default function ScannerPage() {
     imageUrls.current = [];
     setScans([]);
   };
+
+  const filterOptions = useMemo(() => ({
+    grades: [...new Set(sheets.map((sheet) => sheet.grade).filter(Boolean))].sort(),
+    subjects: [...new Set(sheets.map((sheet) => sheet.subject).filter(Boolean))].sort(),
+    classes: [...new Map(sheets.flatMap((sheet) => sheet.classes || []).map((item) => [item.id, item])).values()],
+  }), [sheets]);
+  const filteredSheets = sheets.filter((sheet) =>
+    (!gradeFilter || sheet.grade === gradeFilter)
+    && (!subjectFilter || sheet.subject === subjectFilter)
+    && (!classFilter || sheet.classes?.some((item) => item.id === classFilter)));
+
+  const scanThirdParty = async () => {
+    if (scanning) return;
+    if (!teacher || teacher.schoolId !== schoolId) {
+      setError("请先以当前学校的教师账号登录，才能将第三方卡保存到作业管理。");
+      return;
+    }
+    setScanning(true);
+    setError("");
+    setSavedName("");
+    try {
+      if (!deviceId) throw new Error("请先选择扫描设备");
+      const images = await scannerService.scan(deviceId, duplex);
+      const blob = images[0];
+      if (!blob) throw new Error("扫描仪未返回有效图像");
+      const url = URL.createObjectURL(blob);
+      imageUrls.current.push(url);
+      setThirdPartyImage({ blob, url });
+      setThirdPartyName(`第三方答题卡-${new Date().toISOString().slice(0, 10)}-${Date.now()}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "第三方卡扫描失败");
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const saveThirdParty = async () => {
+    if (!thirdPartyImage || savingThirdParty) return;
+    setSavingThirdParty(true);
+    setError("");
+    try {
+      const saved = await scannerService.saveThirdPartyCard(thirdPartyImage.blob, thirdPartyName);
+      setThirdPartyImage(null);
+      setSavedName(saved.fileName);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "保存第三方卡失败");
+    } finally {
+      setSavingThirdParty(false);
+    }
+  };
+
   const bindSchool = () => {
     if (!selection || !schools.some((school) => school.id === selection)) { setError("请选择学校"); return; }
     localStorage.setItem(SCANNER_SCHOOL_KEY, selection);
@@ -119,6 +177,11 @@ export default function ScannerPage() {
     setSelected(null);
     clearImages();
     setSheets([]);
+    setGradeFilter("");
+    setSubjectFilter("");
+    setClassFilter("");
+    setThirdPartyImage(null);
+    setSavedName("");
     setError("");
   };
 
@@ -168,8 +231,17 @@ export default function ScannerPage() {
     <div className="min-h-screen bg-mist p-4 sm:p-8">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex items-center justify-between gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/login")}><ArrowLeft className="h-4 w-4" />返回登录页</Button>
-          {selectedSchool && !changingSchool && <Button variant="outline" size="sm" disabled={scanning || uploading} onClick={() => { setSelection(schoolId); setChangingSchool(true); }}>切换学校</Button>}
+          <Button variant="ghost" size="sm" onClick={() => navigate("/login")}>
+            <ArrowLeft className="h-4 w-4" />返回登录页
+          </Button>
+          {selectedSchool && !changingSchool && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => void scanThirdParty()} loading={scanning} disabled={uploading || !deviceId}>扫描第三方卡</Button>
+              <Button variant="outline" size="sm" disabled={scanning || uploading} onClick={() => { setSelection(schoolId); setChangingSchool(true); }}>
+                切换学校
+              </Button>
+            </div>
+          )}
         </div>
         <header className="rounded-2xl bg-ink-900 text-paper px-6 py-7 sm:px-9">
           <div className="flex items-center gap-4">
@@ -187,7 +259,13 @@ export default function ScannerPage() {
           </section>
         ) : (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="text-xs text-ink-500">当前绑定学校</div><h2 className="text-lg font-semibold text-ink-900">{selectedSchool.name}</h2></div><div className="text-sm text-ink-500">已发布答题卡 {sheets.length} 份</div></div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-xs text-ink-500">当前绑定学校</div>
+                <h2 className="text-lg font-semibold text-ink-900">{selectedSchool.name}</h2>
+              </div>
+              <div className="text-sm text-ink-500">已发布答题卡 {sheets.length} 份</div>
+            </div>
             <section className="rounded-xl border border-ink-100 bg-paper p-5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">本机扫描设备</h2><Button size="sm" variant="outline" onClick={() => void refreshDevices()} loading={loadingDevices}><RefreshCw className="h-4 w-4" />刷新设备</Button></div>
               {deviceStatus && <p role="status" className="text-sm text-amber-700">{deviceStatus}</p>}
@@ -196,14 +274,70 @@ export default function ScannerPage() {
               {selectedDevice && duplex && !selectedDevice.duplex && <p className="text-sm text-amber-700">所选 WIA 通道不能保证双面扫描；请选择 TWAIN 设备或取消双面模式。</p>}
             </section>
             {!canUpload && <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800">当前未以本校教师身份登录。可在本机扫描并下载，但上传与后续异常卷处理需要先<Link to="/login" className="underline">登录本校教师账号</Link>。</p>}
-            {loadingSheets ? <div className="flex justify-center py-14"><Spinner size={30} /></div> : sheets.length === 0 ? <div className="rounded-xl border border-ink-100 bg-paper px-6 py-16 text-center text-ink-500">本校暂无已发布的答题卡</div> : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{sheets.map((sheet) => (
-                <button key={`${sheet.type}:${sheet.id}`} type="button" disabled={scanning || uploading || !deviceId} onClick={() => void scanSheet(sheet)} className="rounded-xl border border-ink-100 bg-paper p-5 text-left shadow-sm transition-colors hover:border-gold-400 hover:bg-gold-50 disabled:opacity-60">
-                  <div className="flex items-start justify-between gap-2"><FileText className="h-5 w-5 text-gold-600" /><span className="text-xs text-ink-500">{sheet.type === "paper" ? "试卷" : "讲义"}</span></div>
-                  <h3 className="mt-3 line-clamp-2 font-semibold text-ink-900">{sheet.title}</h3><p className="mt-2 text-xs text-ink-500">{sheet.grade} · {sheet.schoolYear}</p>
-                  <p className="mt-3 text-xs text-gold-700">{scanning && selected?.id === sheet.id && selected.type === sheet.type ? "正在扫描…" : "点击采集"}</p>
-                </button>
-              ))}</div>
+            {thirdPartyImage && (
+              <section className="space-y-3 rounded-xl border border-gold-400 bg-paper p-5">
+                <h3 className="font-semibold text-ink-900">第三方答题卡扫描结果</h3>
+                <img src={thirdPartyImage.url} alt="第三方答题卡预览" className="max-h-80 w-full object-contain bg-mist" />
+                <label className="block text-sm font-medium text-ink-700">文件名
+                  <input aria-label="第三方卡文件名" value={thirdPartyName} maxLength={160} onChange={(event) => setThirdPartyName(event.target.value)} className="mt-1 w-full rounded-md border border-ink-200 px-3 py-2" />
+                </label>
+                <div className="flex gap-2">
+                  <Button onClick={() => void saveThirdParty()} loading={savingThirdParty} disabled={!thirdPartyName.trim()}>保存到作业管理</Button>
+                  <Button variant="outline" onClick={() => setThirdPartyImage(null)} disabled={savingThirdParty}>取消</Button>
+                </div>
+              </section>
+            )}
+            {savedName && <div role="status" className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm">已保存「{savedName}」。<Link className="ml-2 text-teal-700 underline" to="/homework-exams/homework">前往作业管理编辑标注</Link></div>}
+            {loadingSheets ? (
+              <div className="flex justify-center py-14"><Spinner size={30} /></div>
+            ) : (
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
+                <div>
+                  {filteredSheets.length === 0 ? (
+                    <div className="rounded-xl border border-ink-100 bg-paper px-6 py-16 text-center text-ink-500">{sheets.length ? "没有符合筛选条件的答题卡" : "本校暂无已发布的答题卡"}</div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {filteredSheets.map((sheet) => (
+                        <button
+                          key={`${sheet.type}:${sheet.id}`}
+                          type="button"
+                          disabled={scanning || uploading || !deviceId}
+                          onClick={() => void scanSheet(sheet)}
+                          className="rounded-xl border border-ink-100 bg-paper p-5 text-left shadow-sm transition-colors hover:border-gold-400 hover:bg-gold-50 disabled:opacity-60"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <FileText className="h-5 w-5 text-gold-600" />
+                            <span className="text-xs text-ink-500">{sheet.type === "paper" ? "试卷" : "讲义"}</span>
+                          </div>
+                          <h3 className="mt-3 line-clamp-2 font-semibold text-ink-900">{sheet.title}</h3>
+                          <p className="mt-2 text-xs text-ink-500">{sheet.grade} · {sheet.schoolYear} · {sheet.subject}</p>
+                          {!!sheet.classes?.length && <p className="mt-1 text-xs text-ink-500">{sheet.classes.map((item) => item.name).join("、")}</p>}
+                          <p className="mt-3 text-xs text-gold-700">{scanning && selected?.id === sheet.id && selected.type === sheet.type ? "正在扫描…" : "点击开始扫描"}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <aside className="h-fit space-y-4 rounded-xl border border-ink-100 bg-paper p-4" aria-label="答题卡筛选">
+                  <h3 className="font-semibold text-ink-900">答题卡筛选</h3>
+                  <label className="block text-sm">年级
+                    <select aria-label="筛选年级" value={gradeFilter} onChange={(event) => setGradeFilter(event.target.value)} className="mt-1 w-full rounded-md border border-ink-200 p-2">
+                      <option value="">全部年级</option>{filterOptions.grades.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-sm">学科
+                    <select aria-label="筛选学科" value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)} className="mt-1 w-full rounded-md border border-ink-200 p-2">
+                      <option value="">全部学科</option>{filterOptions.subjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-sm">班级
+                    <select aria-label="筛选班级" value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="mt-1 w-full rounded-md border border-ink-200 p-2">
+                      <option value="">全部班级</option>{filterOptions.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
+                  <p className="text-xs text-ink-500">显示 {filteredSheets.length} / {sheets.length} 份</p>
+                </aside>
+              </div>
             )}
             {selected && <section className="space-y-4 rounded-xl border border-ink-100 bg-paper p-5 sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-ink-900">{selected.title}</h2><p className="mt-1 text-xs text-ink-500">已采集 {scans.length} 页 · 已上传 {scans.filter((scan) => scan.uploaded).length} 页</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void scanSheet(selected)} loading={scanning} disabled={uploading || !deviceId}><RefreshCw className="h-4 w-4" />继续扫描</Button><Button onClick={() => void uploadPending()} disabled={!canUpload || !pendingCount || scanning} loading={uploading}>确认试卷并上传 {pendingCount} 页</Button></div></div>

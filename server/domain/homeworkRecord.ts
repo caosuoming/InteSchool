@@ -9,7 +9,7 @@ import type {
   KnowledgePoint,
   Student,
   StudentMissingHomeworkRecord,
-  StudentInteractionAttachment,
+  HomeworkOverviewImage,
   Teacher,
 } from "../../src/types/index.js";
 import { HOMEWORK_ATTITUDE_KEYWORDS } from "../../src/types/index.js";
@@ -203,7 +203,7 @@ export const homeworkRecordService = {
       classId: string;
       homeworkDate: string;
       summary?: string;
-      images?: StudentInteractionAttachment[];
+      images?: HomeworkOverviewImage[];
       submittedStudentIds?: string[];
       absentStudentIds?: string[];
       attendanceTaken?: boolean;
@@ -236,7 +236,11 @@ export const homeworkRecordService = {
       const size = Number(image.size);
       if (!id || url !== `/api/files/${id}` || !/^image\//.test(mimeType)
         || !Number.isFinite(size) || size < 0) throw new Error("作业图片格式不正确");
-      return { id, url, name: String(image.name || "作业图片").slice(0, 200), mimeType, size };
+      const category = image.category ?? "excellent";
+      const note = String(image.note ?? "").trim();
+      if (category !== "excellent" && category !== "poor") throw new Error("作业图片分类不正确");
+      if (note.length > 500) throw new Error("作业图片备注不能超过 500 字");
+      return { id, url, name: String(image.name || "作业图片").slice(0, 200), mimeType, size, category, note };
     });
 
     let studentNames = existing?.studentNames || {};

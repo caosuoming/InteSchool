@@ -157,7 +157,7 @@ describe("TeacherProfilesPage", () => {
     await waitFor(() => {
       expect(organizationService.updateTeacherRoles).toHaveBeenCalledWith("teacher-2", "school-1", ["teacher", "dean"]);
       expect(authService.updateTeacherTeachingProfile).toHaveBeenCalledWith("teacher-2", {
-        subject: "数学",
+        subject: "数学", subjects: ["数学"],
         teachingGrades: ["高一"],
         teachingClassIds: ["class-high-2", "class-middle-1"],
         homeroomClassIds: ["class-high-2"],

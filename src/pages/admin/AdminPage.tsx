@@ -119,9 +119,9 @@ const allAdminItems: AdminItem[] = [
   },
   {
     icon: ShieldCheck,
-    title: "教师权限申请与管理",
-    description: "审核权限调整申请并统一管理本校教师职务、任课与班主任权限",
-    href: "/admin/permission-applications#pending",
+    title: "本校教师权限审核",
+    description: "审核本校教师的权限申请，可通过、拒绝或调整职务与班级后通过",
+    href: "/admin/permission-applications#review",
     group: "school",
     schoolOnly: true,
     schoolAdminOnly: true,

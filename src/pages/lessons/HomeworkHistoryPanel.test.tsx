@@ -23,5 +23,14 @@ describe("HomeworkHistoryPanel", () => {
     expect(screen.getAllByText(/作业概况：函数练习/)).toHaveLength(3);
     expect(screen.getAllByRole("link", { name: "批改.png" })).toHaveLength(3);
     expect(screen.getAllByRole("link", { name: "批改.png" })[0]).toHaveAttribute("href", "/api/files/img-1");
+    expect(screen.getAllByText("优秀作业（1）")).toHaveLength(3);
+  });
+
+  it("renders categories and notes for historical homework photos", () => {
+    const record = overview("1", "2026-08-01");
+    record.images = [{ ...record.images![0], category: "poor", note: "步骤错误，需要订正" }];
+    render(<HomeworkHistoryPanel records={[record]} students={[]} />);
+    expect(screen.getByText("糟糕作业（1）")).toBeInTheDocument();
+    expect(screen.getByText("步骤错误，需要订正")).toBeInTheDocument();
   });
 });

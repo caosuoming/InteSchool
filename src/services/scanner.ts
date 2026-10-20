@@ -1,4 +1,6 @@
-import { apiRequest, rpcCall } from "./api";
+import { apiRequest, rpcCall, uploadFile } from "./api";
+import type { CardRegion, ThirdPartyCard } from "../types/scanner";
+export type { CardRegion, CardRegionType, ThirdPartyCard } from "../types/scanner";
 
 export interface PublishedScannerSheet {
   id: string;
@@ -7,6 +9,8 @@ export interface PublishedScannerSheet {
   grade: string;
   schoolYear: string;
   publishedAt: string;
+  subject: string;
+  classes: { id: string; name: string }[];
 }
 
 export interface ScannerDevice {
@@ -94,5 +98,24 @@ export const scannerService = {
     return apiRequest<ScannerPageRecord>(`/api/scanner/pages/${encodeURIComponent(pageId)}`, {
       method: "PATCH", body: JSON.stringify({ studentId }),
     }, true);
+  },
+
+  async listThirdPartyCards(schoolId: string): Promise<ThirdPartyCard[]> {
+    return rpcCall("scanner", "listThirdPartyCards", [schoolId]);
+  },
+
+  async saveThirdPartyCard(image: Blob, fileName: string): Promise<ThirdPartyCard> {
+    if (!fileName.trim() || fileName.trim().length > 160) throw new Error("请填写有效的文件名");
+    const extension = image.type === "image/jpeg" ? ".jpg" : image.type === "image/bmp" ? ".bmp" : ".png";
+    const name = `${fileName.trim().replace(/\.(png|jpe?g|bmp)$/i, "")}${extension}`;
+    const uploaded = await uploadFile(new File([image], name, { type: image.type }));
+    const response = await apiRequest<{ result: ThirdPartyCard }>("/api/scanner/third-party", {
+      method: "POST", body: JSON.stringify({ fileId: uploaded.id, fileName: name }),
+    }, true);
+    return response.result;
+  },
+
+  async updateThirdPartyCard(id: string, patch: { fileName?: string; paperId?: string | null; regions?: CardRegion[] }): Promise<ThirdPartyCard> {
+    return rpcCall("scanner", "updateThirdPartyCard", [id, patch]);
   },
 };

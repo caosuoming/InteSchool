@@ -9,10 +9,10 @@ import { questionService } from "@/services/question";
 import { toast } from "@/stores/ui";
 import type { Lecture, LectureSection } from "@/types";
 
-function flattenQuestionSections(sections: LectureSection[]): LectureSection[] {
+function flattenQuestionSections(sections: LectureSection[], projectId?: string): { section: LectureSection; projectId?: string }[] {
   return sections.flatMap((section) => [
-    ...(section.type === "question" ? [section] : []),
-    ...flattenQuestionSections(section.children || []),
+    ...(section.type === "question" ? [{ section, projectId }] : []),
+    ...flattenQuestionSections(section.children || [], section.type === "chapter" && !projectId ? section.id : projectId),
   ]);
 }
 
@@ -47,12 +47,13 @@ export default function LectureAnswerSheetPage() {
 
       const questionSections = flattenQuestionSections(loadedLecture.sections);
       const loadedQuestions = await Promise.all(
-        questionSections.map(async (section): Promise<AnswerSheetQuestion> => {
+        questionSections.map(async ({ section, projectId }): Promise<AnswerSheetQuestion> => {
           const question = section.questionId
             ? await questionService.getQuestion(section.questionId).catch(() => null)
             : null;
           return {
             id: section.id,
+            projectId,
             label: section.customLabel,
             type: question?.type || "essay",
             stem: question?.stem || section.content || section.title,
@@ -97,6 +98,8 @@ export default function LectureAnswerSheetPage() {
       resourceId={lecture.id}
       resourceLabel="讲义"
       questions={questions}
+      sourceLayoutMode={lecture.sections.some((section) => section.type === "chapter") ? "flat" : "grouped"}
+      projects={lecture.sections.filter((section) => section.type === "chapter").map((section) => ({ id: section.id, name: section.title }))}
       initialSettings={lecture.answerSheetSettings}
       initialViewMode={initialViewMode}
       published={Boolean(lecture.answerSheetPublishedAt)}
