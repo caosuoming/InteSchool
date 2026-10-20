@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { BookCheck, ClipboardList, FileText, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ScannerReviewPanel } from "./ScannerReviewPanel";
 import { ThirdPartyCardEditor } from "@/components/scanner/ThirdPartyCardEditor";
 import { scannerService, type ThirdPartyCard } from "@/services/scanner";
 import { Badge } from "@/components/ui/Badge";
@@ -180,7 +181,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           classroomHomeworkService.listHomeworks({ schoolId, teacherId }),
           examPaperService.listPapers({ schoolId, teacherId }),
           section === "exams" ? examPublishService.listPublications(schoolId) : Promise.resolve([]),
-          section === "homework" ? classService.listMyStudents(schoolId, teacherId).catch(() => [] as Student[]) : Promise.resolve([]),
+          (section === "exams" ? classService.listStudentsBySchool(schoolId) : classService.listMyStudents(schoolId, teacherId)).catch(() => [] as Student[]),
           section === "homework" ? scannerService.listThirdPartyCards(schoolId) : Promise.resolve([]),
         ]);
         const classIds = section === "homework"
@@ -241,7 +242,8 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const managedRecords: ManagedRecord[] = [
     ...homeworks.filter((item) => (item.managementCategory === "exam") !== isHomework)
       .map((item): ManagedRecord => ({ kind: "classroom", item })),
-    ...papers.filter((item) => (item.managementCategory === "exam") !== isHomework)
+    ...papers.filter((item) => (item.managementCategory === "exam") !== isHomework
+      && (!isHomework || (!item.originalFileUrl && !item.isExtractCopy)))
       .map((item): ManagedRecord => ({ kind: "paper", item })),
   ].filter(matchesRecord).sort((left, right) =>
     right.item.updatedAt.localeCompare(left.item.updatedAt));
@@ -397,6 +399,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
         <Link to="/homework-exams/homework" className={`flex-1 rounded-lg px-4 py-2.5 text-center text-sm font-medium ${isHomework ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-mist"}`}>作业管理</Link>
         <Link to="/homework-exams/exams" className={`flex-1 rounded-lg px-4 py-2.5 text-center text-sm font-medium ${!isHomework ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-mist"}`}>考试管理</Link>
       </div>
+      {!isHomework && schoolId && <ScannerReviewPanel schoolId={schoolId} students={students} />}
       {!schoolId ? (
         <Card><p className="py-10 text-center text-sm text-ink-500">请切换到学校身份后查看作业考试。</p></Card>
       ) : loading ? (
