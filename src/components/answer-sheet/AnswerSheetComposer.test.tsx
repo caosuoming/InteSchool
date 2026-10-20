@@ -2,6 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AnswerSheetComposer } from "./AnswerSheetComposer";
 
+const downloadPdfMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@/lib/answer-sheet-export", () => ({ downloadAnswerSheetPdf: downloadPdfMock }));
+
 const questions = [
   { id: "q1", type: "single" as const, stem: "1+1 等于？", options: ["1", "2", "3", "4"], score: 5 },
   { id: "q2", type: "multiple" as const, stem: "选择偶数", options: ["1", "2", "3", "4"], score: 5 },
@@ -122,17 +125,29 @@ describe("AnswerSheetComposer", () => {
     expect(headings.map((heading) => heading.match(/、([^（]+)/)?.[1])).toEqual(["单选题", "多选题", "填空题"]);
   });
 
-  it("publishes before download, prevents editing while published, and supports withdrawal", async () => {
+  it("downloads preview pages as PDF and prints without changing publication status", async () => {
+    downloadPdfMock.mockClear();
     const onPublicationChange = vi.fn().mockResolvedValue(undefined);
     const print = vi.spyOn(window, "print").mockImplementation(() => {});
     try {
-      const { rerender } = renderComposer({
+      const { container, rerender } = renderComposer({
         initialViewMode: "preview",
+        initialSettings: { paperSize: "8K" },
         onPublicationChange,
       });
       fireEvent.click(screen.getByRole("button", { name: "下载答题卡" }));
-      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(true, expect.objectContaining({ paperSize: "A4" })));
-      await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(downloadPdfMock).toHaveBeenCalledTimes(1));
+      const [pages, name, paperSize] = downloadPdfMock.mock.calls[0];
+      expect(pages).toEqual(Array.from(container.querySelectorAll('[data-paper-view="preview"]')));
+      expect(pages).toHaveLength(1);
+      expect(name).toBe("高一数学期中考试_答题卡");
+      expect(paperSize).toBe("8K");
+      expect(onPublicationChange).not.toHaveBeenCalled();
+      expect(print).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "打印答题卡" }));
+      expect(print).toHaveBeenCalledTimes(1);
+      expect(onPublicationChange).not.toHaveBeenCalled();
       rerender(<AnswerSheetComposer title="期中" resourceType="exam-paper" resourceId="paper-1" resourceLabel="试卷"
         questions={questions} published initialViewMode="preview" onPublicationChange={onPublicationChange} onBack={vi.fn()} />);
       expect(screen.getByRole("button", { name: "撤回发布" })).toBeInTheDocument();
@@ -143,6 +158,19 @@ describe("AnswerSheetComposer", () => {
       print.mockRestore();
     }
   });
+
+  it.each(["A4", "16K", "A3", "8K"] as const)(
+    "exports %s sheets using the matching preview paper size", async (paperSize) => {
+      downloadPdfMock.mockClear();
+      renderComposer({ initialViewMode: "preview", initialSettings: { paperSize } });
+      fireEvent.click(screen.getByRole("button", { name: "下载答题卡" }));
+      await waitFor(() => expect(downloadPdfMock).toHaveBeenCalledWith(
+        [expect.objectContaining({ dataset: expect.objectContaining({ paperSize }) })],
+        "高一数学期中考试_答题卡",
+        paperSize,
+      ));
+    },
+  );
 
   it("uses an 8-digit student number by default and renders a real QR code", () => {
     const { container } = renderComposer();

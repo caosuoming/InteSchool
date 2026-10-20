@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
 import {
+  ANSWER_SHEET_PAPER_MM,
   buildAnswerSheetQrPayload,
   DEFAULT_ANSWER_SHEET_SETTINGS,
   MAX_STUDENT_NUMBER_DIGITS,
@@ -37,6 +38,7 @@ import {
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
 import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
+import { downloadAnswerSheetPdf } from "@/lib/answer-sheet-export";
 import { layoutChoiceOptions } from "@/lib/answer-sheet-choice-options";
 import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
 import { EssayImages } from "./EssayImages";
@@ -62,23 +64,23 @@ const paperSizeConfig: Record<AnswerSheetPaperSize, {
   className: string;
 }> = {
   A4: {
-    physicalWidthMm: 210,
-    heightMm: 297,
+    physicalWidthMm: ANSWER_SHEET_PAPER_MM.A4.width,
+    heightMm: ANSWER_SHEET_PAPER_MM.A4.height,
     className: "answer-sheet-paper-a4",
   },
   "16K": {
-    physicalWidthMm: 185,
-    heightMm: 260,
+    physicalWidthMm: ANSWER_SHEET_PAPER_MM["16K"].width,
+    heightMm: ANSWER_SHEET_PAPER_MM["16K"].height,
     className: "answer-sheet-paper-16k",
   },
   A3: {
-    physicalWidthMm: 420,
-    heightMm: 297,
+    physicalWidthMm: ANSWER_SHEET_PAPER_MM.A3.width,
+    heightMm: ANSWER_SHEET_PAPER_MM.A3.height,
     className: "answer-sheet-paper-a3",
   },
   "8K": {
-    physicalWidthMm: 370,
-    heightMm: 260,
+    physicalWidthMm: ANSWER_SHEET_PAPER_MM["8K"].width,
+    heightMm: ANSWER_SHEET_PAPER_MM["8K"].height,
     className: "answer-sheet-paper-8k",
   },
 };
@@ -885,10 +887,12 @@ export function AnswerSheetComposer({
   const [viewMode, setViewMode] = useState<"edit" | "preview">(initialViewMode);
   const [pageStarts, setPageStarts] = useState<number[]>([0]);
   const [publishing, setPublishing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [selectedChoiceId, setSelectedChoiceId] = useState("");
   const [selectedSpacingId, setSelectedSpacingId] = useState("");
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
+  const previewPagesRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(
     () => sourceLayoutMode === "flat" ? groupProjectQuestions(questions, projects) : groupQuestions(questions),
@@ -927,17 +931,32 @@ export function AnswerSheetComposer({
     [fillItems, fillAvailableMm, settings.answerBoxWidths],
   );
 
-  const changePublication = async (publish: boolean, print = false) => {
+  const changePublication = async (publish: boolean) => {
     if (!onPublicationChange || publishing) return;
     setPublishing(true);
     try {
       await onPublicationChange(publish, settings);
       toast.success(publish ? "答题卡已发布" : "已撤回发布");
-      if (print) window.print();
     } catch (error) {
       toast.error("答题卡操作失败", error instanceof Error ? error.message : undefined);
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (exporting) return;
+    const pages = Array.from(previewPagesRef.current?.querySelectorAll<HTMLElement>(
+      '.answer-sheet-paper[data-paper-view="preview"]',
+    ) || []);
+    setExporting(true);
+    try {
+      await downloadAnswerSheetPdf(pages, `${title}_答题卡`, settings.paperSize);
+      toast.success("答题卡 PDF 已下载");
+    } catch (error) {
+      toast.error("答题卡 PDF 下载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -1422,10 +1441,10 @@ export function AnswerSheetComposer({
 
   return (
     <div
-      className="min-h-screen bg-ink-100 px-4 py-8"
+      className="answer-sheet-page-root min-h-screen bg-ink-100 px-4 py-8"
       style={{ "--answer-sheet-stem-font-size": `${settings.stemFontSize}px` } as CSSProperties}
     >
-      <div className="mx-auto max-w-[460mm]">
+      <div className="answer-sheet-page-container mx-auto max-w-[460mm]">
         <div className="no-print">
           <PageHeader
             title={isPreview ? "预览答题卡" : "制作答题卡"}
@@ -1445,11 +1464,11 @@ export function AnswerSheetComposer({
                         {published ? "撤回发布" : "发布答题卡"}
                       </Button>
                     )}
-                    <Button variant="gold" disabled={publishing} onClick={() => void (published ? Promise.resolve().then(() => window.print()) : changePublication(true, true))}>
+                    <Button variant="gold" loading={exporting} disabled={exporting} onClick={() => void downloadPdf()}>
                       <Download className="h-4 w-4" />
                       下载答题卡
                     </Button>
-                    <Button variant="outline" disabled={publishing} onClick={() => void (published ? Promise.resolve().then(() => window.print()) : changePublication(true, true))}>
+                    <Button variant="outline" onClick={() => window.print()}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>
@@ -1669,7 +1688,7 @@ export function AnswerSheetComposer({
         </div>
 
         <div className="answer-sheet-print-shell overflow-x-auto pb-8">
-          <div className="space-y-6" data-testid={isPreview ? "answer-sheet-preview-pages" : "answer-sheet-editor-pages"}>
+          <div ref={previewPagesRef} className="answer-sheet-preview-pages space-y-6" data-testid={isPreview ? "answer-sheet-preview-pages" : "answer-sheet-editor-pages"}>
             {wideEditor ? logicalPages.map((indices, columnIndex) => (
               <article
                 key={columnIndex}

@@ -536,6 +536,18 @@
 
 /* ===== 打印样式 ===== */
 @media print {
+  .answer-sheet-page-root {
+    min-height: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  .answer-sheet-page-container {
+    max-width: none !important;
+    margin: 0 !important;
+  }
+  .answer-sheet-preview-pages > .answer-sheet-preview-sheet {
+    margin: 0 !important;
+  }
   .answer-sheet-image-caption-print { display: block !important; }
   .no-print { display: none !important; }
   .print-content-shell { margin-left: 0 !important; }
