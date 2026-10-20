@@ -392,11 +392,23 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
             </select>
             <Link to={isHomework ? "/my-lessons?tab=homework" : "/my-resources/exam-papers"} className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><Plus className="h-4 w-4" />{isHomework ? "布置作业" : "查看试卷库"}</Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+          <div className="overflow-x-auto" aria-label={isHomework ? "作业管理表格，可横向滚动查看后续列" : "考试管理表格"} role="region" tabIndex={0}>
+            <table className={`w-full text-left text-sm ${isHomework ? "min-w-[1600px] table-fixed" : "min-w-[1000px]"}`}>
+              {isHomework && <colgroup>
+                <col className="w-56" />
+                <col className="w-64" />
+                <col className="w-56" />
+                <col className="w-24" />
+                <col className="w-20" />
+                <col className="w-20" />
+                <col className="w-48" />
+                <col className="w-48" />
+                <col className="w-24" />
+                <col />
+              </colgroup>}
               <thead className="bg-ink-50 text-ink-700">
                 {isHomework ? (
-                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
+                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title, index) => <th key={title} scope="col" className={`whitespace-nowrap px-4 py-3 font-medium ${index === 0 ? "sticky left-0 z-10 bg-ink-50" : index === 1 ? "sticky left-56 z-10 bg-ink-50" : ""}`}>{title}</th>)}</tr>
                 ) : (
                   <tr>{["考试名称", "使用对象", "类型", "发布时间", "解锁时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 )}
@@ -406,9 +418,9 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                   const status = recordStatus(record, now);
                   const counts = record.kind === "classroom" ? homeworkSubmissionDetails(record.item, attendance) : null;
                   return (
-                    <tr key={`${record.kind}-${record.item.id}`} className="align-top hover:bg-mist/40">
-                      <td className="max-w-72 break-words px-4 py-3 font-medium text-ink-900">{recordTitle(record)}</td>
-                      <td className="max-w-64 break-all px-4 py-3 text-ink-600">
+                    <tr key={`${record.kind}-${record.item.id}`} className="group align-top hover:bg-mist/40">
+                      <td className="sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist">{recordTitle(record)}</td>
+                      <td className="sticky left-56 z-10 break-all bg-paper px-4 py-3 text-ink-600 group-hover:bg-mist">
                         {record.kind === "paper" ? (
                           <Link className="text-teal-700 hover:underline" to={paperPreviewUrl(record.item)}>{fileName(record)}</Link>
                         ) : record.item.attachments?.length ? (
@@ -434,7 +446,12 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "classroom" ? record.item.publishAt : record.item.createdAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                      <td className="whitespace-nowrap px-4 py-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button></td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button>
+                          <Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link>
+                        </div>
+                      </td>
                     </tr>
                   );
                 }) : <>
