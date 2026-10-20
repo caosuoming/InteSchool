@@ -33,6 +33,7 @@ export default function ScannerPage() {
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem(SCANNER_DEVICE_KEY) || "");
   const [duplex, setDuplex] = useState(true);
   const [deviceStatus, setDeviceStatus] = useState("");
+  const [bridgeUnavailable, setBridgeUnavailable] = useState(false);
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [selected, setSelected] = useState<PublishedScannerSheet | null>(null);
   const [scans, setScans] = useState<ScannedImage[]>([]);
@@ -84,6 +85,7 @@ export default function ScannerPage() {
     try {
       const { devices: items, diagnostics } = await scannerService.listDevices();
       setDevices(items);
+      setBridgeUnavailable(false);
       setDeviceId((current) => {
         const next = items.find((item) => item.id === current)?.id
           || items.find((item) => item.id === localStorage.getItem(SCANNER_DEVICE_KEY))?.id
@@ -94,6 +96,7 @@ export default function ScannerPage() {
       if (!items.length) setDeviceStatus(`未发现可用扫描仪。${diagnostics.join("；") || "请检查驱动、设备连接及本机扫描服务。"}`);
     } catch (cause) {
       setDevices([]);
+      setBridgeUnavailable(true);
       setDeviceStatus(cause instanceof Error ? cause.message : "无法查询扫描仪");
     } finally { setLoadingDevices(false); }
   };
@@ -269,6 +272,18 @@ export default function ScannerPage() {
             <section className="rounded-xl border border-ink-100 bg-paper p-5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">本机扫描设备</h2><Button size="sm" variant="outline" onClick={() => void refreshDevices()} loading={loadingDevices}><RefreshCw className="h-4 w-4" />刷新设备</Button></div>
               {deviceStatus && <p role="status" className="text-sm text-amber-700">{deviceStatus}</p>}
+              {bridgeUnavailable && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm text-ink-800">
+                  <p className="font-semibold">首次使用请安装 Windows 扫描桥接程序</p>
+                  <p>安装包已包含运行环境，无需配置 Node.js。安装完成后点击“授权连接本站”，在系统弹窗中确认网址，最后刷新设备列表。</p>
+                  <div className="flex flex-wrap gap-3 items-center">
+                    <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href="https://github.com/caosuoming/InteSchool/releases/download/scanner-bridge-latest/InteSchool-Scanner-Setup.exe"><Download className="h-4 w-4" />下载 Windows 安装包</a>
+                    <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href={`inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`}>授权连接本站</a>
+                    <a className="text-ink-600 underline" href="https://github.com/caosuoming/InteSchool/blob/main/docs/scanner-bridge.md" target="_blank" rel="noopener noreferrer">安装说明及故障排查</a>
+                  </div>
+                  <p className="text-xs text-ink-600">连接时浏览器可能询问是否打开 InteSchool 扫描桥接；仅对可信学校网址授权。扫描仪还需安装厂商驱动。</p>
+                </div>
+              )}
               <Select label="扫描仪" value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem(SCANNER_DEVICE_KEY, event.target.value); }} options={deviceOptions} placeholder="请连接扫描仪并刷新" />
               <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={duplex} onChange={(event) => setDuplex(event.target.checked)} />双面自动进纸（默认）</label>
               {selectedDevice && duplex && !selectedDevice.duplex && <p className="text-sm text-amber-700">所选 WIA 通道不能保证双面扫描；请选择 TWAIN 设备或取消双面模式。</p>}

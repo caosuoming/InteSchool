@@ -145,6 +145,18 @@ describe("ScannerPage", () => {
     expect(scannerService.scan).not.toHaveBeenCalled();
   });
 
+  it("offers Windows installer and explicit site pairing only when the bridge is unavailable", async () => {
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    vi.mocked(scannerService.listDevices).mockRejectedValueOnce(new Error("无法连接本机扫描服务"));
+    mount();
+    const download = await screen.findByRole("link", { name: /下载 Windows 安装包/ });
+    expect(download).toHaveAttribute("href", "https://github.com/caosuoming/InteSchool/releases/download/scanner-bridge-latest/InteSchool-Scanner-Setup.exe");
+    expect(screen.getByRole("link", { name: "授权连接本站" })).toHaveAttribute("href",
+      `inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`);
+    await userEvent.setup().click(screen.getByRole("button", { name: "刷新设备" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: /下载 Windows 安装包/ })).not.toBeInTheDocument());
+  });
+
   it("reports a missing scanner service instead of showing a false success", async () => {
     const user = userEvent.setup();
     localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
