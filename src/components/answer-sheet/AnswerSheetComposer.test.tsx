@@ -50,55 +50,59 @@ describe("AnswerSheetComposer", () => {
     expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
   });
 
-  it("consolidates project-layout answers by type without changing original question numbers", () => {
+  it("shows project names instead of question types for a project-layout answer sheet", () => {
     const { container } = renderComposer({
       sourceLayoutMode: "flat",
+      projects: [{ id: "algebra", name: "代数计算" }, { id: "geometry", name: "图形证明" }, { id: "empty", name: "空项目" }],
       questions: [
-        { id: "fill1", label: "例1", type: "short", stem: "填空一", score: 4 },
-        { id: "multi", type: "multiple", stem: "多选", score: 5 },
-        { id: "essay", type: "essay", stem: "证明", score: 8 },
-        { id: "single1", type: "single", stem: "单选一", score: 5 },
-        { id: "fill2", type: "short", stem: "填空二", score: 4 },
-        { id: "single2", type: "single", stem: "单选二", score: 5 },
+        { id: "fill1", projectId: "algebra", label: "例1", type: "short", stem: "填空一", score: 4 },
+        { id: "multi", projectId: "geometry", type: "multiple", stem: "多选", score: 5 },
+        { id: "essay", projectId: "geometry", type: "essay", stem: "证明", score: 8 },
+        { id: "single1", projectId: "algebra", type: "single", stem: "单选一", score: 5 },
+        { id: "fill2", projectId: "missing", type: "short", stem: "填空二", score: 4 },
+        { id: "single2", projectId: "algebra", type: "single", stem: "单选二", score: 5 },
       ],
     });
 
     const headings = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="group-heading"]'),
       (node) => node.textContent || "");
-    expect(headings).toHaveLength(4);
-    expect(headings.map((heading) => heading.match(/、([^（]+)/)?.[1])).toEqual(["单选题", "多选题", "填空题", "解答题"]);
+    expect(headings.map((heading) => heading.match(/、([^（]+)/)?.[1])).toEqual(["未分组", "代数计算", "图形证明"]);
+    expect(headings.join(" ")).not.toMatch(/单选题|多选题|填空题|解答题/);
     const rows = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'),
       (node) => node.textContent || "");
     expect(rows).toHaveLength(6);
-    expect(rows.map((row) => row.match(/(?:例1|[1-6])\./)?.[0])).toEqual(["4.", "6.", "2.", "例1.", "5.", "3."]);
-    expect(screen.getByLabelText("不显题干")).toBeChecked();
-    expect(screen.getByLabelText("显题干")).not.toBeChecked();
+    expect(rows.map((row) => row.match(/(?:例1|[1-6])\./)?.[0])).toEqual(["5.", "例1.", "4.", "6.", "2.", "3."]);
   });
 
-  it("groups project-layout concentrated questions but leaves inline question order intact", () => {
+  it("preserves project sections and question order across inline and concentrated layouts", () => {
     const { container } = renderComposer({
       sourceLayoutMode: "flat",
+      projects: [{ id: "practice", name: "综合训练" }],
       questions: [
-        { id: "fill1", type: "short", stem: "填空第一", score: 4 },
-        { id: "multi", type: "multiple", stem: "多选第二", score: 5 },
-        { id: "essay", type: "essay", stem: "解答第三", score: 8 },
-        { id: "single", type: "single", stem: "单选第四", score: 5 },
-        { id: "fill2", type: "short", stem: "填空第五", score: 4 },
+        { id: "fill1", projectId: "practice", type: "short", stem: "填空第一", score: 4 },
+        { id: "multi", projectId: "practice", type: "multiple", stem: "多选第二", score: 5 },
+        { id: "essay", projectId: "practice", type: "essay", stem: "解答第三", score: 8 },
+        { id: "single", projectId: "practice", type: "single", stem: "单选第四", score: 5 },
+        { id: "fill2", projectId: "practice", type: "short", stem: "填空第五", score: 4 },
       ],
       initialSettings: { mode: "with-questions", choiceLayout: "inline" },
     });
 
     const questionRows = () => Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'),
       (node) => node.textContent || "");
+    const headings = () => Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="group-heading"]'),
+      (node) => node.textContent || "");
     expect(questionRows().map((row) => row.match(/(填空第一|多选第二|解答第三|单选第四|填空第五)/)?.[1]))
       .toEqual(["填空第一", "多选第二", "解答第三", "单选第四", "填空第五"]);
 
     fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "concentrated" } });
     expect(questionRows().map((row) => row.match(/(填空第一|多选第二|解答第三|单选第四|填空第五)/)?.[1]))
-      .toEqual(["单选第四", "多选第二", "填空第一", "填空第五", "解答第三"]);
+      .toEqual(["填空第一", "多选第二", "解答第三", "单选第四", "填空第五"]);
+    expect(headings()).toHaveLength(1);
+    expect(headings()[0]).toContain("综合训练");
     const choiceZones = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-choice"]'),
       (node) => node.textContent || "");
-    expect(choiceZones.join(" ")).toMatch(/4\.[\s\S]*2\./);
+    expect(choiceZones.join(" ")).toMatch(/2\.[\s\S]*4\./);
     const fillZones = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="zone-fill"]'),
       (node) => node.textContent || "");
     expect(fillZones[0]).toContain("1.");
@@ -106,7 +110,15 @@ describe("AnswerSheetComposer", () => {
 
     fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "inline" } });
     expect(questionRows()[0]).toContain("填空第一");
+    expect(headings()[0]).toContain("综合训练");
     expect(container.querySelector('[data-answer-sheet-flow-item="zone-choice"]')).toBeNull();
+  });
+
+  it("keeps question-type section titles for grouped papers", () => {
+    const { container } = renderComposer({ sourceLayoutMode: "grouped" });
+    const headings = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="group-heading"]'),
+      (node) => node.textContent || "");
+    expect(headings.map((heading) => heading.match(/、([^（]+)/)?.[1])).toEqual(["单选题", "多选题", "填空题"]);
   });
 
   it("publishes before download, prevents editing while published, and supports withdrawal", async () => {

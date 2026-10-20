@@ -2,6 +2,7 @@ import { openPage } from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnswerSheetComposer } from "@/components/answer-sheet/AnswerSheetComposer";
+import { getProjectSections } from "./project-sections";
 import { Spinner } from "@/components/ui/Spinner";
 import { examPaperService } from "@/services/examPaper";
 import { toast } from "@/stores/ui";
@@ -62,7 +63,10 @@ export default function ExamPaperAnswerSheetPage() {
 
   const originalLabels = new Map(paper.contentBlocks?.filter((block) => block.type === "question" && block.examPaperQuestionId)
     .map((block) => [block.examPaperQuestionId!, block.customLabel]));
-  const answerQuestions = paper.questions.map((question) => ({
+  const orderedQuestions = paper.layoutMode === "flat"
+    ? getProjectSections(paper.questions, paper.projects || []).flatMap((section) => section.questions)
+    : paper.questions;
+  const answerQuestions = orderedQuestions.map((question) => ({
     ...question,
     label: originalLabels.get(question.id),
   }));
@@ -76,6 +80,7 @@ export default function ExamPaperAnswerSheetPage() {
       resourceLabel="试卷"
       questions={answerQuestions}
       sourceLayoutMode={paper.layoutMode}
+      projects={paper.projects}
       totalScore={paper.totalScore}
       initialSettings={paper.answerSheetSettings}
       initialViewMode={initialViewMode}
