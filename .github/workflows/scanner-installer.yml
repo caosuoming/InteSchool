@@ -80,7 +80,7 @@ jobs:
         run: |
           gh release view scanner-bridge-latest > $null 2>&1
           if ($LASTEXITCODE -ne 0) {
-            gh release create scanner-bridge-latest --target "$env:GITHUB_SHA" --title "InteSchool Windows 扫描桥接" --notes "Windows x64 扫描桥接安装包（包含 Node.js 运行时）。安装后在扫描页面点击“授权连接本站”。" --latest=false
+            gh release create scanner-bridge-latest --target "$env:GITHUB_SHA" --title "InteSchool Windows 扫描桥接" --notes "Windows x64 扫描桥接安装包，已包含 Node.js 运行时。安装后在扫描页面授权连接当前网站。" --latest=false
           }
           gh release upload scanner-bridge-latest packaging/windows/stage/output/InteSchool-Scanner-Setup.exe --clobber
           $hash = (Get-FileHash packaging/windows/stage/output/InteSchool-Scanner-Setup.exe -Algorithm SHA256).Hash.ToLower()
