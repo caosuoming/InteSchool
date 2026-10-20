@@ -10,7 +10,7 @@ import {
   CircleHelp, Monitor,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { useUIStore } from "@/stores/ui";
+import { useUIStore, toast } from "@/stores/ui";
 import { shareService } from "@/services/share";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
@@ -78,7 +78,7 @@ const allNavItems: NavItem[] = [
 export function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { teacher, loading, logout, switchAffiliation, getAffiliations, getCurrentAffiliation } = useAuthStore();
+  const { teacher, loading, logout, switchAffiliation, switchSubject, getAffiliations, getCurrentAffiliation } = useAuthStore();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [affiliationDropdownOpen, setAffiliationDropdownOpen] = useState(false);
@@ -87,6 +87,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const affiliations = teacher ? getAffiliations().filter((item) => item.status === "active") : [];
   const currentAffiliation = teacher ? getCurrentAffiliation() : null;
+  const availableSubjects = currentAffiliation?.schoolId
+    ? (currentAffiliation.subjects?.length ? currentAffiliation.subjects : [currentAffiliation.subject])
+    : [];
   const currentSchoolId = currentAffiliation ? currentAffiliation.schoolId : teacher?.schoolId || null;
   const isPersonalIdentity = !currentAffiliation?.schoolId;
   const canManageExams = teacher ? canManageSchoolExams(teacher, currentAffiliation) : false;
@@ -131,6 +134,18 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const handleSwitchAffiliation = async (affId: string) => {
     useExtractTasksStore.getState().reset();
     await switchAffiliation(affId);
+    setAffiliationDropdownOpen(false);
+    navigate("/dashboard");
+  };
+
+  const handleSwitchSubject = async (subject: string) => {
+    if (subject === currentAffiliation?.subject) return;
+    const ok = await switchSubject(subject);
+    if (!ok) {
+      toast.error("切换学科失败", useAuthStore.getState().error || undefined);
+      return;
+    }
+    useExtractTasksStore.getState().reset();
     setAffiliationDropdownOpen(false);
     navigate("/dashboard");
   };
@@ -271,6 +286,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     )}
                   </button>
                 ))}
+                {currentAffiliation?.schoolId && availableSubjects.length > 1 && (
+                  <>
+                    <div className="text-[10px] text-ink-400 px-3 py-1.5 border-t border-ink-700/50">当前学校 · 切换学科</div>
+                    {availableSubjects.map((subject) => (
+                      <button
+                        key={subject}
+                        onClick={() => void handleSwitchSubject(subject)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-ink-700/50",
+                          subject === currentAffiliation.subject ? "text-gold-300 bg-gold-400/10" : "text-ink-200",
+                        )}
+                      >
+                        <BookOpen className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="flex-1">{subject}</span>
+                        {subject === currentAffiliation.subject && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>

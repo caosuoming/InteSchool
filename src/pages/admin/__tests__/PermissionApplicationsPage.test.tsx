@@ -93,7 +93,7 @@ describe("PermissionApplicationsPage", () => {
     await user.click(screen.getByRole("button", { name: "提交权限申请" }));
 
     await waitFor(() => expect(authService.applyTeacherPermissions).toHaveBeenCalledWith({
-      roles: ["teacher", "gradeLeader"],
+      roles: ["teacher", "gradeLeader"], subjects: ["数学"],
       teachingClassIds: ["cls-1"], homeroomClassIds: ["cls-2"],
       position: "年级负责人",
     }, "本学期负责新班级"));
@@ -121,7 +121,7 @@ describe("PermissionApplicationsPage", () => {
     await user.click(within(reviewArea).getByRole("button", { name: "按上述权限通过" }));
     await waitFor(() => expect(authService.reviewTeacherPermissionApplication).toHaveBeenCalledWith(
       "application-1", true, {
-        roles: ["teacher", "gradeLeader"],
+        roles: ["teacher", "gradeLeader"], subjects: undefined,
         teachingClassIds: ["cls-1", "cls-2"],
         homeroomClassIds: [], position: "组长",
       },

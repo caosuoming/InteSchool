@@ -307,6 +307,7 @@ export const authService = {
     teacherId: string,
     patch: {
       subject?: string;
+      subjects?: string[];
       teachingGrades?: string[];
       teachingClassIds?: string[];
       homeroomClassIds?: string[];
@@ -329,6 +330,14 @@ export const authService = {
       || affiliations.find((item) => item.isCurrent)
       || affiliations[0]
       || null;
+  },
+
+  async switchSubject(affiliationId: string, subject: string): Promise<Teacher> {
+    const teacher = await apiRequest<Teacher>(`/api/auth/affiliations/${encodeURIComponent(affiliationId)}/subject`, {
+      method: "POST", body: JSON.stringify({ subject }),
+    }, true);
+    currentTeacher = teacher;
+    return teacher;
   },
 
   async switchAffiliation(_teacherId: string, affiliationId: string): Promise<TeacherAffiliation> {

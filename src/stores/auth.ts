@@ -14,6 +14,7 @@ interface AuthState {
   updateProfile: (patch: Parameters<typeof authService.updateProfile>[0]) => Promise<boolean>;
   clearError: () => void;
   switchAffiliation: (affiliationId: string) => Promise<boolean>;
+  switchSubject: (subject: string) => Promise<boolean>;
   getCurrentAffiliation: () => TeacherAffiliation | null;
   getAffiliations: () => TeacherAffiliation[];
 }
@@ -94,6 +95,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (error) {
       set({ error: error instanceof Error ? error.message : "切换身份失败" });
+      return false;
+    }
+  },
+
+  switchSubject: async (subject) => {
+    const current = get().getCurrentAffiliation();
+    if (!current || !current.schoolId) return false;
+    try {
+      const teacher = await authService.switchSubject(current.id, subject);
+      set({ teacher, error: null });
+      return true;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : "切换学科失败" });
       return false;
     }
   },

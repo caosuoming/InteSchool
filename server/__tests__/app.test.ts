@@ -732,6 +732,53 @@ describe("production backend", () => {
     ]));
   });
 
+  it("switches only approved teaching subjects for the current school", async () => {
+    const teacherSession = await login(built.app);
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    const subjectTeacher = state.teachers.find((item) => item.id === teacherSession.teacher.id)!;
+    const active = subjectTeacher.affiliations.find((item) => item.id === subjectTeacher.currentAffiliationId)!;
+    active.subjects = ["数学", "物理"];
+    active.subject = "数学";
+    subjectTeacher.subject = "数学";
+    subjectTeacher.subjects = ["数学", "物理"];
+    await built.store.saveState(before, state);
+
+    const url = `/api/auth/affiliations/${active.id}/subject`;
+    const invalid = await built.app.inject({
+      method: "POST", url,
+      headers: { cookie: teacherSession.cookie, "x-inteschool-csrf": teacherSession.csrfToken },
+      payload: { subject: "化学" },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const csrfBlocked = await built.app.inject({
+      method: "POST", url, headers: { cookie: teacherSession.cookie }, payload: { subject: "物理" },
+    });
+    expect(csrfBlocked.statusCode).toBe(400);
+    const wrongAffiliation = await built.app.inject({
+      method: "POST", url: "/api/auth/affiliations/aff-wrong/subject",
+      headers: { cookie: teacherSession.cookie, "x-inteschool-csrf": teacherSession.csrfToken },
+      payload: { subject: "物理" },
+    });
+    expect(wrongAffiliation.statusCode).toBe(400);
+
+    const updated = await built.app.inject({
+      method: "POST", url,
+      headers: { cookie: teacherSession.cookie, "x-inteschool-csrf": teacherSession.csrfToken },
+      payload: { subject: "物理" },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    expect(updated.json()).toMatchObject({ subject: "物理", subjects: ["数学", "物理"] });
+    const refreshed = await built.app.inject({
+      method: "GET", url: "/api/auth/current", headers: { cookie: teacherSession.cookie },
+    });
+    expect(refreshed.json()).toMatchObject({ teacher: {
+      subject: "物理", affiliations: expect.arrayContaining([
+        expect.objectContaining({ id: active.id, subject: "物理", subjects: ["数学", "物理"] }),
+      ]),
+    } });
+  });
+
   it("keeps platform authority across school switches and supports user and school suspension", async () => {
     const target = await register(built.app, "suspend-target@example.com");
     const targetTeacherId = String(target.teacher.id);
@@ -927,7 +974,7 @@ describe("production backend", () => {
     const applicant = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
     const admin = await login(built.app);
     const requested = {
-      roles: ["teacher", "gradeLeader"],
+      roles: ["teacher", "gradeLeader"], subjects: ["数学", "物理"],
       teachingClassIds: ["cls-1"],
       homeroomClassIds: ["cls-2"],
       position: "年级教学负责人",
@@ -982,7 +1029,7 @@ describe("production backend", () => {
     expect(foreignReview.statusCode).toBe(403);
 
     const fields = {
-      roles: ["teacher", "subjectLeader"],
+      roles: ["teacher", "subjectLeader"], subjects: ["数学", "物理", "化学"],
       teachingClassIds: ["cls-2"],
       homeroomClassIds: ["cls-1"],
       position: "学科教研组负责人",
@@ -996,6 +1043,7 @@ describe("production backend", () => {
     const updated = built.store.loadState().teachers.find((item) => item.id === "tch-2");
     expect(updated?.affiliations.find((item) => item.schoolId === "sch-1")).toMatchObject({
       assignedRoles: ["teacher", "subjectLeader", "headTeacher"],
+      subjects: ["数学", "物理", "化学"],
       teachingClassIds: ["cls-2"],
       homeroomClassIds: ["cls-1"],
       position: "学科教研组负责人",
@@ -1185,8 +1233,15 @@ describe("production backend", () => {
       headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
       payload: { subject: "英语", teachingGrades: ["高二"] },
     });
-    expect(selfUpdate.statusCode).toBe(200);
-    expect(selfUpdate.json()).toMatchObject({ subject: "英语", teachingGrades: ["高二"] });
+    expect(selfUpdate.statusCode).toBe(400);
+    expect(selfUpdate.json()).toEqual({ error: "只能选择已批准的任教学科，请先提交权限申请" });
+    const selfGradesUpdate = await built.app.inject({
+      method: "PATCH", url: "/api/auth/profile",
+      headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
+      payload: { teachingGrades: ["高二"] },
+    });
+    expect(selfGradesUpdate.statusCode).toBe(200);
+    expect(selfGradesUpdate.json()).toMatchObject({ subject: "数学", teachingGrades: ["高二"] });
 
     const selfAssignedClass = await built.app.inject({
       method: "PATCH",
@@ -1226,7 +1281,7 @@ describe("production backend", () => {
       method: "PATCH",
       url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
       headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
-      payload: { subject: "物理" },
+      payload: { subject: "物理", subjects: ["数学", "物理"] },
     });
     expect(leaderManaged.statusCode, leaderManaged.body).toBe(200);
     expect(leaderManaged.json()).toMatchObject({ subject: "物理", teachingGrades: ["高二"] });
@@ -1302,7 +1357,7 @@ describe("production backend", () => {
       url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
       headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
       payload: {
-        subject: "语文",
+        subject: "语文", subjects: ["数学", "物理", "语文"],
         teachingGrades: ["高三"],
         teachingClassIds: [],
         homeroomClassIds: [managedClassId],
