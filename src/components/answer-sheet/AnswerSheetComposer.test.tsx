@@ -574,15 +574,20 @@ describe("AnswerSheetComposer", () => {
 
     const stemWrap = screen.getByAltText("题干图").closest("[data-image-index]") as HTMLElement;
     expect(stemWrap).toHaveAttribute("data-wrap", "left");
+    expect(stemWrap).toHaveStyle({ marginTop: "4px", marginLeft: "0px" });
+    expect(stemWrap.style.left).toBe("");
+    expect(stemWrap.style.top).toBe("");
     const stemImage = screen.getByAltText("题干图");
     fireEvent.pointerDown(stemImage, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
     fireEvent.pointerMove(stemImage, { pointerId: 1, clientX: 36, clientY: 25 });
     fireEvent.pointerUp(stemImage, { pointerId: 1, clientX: 36, clientY: 25 });
-    expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveStyle({ left: "26px", top: "15px" });
+    expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveStyle({ marginLeft: "26px", marginTop: "19px" });
 
     fireEvent.input(screen.getByRole("combobox", { name: "第1题题干第1张图片环绕模式" }), { target: { value: "right" } });
     const optionImage = screen.getByAltText("选项图");
-    fireEvent.input(optionImage.closest("[data-image-index]")!.querySelector("select")!, { target: { value: "none" } });
+    const optionWrap = optionImage.closest("[data-image-index]")!;
+    expect(Array.from(optionWrap.querySelector("select")!.options, (option) => option.value)).toEqual(["left", "right"]);
+    fireEvent.input(optionWrap.querySelector("select")!, { target: { value: "right" } });
     const fillQuestion = screen.getByAltText("填空图").closest("[data-answer-sheet-question]")!;
     expect(fillQuestion.querySelector(".answer-sheet-inline-blank")).toHaveAttribute("data-answer-sheet-editable", "true");
     const fillInput = screen.getByAltText("填空图").closest("[data-image-index]")!.querySelector("input")!;
@@ -594,7 +599,7 @@ describe("AnswerSheetComposer", () => {
       questionImageLayouts: {
         "choice-image": {
           stem: [{ x: 26, y: 15, wrap: "right", caption: "" }],
-          "option-0": [{ x: 0, y: 0, wrap: "none", caption: "" }],
+          "option-0": [{ x: 0, y: 0, wrap: "right", caption: "" }],
         },
         "fill-image": {
           stem: [{ x: 0, y: 0, wrap: "left", caption: "图1 函数示意图" }],
@@ -604,10 +609,61 @@ describe("AnswerSheetComposer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.getByAltText("题干图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "right");
-    expect(screen.getByAltText("选项图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "none");
+    expect(screen.getByAltText("选项图").closest("[data-image-index]")).toHaveAttribute("data-wrap", "right");
     expect(screen.getByText("图1 函数示意图")).toHaveClass("answer-sheet-image-caption");
     expect(screen.queryByRole("combobox", { name: "第1题题干第1张图片环绕模式" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "第2题题干第1张图片备注" })).not.toBeInTheDocument();
+  });
+
+  it("converts legacy non-wrapping image layouts into text-flow wrapping in editor and preview", () => {
+    const { container } = renderComposer({
+      questions: [
+        { id: "choice", type: "single", stem: '题干 <img src="/inline.png" alt="旧题干图"> 后续文字' },
+        { id: "essay", type: "essay", stem: '<p>解答题文字</p><img src="/figure.png" alt="旧解答图">' },
+      ],
+      initialSettings: {
+        mode: "with-questions",
+        questionImageLayouts: { choice: { stem: [{ x: 19, y: 14, wrap: "none", caption: "" }] } },
+        essayImageLayouts: { essay: [{ x: 8, y: 10, width: 120, wrap: "none" }] },
+      },
+    });
+    const assertFlow = () => {
+      const inline = screen.getByAltText("旧题干图").closest<HTMLElement>("[data-image-index]")!;
+      const essay = screen.getByAltText("旧解答图").closest<HTMLElement>(".answer-sheet-essay-image")!;
+      expect(inline).toHaveAttribute("data-wrap", "left");
+      expect(inline).toHaveStyle({ marginLeft: "19px", marginTop: "18px" });
+      expect(inline.style.left).toBe("");
+      expect(inline.style.top).toBe("");
+      expect(essay).toHaveAttribute("data-wrap", "left");
+      expect(essay).toHaveStyle({ position: "static", float: "left", marginLeft: "8px", marginTop: "10px" });
+    };
+    assertFlow();
+    expect(container.querySelectorAll('[data-wrap="none"]')).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    assertFlow();
+  });
+
+  it("keeps right-wrapped images in flow when dragging left and clamps backward movement", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [{ id: "right-img", type: "short", stem: '图示 <img src="/right.png" alt="靠右图"> 后面的文字' }],
+      initialSettings: {
+        mode: "with-questions",
+        questionImageLayouts: { "right-img": { stem: [{ x: 8, y: 0, wrap: "right", caption: "" }] } },
+      },
+      onSettingsChange,
+    });
+    const image = screen.getByAltText("靠右图");
+    fireEvent.pointerDown(image, { button: 0, pointerId: 1, clientX: 100, clientY: 10 });
+    fireEvent.pointerMove(image, { pointerId: 1, clientX: 80, clientY: -30 });
+    const wrapper = image.closest<HTMLElement>("[data-image-index]")!;
+    expect(wrapper).toHaveStyle({ marginRight: "28px", marginTop: "4px" });
+    expect(wrapper.style.left).toBe("");
+    fireEvent.pointerUp(image, { pointerId: 1, clientX: 80, clientY: -30 });
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
+      questionImageLayouts: { "right-img": { stem: [{ x: 28, y: 0, wrap: "right", caption: "" }] } },
+    }));
   });
 
   it("loads saved image captions and wrap modes without editing", () => {
@@ -620,7 +676,9 @@ describe("AnswerSheetComposer", () => {
       initialViewMode: "preview",
     });
     const wrapper = screen.getByAltText("存档图").closest("[data-image-index]");
-    expect(wrapper).toHaveStyle({ left: "11px", top: "9px" });
+    expect(wrapper).toHaveStyle({ marginRight: "11px", marginTop: "13px" });
+    expect((wrapper as HTMLElement).style.left).toBe("");
+    expect((wrapper as HTMLElement).style.top).toBe("");
     expect(wrapper).toHaveAttribute("data-wrap", "right");
     expect(screen.getByText("存档备注")).toHaveClass("answer-sheet-image-caption");
   });
@@ -639,6 +697,9 @@ describe("AnswerSheetComposer", () => {
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
       essayImageLayouts: { "essay-image": [{ x: 8, y: 10, width: 120, wrap: "left", caption: "图2 结构图" }] },
     }));
+    expect(screen.getByTestId("essay-image")).toHaveStyle({ position: "static", float: "left" });
+    expect(Array.from(screen.getByRole("combobox", { name: "第1题第1张图片环绕模式" }).querySelectorAll("option"),
+      (option) => option.value)).toEqual(["left", "right"]);
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(screen.getByTestId("essay-image")).toHaveAttribute("data-wrap", "left");
     expect(screen.getByText("图2 结构图")).toHaveClass("answer-sheet-image-caption");
@@ -724,7 +785,7 @@ describe("AnswerSheetComposer", () => {
     fireEvent.pointerDown(image, { button: 0, pointerId: 1, clientX: 15, clientY: 15 });
     fireEvent.pointerMove(image, { pointerId: 1, clientX: 45, clientY: 55 });
     fireEvent.pointerUp(image, { pointerId: 1 });
-    expect(image).toHaveStyle({ left: "38px", top: "50px" });
+    expect(image).toHaveStyle({ marginLeft: "38px", marginTop: "50px", position: "static", float: "left" });
 
     const handle = screen.getByRole("button", { name: "调整第1题第1张图片大小" });
     fireEvent.pointerDown(handle, { button: 0, pointerId: 2, clientX: 40, clientY: 40 });
@@ -732,7 +793,7 @@ describe("AnswerSheetComposer", () => {
     fireEvent.pointerUp(image, { pointerId: 2 });
     expect(image).toHaveStyle({ width: "180px" });
     expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
-      essayImageLayouts: { "essay-1": [{ x: 38, y: 50, width: 180 }] },
+      essayImageLayouts: { "essay-1": [{ x: 38, y: 50, width: 180, wrap: "left" }] },
     }));
 
     vi.spyOn(answerBox, "getBoundingClientRect").mockReturnValue({ height: 240 } as DOMRect);
@@ -742,7 +803,7 @@ describe("AnswerSheetComposer", () => {
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
-    expect(screen.getByTestId("essay-image")).toHaveStyle({ left: "38px", top: "50px", width: "180px" });
+    expect(screen.getByTestId("essay-image")).toHaveStyle({ marginLeft: "38px", marginTop: "50px", width: "180px", position: "static", float: "left" });
     expect(screen.getByTestId("answer-box")).toHaveStyle({ height: "240px", resize: "none" });
     expect(screen.queryByRole("button", { name: "调整第1题第1张图片大小" })).not.toBeInTheDocument();
   });
