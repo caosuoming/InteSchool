@@ -2,6 +2,13 @@ import type { QuestionType } from "@/types";
 
 export type AnswerSheetResourceType = "exam-paper" | "lecture";
 export type AnswerSheetPaperSize = "A4" | "16K" | "A3" | "8K";
+
+export const ANSWER_SHEET_PAPER_MM: Record<AnswerSheetPaperSize, { width: number; height: number }> = {
+  A4: { width: 210, height: 297 },
+  "16K": { width: 185, height: 260 },
+  A3: { width: 420, height: 297 },
+  "8K": { width: 370, height: 260 },
+};
 export type AnswerSheetMode = "blank" | "with-questions";
 export type AnswerSheetChoiceLayout = "inline" | "concentrated";
 export type AnswerSheetChoiceDirection = "horizontal" | "vertical";
