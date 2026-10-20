@@ -46,7 +46,8 @@ const WIDE_COLUMN_PAGE_NUMBER_MM = 6;
 const MM_TO_CSS_PX = 96 / 25.4;
 const CHOICE_GROUP_SIZE = 5;
 const CHOICE_GROUP_GAP_MM = 5;
-const CHOICE_VERTICAL_GROUP_WIDTH_MM = 48;
+const CHOICE_VERTICAL_COLUMN_WIDTH_MM = 8;
+const CHOICE_VERTICAL_GROUP_GAP_MM = 2;
 const CHOICE_NUMBER_WIDTH_MM = 8;
 const CHOICE_OPTION_WIDTH_MM = 6;
 
@@ -109,6 +110,12 @@ function choiceOptionCount(question: AnswerSheetQuestion): number {
   return Math.min(8, Math.max(2, question.options?.length || 4));
 }
 
+function choiceGroupWidthMm(items: NumberedQuestion[], direction: AnswerSheetChoiceDirection): number {
+  return direction === "vertical"
+    ? items.length * CHOICE_VERTICAL_COLUMN_WIDTH_MM
+    : CHOICE_NUMBER_WIDTH_MM + Math.max(...items.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
+}
+
 function groupChoiceRows(
   choices: NumberedQuestion[],
   direction: AnswerSheetChoiceDirection,
@@ -118,14 +125,13 @@ function groupChoiceRows(
   let usedWidth = 0;
   for (let index = 0; index < choices.length; index += CHOICE_GROUP_SIZE) {
     const group = choices.slice(index, index + CHOICE_GROUP_SIZE);
-    const width = direction === "vertical"
-      ? CHOICE_VERTICAL_GROUP_WIDTH_MM
-      : CHOICE_NUMBER_WIDTH_MM + Math.max(...group.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
-    const gap = usedWidth > 0 ? CHOICE_GROUP_GAP_MM : 0;
+    const width = choiceGroupWidthMm(group, direction);
+    const groupGap = direction === "vertical" ? CHOICE_VERTICAL_GROUP_GAP_MM : CHOICE_GROUP_GAP_MM;
+    const gap = usedWidth > 0 ? groupGap : 0;
     if (usedWidth > 0 && usedWidth + gap + width > widthMm) usedWidth = 0;
     if (usedWidth === 0) rows.push([]);
     rows[rows.length - 1].push(group);
-    usedWidth += (usedWidth > 0 ? CHOICE_GROUP_GAP_MM : 0) + width;
+    usedWidth += (usedWidth > 0 ? groupGap : 0) + width;
   }
   return rows;
 }
@@ -274,7 +280,7 @@ function ChoiceAnswer({ number, optionCount, direction = "horizontal", grouped =
   const vertical = direction === "vertical";
   return (
     <div
-      className={vertical ? "flex w-[8mm] flex-col items-center gap-1" : "flex items-center"}
+      className={vertical ? "flex w-[8mm] shrink-0 flex-col items-center gap-1" : "flex items-center"}
       style={!vertical && !grouped ? { width: `${CHOICE_NUMBER_WIDTH_MM + count * CHOICE_OPTION_WIDTH_MM}mm` } : undefined}
       data-testid="choice-answer"
     >
@@ -305,9 +311,7 @@ function ChoiceAnswerGroup({ items, direction }: {
   items: NumberedQuestion[];
   direction: AnswerSheetChoiceDirection;
 }) {
-  const width = direction === "vertical"
-    ? CHOICE_VERTICAL_GROUP_WIDTH_MM
-    : CHOICE_NUMBER_WIDTH_MM + Math.max(...items.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
+  const width = choiceGroupWidthMm(items, direction);
   return (
     <div
       className={direction === "vertical"
@@ -1183,7 +1187,7 @@ export function AnswerSheetComposer({
     if (flowItem.kind === "zone-choice" && flowItem.choiceGroups) {
       return (
         <div
-          className={`flex flex-wrap gap-[5mm] border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          className={`flex flex-wrap ${settings.concentratedChoiceDirection === "vertical" ? "gap-x-[2mm] gap-y-[5mm]" : "gap-[5mm]"} border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
           data-testid="choice-answer-row"
         >

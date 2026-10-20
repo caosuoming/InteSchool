@@ -892,6 +892,9 @@ describe("AnswerSheetComposer", () => {
     }));
     expect(screen.getAllByTestId("choice-answer-options")[0]).toHaveClass("flex-col");
     expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveClass("justify-between");
+    expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveStyle({ width: "16mm" });
+    expect(screen.getByTestId("choice-answer-row")).toHaveClass("gap-x-[2mm]", "gap-y-[5mm]");
+    expect(screen.getAllByTestId("choice-answer")[0]).toHaveClass("w-[8mm]", "shrink-0");
     expect(screen.getAllByTestId("choice-answer")[0].firstElementChild).toHaveTextContent("1.");
     expect(screen.getAllByTestId("choice-answer")[0].firstElementChild?.nextElementSibling)
       .toHaveAttribute("data-direction", "vertical");
@@ -936,13 +939,15 @@ describe("AnswerSheetComposer", () => {
     expect(rowGroups()).toEqual([5]);
 
     fireEvent.change(screen.getByLabelText("选择题填涂方向"), { target: { value: "vertical" } });
-    expect(rowGroups()).toEqual([3, 2]);
+    expect(rowGroups()).toEqual([5]);
+    expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveStyle({ width: "40mm" });
+    expect(screen.getAllByTestId("choice-answer-group")[4]).toHaveStyle({ width: "16mm" });
     expect(groupNumbers()).toHaveLength(5);
     expect(screen.getAllByTestId("choice-answer-group")[0]).toHaveAttribute("data-direction", "vertical");
     expect(screen.getAllByTestId("choice-answer")[0]).toHaveClass("flex-col");
 
     fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
-    expect(rowGroups()).toEqual([1, 1, 1, 1, 1]);
+    expect(rowGroups()).toEqual([2, 2, 1]);
     fireEvent.change(screen.getByLabelText("选择题填涂方向"), { target: { value: "horizontal" } });
     expect(rowGroups()).toEqual([2, 2, 1]);
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
