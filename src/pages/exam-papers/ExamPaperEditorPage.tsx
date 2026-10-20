@@ -41,6 +41,7 @@ import { RelatedQuestionReplacementPanel } from "@/components/question/RelatedQu
 import { AddToBasketDropdown } from "@/components/basket/AddToBasketDropdown";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
+import { DocumentQuestionPicker } from "@/components/editor/DocumentQuestionPicker";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
@@ -86,6 +87,7 @@ import type {
   ExamPublication,
   ExtractedDocumentBlock,
   Lecture,
+  LectureSection,
   LessonCourseware,
   PrepResourceComment,
   PrepTask,
@@ -107,6 +109,13 @@ import { isDocumentStructureLocked } from "@/lib/document-resource";
 import { getProjectSections } from "./project-sections";
 
 type TimeRangeKey = "all" | "1month" | "2month" | "3month" | "6month" | "1year" | "2year";
+
+function getLectureQuestionSections(sections: LectureSection[]): LectureSection[] {
+  return sections.flatMap((section) => [
+    ...(section.type === "question" ? [section] : []),
+    ...getLectureQuestionSections(section.children ?? []),
+  ]);
+}
 
 const timeRangeOptions: { value: TimeRangeKey; label: string }[] = [
   { value: "all", label: "全部时间" },
@@ -1098,18 +1107,20 @@ export default function ExamPaperEditorPage() {
     } else if (addSource === "bank") {
       toAdd = await questionService.listQuestions({ schoolId, ids: selectedQuestionIds });
     } else if (addSource === "examPaper" && selectedPaper) {
-      const all = await questionService.listQuestions({ schoolId });
+      const all = await questionService.listQuestions({ schoolId, ids: selectedQuestionIds });
+      const byId = new Map(all.map((question) => [question.id, question]));
       toAdd = selectedPaper.questions
         .filter((pq) => pq.questionId && selectedQuestionIds.includes(pq.questionId))
-        .map((pq) => all.find((q) => q.id === pq.questionId)!)
-        .filter(Boolean);
+        .map((pq) => byId.get(pq.questionId!))
+        .filter((question): question is Question => Boolean(question));
     } else if (addSource === "lecture" && selectedLecture) {
-      const all = await questionService.listQuestions({ schoolId });
-      const qIds = selectedLecture.sections
+      const all = await questionService.listQuestions({ schoolId, ids: selectedQuestionIds });
+      const byId = new Map(all.map((question) => [question.id, question]));
+      const qIds = getLectureQuestionSections(selectedLecture.sections)
         .filter((s) => s.type === "question" && s.questionId)
         .map((s) => s.questionId!)
         .filter((qid) => selectedQuestionIds.includes(qid));
-      toAdd = all.filter((q) => qIds.includes(q.id));
+      toAdd = qIds.map((qid) => byId.get(qid)).filter((question): question is Question => Boolean(question));
     }
 
     if (addTargetQuestionType) {
@@ -3028,7 +3039,7 @@ export default function ExamPaperEditorPage() {
       <Modal
         open={Boolean(addSource)}
         onClose={closeAddQuestion}
-        size="lg"
+        size={addSource === "examPaper" || addSource === "lecture" ? "xl" : "lg"}
         title={replaceIdx !== null
           ? "替换题目"
           : addTarget
@@ -3232,91 +3243,47 @@ export default function ExamPaperEditorPage() {
         )}
 
         {addSource === "examPaper" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {otherPapers.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => { setSelectedPaper(p); setSelectedQuestionIds([]); }}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md text-sm border transition-all",
-                    selectedPaper?.id === p.id ? "bg-gold-400 border-gold-400 text-ink-900" : "border-ink-200 hover:border-ink-300",
-                  )}
-                >
-                  {p.title}
-                </button>
-              ))}
-            </div>
-            {selectedPaper && (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {selectedPaper.questions
-                  .filter((pq) => pq.questionId && (!addTargetQuestionType || pq.type === addTargetQuestionType))
-                  .map((pq) => {
-                  const checked = selectedQuestionIds.includes(pq.questionId!);
-                  return (
-                    <label key={pq.id} className={cn(
-                      "flex items-start gap-2 p-3 rounded-md border cursor-pointer transition-colors",
-                      checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                    )}>
-                      <input
-                        type={replaceIdx !== null ? "radio" : "checkbox"}
-                        checked={checked}
-                        onChange={() => {
-                          if (replaceIdx !== null) setSelectedQuestionIds([pq.questionId!]);
-                          else setSelectedQuestionIds((prev) => prev.includes(pq.questionId!) ? prev.filter((id) => id !== pq.questionId) : [...prev, pq.questionId!]);
-                        }}
-                        className="mt-1 rounded border-ink-300 text-gold-500"
-                      />
-                      <div className="flex-1 text-sm text-ink-900 line-clamp-2">{pq.stem}</div>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <DocumentQuestionPicker
+            documents={otherPapers.map((p) => ({
+              id: p.id,
+              title: p.title,
+              questions: p.questions
+                .filter((pq) => !addTargetQuestionType || pq.type === addTargetQuestionType)
+                .map((pq) => ({ id: pq.id, questionId: pq.questionId, title: pq.stem })),
+            }))}
+            selectedDocumentId={selectedPaper?.id ?? null}
+            onDocumentSelect={(documentId) => {
+              setSelectedPaper(otherPapers.find((p) => p.id === documentId) ?? null);
+              setSelectedQuestionIds([]);
+            }}
+            selectedQuestionIds={selectedQuestionIds}
+            onSelectionChange={setSelectedQuestionIds}
+            singleSelect={replaceIdx !== null}
+            emptyDocumentsText="暂无可引用的试卷"
+          />
         )}
 
         {addSource === "lecture" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {otherLectures.map((l) => (
-                <button
-                  key={l.id}
-                  onClick={() => { setSelectedLecture(l); setSelectedQuestionIds([]); }}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md text-sm border transition-all",
-                    selectedLecture?.id === l.id ? "bg-gold-400 border-gold-400 text-ink-900" : "border-ink-200 hover:border-ink-300",
-                  )}
-                >
-                  {l.title}
-                </button>
-              ))}
-            </div>
-            {selectedLecture && (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {selectedLecture.sections.filter((s) => s.type === "question" && s.questionId).map((s) => {
-                  const checked = selectedQuestionIds.includes(s.questionId!);
-                  return (
-                    <label key={s.id} className={cn(
-                      "flex items-start gap-2 p-3 rounded-md border cursor-pointer transition-colors",
-                      checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                    )}>
-                      <input
-                        type={replaceIdx !== null ? "radio" : "checkbox"}
-                        checked={checked}
-                        onChange={() => {
-                          if (replaceIdx !== null) setSelectedQuestionIds([s.questionId!]);
-                          else setSelectedQuestionIds((prev) => prev.includes(s.questionId!) ? prev.filter((id) => id !== s.questionId) : [...prev, s.questionId!]);
-                        }}
-                        className="mt-1 rounded border-ink-300 text-gold-500"
-                      />
-                      <div className="flex-1 text-sm text-ink-900">{s.title}</div>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <DocumentQuestionPicker
+            documents={otherLectures.map((l) => ({
+              id: l.id,
+              title: l.title,
+              questions: getLectureQuestionSections(l.sections).map((section) => ({
+                id: section.id,
+                questionId: section.questionId,
+                title: section.content || section.title,
+              })),
+            }))}
+            selectedDocumentId={selectedLecture?.id ?? null}
+            onDocumentSelect={(documentId) => {
+              setSelectedLecture(otherLectures.find((l) => l.id === documentId) ?? null);
+              setSelectedQuestionIds([]);
+            }}
+            selectedQuestionIds={selectedQuestionIds}
+            onSelectionChange={setSelectedQuestionIds}
+            singleSelect={replaceIdx !== null}
+            emptyDocumentsText="暂无可引用的讲义"
+          />
         )}
       </Modal>
 

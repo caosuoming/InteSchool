@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { Clock3, ShieldCheck, UserCheck } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Input, Spinner, Textarea } from "@/components/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import TeacherProfilesPage from "./TeacherProfilesPage";
 import { isPlatformAdminAccount } from "@/lib/platform-admin";
 import { TEACHER_ROLES } from "@/lib/teacher-roles";
+import { SUBJECT_OPTIONS } from "@/lib/education";
 import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
 import { roleLabels } from "@/services/organization";
@@ -42,6 +44,21 @@ function PermissionEditor({
 
   return (
     <div className="space-y-5">
+      <fieldset disabled={disabled}>
+        <legend className="mb-2 font-medium text-ink-700 text-sm">任教学科</legend>
+        <div className="flex flex-wrap gap-2">
+          {SUBJECT_OPTIONS.map((subject) => (
+            <label key={subject} className="flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+              <input type="checkbox" checked={(fields.subjects || []).includes(subject)}
+                onChange={() => {
+                  const next = changeSelection(fields.subjects || [], subject);
+                  if (next.length) set("subjects", next);
+                }} />
+              {subject}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <fieldset disabled={disabled}>
         <legend className="mb-2 font-medium text-ink-700 text-sm">行政职务与角色</legend>
         <div className="flex flex-wrap gap-2">
@@ -94,6 +111,7 @@ function PermissionEditor({
 function PermissionSummary({ fields, classes }: { fields: TeacherPermissionFields; classes: SchoolClass[] }) {
   return (
     <div className="space-y-1 text-sm text-ink-600">
+      <p>任教学科：{(fields.subjects || []).join("、") || "未设置"}</p>
       <p>职务权限：{roleNames(fields.roles)}</p>
       <p>行政职务：{fields.position || "未设置"}</p>
       <p>任课班级：{fields.teachingClassIds.map((id) => classLabel(classes, id)).join("、") || "无"}</p>
@@ -105,6 +123,7 @@ function PermissionSummary({ fields, classes }: { fields: TeacherPermissionField
 function applicationFields(item: TeacherPermissionApplication): TeacherPermissionFields {
   return {
     roles: item.requestedRoles,
+    subjects: item.requestedSubjects || item.previous?.subjects,
     teachingClassIds: item.requestedTeachingClassIds,
     homeroomClassIds: item.requestedHomeroomClassIds,
     position: item.requestedPosition,
@@ -117,13 +136,21 @@ export default function PermissionApplicationsPage() {
   const schoolId = affiliation?.schoolId || null;
   const platformAdmin = isPlatformAdminAccount(teacher);
   const schoolAdmin = affiliation?.role === "school_admin" && !platformAdmin;
-  const [view, setView] = useState<"applications" | "management">("applications");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const view = schoolAdmin && (location.hash === "#review" || location.hash === "#pending")
+    ? "review" : schoolAdmin && location.hash === "#management" ? "management" : "applications";
+  const switchView = (next: "applications" | "review" | "management") => {
+    void navigate({ pathname: location.pathname, search: location.search,
+      hash: next === "applications" ? "" : `#${next}` });
+  };
   const current = useMemo<TeacherPermissionFields>(() => ({
     roles: affiliation?.assignedRoles?.length ? affiliation.assignedRoles : affiliation?.roles || ["teacher"],
+    subjects: affiliation?.subjects?.length ? affiliation.subjects : [affiliation?.subject || teacher?.subject || "数学"],
     teachingClassIds: affiliation?.teachingClassIds || [],
     homeroomClassIds: affiliation?.homeroomClassIds || [],
     position: affiliation?.position || "",
-  }), [affiliation]);
+  }), [affiliation, teacher?.subject]);
   const [draft, setDraft] = useState<TeacherPermissionFields>(current);
   const [reason, setReason] = useState("");
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -132,6 +159,7 @@ export default function PermissionApplicationsPage() {
   const [legacyMine, setLegacyMine] = useState<TeacherRoleApplication[]>([]);
   const [legacyPending, setLegacyPending] = useState<TeacherRoleApplication[]>([]);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, TeacherPermissionFields>>({});
+  const [legacyReviewDrafts, setLegacyReviewDrafts] = useState<Record<string, TeacherRole[]>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
@@ -159,6 +187,9 @@ export default function PermissionApplicationsPage() {
       setLegacyPending(previousPending);
       setReviewDrafts((old) => Object.fromEntries(pendingList.map((item) => [
         item.id, old[item.id] || applicationFields(item),
+      ])));
+      setLegacyReviewDrafts((old) => Object.fromEntries(previousPending.map((item) => [
+        item.id, old[item.id] || item.requestedRoles.filter((role) => role !== "teacher"),
       ])));
     } catch (error) {
       toast.error("权限申请加载失败", error instanceof Error ? error.message : undefined);
@@ -188,10 +219,19 @@ export default function PermissionApplicationsPage() {
   };
 
   const review = async (id: string, approved: boolean, legacy = false) => {
+    if (reviewing !== null) return;
     setReviewing(id);
     try {
-      if (legacy) await authService.reviewTeacherRoleApplication(id, approved);
-      else await authService.reviewTeacherPermissionApplication(id, approved, approved ? reviewDrafts[id] : undefined);
+      if (legacy) {
+        const approvedRoles = legacyReviewDrafts[id] || [];
+        if (approved && approvedRoles.length === 0) {
+          toast.error("请至少选择一项拟批准的职务权限，或拒绝该申请");
+          return;
+        }
+        await authService.reviewTeacherRoleApplication(id, approved, approved ? approvedRoles : undefined);
+      } else {
+        await authService.reviewTeacherPermissionApplication(id, approved, approved ? reviewDrafts[id] : undefined);
+      }
       toast.success(approved ? "权限申请已通过" : "权限申请已拒绝");
       await Promise.all([load(), refresh()]);
     } catch (error) {
@@ -214,14 +254,16 @@ export default function PermissionApplicationsPage() {
 
   return (
     <div>
-      <PageHeader title="我的权限申请" description="查看个人权限并申请调整，提交后由本校管理员审核"
+      <PageHeader title={view === "review" ? "本校教师权限审核" : view === "management" ? "本校教师权限管理" : "我的权限申请"}
+        description={view === "review" ? "审核本校教师的权限申请，可拒绝、通过或调整后通过" : view === "management" ? "管理本校教师职务与任教权限" : "查看个人权限并申请调整，提交后由本校管理员审核"}
         icon={<ShieldCheck className="h-5 w-5" />} />
       {schoolAdmin && <nav aria-label="教师权限申请与管理" className="mb-6 flex flex-wrap gap-2">
-        <Button variant={view === "applications" ? "gold" : "outline"} onClick={() => setView("applications")}>权限申请与审核</Button>
-        <Button variant={view === "management" ? "gold" : "outline"} onClick={() => setView("management")}>本校教师权限管理</Button>
+        <Button variant={view === "applications" ? "gold" : "outline"} onClick={() => switchView("applications")}>我的权限申请</Button>
+        <Button variant={view === "review" ? "gold" : "outline"} onClick={() => switchView("review")}>本校教师权限审核</Button>
+        <Button variant={view === "management" ? "gold" : "outline"} onClick={() => switchView("management")}>本校教师权限管理</Button>
       </nav>}
       {schoolAdmin && view === "management" && <TeacherProfilesPage embedded />}
-      {(!schoolAdmin || view === "applications") && <>
+      {view === "applications" && <>
       <Card className="mb-6 space-y-4 p-6">
         <h2 className="font-serif text-lg font-semibold text-ink-900">当前权限 · {affiliation?.schoolName || "本校"}</h2>
         <PermissionSummary fields={{ ...current, roles: affiliation?.roles || current.roles }} classes={classes} />
@@ -269,11 +311,18 @@ export default function PermissionApplicationsPage() {
                     <Badge variant={item.status === "approved" ? "teal" : item.status === "rejected" ? "red" : "gold"}>{statusLabel[item.status]}</Badge>
                   </div>
                   <p className="text-sm text-ink-600">{roleNames(item.requestedRoles)} · {item.reason}</p>
+                  {item.approvedRoles && <p className="text-sm text-ink-600">实际批准：{roleNames(item.approvedRoles)}</p>}
                 </Card>
               ))}
             </div>}
           </section>
-          {schoolAdmin && <section id="pending">
+        </>
+      )}
+      </>}
+      {schoolAdmin && view === "review" && (loading
+        ? <Card className="flex items-center justify-center gap-2 py-12 text-sm text-ink-500"><Spinner />加载待审核申请中...</Card>
+        : (
+          <section aria-label="本校待审核权限申请">
             <div className="mb-3 flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-ink-500" />
               <h2 className="font-serif font-semibold text-ink-900">本校待审核权限申请</h2>
@@ -307,22 +356,34 @@ export default function PermissionApplicationsPage() {
                 </Card>
               ))}
               {legacyPending.map((item) => (
-                <Card key={item.id} className="flex flex-wrap items-center justify-between gap-3 p-5">
+                <Card key={item.id} className="space-y-4 p-5">
                   <div>
                     <p className="font-medium text-ink-900">{item.teacherName} · 历史职务申请</p>
-                    <p className="mt-1 text-sm text-ink-600">{roleNames(item.requestedRoles)} · {item.reason}</p>
+                    <p className="mt-1 text-sm text-ink-600">原申请：{roleNames(item.requestedRoles)} · {item.reason}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" disabled={reviewing !== null} onClick={() => review(item.id, false, true)}>拒绝</Button>
-                    <Button variant="gold" disabled={reviewing !== null} onClick={() => review(item.id, true, true)}>通过</Button>
+                  <fieldset disabled={reviewing !== null}>
+                    <legend className="mb-2 text-sm font-medium text-ink-700">拟批准的职务权限（可调整）</legend>
+                    <div className="flex flex-wrap gap-2">
+                      {TEACHER_ROLES.filter((role) => role !== "teacher").map((role) => (
+                        <label key={role} className="inline-flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+                          <input type="checkbox" checked={(legacyReviewDrafts[item.id] || []).includes(role)}
+                            onChange={() => setLegacyReviewDrafts((old) => ({
+                              ...old, [item.id]: changeSelection(old[item.id] || [], role),
+                            }))} />
+                          {roleLabels[role]}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" disabled={reviewing !== null} loading={reviewing === item.id} onClick={() => review(item.id, false, true)}>拒绝</Button>
+                    <Button variant="gold" disabled={reviewing !== null} loading={reviewing === item.id} onClick={() => review(item.id, true, true)}>按上述权限通过</Button>
                   </div>
                 </Card>
               ))}
             </div>}
-          </section>}
-        </>
-      )}
-      </>}
+          </section>
+        ))}
     </div>
   );
 }

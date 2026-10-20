@@ -57,6 +57,7 @@ import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
+import { DocumentQuestionPicker } from "@/components/editor/DocumentQuestionPicker";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
@@ -3415,7 +3416,7 @@ export default function LectureEditorPage() {
       <Modal
         open={Boolean(addSource)}
         onClose={closeAddSourceModal}
-        size="lg"
+        size={addSource === "examPaper" || addSource === "lecture" ? "xl" : "lg"}
         title={
           replacingQuestion ? "换题" :
           addSource === "basket" ? "从资源篮添加题目" :
@@ -3543,73 +3544,26 @@ export default function LectureEditorPage() {
 
 
         {addSource === "examPaper" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {otherPapers.map((paper) => (
-                <button
-                  key={paper.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedOtherPaper(paper);
-                    setSelectedQuestionIds([]);
-                  }}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md text-sm border transition-all",
-                    selectedOtherPaper?.id === paper.id
-                      ? "bg-gold-400 border-gold-400 text-ink-900"
-                      : "border-ink-200 hover:border-ink-300",
-                  )}
-                >
-                  {paper.title} ({paper.questions.length})
-                </button>
-              ))}
-              {otherPapers.length === 0 && (
-                <div className="w-full py-8 text-center text-sm text-ink-400">暂无可引用的试卷</div>
-              )}
-            </div>
-            {selectedOtherPaper && (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {selectedOtherPaper.questions.map((paperQuestion, index) => {
-                  const questionId = paperQuestion.questionId;
-                  const checked = Boolean(questionId && selectedQuestionIds.includes(questionId));
-                  return (
-                    <label
-                      key={paperQuestion.id}
-                      className={cn(
-                        "flex items-start gap-2 p-3 rounded-md border transition-colors",
-                        questionId ? "cursor-pointer" : "cursor-not-allowed opacity-60",
-                        checked ? "border-gold-300 bg-gold-50/30" : "border-ink-100 hover:bg-mist",
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={!questionId}
-                        onChange={(event) => {
-                          if (!questionId) return;
-                          setSelectedQuestionIds((previous) =>
-                            event.target.checked
-                              ? [...previous, questionId]
-                              : previous.filter((id) => id !== questionId),
-                          );
-                        }}
-                        className="mt-1 rounded border-ink-300 text-gold-500 focus:ring-gold-400"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-1 text-sm text-ink-900">
-                          <span className="flex-shrink-0">{index + 1}.</span>
-                          <MathHtml className="min-w-0 flex-1 line-clamp-2">{paperQuestion.stem}</MathHtml>
-                        </div>
-                        {!questionId && (
-                          <div className="text-[11px] text-ink-400 mt-1">该题尚未关联题库，无法直接引用</div>
-                        )}
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <DocumentQuestionPicker
+            documents={otherPapers.map((paper) => ({
+              id: paper.id,
+              title: paper.title,
+              questions: paper.questions.map((item) => ({
+                id: item.id,
+                questionId: item.questionId,
+                title: item.stem,
+              })),
+            }))}
+            selectedDocumentId={selectedOtherPaper?.id ?? null}
+            onDocumentSelect={(documentId) => {
+              setSelectedOtherPaper(otherPapers.find((paper) => paper.id === documentId) ?? null);
+              setSelectedQuestionIds([]);
+            }}
+            selectedQuestionIds={selectedQuestionIds}
+            onSelectionChange={setSelectedQuestionIds}
+            singleSelect={Boolean(replacingQuestion)}
+            emptyDocumentsText="暂无可引用的试卷"
+          />
         )}
 
         {addSource === "lecture" && (

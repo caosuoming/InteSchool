@@ -82,6 +82,16 @@ export const questionService = {
     return questions.map(normalizeLegacyQuestionMeanNotation);
   },
 
+  async findSimilarQuestionsBatch(stems: string[], schoolId: string): Promise<SimilarQuestionCandidate[][]> {
+    const results = await rpcCall<SimilarQuestionCandidate[][]>(
+      "question", "findSimilarQuestionsBatch", [stems, schoolId],
+    );
+    return results.map((candidates) => candidates.map((candidate) => ({
+      ...candidate,
+      question: normalizeLegacyQuestionMeanNotation(candidate.question),
+    })));
+  },
+
   async findSimilarQuestions(
     stem: string,
     schoolId: string,

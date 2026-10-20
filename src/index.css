@@ -354,7 +354,7 @@
 }
 
 .answer-sheet-inline-image {
-  position: relative;
+  position: static;
   display: block;
   box-sizing: border-box;
   width: max-content;
@@ -366,7 +366,6 @@
 
 .answer-sheet-inline-image[data-wrap="left"] { float: left; }
 .answer-sheet-inline-image[data-wrap="right"] { float: right; margin: 4px 0 6px 6px; }
-.answer-sheet-inline-image[data-wrap="none"] { float: none; clear: both; max-width: 100%; margin: 6px auto; }
 
 .answer-sheet-inline-image img {
   display: block;
@@ -438,10 +437,10 @@
 }
 
 .answer-sheet-essay-image {
-  position: absolute;
-  z-index: 1;
+  position: static;
   box-sizing: border-box;
   max-width: 100%;
+  margin-bottom: 6px;
   user-select: none;
 }
 

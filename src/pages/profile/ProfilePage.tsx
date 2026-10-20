@@ -470,7 +470,7 @@ export default function ProfilePage() {
         <form onSubmit={handleProfileSave} className="space-y-5">
           <div className="grid md:grid-cols-2 gap-4">
             <Input label="公开昵称" maxLength={20} value={nickname} onChange={(event) => setNickname(event.target.value)} required hint="平台资源仅展示昵称。" />
-            <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={SUBJECT_OPTIONS.map((value) => ({ value, label: value }))} />
+            <Select label="任教学科" value={subject} onChange={(event) => setSubject(event.target.value)} options={(affiliation?.schoolId ? (affiliation.subjects?.length ? affiliation.subjects : [affiliation.subject]) : SUBJECT_OPTIONS).map((value) => ({ value, label: value }))} />
           </div>
           <ChoiceGrid icon={<Building2 className="w-4 h-4" />} label="任教年级" values={GRADE_OPTIONS} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
           <Button type="submit" variant="gold" loading={savingProfile}>保存资料</Button>

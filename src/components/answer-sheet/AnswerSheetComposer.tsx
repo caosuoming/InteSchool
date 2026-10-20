@@ -23,6 +23,7 @@ import {
   MAX_STUDENT_NUMBER_DIGITS,
   MIN_STUDENT_NUMBER_DIGITS,
   normalizeAnswerSheetStemFontSize,
+  normalizeAnswerSheetQuestionGap,
   normalizeStudentNumberDigits,
   type AnswerSheetBoxStyle,
   type AnswerSheetOptionBreak,
@@ -31,6 +32,7 @@ import {
   type AnswerSheetPaperSize,
   type AnswerSheetInlineImageLayout,
   type AnswerSheetQuestion,
+  type AnswerSheetProject,
   type AnswerSheetResourceType,
   type AnswerSheetSettings,
   type AnswerSheetWideColumns,
@@ -48,9 +50,13 @@ const WIDE_COLUMN_PAGE_NUMBER_MM = 6;
 const MM_TO_CSS_PX = 96 / 25.4;
 const CHOICE_GROUP_SIZE = 5;
 const CHOICE_GROUP_GAP_MM = 5;
-const CHOICE_VERTICAL_GROUP_WIDTH_MM = 48;
+const CHOICE_VERTICAL_COLUMN_WIDTH_MM = 8;
+const CHOICE_VERTICAL_GROUP_GAP_MM = 2;
 const CHOICE_NUMBER_WIDTH_MM = 8;
 const CHOICE_OPTION_WIDTH_MM = 6;
+const FILL_ANSWER_WIDTH_MM = 40;
+const FILL_ANSWER_GAP_MM = 3;
+const FILL_ZONE_PADDING_MM = 7;
 
 const paperSizeConfig: Record<AnswerSheetPaperSize, {
   physicalWidthMm: number;
@@ -89,6 +95,8 @@ const typeLabels: Record<string, string> = {
   comprehensive: "综合题",
 };
 
+const EMPTY_PROJECTS: AnswerSheetProject[] = [];
+
 const answerSheetTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
 
 const chineseNumerals = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
@@ -111,6 +119,12 @@ function choiceOptionCount(question: AnswerSheetQuestion): number {
   return Math.min(8, Math.max(2, question.options?.length || 4));
 }
 
+function choiceGroupWidthMm(items: NumberedQuestion[], direction: AnswerSheetChoiceDirection): number {
+  return direction === "vertical"
+    ? items.length * CHOICE_VERTICAL_COLUMN_WIDTH_MM
+    : CHOICE_NUMBER_WIDTH_MM + Math.max(...items.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
+}
+
 function groupChoiceRows(
   choices: NumberedQuestion[],
   direction: AnswerSheetChoiceDirection,
@@ -120,14 +134,39 @@ function groupChoiceRows(
   let usedWidth = 0;
   for (let index = 0; index < choices.length; index += CHOICE_GROUP_SIZE) {
     const group = choices.slice(index, index + CHOICE_GROUP_SIZE);
-    const width = direction === "vertical"
-      ? CHOICE_VERTICAL_GROUP_WIDTH_MM
-      : CHOICE_NUMBER_WIDTH_MM + Math.max(...group.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
-    const gap = usedWidth > 0 ? CHOICE_GROUP_GAP_MM : 0;
+    const width = choiceGroupWidthMm(group, direction);
+    const groupGap = direction === "vertical" ? CHOICE_VERTICAL_GROUP_GAP_MM : CHOICE_GROUP_GAP_MM;
+    const gap = usedWidth > 0 ? groupGap : 0;
     if (usedWidth > 0 && usedWidth + gap + width > widthMm) usedWidth = 0;
     if (usedWidth === 0) rows.push([]);
     rows[rows.length - 1].push(group);
-    usedWidth += (usedWidth > 0 ? CHOICE_GROUP_GAP_MM : 0) + width;
+    usedWidth += (usedWidth > 0 ? groupGap : 0) + width;
+  }
+  return rows;
+}
+
+function fillAnswerWidthPx(question: NumberedQuestion, savedWidths: Record<string, number> | undefined, availableMm: number): number {
+  const saved = savedWidths?.[question.question.id];
+  const requested = typeof saved === "number" && Number.isFinite(saved) && saved > 0
+    ? saved
+    : FILL_ANSWER_WIDTH_MM * MM_TO_CSS_PX;
+  return Math.min(Math.max(requested, 32 * MM_TO_CSS_PX), availableMm * MM_TO_CSS_PX);
+}
+
+function groupFillRows(
+  fills: NumberedQuestion[],
+  availableMm: number,
+  savedWidths: Record<string, number> | undefined,
+): NumberedQuestion[][] {
+  const rows: NumberedQuestion[][] = [];
+  let usedMm = 0;
+  for (const item of fills) {
+    const widthMm = fillAnswerWidthPx(item, savedWidths, availableMm) / MM_TO_CSS_PX;
+    const gapMm = usedMm > 0 ? FILL_ANSWER_GAP_MM : 0;
+    if (usedMm > 0 && usedMm + gapMm + widthMm > availableMm) usedMm = 0;
+    if (usedMm === 0) rows.push([]);
+    rows[rows.length - 1].push(item);
+    usedMm += (usedMm > 0 ? FILL_ANSWER_GAP_MM : 0) + widthMm;
   }
   return rows;
 }
@@ -164,6 +203,7 @@ interface FlowItem {
     | "question"
     | "footer";
   item?: NumberedQuestion;
+  fillRow?: NumberedQuestion[];
   choiceGroups?: NumberedQuestion[][];
   group?: QuestionGroup;
   groupIndex?: number;
@@ -207,6 +247,20 @@ function groupQuestions(questions: AnswerSheetQuestion[], consolidateTypes = fal
     groups.sort((left, right) => priority(left.type) - priority(right.type));
   }
   return groups;
+}
+
+function groupProjectQuestions(questions: AnswerSheetQuestion[], projects: AnswerSheetProject[]): QuestionGroup[] {
+  const projectIds = new Set(projects.map((project) => project.id));
+  const numbered = questions.map((question, index) => ({ question, number: index + 1 }));
+  const ungrouped = numbered.filter(({ question }) => !question.projectId || !projectIds.has(question.projectId));
+  return [
+    ...(ungrouped.length ? [{ type: "project", label: "未分组", items: ungrouped }] : []),
+    ...projects.map((project) => ({
+      type: "project",
+      label: project.name,
+      items: numbered.filter(({ question }) => question.projectId === project.id),
+    })).filter((group) => group.items.length > 0),
+  ];
 }
 
 function StudentNumberGrid({ digits }: { digits: number }) {
@@ -276,7 +330,7 @@ function ChoiceAnswer({ number, optionCount, direction = "horizontal", grouped =
   const vertical = direction === "vertical";
   return (
     <div
-      className={vertical ? "flex w-[8mm] flex-col items-center gap-1" : "flex items-center"}
+      className={vertical ? "flex w-[8mm] shrink-0 flex-col items-center gap-1" : "flex items-center"}
       style={!vertical && !grouped ? { width: `${CHOICE_NUMBER_WIDTH_MM + count * CHOICE_OPTION_WIDTH_MM}mm` } : undefined}
       data-testid="choice-answer"
     >
@@ -307,9 +361,7 @@ function ChoiceAnswerGroup({ items, direction }: {
   items: NumberedQuestion[];
   direction: AnswerSheetChoiceDirection;
 }) {
-  const width = direction === "vertical"
-    ? CHOICE_VERTICAL_GROUP_WIDTH_MM
-    : CHOICE_NUMBER_WIDTH_MM + Math.max(...items.map(({ question }) => choiceOptionCount(question))) * CHOICE_OPTION_WIDTH_MM;
+  const width = choiceGroupWidthMm(items, direction);
   return (
     <div
       className={direction === "vertical"
@@ -348,6 +400,8 @@ function AnswerBox({
   boxStyle,
   compact = false,
   lined = false,
+  showScore = true,
+  maxWidthMm,
   editable,
   height,
   width,
@@ -361,6 +415,8 @@ function AnswerBox({
   boxStyle: AnswerSheetBoxStyle;
   compact?: boolean;
   lined?: boolean;
+  showScore?: boolean;
+  maxWidthMm?: number;
   editable: boolean;
   height?: number;
   width?: number;
@@ -369,25 +425,57 @@ function AnswerBox({
   onWidthChange?: (width: number) => void;
   children?: ReactNode;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const resizePendingRef = useRef(false);
+  const saveSize = useCallback(() => {
+    if (!editable || !boxRef.current) return;
+    const rect = boxRef.current.getBoundingClientRect();
+    const nextHeight = Math.round(rect.height);
+    if (onHeightChange && nextHeight > 0 && nextHeight !== height) onHeightChange(nextHeight);
+    const nextWidth = Math.round(rect.width);
+    if (resizableBoth && onWidthChange && nextWidth > 0 && nextWidth !== width) onWidthChange(nextWidth);
+  }, [editable, height, onHeightChange, onWidthChange, resizableBoth, width]);
+
+  useEffect(() => {
+    if (!editable) return undefined;
+    // Native CSS resize can finish outside the box; its pointerup does not always
+    // target the resized element. Persist the dimensions at the window level.
+    const finishResize = () => {
+      if (!resizePendingRef.current) return;
+      resizePendingRef.current = false;
+      saveSize();
+    };
+    window.addEventListener("pointerup", finishResize, true);
+    window.addEventListener("pointercancel", finishResize, true);
+    return () => {
+      window.removeEventListener("pointerup", finishResize, true);
+      window.removeEventListener("pointercancel", finishResize, true);
+    };
+  }, [editable, saveSize]);
+
   return (
     <div
+      ref={boxRef}
       className={`answer-sheet-answer-box relative box-border w-full border border-ink-800 p-2 ${boxStyle === "dashed" ? "border-dashed" : "border-solid"}`}
       style={{
         height: height ? `${height}px` : undefined,
         width: width ? `${width}px` : undefined,
         minHeight: compact ? "13mm" : "30mm",
         minWidth: resizableBoth ? "32mm" : undefined,
-        maxWidth: "100%",
+        maxWidth: maxWidthMm ? `${maxWidthMm}mm` : "100%",
         resize: editable ? (resizableBoth ? "both" : "vertical") : "none",
         overflow: "hidden",
       }}
-      onPointerUp={(event) => {
-        if (!editable || event.target !== event.currentTarget) return;
+      onPointerDown={(event) => {
+        if (!editable || event.button !== 0) return;
         const rect = event.currentTarget.getBoundingClientRect();
-        const nextHeight = Math.round(rect.height);
-        if (onHeightChange && nextHeight > 0 && nextHeight !== height) onHeightChange(nextHeight);
-        const nextWidth = Math.round(rect.width);
-        if (resizableBoth && onWidthChange && nextWidth > 0 && nextWidth !== width) onWidthChange(nextWidth);
+        resizePendingRef.current = event.clientX >= rect.right - 24
+          && event.clientX <= rect.right && event.clientY >= rect.bottom - 24
+          && event.clientY <= rect.bottom;
+      }}
+      onPointerUp={(event) => {
+        if (event.target === event.currentTarget) saveSize();
+        resizePendingRef.current = false;
       }}
       data-testid="answer-box"
       data-answer-box-style={boxStyle}
@@ -398,13 +486,15 @@ function AnswerBox({
           {children}
         </div>
       )}
-      {lined && <span className="answer-sheet-fill-rule" data-testid="fill-answer-rule" aria-hidden="true" />}
-      <div
-        className="pointer-events-none absolute bottom-0 right-0 flex h-[9mm] w-[13mm] items-center justify-center border-l border-t border-ink-800 bg-white text-[8px] text-ink-500"
-        aria-label={`第${number}题评分框`}
-      >
-        得分
-      </div>
+      {lined && <span className="answer-sheet-fill-rule" style={!showScore ? { right: "2mm" } : undefined} data-testid="fill-answer-rule" aria-hidden="true" />}
+      {showScore && (
+        <div
+          className="pointer-events-none absolute bottom-0 right-0 flex h-[9mm] w-[13mm] items-center justify-center border-l border-t border-ink-800 bg-white text-[8px] text-ink-500"
+          aria-label={`第${number}题评分框`}
+        >
+          得分
+        </div>
+      )}
     </div>
   );
 }
@@ -740,6 +830,7 @@ interface AnswerSheetComposerProps {
   resourceLabel: "试卷" | "讲义";
   questions: AnswerSheetQuestion[];
   sourceLayoutMode?: "grouped" | "flat";
+  projects?: AnswerSheetProject[];
   totalScore?: number;
   initialSettings?: Partial<AnswerSheetSettings>;
   initialViewMode?: "edit" | "preview";
@@ -763,6 +854,12 @@ function buildInitialSettings(initialSettings?: Partial<AnswerSheetSettings>): A
     stemFontSize: normalizeAnswerSheetStemFontSize(
       initialSettings?.stemFontSize ?? DEFAULT_ANSWER_SHEET_SETTINGS.stemFontSize,
     ),
+    questionGapPx: normalizeAnswerSheetQuestionGap(initialSettings?.questionGapPx ?? 0),
+    questionGapOverrides: Object.fromEntries(
+      Object.entries(initialSettings?.questionGapOverrides ?? {})
+        .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
+        .map(([id, value]) => [id, normalizeAnswerSheetQuestionGap(value)]),
+    ),
   };
 }
 
@@ -777,6 +874,7 @@ export function AnswerSheetComposer({
   resourceLabel,
   questions,
   sourceLayoutMode,
+  projects = EMPTY_PROJECTS,
   totalScore,
   initialSettings,
   initialViewMode = "edit",
@@ -791,19 +889,22 @@ export function AnswerSheetComposer({
   const [publishing, setPublishing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedChoiceId, setSelectedChoiceId] = useState("");
+  const [selectedSpacingId, setSelectedSpacingId] = useState("");
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
   const previewPagesRef = useRef<HTMLDivElement>(null);
 
-  const consolidateTypes = sourceLayoutMode === "flat"
-    && (settings.mode === "blank" || settings.choiceLayout === "concentrated");
-  const groups = useMemo(() => groupQuestions(questions, consolidateTypes), [questions, consolidateTypes]);
+  const groups = useMemo(
+    () => sourceLayoutMode === "flat" ? groupProjectQuestions(questions, projects) : groupQuestions(questions),
+    [questions, projects, sourceLayoutMode],
+  );
   const numberedQuestions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const choiceItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isChoiceQuestion(question)),
     [numberedQuestions],
   );
   const selectedChoice = choiceItems.find(({ question }) => question.id === selectedChoiceId) ?? choiceItems[0];
+  const selectedSpacingQuestion = numberedQuestions.find(({ question }) => question.id === selectedSpacingId) ?? numberedQuestions[0];
   const fillItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isFillQuestion(question)),
     [numberedQuestions],
@@ -823,6 +924,11 @@ export function AnswerSheetComposer({
   const choiceRows = useMemo(
     () => groupChoiceRows(choiceItems, settings.concentratedChoiceDirection, columnWidthMm - 7),
     [choiceItems, columnWidthMm, settings.concentratedChoiceDirection],
+  );
+  const fillAvailableMm = columnWidthMm - FILL_ZONE_PADDING_MM;
+  const fillRows = useMemo(
+    () => groupFillRows(fillItems, fillAvailableMm, settings.answerBoxWidths),
+    [fillItems, fillAvailableMm, settings.answerBoxWidths],
   );
 
   const changePublication = async (publish: boolean) => {
@@ -858,6 +964,18 @@ export function AnswerSheetComposer({
     if (published) return;
     setSettings((current) => {
       const next = { ...current, ...patch };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateQuestionGap = (questionId: string, gap: number | null) => {
+    if (published) return;
+    setSettings((current) => {
+      const overrides = { ...current.questionGapOverrides };
+      if (gap === null) delete overrides[questionId];
+      else overrides[questionId] = normalizeAnswerSheetQuestionGap(gap);
+      const next = { ...current, questionGapOverrides: overrides };
       onSettingsChange?.(next);
       return next;
     });
@@ -963,13 +1081,13 @@ export function AnswerSheetComposer({
           label: "填空题答题区",
           testId: "concentrated-fill-area",
         });
-        fillItems.forEach((item, index) => {
+        fillRows.forEach((fillRow, index) => {
           items.push({
-            key: `zone-fill-${item.question.id}`,
+            key: `zone-fill-${fillRow[0].question.id}`,
             kind: "zone-fill",
-            item,
+            fillRow,
             first: index === 0,
-            last: index === fillItems.length - 1,
+            last: index === fillRows.length - 1,
           });
         });
       }
@@ -997,7 +1115,7 @@ export function AnswerSheetComposer({
 
     items.push({ key: "footer", kind: "footer" });
     return items;
-  }, [choiceItems, choiceRows, fillItems, groups, settings.choiceLayout, settings.mode]);
+  }, [choiceItems, choiceRows, fillItems, fillRows, groups, settings.choiceLayout, settings.mode]);
 
   const recalculatePagination = useCallback(() => {
     if (flowItems.length === 0 || pageContentHeightPx <= 0) return;
@@ -1044,6 +1162,7 @@ export function AnswerSheetComposer({
     columnWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle,
     settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits,
     settings.choiceOptionBreaks, settings.concentratedChoiceDirection, settings.stemFontSize,
+    settings.questionGapPx, settings.questionGapOverrides,
     settings.questionImageLayouts, settings.essayImageLayouts, viewMode,
   ]);
 
@@ -1084,11 +1203,13 @@ export function AnswerSheetComposer({
       <h1 className="mb-1 text-center font-serif text-xl font-bold">{title}</h1>
 
       <div
-        className="flex min-w-0 items-stretch border border-ink-900"
+        className="flex min-w-0 items-stretch gap-[1.5mm]"
         data-testid="answer-sheet-identity-area"
       >
         <div
-          className={isWidePaper ? "w-[38mm] shrink-0 px-[1mm] pb-[1mm] pt-[2.5mm]" : "w-[75mm] shrink-0 px-2.5 pb-2.5 pt-[4mm]"}
+          className={isWidePaper
+            ? "min-w-0 flex-1 border border-ink-900 px-[1mm] pb-[1mm] pt-[2.5mm]"
+            : "min-w-0 flex-1 border border-ink-900 px-2.5 pb-2.5 pt-[4mm]"}
           data-testid="answer-sheet-identity-fields"
         >
           <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
@@ -1098,37 +1219,34 @@ export function AnswerSheetComposer({
           <div className={isWidePaper ? "flex flex-col items-start gap-1 text-xs" : "flex flex-col items-start gap-1 text-sm"}>
             <div>姓名：</div>
             <span
-              className="block h-[13mm] w-[26.67mm] shrink-0 border border-dashed border-ink-700"
+              className={`block h-[13mm] shrink-0 border border-dashed border-ink-700 ${isWidePaper ? "w-[32mm]" : "w-[50mm]"}`}
               aria-label="姓名签名填写区"
               data-answer-sheet-field="signature"
               data-signature-history-limit="10"
             />
           </div>
         </div>
-        <div className="contents">
-          <div className="min-w-0 flex-1" aria-hidden="true" />
-          <div
-            className={isWidePaper
-              ? "flex w-[49mm] shrink-0 items-center border-l border-ink-900 p-[1mm]"
-              : "flex w-[52mm] shrink-0 items-center border-l border-ink-900 p-2"}
-            data-testid="answer-sheet-student-number-column"
-          >
-            <StudentNumberGrid digits={settings.studentNumberDigits} />
-          </div>
-          <div
-            className="answer-sheet-qr flex w-[24mm] shrink-0 flex-col items-center justify-center border-l border-ink-900 p-1.5"
-            data-testid="answer-sheet-qr-position"
-          >
-            <QRCodeSVG
-              value={qrPayload}
-              size={82}
-              style={{ width: "20mm", height: "20mm", display: "block" }}
-              level="M"
-              aria-label={`${resourceLabel}答题卡二维码`}
-            />
-            <div className="mt-1 w-full truncate text-center font-mono text-[7px] text-ink-500" title={resourceId}>
-              {resourceType}:{resourceId}
-            </div>
+        <div
+          className={isWidePaper
+            ? "flex w-[49mm] shrink-0 items-center border border-ink-900 p-[1mm]"
+            : "flex w-[52mm] shrink-0 items-center border border-ink-900 p-2"}
+          data-testid="answer-sheet-student-number-column"
+        >
+          <StudentNumberGrid digits={settings.studentNumberDigits} />
+        </div>
+        <div
+          className="answer-sheet-qr flex w-[24mm] shrink-0 flex-col items-center justify-center border border-ink-900 p-1.5"
+          data-testid="answer-sheet-qr-position"
+        >
+          <QRCodeSVG
+            value={qrPayload}
+            size={82}
+            style={{ width: "20mm", height: "20mm", display: "block" }}
+            level="M"
+            aria-label={`${resourceLabel}答题卡二维码`}
+          />
+          <div className="mt-1 w-full truncate text-center font-mono text-[7px] text-ink-500" title={resourceId}>
+            {resourceType}:{resourceId}
           </div>
         </div>
       </div>
@@ -1202,7 +1320,7 @@ export function AnswerSheetComposer({
     if (flowItem.kind === "zone-choice" && flowItem.choiceGroups) {
       return (
         <div
-          className={`flex flex-wrap gap-[5mm] border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          className={`flex flex-wrap ${settings.concentratedChoiceDirection === "vertical" ? "gap-x-[2mm] gap-y-[5mm]" : "gap-[5mm]"} border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
           data-testid="choice-answer-row"
         >
@@ -1217,24 +1335,35 @@ export function AnswerSheetComposer({
       );
     }
 
-    if (flowItem.kind === "zone-fill" && flowItem.item) {
+    if (flowItem.kind === "zone-fill" && flowItem.fillRow) {
       return (
         <div
-          className={`border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          className={`flex flex-wrap items-start gap-[3mm] border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          data-testid="concentrated-fill-row"
           data-answer-sheet-question
         >
-          <AnswerBox
-            number={flowItem.item.question.label || flowItem.item.number}
-            boxStyle={settings.answerBoxStyle}
-            compact
-            lined
-            editable={!isPreview}
-            resizableBoth
-            height={settings.answerBoxHeights?.[flowItem.item.question.id]}
-            width={settings.answerBoxWidths?.[flowItem.item.question.id]}
-            onHeightChange={(height) => updateAnswerBoxHeight(flowItem.item!.question.id, height)}
-            onWidthChange={(width) => updateAnswerBoxWidth(flowItem.item!.question.id, width)}
-          />
+          {flowItem.fillRow.map((item) => (
+            <div
+              key={item.question.id}
+              className="min-w-0 shrink-0"
+              style={{ width: `${fillAnswerWidthPx(item, settings.answerBoxWidths, fillAvailableMm)}px`, maxWidth: "100%" }}
+            >
+              <AnswerBox
+                number={item.question.label || item.number}
+                boxStyle={settings.answerBoxStyle}
+                compact
+                lined
+                showScore={false}
+                maxWidthMm={fillAvailableMm}
+                editable={!isPreview}
+                resizableBoth
+                height={settings.answerBoxHeights?.[item.question.id]}
+                width={settings.answerBoxWidths?.[item.question.id]}
+                onHeightChange={(height) => updateAnswerBoxHeight(item.question.id, height)}
+                onWidthChange={(width) => updateAnswerBoxWidth(item.question.id, width)}
+              />
+            </div>
+          ))}
         </div>
       );
     }
@@ -1252,6 +1381,11 @@ export function AnswerSheetComposer({
         <div
           className={`border-x border-ink-800 ${flowItem.item.question.type === "essay" ? "px-[1mm]" : "px-3"} py-2 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
+          data-question-id={flowItem.item.question.id}
+          style={settings.mode === "with-questions" ? {
+            paddingBottom: `${(flowItem.last ? 12 : 8) + (settings.questionGapOverrides?.[flowItem.item.question.id]
+              ?? settings.questionGapPx ?? 0)}px`,
+          } : undefined}
         >
           {renderGroupItem(flowItem.item)}
         </div>
@@ -1445,6 +1579,57 @@ export function AnswerSheetComposer({
                   {typeof totalScore === "number" && <Badge variant="gold">{totalScore}分</Badge>}
                 </div>
               </div>
+              {settings.mode === "with-questions" && numberedQuestions.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-200 pt-4" data-testid="answer-sheet-spacing-controls">
+                  <div className="w-40">
+                    <Input
+                      label="统一题后间距（px）"
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={settings.questionGapPx ?? 0}
+                      onChange={(event) => updateSettings({
+                        questionGapPx: normalizeAnswerSheetQuestionGap(Number(event.target.value)),
+                      })}
+                    />
+                  </div>
+                  <div className="w-36">
+                    <Select
+                      label="调整题号"
+                      value={selectedSpacingQuestion?.question.id ?? ""}
+                      onChange={(event) => setSelectedSpacingId(event.target.value)}
+                      options={numberedQuestions.map(({ question, number }) => ({
+                        value: question.id,
+                        label: `第${question.label || number}题`,
+                      }))}
+                    />
+                  </div>
+                  {selectedSpacingQuestion && (
+                    <>
+                      <div className="w-40">
+                        <Input
+                          label="该题后间距（px）"
+                          type="number"
+                          min={0}
+                          max={120}
+                          value={settings.questionGapOverrides?.[selectedSpacingQuestion.question.id]
+                            ?? settings.questionGapPx ?? 0}
+                          onChange={(event) => updateQuestionGap(
+                            selectedSpacingQuestion.question.id, Number(event.target.value),
+                          )}
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        disabled={settings.questionGapOverrides?.[selectedSpacingQuestion.question.id] === undefined}
+                        onClick={() => updateQuestionGap(selectedSpacingQuestion.question.id, null)}
+                      >
+                        跟随统一间距
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
               {settings.mode === "with-questions" && choiceItems.length > 0 && (
                 <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-200 pt-4" data-testid="answer-sheet-choice-controls">
                   <div className="w-36">
