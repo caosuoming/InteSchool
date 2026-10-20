@@ -256,12 +256,12 @@ describe("homeworkRecordService", () => {
       const saved = await homeworkRecordService.saveClassOverview({
         classId: "class-1", homeworkDate: "2026-09-08", summary: "优秀", images: [image],
       }, teacher);
-      expect(saved.images).toEqual([image]);
+      expect(saved.images).toEqual([{ ...image, category: "excellent", note: "" }]);
       expect(await homeworkRecordService.listClassOverviews("class-1", teacher)).toHaveLength(1);
       const next = await homeworkRecordService.saveClassOverview({
         classId: "class-1", homeworkDate: "2026-09-08", submittedStudentIds: ["student-1"],
       }, teacher);
-      expect(next.images).toEqual([image]);
+      expect(next.images).toEqual([{ ...image, category: "excellent", note: "" }]);
       expect(next.summary).toBe("优秀");
       await expect(homeworkRecordService.saveClassOverview({
         classId: "class-1", homeworkDate: "2026-09-08", images: [{ ...image, url: "https://evil.example/img" }],
@@ -269,6 +269,22 @@ describe("homeworkRecordService", () => {
       await expect(homeworkRecordService.saveClassOverview({
         classId: "class-1", homeworkDate: "2026-09-08", images: Array(7).fill(image),
       }, teacher)).rejects.toThrow("作业图片最多 6 张");
+      await expect(homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08",
+        images: [{ ...image, category: "unknown" as any }],
+      }, teacher)).rejects.toThrow("作业图片分类不正确");
+      await expect(homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08",
+        images: [{ ...image, note: "x".repeat(501) }],
+      }, teacher)).rejects.toThrow("作业图片备注不能超过 500 字");
+      const categorized = [{ ...image, category: "poor" as const, note: "  解题步骤错误  " }];
+      const savedCategorized = await homeworkRecordService.saveClassOverview({
+        classId: "class-1", homeworkDate: "2026-09-08", images: categorized,
+      }, teacher);
+      expect(savedCategorized.images).toEqual([{ ...image, category: "poor", note: "解题步骤错误" }]);
+      expect((await homeworkRecordService.getClassOverview("class-1", "2026-09-08", teacher))?.images)
+        .toEqual(savedCategorized.images);
+
     });
   });
 

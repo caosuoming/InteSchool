@@ -58,18 +58,52 @@ describe("ClassHomeworkOverview", () => {
     expect(screen.queryByRole("button", { name: "保存作业点名" })).not.toBeInTheDocument();
   });
 
-  it("uploads pasted images and saves their metadata", async () => {
+  it("moves submitted students to the end without changing the relative order of others", async () => {
+    const user = userEvent.setup();
+    render(<ClassHomeworkOverview classInfo={classInfo} students={students} teacherId="teacher-1" />);
+    await screen.findByText("作业点名");
+    const order = () => screen.getAllByRole("checkbox", { name: /已交作业$/ })
+      .map((node) => node.getAttribute("aria-label"));
+    expect(order()).toEqual(["甲同学已交作业", "乙同学已交作业"]);
+    await user.click(screen.getByRole("checkbox", { name: "甲同学已交作业" }));
+    expect(order()).toEqual(["乙同学已交作业", "甲同学已交作业"]);
+    await user.click(screen.getByRole("checkbox", { name: "甲同学已交作业" }));
+    expect(order()).toEqual(["甲同学已交作业", "乙同学已交作业"]);
+  });
+
+  it("pastes images without focusing an editor, saves category and note, and allows recategorizing", async () => {
     vi.mocked(uploadFile).mockResolvedValue({
       id: "img-1", ownerId: "teacher-1", schoolId: "school-1", originalName: "截图.png",
       mimeType: "image/png", size: 100, createdAt: "2026-10-01T00:00:00.000Z", url: "/api/files/img-1",
     });
+    const user = userEvent.setup();
     render(<ClassHomeworkOverview classInfo={classInfo} students={students} teacherId="teacher-1" />);
-    const box = await screen.findByRole("textbox", { name: "粘贴作业图片" });
+    const poor = await screen.findByRole("textbox", { name: "粘贴糟糕作业图片" });
+    await user.click(poor);
     const file = new File(["image"], "截图.png", { type: "image/png" });
-    fireEvent.paste(box, { clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => file }] } });
+    fireEvent.paste(document.body, { clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: () => file }] } });
     await waitFor(() => expect(homeworkRecordService.saveClassOverview).toHaveBeenCalledWith(expect.objectContaining({
-      images: [{ id: "img-1", name: "截图.png", url: "/api/files/img-1", mimeType: "image/png", size: 100 }],
+      images: [{ id: "img-1", name: "截图.png", url: "/api/files/img-1", mimeType: "image/png", size: 100,
+        category: "poor", note: "" }],
     })));
     expect(await screen.findByRole("link", { name: "截图.png" })).toHaveAttribute("href", "/api/files/img-1");
+
+    await user.type(screen.getByRole("textbox", { name: "截图.png备注" }), "需要订正");
+    await user.click(screen.getByRole("button", { name: "保存备注" }));
+    await waitFor(() => expect(homeworkRecordService.saveClassOverview).toHaveBeenLastCalledWith(expect.objectContaining({
+      images: [expect.objectContaining({ category: "poor", note: "需要订正" })],
+    })));
+    await user.click(screen.getByRole("button", { name: "将截图.png移至优秀作业" }));
+    await waitFor(() => expect(homeworkRecordService.saveClassOverview).toHaveBeenLastCalledWith(expect.objectContaining({
+      images: [expect.objectContaining({ category: "excellent", note: "需要订正" })],
+    })));
+  });
+
+  it("does not hijack image paste while typing in the homework summary", async () => {
+    render(<ClassHomeworkOverview classInfo={classInfo} students={students} teacherId="teacher-1" />);
+    const summary = await screen.findByRole("textbox", { name: "当天作业概况" });
+    fireEvent.paste(summary, { clipboardData: { items: [{ kind: "file", type: "image/png",
+      getAsFile: () => new File(["image"], "截图.png", { type: "image/png" }) }] } });
+    expect(uploadFile).not.toHaveBeenCalled();
   });
 });
