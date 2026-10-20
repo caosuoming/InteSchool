@@ -21,6 +21,7 @@ import { assertResourceCapacity } from "./quota.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
   questionStemSimilarity,
+  normalizeQuestionStem,
 } from "../../src/lib/question-similarity.js";
 
 export interface QuestionInput {
@@ -105,25 +106,66 @@ export function recordQuestionUsage(questionIds: readonly string[]): void {
   );
 }
 
+/** Build the candidate index once per batch rather than normalizing and comparing
+ * the entire school question bank for every uploaded question. A pair of stems
+ * with >= 0.8 bigram similarity must share at least one bigram, so the inverted
+ * index cannot omit a high-similarity match. Exact normalized matches of length
+ * one are handled separately. */
+function batchSimilarQuestionCandidates(
+  stems: readonly string[],
+  schoolId: string,
+  excludedIds: readonly string[] = [],
+): SimilarQuestionCandidate[][] {
+  const excluded = new Set(excludedIds);
+  const questions = (db.read("questions") as Question[]).filter((question) =>
+    !excluded.has(question.id) && (question.schoolId === schoolId || question.isShared),
+  );
+  const normalized = questions.map((question) => normalizeQuestionStem(question.stem));
+  const postings = new Map<string, Set<number>>();
+  const exact = new Map<string, number[]>();
+  normalized.forEach((stem, index) => {
+    if (!stem) return;
+    if (stem.length < 2) {
+      const matches = exact.get(stem) || [];
+      matches.push(index);
+      exact.set(stem, matches);
+      return;
+    }
+    for (let i = 0; i < stem.length - 1; i += 1) {
+      const pair = stem.slice(i, i + 2);
+      if (!postings.has(pair)) postings.set(pair, new Set());
+      postings.get(pair)!.add(index);
+    }
+  });
+
+  return stems.map((stem) => {
+    const value = normalizeQuestionStem(stem);
+    if (!value) return [];
+    const candidates = new Set<number>(exact.get(value) || []);
+    for (let i = 0; i < value.length - 1; i += 1) {
+      for (const index of postings.get(value.slice(i, i + 2)) || []) candidates.add(index);
+    }
+    return [...candidates]
+      .filter((index) => Math.min(value.length, normalized[index].length)
+        / Math.max(value.length, normalized[index].length) >= HIGH_SIMILARITY_THRESHOLD)
+      .map((index) => ({
+        question: questions[index],
+        similarity: questionStemSimilarity(stem, questions[index].stem),
+        index,
+      }))
+      .filter(({ similarity }) => similarity >= HIGH_SIMILARITY_THRESHOLD)
+      .sort((left, right) => right.similarity - left.similarity || left.index - right.index)
+      .slice(0, 5)
+      .map(({ question, similarity }) => ({ question, similarity }));
+  });
+}
+
 function similarQuestionCandidates(
   stem: string,
   schoolId: string,
   excludeQuestionIds: readonly string[] = [],
 ): SimilarQuestionCandidate[] {
-  const excludedQuestionIds = new Set(excludeQuestionIds);
-  return db
-    .read("questions")
-    .filter((question) =>
-      !excludedQuestionIds.has(question.id)
-      && (question.schoolId === schoolId || question.isShared),
-    )
-    .map((question) => ({
-      question,
-      similarity: questionStemSimilarity(stem, question.stem),
-    }))
-    .filter((candidate) => candidate.similarity >= HIGH_SIMILARITY_THRESHOLD)
-    .sort((left, right) => right.similarity - left.similarity)
-    .slice(0, 5);
+  return batchSimilarQuestionCandidates([stem], schoolId, excludeQuestionIds)[0];
 }
 
 export function createDuplicateConfirmationError(candidate: SimilarQuestionCandidate): Error {
@@ -244,6 +286,59 @@ function sortQuestions(questions: Question[], sortKey: QuestionSortKey): Questio
   return sorted;
 }
 
+function buildQuestion(teacherId: string, schoolId: string, input: QuestionInput): Question {
+  const now = new Date().toISOString();
+  const duplicateHash = computeDuplicateHash(input.stem, input.answer, input.options);
+  // 扩展知识点ID，关联所有同名分身
+  const expandedKpIds = expandKnowledgePointAliases(input.knowledgePointIds, schoolId, teacherId);
+  const question: Question = {
+    id: genId("q"),
+    teacherId,
+    schoolId,
+    type: input.type,
+    stem: input.stem,
+    options: input.options,
+    answer: input.answer,
+    analysis: input.analysis,
+    summary: input.summary || "",
+    board: input.board || "",
+    boardImages: input.boardImages ? [...input.boardImages] : [],
+    links: input.links?.map((link) => ({ ...link })) || [],
+    explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
+    chapterIds: input.chapterIds,
+    knowledgePointIds: expandedKpIds,
+    grade: input.grade,
+    schoolYear: input.schoolYear,
+    semester: input.semester || "上学期",
+    sourceType: input.sourceType,
+    category: input.category,
+    categories: input.categories,
+    difficulty: input.difficulty,
+    recommendation: input.recommendation,
+    usageCount: 0,
+    remark: input.remark || "",
+    isShared: input.isShared ?? false,
+    duplicateHash,
+    hiddenByExamIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  return question;
+}
+
+/** Only called by extractService after checking the complete reviewed batch
+ * against a consistent library snapshot in the same RPC transaction. */
+export function createVerifiedExtractQuestions(
+  teacherId: string,
+  schoolId: string,
+  inputs: readonly QuestionInput[],
+): Question[] {
+  assertResourceCapacity(teacherId, "question", inputs.length);
+  const created = inputs.map((input) => buildQuestion(teacherId, schoolId, input));
+  if (created.length) db.update("questions", (list) => [...created.slice().reverse(), ...list]);
+  return created;
+}
+
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     const indexed = await db.searchQuestions(filter);
@@ -313,6 +408,13 @@ export const questionService = {
       });
   },
 
+  async findSimilarQuestionsBatch(
+    stems: string[],
+    schoolId: string,
+  ): Promise<SimilarQuestionCandidate[][]> {
+    return batchSimilarQuestionCandidates(stems, schoolId);
+  },
+
   async findSimilarQuestions(
     stem: string,
     schoolId: string,
@@ -343,42 +445,7 @@ export const questionService = {
     if (similar.length > 0 && input.duplicateDecision !== "add") {
       throw createDuplicateConfirmationError(similar[0]);
     }
-    const now = new Date().toISOString();
-    const duplicateHash = computeDuplicateHash(input.stem, input.answer, input.options);
-    // 扩展知识点ID，关联所有同名分身
-    const expandedKpIds = expandKnowledgePointAliases(input.knowledgePointIds, schoolId, teacherId);
-    const question: Question = {
-      id: genId("q"),
-      teacherId,
-      schoolId,
-      type: input.type,
-      stem: input.stem,
-      options: input.options,
-      answer: input.answer,
-      analysis: input.analysis,
-      summary: input.summary || "",
-      board: input.board || "",
-      boardImages: input.boardImages ? [...input.boardImages] : [],
-      links: input.links?.map((link) => ({ ...link })) || [],
-      explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
-      chapterIds: input.chapterIds,
-      knowledgePointIds: expandedKpIds,
-      grade: input.grade,
-      schoolYear: input.schoolYear,
-      semester: input.semester || "上学期",
-      sourceType: input.sourceType,
-      category: input.category,
-      categories: input.categories,
-      difficulty: input.difficulty,
-      recommendation: input.recommendation,
-      usageCount: 0,
-      remark: input.remark || "",
-      isShared: input.isShared ?? false,
-      duplicateHash,
-      hiddenByExamIds: [],
-      createdAt: now,
-      updatedAt: now,
-    };
+    const question = buildQuestion(teacherId, schoolId, input);
     db.update("questions", (list) => [question, ...list]);
     return question;
   },

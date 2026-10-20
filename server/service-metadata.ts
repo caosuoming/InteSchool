@@ -903,7 +903,9 @@ export const serviceParameters = {
       "semester",
       "sourceResourceId",
       "questionSourceType",
-      "questionCategory"
+      "questionCategory",
+      "sourceResourceType",
+      "contentBlocks"
     ]
   },
   "knowledge": {
@@ -1421,6 +1423,10 @@ export const serviceParameters = {
       "stem",
       "answer",
       "options",
+      "schoolId"
+    ],
+    "findSimilarQuestionsBatch": [
+      "stems",
       "schoolId"
     ],
     "findSimilarQuestions": [
