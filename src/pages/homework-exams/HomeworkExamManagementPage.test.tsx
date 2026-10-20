@@ -106,6 +106,29 @@ describe("作业考试管理页面", () => {
     expect(screen.getByText("没有符合筛选条件的记录")).toBeInTheDocument();
   });
 
+  it("keeps the homework title and filename visible while later columns scroll and links to student homework records", async () => {
+    mount("homework");
+    const tableRegion = await screen.findByRole("region", { name: "作业管理表格，可横向滚动查看后续列" });
+    expect(within(tableRegion).getByRole("table")).toHaveClass("min-w-[1600px]", "table-fixed");
+    expect(within(tableRegion).getByRole("columnheader", { name: "作业名称" })).toHaveClass("sticky", "left-0");
+    expect(within(tableRegion).getByRole("columnheader", { name: "作业文件名" })).toHaveClass("sticky", "left-56");
+    expect(within(tableRegion).getByRole("columnheader", { name: "使用对象" })).not.toHaveClass("sticky");
+    const homeworkRow = within(tableRegion).getByRole("row", { name: /函数专题作业/ });
+    expect(within(homeworkRow).getAllByRole("cell")[0]).toHaveClass("sticky", "left-0");
+    expect(within(homeworkRow).getAllByRole("cell")[1]).toHaveClass("sticky", "left-56");
+    expect(within(homeworkRow).getByRole("link", { name: "作业记录" })).toHaveAttribute("href", "/my-students?tab=homework");
+    const paperRow = within(tableRegion).getByRole("row", { name: /资源篮函数练习/ });
+    expect(within(paperRow).getByRole("link", { name: "作业记录" })).toHaveAttribute("href", "/my-students?tab=homework");
+  });
+
+  it("does not add homework record actions or frozen columns to exam management", async () => {
+    mount("exams");
+    const tableRegion = await screen.findByRole("region", { name: "考试管理表格" });
+    expect(within(tableRegion).getByRole("table")).toHaveClass("min-w-[1000px]");
+    expect(within(tableRegion).getByRole("columnheader", { name: "考试名称" })).not.toHaveClass("sticky");
+    expect(within(tableRegion).queryByRole("link", { name: "作业记录" })).not.toBeInTheDocument();
+  });
+
   it("includes library documents and copies with truthful original filenames", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([
       paper, { ...paper, id: "copy-1", title: "函数练习（副本）", originalFileName: undefined },
