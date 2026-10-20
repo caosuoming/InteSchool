@@ -1,5 +1,5 @@
 #define AppName "InteSchool 扫描桥接"
-#define AppVersion "1.0.0"
+#define AppVersion "1.0.1"
 
 [Setup]
 AppId={{B2A20F71-10F0-40CA-9057-4CF45CDE8634}

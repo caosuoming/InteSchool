@@ -55,7 +55,15 @@ jobs:
           & (Join-Path $dir 'node.exe') --input-type=module -e "import {approveOrigin} from './scripts/scanner-pairing.mjs'; await approveOrigin('https://test.inteschool.example');" 
           $protocolCommand = (Get-ItemProperty -Path 'HKCU:\Software\Classes\inteschool-scanner\shell\open\command').'(default)'
           if ($protocolCommand -notmatch 'scanner-launch.vbs') { throw "Protocol handler not registered" }
-          & (Join-Path $env:WINDIR 'System32\wscript.exe') (Join-Path $dir 'scanner-launch.vbs')
+          # cscript must execute the installed VBS synchronously, checking the exit code.
+          # Running wscript without checking its result previously allowed a syntax error
+          # (800A03EE) to pass this smoke test undetected.
+          $vbs = Join-Path $dir 'scanner-launch.vbs'
+          if ([System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($vbs)) -match '[^\x00-\x7F]') {
+            throw "VBScript must remain ASCII to avoid legacy Windows codepage parsing errors"
+          }
+          & (Join-Path $env:WINDIR 'System32\cscript.exe') '//Nologo' $vbs
+          if ($LASTEXITCODE -ne 0) { throw "Installed scanner-launch.vbs failed (exit $LASTEXITCODE)" }
           Start-Sleep -Seconds 3
           $code = @'
           import http from 'node:http';
