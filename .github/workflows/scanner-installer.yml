@@ -18,7 +18,7 @@ jobs:
           node-version: 22
       - name: Unit tests for pairing and local bridge
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npx vitest run scripts/scanner-bridge.test.mjs scripts/scanner-pairing.test.mjs
       - name: Prepare bundled Node runtime
         shell: pwsh
@@ -30,7 +30,8 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --no-progress --yes
-          $compiler = Get-ChildItem "${env:ProgramFiles(x86)}" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'Inno Setup' } | Select-Object -First 1 -ExpandProperty FullName
+          $compiler = Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter "Inno Setup*" -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "ISCC.exe" } | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (!$compiler) { throw "Inno Setup compiler missing" }
           & $compiler "packaging\windows\scanner-installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup packaging failed" }
