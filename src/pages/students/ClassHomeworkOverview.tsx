@@ -5,7 +5,8 @@ import type {
   ClassroomHomework,
   HomeworkClassOverviewRecord,
   Student,
-  StudentInteractionAttachment,
+  HomeworkImageCategory,
+  HomeworkOverviewImage,
 } from "@/types";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { homeworkRecordService } from "@/services/homeworkRecord";
@@ -15,7 +16,9 @@ import { Textarea } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { uploadFile } from "@/services/api";
-import type { ClipboardEvent, ChangeEvent } from "react";
+import { HomeworkImageGallery } from "@/components/homework/HomeworkImageGallery";
+import { HOMEWORK_IMAGE_CATEGORIES, imageCategory } from "@/components/homework/homeworkImageCategories";
+import type { ChangeEvent } from "react";
 
 function localToday(): string {
   const now = new Date();
@@ -55,8 +58,10 @@ export function ClassHomeworkOverview({
   const [loading, setLoading] = useState(true);
   const [summaryPending, setSummaryPending] = useState(false);
   const [attendancePending, setAttendancePending] = useState(false);
-  const [images, setImages] = useState<StudentInteractionAttachment[]>([]);
-  const savedImagesRef = useRef<StudentInteractionAttachment[]>([]);
+  const [images, setImages] = useState<HomeworkOverviewImage[]>([]);
+  const savedImagesRef = useRef<HomeworkOverviewImage[]>([]);
+  const [activeImageCategory, setActiveImageCategory] = useState<HomeworkImageCategory>("excellent");
+  const activeImageCategoryRef = useRef<HomeworkImageCategory>("excellent");
   const [imagesPending, setImagesPending] = useState(false);
   const attendanceDraft = useRef({ submitted: new Set<string>(), absent: new Set<string>() });
   const pendingAttendance = useRef<{
@@ -210,7 +215,7 @@ export function ClassHomeworkOverview({
     void flushAttendance();
   };
 
-  const saveImages = async (next: StudentInteractionAttachment[]) => {
+  const saveImages = async (next: HomeworkOverviewImage[]) => {
     setImagesPending(true);
     const key = currentKey;
     try {
@@ -235,7 +240,7 @@ export function ClassHomeworkOverview({
     }
   };
 
-  const addImages = async (files: File[]) => {
+  const addImages = async (files: File[], category: HomeworkImageCategory) => {
     const valid = files.filter((file) => file.type.startsWith("image/"));
     if (valid.length !== files.length) {
       toast.error("只能上传图片文件");
@@ -250,10 +255,12 @@ export function ClassHomeworkOverview({
     setImagesPending(true);
     try {
       const uploaded = await Promise.all(valid.map(uploadFile));
+      if (currentKeyRef.current !== key) return;
       const next = [...images, ...uploaded.map((file) => ({
         id: file.id, name: file.originalName, url: file.url, mimeType: file.mimeType, size: file.size,
+        category, note: "",
       }))];
-      if (currentKeyRef.current === key) setImages(next);
+      setImages(next);
       await saveImages(next);
     } catch (error) {
       toast.error("上传作业图片失败", error instanceof Error ? error.message : undefined);
@@ -261,25 +268,41 @@ export function ClassHomeworkOverview({
     }
   };
 
-  const onPasteImages = (event: ClipboardEvent<HTMLDivElement>) => {
-    const files = Array.from(event.clipboardData.items)
-      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-      .map((item) => item.getAsFile())
-      .filter((file): file is File => file !== null);
-    if (files.length) {
+  // 用户无需先聚焦粘贴框；选中分类后直接在页面按 Ctrl/Cmd+V 即可。
+  useEffect(() => {
+    const onPaste = (event: globalThis.ClipboardEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"], [role="dialog"]')) return;
+      const files = Array.from(event.clipboardData?.items || [])
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+      if (!files.length) return;
       event.preventDefault();
-      void addImages(files);
-    }
+      void addImages(files, activeImageCategoryRef.current);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
+
+  const selectImageCategory = (category: HomeworkImageCategory) => {
+    activeImageCategoryRef.current = category;
+    setActiveImageCategory(category);
   };
 
-  const onChooseImages = (event: ChangeEvent<HTMLInputElement>) => {
-    void addImages(Array.from(event.target.files || []));
+  const onChooseImages = (event: ChangeEvent<HTMLInputElement>, category: HomeworkImageCategory) => {
+    void addImages(Array.from(event.target.files || []), category);
     event.target.value = "";
   };
 
   const currentMissingCount = useMemo(() => students.filter((student) => (
     !submittedStudentIds.has(student.id) && !absentStudentIds.has(student.id)
   )).length, [absentStudentIds, students, submittedStudentIds]);
+
+  const orderedStudents = useMemo(() => [
+    ...sortedStudents.filter((student) => !submittedStudentIds.has(student.id)),
+    ...sortedStudents.filter((student) => submittedStudentIds.has(student.id)),
+  ], [sortedStudents, submittedStudentIds]);
 
   const previousRecords = useMemo(
     () => history.filter((item) => item.homeworkDate !== homeworkDate),
@@ -423,7 +446,7 @@ export function ClassHomeworkOverview({
           <div className="px-4 py-8 text-center text-sm text-ink-400">该班级暂无学生</div>
         ) : (
           <div className="grid gap-2 px-4 pb-4 sm:grid-cols-2 xl:grid-cols-3 lg:px-5 lg:pb-5">
-            {sortedStudents.map((student) => {
+            {orderedStudents.map((student) => {
               const submitted = submittedStudentIds.has(student.id);
               const absent = absentStudentIds.has(student.id);
               return (
@@ -481,31 +504,66 @@ export function ClassHomeworkOverview({
       </section>
 
       <section className="border-b border-ink-100 p-4 lg:p-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-ink-900">
-            <ImagePlus className="h-4 w-4 text-gold-600" />作业图片
-          </h3>
-          <label className="cursor-pointer rounded-lg border border-ink-200 px-3 py-1.5 text-xs hover:border-gold-400">
-            上传图片
-            <input type="file" accept="image/*" multiple className="sr-only" onChange={onChooseImages} disabled={imagesPending} aria-label="上传作业图片" />
-          </label>
+        <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-ink-900">
+          <ImagePlus className="h-4 w-4 text-gold-600" />作业图片
+        </h3>
+        <p className="mb-3 text-xs text-ink-500">选择分类后可直接按 Ctrl/Cmd+V 粘贴截图；最多 6 张，支持逐张备注。</p>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {HOMEWORK_IMAGE_CATEGORIES.map((category) => {
+            const group = images.filter((image) => imageCategory(image) === category.id);
+            return <div key={category.id} className="rounded-lg border border-ink-200 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h4 className="text-sm font-medium text-ink-800">{category.label}（{group.length}）</h4>
+                <label className="cursor-pointer rounded-lg border border-ink-200 px-2.5 py-1.5 text-xs hover:border-gold-400">
+                  上传图片
+                  <input type="file" accept="image/*" multiple className="sr-only"
+                    aria-label={`上传${category.label}图片`} disabled={imagesPending}
+                    onChange={(event) => onChooseImages(event, category.id)} />
+                </label>
+              </div>
+              <div role="textbox" aria-label={`粘贴${category.label}图片`} tabIndex={0}
+                onFocus={() => selectImageCategory(category.id)}
+                onClick={() => selectImageCategory(category.id)}
+                className={cn("cursor-pointer rounded-lg border border-dashed px-3 py-3 text-xs focus:outline-none",
+                  activeImageCategory === category.id ? "border-gold-400 bg-gold-50/40 text-ink-700" : "border-ink-200 text-ink-500")}
+              >
+                {activeImageCategory === category.id ? "当前粘贴分类" : "点击选择粘贴分类"} · Ctrl/Cmd+V 粘贴图片
+                {imagesPending && " · 正在保存..."}
+              </div>
+              {group.length > 0 && <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {group.map((image) => <div key={image.id} className="min-w-0 rounded-lg border border-ink-100 bg-paper p-2">
+                  <div className="relative">
+                    <a href={image.url} target="_blank" rel="noreferrer" title="点击查看大图">
+                      <img src={image.url} alt={image.name} className="h-28 w-full rounded object-contain" />
+                    </a>
+                    <button type="button" aria-label={`删除作业图片${image.name}`} disabled={imagesPending}
+                      onClick={() => void saveImages(images.filter((item) => item.id !== image.id))}
+                      className="absolute right-1 top-1 rounded-full bg-ink-800 p-1 text-white disabled:opacity-40">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <button type="button" disabled={imagesPending}
+                    aria-label={`将${image.name}移至${category.id === "excellent" ? "糟糕作业" : "优秀作业"}`}
+                    onClick={() => void saveImages(images.map((item) => item.id === image.id
+                      ? { ...item, category: category.id === "excellent" ? "poor" : "excellent" } : item))}
+                    className="mt-1 text-xs text-gold-700 hover:text-gold-800 disabled:opacity-40">
+                    移至{category.id === "excellent" ? "糟糕作业" : "优秀作业"}
+                  </button>
+                  <textarea aria-label={`${image.name}备注`} placeholder="添加备注说明"
+                    value={image.note || ""} maxLength={500} rows={2} disabled={imagesPending}
+                    onChange={(event) => setImages((current) => current.map((item) => item.id === image.id
+                      ? { ...item, note: event.target.value } : item))}
+                    className="mt-2 w-full resize-y rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 focus:border-gold-400 focus:outline-none" />
+                  <button type="button" disabled={imagesPending || (image.note || "").trim() === (savedImagesRef.current.find((item) => item.id === image.id)?.note || "")}
+                    onClick={() => void saveImages(images)}
+                    className="mt-1 text-xs text-gold-700 hover:text-gold-800 disabled:opacity-40">
+                    保存备注
+                  </button>
+                </div>)}
+              </div>}
+            </div>;
+          })}
         </div>
-        <div role="textbox" aria-label="粘贴作业图片" tabIndex={0} onPaste={onPasteImages}
-          className="rounded-lg border border-dashed border-ink-200 px-3 py-3 text-xs text-ink-500 focus:border-gold-400 focus:outline-none">
-          点击此区域后可直接粘贴截图或图片（最多 6 张）{imagesPending && " · 正在保存..."}
-        </div>
-        {images.length > 0 && <div className="mt-3 flex flex-wrap gap-3">
-          {images.map((image) => <div key={image.id} className="relative">
-            <a href={image.url} target="_blank" rel="noreferrer" title="点击查看大图">
-              <img src={image.url} alt={image.name} className="h-24 w-28 rounded-lg border border-ink-100 object-cover" />
-            </a>
-            <button type="button" aria-label={`删除作业图片${image.name}`} disabled={imagesPending}
-              onClick={() => { const next = images.filter((item) => item.id !== image.id); setImages(next); void saveImages(next); }}
-              className="absolute -right-1.5 -top-1.5 rounded-full bg-ink-800 p-1 text-white disabled:opacity-40">
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>)}
-        </div>}
       </section>
 
       <section className="p-4 lg:p-5">
@@ -534,11 +592,7 @@ export function ClassHomeworkOverview({
                     未交名单：{item.studentIds.filter((id) => !item.submittedStudentIds.includes(id) && !item.absentStudentIds.includes(id))
                       .map((id) => `${item.studentNames?.[id] || students.find((student) => student.id === id)?.name || id}（${missingCounts.get(id) || 1}次）`).join("、") || "无"}
                   </div>}
-                  {(item.images?.length || 0) > 0 && <div className="mt-2 flex flex-wrap gap-2">
-                    {item.images?.map((image) => <a key={image.id} href={image.url} target="_blank" rel="noreferrer" title="点击查看大图">
-                      <img src={image.url} alt={image.name} className="h-20 w-24 rounded border border-ink-100 object-cover" />
-                    </a>)}
-                  </div>}
+                  <HomeworkImageGallery images={item.images || []} />
                 </div>
               );
             })}

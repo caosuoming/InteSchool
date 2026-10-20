@@ -3355,6 +3355,14 @@ export interface HomeworkRecordPreference {
   updatedAt: string;
 }
 
+/** 班级作业展示图片的分组；历史图片缺少 category 时归入优秀作业。 */
+export type HomeworkImageCategory = "excellent" | "poor";
+
+export interface HomeworkOverviewImage extends StudentInteractionAttachment {
+  category?: HomeworkImageCategory;
+  note?: string;
+}
+
 /** 教师针对整个班级、某次作业保存的作业概况与点名结果。 */
 export interface HomeworkClassOverviewRecord {
   id: string;
@@ -3372,8 +3380,8 @@ export interface HomeworkClassOverviewRecord {
   absentStudentIds: string[];
   /** 点名时的学生姓名快照，用于历史记录。 */
   studentNames?: Record<string, string>;
-  /** 当天作业图片。 */
-  images?: StudentInteractionAttachment[];
+  /** 当天按质量分类、附有备注的作业图片。 */
+  images?: HomeworkOverviewImage[];
   /** 是否已经保存过本次作业点名。 */
   attendanceTaken: boolean;
   createdAt: string;

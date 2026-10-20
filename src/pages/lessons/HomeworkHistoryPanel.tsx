@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { HomeworkClassOverviewRecord } from "@/types";
+import { HomeworkImageGallery } from "@/components/homework/HomeworkImageGallery";
 
 export function HomeworkHistoryPanel({
   records,
@@ -37,15 +38,7 @@ export function HomeworkHistoryPanel({
                   作业点名：{!record.attendanceTaken ? "未点名"
                     : missing.length ? missing.map((id) => `${record.studentNames?.[id] || studentNames.get(id) || id}（${missingCounts.get(id) || 1}次）`).join("、") : "全部已交或请假"}
                 </p>
-                {(record.images?.length || 0) > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {record.images?.map((image) => (
-                      <a key={image.id} href={image.url} target="_blank" rel="noreferrer" title="点击放大作业图片">
-                        <img src={image.url} alt={image.name} className="h-24 w-28 rounded border border-ink-200 object-cover" />
-                      </a>
-                    ))}
-                  </div>
-                )}
+                <HomeworkImageGallery images={record.images || []} />
               </article>
             );
           })}
