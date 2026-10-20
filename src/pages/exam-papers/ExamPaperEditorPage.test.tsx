@@ -5,6 +5,8 @@ import type { ExamPaper, ExamPublication, Question, Teacher, TreeNode } from "@/
 
 const mocks = vi.hoisted(() => ({
   getPaper: vi.fn(),
+  listPapers: vi.fn(),
+  listLectures: vi.fn(),
   updatePaper: vi.fn(),
   duplicatePaper: vi.fn(),
   listQuestions: vi.fn(),
@@ -46,7 +48,7 @@ vi.mock("@/services/examPaper", () => ({
     getPaper: mocks.getPaper,
     updatePaper: mocks.updatePaper,
     duplicatePaper: mocks.duplicatePaper,
-    listPapers: vi.fn().mockResolvedValue([]),
+    listPapers: mocks.listPapers,
   },
 }));
 vi.mock("@/services/question", () => ({
@@ -65,7 +67,7 @@ vi.mock("@/services/basket", () => ({
   },
 }));
 vi.mock("@/services/lecture", () => ({
-  lectureService: { listLectures: vi.fn().mockResolvedValue([]) },
+  lectureService: { listLectures: mocks.listLectures },
 }));
 vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
@@ -281,6 +283,8 @@ describe("ExamPaperEditorPage preview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getPaper.mockResolvedValue(paper);
+    mocks.listPapers.mockResolvedValue([]);
+    mocks.listLectures.mockResolvedValue([]);
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.duplicatePaper.mockResolvedValue({ ...paper, id: "paper-copy", isExtractCopy: false });
     mocks.listQuestions.mockResolvedValue([question]);
@@ -1126,6 +1130,94 @@ describe("ExamPaperEditorPage preview", () => {
     await waitFor(() => expect(screen.getByLabelText("第 1 题所属项目")).toHaveValue("prj-a"));
     expect(screen.getByText(question.stem)).toBeInTheDocument();
     confirmSpy.mockRestore();
+  });
+
+  it("shows another paper's questions beside the document list and adds multiple selected questions", async () => {
+    const draft = { ...paper, isExtractCopy: false, contentBlocks: [], questions: [] };
+    const source = {
+      ...paper,
+      id: "source-paper",
+      title: "来源试卷",
+      questions: [
+        { ...paper.questions[0], id: "source-q1" },
+        { ...paper.questions[0], id: "source-q2", questionId: sameTypeQuestion.id, stem: sameTypeQuestion.stem },
+        { ...paper.questions[0], id: "source-q3", questionId: undefined, stem: "尚未关联题库的原稿题" },
+      ],
+    };
+    mocks.getPaper.mockResolvedValue(draft);
+    mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...draft, ...patch }));
+    mocks.listPapers.mockResolvedValue([draft, source, {
+      ...source, id: "source-empty", title: "另一份试卷", questions: [],
+    }]);
+    mocks.listQuestions.mockResolvedValue([question, sameTypeQuestion]);
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+    fireEvent.click(screen.getAllByRole("button", { name: "添加题目" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "其它文档" }));
+    fireEvent.click(await screen.findByRole("button", { name: /来源试卷/ }));
+    expect(screen.getByText("共 3 题，可添加 2 题")).toBeInTheDocument();
+    expect(screen.getByText("尚未关联题库的原稿题").closest("label")?.querySelector("input")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    expect(screen.getByText("已选择 2 道题目")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /另一份试卷/ }));
+    expect(screen.getByText("已选择 0 道题目")).toBeInTheDocument();
+    expect(screen.getByText("该文档暂无符合条件的题目")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /来源试卷/ }));
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加选中题目" }));
+
+    await waitFor(() => expect(screen.getByText(sameTypeQuestion.stem)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
+      questions: [
+        expect.objectContaining({ questionId: question.id }),
+        expect.objectContaining({ questionId: sameTypeQuestion.id }),
+      ],
+    })));
+  });
+
+  it("lists nested lecture questions and adds the selected ones to an exam paper", async () => {
+    const draft = { ...paper, isExtractCopy: false, contentBlocks: [], questions: [] };
+    mocks.getPaper.mockResolvedValue(draft);
+    mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...draft, ...patch }));
+    mocks.listLectures.mockResolvedValue([{
+      id: "source-lecture",
+      title: "嵌套题目讲义",
+      sections: [{
+        id: "chapter", type: "chapter", title: "第一章", content: "", children: [{
+          id: "knowledge", type: "knowledge", title: "知识点", content: "", children: [{
+            id: "nested-q1", type: "question", title: "嵌套第一题", content: "",
+            questionId: question.id, children: [],
+          }],
+        }, {
+          id: "nested-q2", type: "question", title: "嵌套第二题", content: "",
+          questionId: secondQuestion.id, children: [],
+        }],
+      }],
+    }]);
+    mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+    fireEvent.click(screen.getAllByRole("button", { name: "添加题目" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "其它文档" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "讲义" }).at(-1)!);
+    fireEvent.click(await screen.findByRole("button", { name: /嵌套题目讲义/ }));
+    expect(screen.getByText("嵌套第一题")).toBeInTheDocument();
+    expect(screen.getByText("嵌套第二题")).toBeInTheDocument();
+    expect(screen.getByText("共 2 题，可添加 2 题")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加选中题目" }));
+    await waitFor(() => expect(screen.getByText(secondQuestion.stem)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
+      questions: [
+        expect.objectContaining({ questionId: question.id }),
+        expect.objectContaining({ questionId: secondQuestion.id }),
+      ],
+    })));
   });
 
   it("supports grouped score changes and aligned catalog-related controls in the editor", async () => {

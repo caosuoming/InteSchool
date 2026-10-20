@@ -7,12 +7,17 @@ import type {
   Question,
   Material,
   ResourceSemester,
+  ExtractedDocumentBlock,
 } from "../../src/types/index.js";
 import {
   createDuplicateConfirmationError,
   questionService,
+  createVerifiedExtractQuestions,
 } from "./question.js";
 import { materialService } from "./material.js";
+import { lectureService } from "./lecture.js";
+import { examPaperService } from "./examPaper.js";
+import { db } from "../runtime-db.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
   questionStemSimilarity,
@@ -69,6 +74,8 @@ export const extractService = {
     sourceResourceId: string,
     questionSourceType?: string,
     questionCategory?: string,
+    sourceResourceType?: "examPaper" | "lecture",
+    contentBlocks?: ExtractedDocumentBlock[],
   ): Promise<{
     createdQuestions: Question[];
     mergedQuestions: Question[];
@@ -76,16 +83,39 @@ export const extractService = {
     questionIdByItemId: Record<string, string>;
     materialIdByItemId: Record<string, string>;
   }> {
-    for (const item of items.questions) {
-      if (item.duplicateAction === "merge" || (item.status === "duplicate" && item.duplicateOf)) {
-        continue;
+    if (contentBlocks) {
+      if (sourceResourceType !== "examPaper" && sourceResourceType !== "lecture") {
+        throw new Error("文档类型不合法");
       }
-      if (!item.stem.trim()) throw new Error("题干不能为空");
-      if (item.duplicateAction === "add" || item.status === "confirmed") continue;
-      const existingCandidate = (
-        await questionService.findSimilarQuestions(item.stem, schoolId)
-      )[0];
-      if (existingCandidate) throw createDuplicateConfirmationError(existingCandidate);
+      const collection = sourceResourceType === "examPaper" ? "examPapers" : "lectures";
+      const source = (db.read(collection) || []).find((entry: { id: string }) => entry.id === sourceResourceId);
+      if (!source || source.teacherId !== teacherId || source.schoolId !== schoolId) {
+        throw new Error("源文档不存在或无权操作");
+      }
+      if ((db.read(collection) || []).some((entry: { sourceResourceId?: string; isExtractCopy?: boolean }) =>
+        entry.isExtractCopy && entry.sourceResourceId === sourceResourceId)) {
+        throw new Error("该文档已入库，请刷新后查看拆解副本");
+      }
+    }
+
+    // Resolve all unreviewed items against a single library snapshot before
+    // mutating anything. The RPC transaction persists only on full success.
+    const unresolved = items.questions.filter((item) =>
+      item.duplicateAction !== "merge"
+      && !(item.status === "duplicate" && item.duplicateOf)
+      && item.duplicateAction !== "add"
+      && item.status !== "confirmed",
+    );
+    for (const item of items.questions) {
+      if (item.duplicateAction !== "merge" && !(item.status === "duplicate" && item.duplicateOf) && !item.stem.trim()) {
+        throw new Error("题干不能为空");
+      }
+    }
+    const candidates = await questionService.findSimilarQuestionsBatch(
+      unresolved.map((item) => item.stem), schoolId,
+    );
+    for (const matches of candidates) {
+      if (matches[0]) throw createDuplicateConfirmationError(matches[0]);
     }
 
     const createdQuestions: Question[] = [];
@@ -93,9 +123,7 @@ export const extractService = {
     const createdMaterials: Material[] = [];
     const questionIdByItemId: Record<string, string> = {};
     const materialIdByItemId: Record<string, string> = {};
-    // Duplicate review compares uploads with the library before this loop starts.
-    // Do not let writes from the same reviewed batch become new library conflicts.
-    const mutatedQuestionIds = new Set<string>();
+    const newQuestionItems: ExtractedQuestionItem[] = [];
 
     for (const item of items.questions) {
       if (item.duplicateAction === "merge") {
@@ -122,7 +150,6 @@ export const extractService = {
           "add",
         );
         mergedQuestions.push(updated);
-        mutatedQuestionIds.add(updated.id);
         questionIdByItemId[item.id] = updated.id;
         continue;
       }
@@ -131,13 +158,17 @@ export const extractService = {
         continue;
       }
       if (!item.stem.trim()) throw new Error("题干不能为空");
-      const answer = normalizeQuestionField(item.answer, ["待教师补充"]);
-      const analysis = normalizeQuestionField(item.analysis, ["待教师补充解析"]);
-      const summary = normalizeQuestionField(item.summary);
-      const created = await questionService.createQuestion(
-        teacherId,
-        schoolId,
-        {
+      newQuestionItems.push(item);
+    }
+
+    const newQuestions = createVerifiedExtractQuestions(
+      teacherId,
+      schoolId,
+      newQuestionItems.map((item) => {
+        const answer = normalizeQuestionField(item.answer, ["待教师补充"]);
+        const analysis = normalizeQuestionField(item.analysis, ["待教师补充解析"]);
+        const summary = normalizeQuestionField(item.summary);
+        return {
           type: item.type,
           stem: item.stem,
           options: item.options,
@@ -154,15 +185,13 @@ export const extractService = {
           categories: [...new Set([questionCategory, ...(item.categories || [])].filter((value): value is string => Boolean(value)))],
           difficulty: item.difficulty as 1 | 2 | 3 | 4 | 5,
           recommendation: 3,
-          duplicateDecision:
-            item.duplicateAction === "add" || item.status === "confirmed" ? "add" : undefined,
-        },
-        Array.from(mutatedQuestionIds),
-      );
+        };
+      }),
+    );
+    newQuestions.forEach((created, index) => {
       createdQuestions.push(created);
-      mutatedQuestionIds.add(created.id);
-      questionIdByItemId[item.id] = created.id;
-    }
+      questionIdByItemId[newQuestionItems[index].id] = created.id;
+    });
 
     for (const item of items.knowledgeBlocks) {
       if (item.status === "duplicate" && item.duplicateOf) {
@@ -184,6 +213,19 @@ export const extractService = {
       await materialService.updateMaterial(created.id, { sourceResourceId });
       createdMaterials.push(created);
       materialIdByItemId[item.id] = created.id;
+    }
+
+    if (contentBlocks && sourceResourceType) {
+      const linkedBlocks = contentBlocks.map((block) => ({
+        ...block,
+        ...(block.type === "question" ? { questionId: questionIdByItemId[block.id] } : {}),
+        ...(block.type === "knowledge" ? { materialId: materialIdByItemId[block.id] } : {}),
+      }));
+      if (sourceResourceType === "examPaper") {
+        await examPaperService.createExtractCopy(sourceResourceId, linkedBlocks);
+      } else {
+        await lectureService.createExtractCopy(sourceResourceId, linkedBlocks);
+      }
     }
 
     return {

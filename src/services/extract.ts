@@ -5,6 +5,7 @@ import type {
   Question,
   Material,
   ResourceSemester,
+  ExtractedDocumentBlock,
 } from "@/types";
 
 export const extractService = {
@@ -23,6 +24,8 @@ export const extractService = {
     sourceResourceId: string,
     questionSourceType?: string,
     questionCategory?: string,
+    sourceResourceType?: "examPaper" | "lecture",
+    contentBlocks?: ExtractedDocumentBlock[],
   ): Promise<{
     createdQuestions: Question[];
     mergedQuestions: Question[];
@@ -42,6 +45,8 @@ export const extractService = {
       sourceResourceId,
       questionSourceType,
       questionCategory,
+      sourceResourceType,
+      contentBlocks,
     ]);
   },
 };

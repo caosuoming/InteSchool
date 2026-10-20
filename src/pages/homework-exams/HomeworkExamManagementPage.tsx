@@ -3,6 +3,8 @@ import { Link } from "react-router";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { BookCheck, ClipboardList, FileText, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { ThirdPartyCardEditor } from "@/components/scanner/ThirdPartyCardEditor";
+import { scannerService, type ThirdPartyCard } from "@/services/scanner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -17,7 +19,7 @@ import { examPublishService } from "@/services/examPublish";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, ExamPaper, ExamPaperQuestion, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Student, ClassroomHomeworkAttachment } from "@/types";
+import type { ClassroomHomework, ExamPaper, ExamPaperQuestion, ExamPublication, HomeworkClassOverviewRecord, AnyClass, Student, ClassroomHomeworkAttachment } from "@/types";
 import {
   homeworkStatus, homeworkSubmissionDetails, homeworkTitle, paperHomeworkStatus, publicationStatus,
 } from "@/lib/homework-exam-management";
@@ -126,8 +128,11 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const teacherId = teacher?.id;
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
   const [papers, setPapers] = useState<ExamPaper[]>([]);
+  const [thirdPartyCards, setThirdPartyCards] = useState<ThirdPartyCard[]>([]);
+  const [editingCard, setEditingCard] = useState<ThirdPartyCard | null>(null);
+  const [cardSaving, setCardSaving] = useState(false);
   const [publications, setPublications] = useState<ExamPublication[]>([]);
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [classes, setClasses] = useState<AnyClass[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, HomeworkClassOverviewRecord[]>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -160,6 +165,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     setError("");
     setHomeworks([]);
     setPapers([]);
+    setThirdPartyCards([]);
     setStudents([]);
     setPublications([]);
     setAttendance(new Map());
@@ -169,12 +175,13 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     }
     const load = async () => {
       try {
-        const [classItems, homeworkItems, paperItems, publicationItems, studentResult] = await Promise.all([
-          classService.listSchoolClasses(schoolId),
+        const [classItems, homeworkItems, paperItems, publicationItems, studentResult, scannedItems] = await Promise.all([
+          classService.listAllClasses(schoolId, teacherId),
           classroomHomeworkService.listHomeworks({ schoolId, teacherId }),
           examPaperService.listPapers({ schoolId, teacherId }),
           section === "exams" ? examPublishService.listPublications(schoolId) : Promise.resolve([]),
           section === "homework" ? classService.listMyStudents(schoolId, teacherId).catch(() => [] as Student[]) : Promise.resolve([]),
+          section === "homework" ? scannerService.listThirdPartyCards(schoolId) : Promise.resolve([]),
         ]);
         const classIds = section === "homework"
           ? [...new Set(homeworkItems.filter((item) => item.managementCategory !== "exam"
@@ -187,6 +194,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
         setStudents(studentResult);
         setHomeworks(homeworkItems);
         setPapers(paperItems);
+        setThirdPartyCards(scannedItems);
         setPublications(publicationItems.filter((item) =>
           item.publisherId === teacherId && item.publisherSchoolId === schoolId));
         setAttendance(new Map(classIds.map((id, index) => [
@@ -204,7 +212,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   }, [schoolId, teacherId, section, refreshKey]);
 
   const classNames = useMemo(() => new Map(classes.map((item) => [
-    item.id, `${item.grade} · ${item.name}`,
+    item.id, item.type === "personal" ? `个人班级 · ${item.name}` : `${item.grade} · ${item.name}`,
   ])), [classes]);
 
   const studentNames = useMemo(() => new Map(students.map((item) => [item.id, item])), [students]);
@@ -247,6 +255,24 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
       && item.title.toLocaleLowerCase().includes(normalizedQuery);
   });
   const visibleRecords = managedRecords;
+  const visibleScannedCards = isHomework ? thirdPartyCards.filter((card) =>
+    (statusFilter === "all" || statusFilter === "草稿")
+    && [card.fileName, papers.find((paper) => paper.id === card.paperId)?.title || ""].join(" ").toLocaleLowerCase().includes(normalizedQuery)) : [];
+
+  const saveCard = async (patch: { fileName: string; paperId: string | null; regions: ThirdPartyCard["regions"] }) => {
+    if (!editingCard) return;
+    setCardSaving(true);
+    try {
+      const updated = await scannerService.updateThirdPartyCard(editingCard.id, patch);
+      setThirdPartyCards((items) => items.map((item) => item.id === updated.id ? updated : item));
+      setEditingCard(null);
+      toast.success("第三方卡标注已保存");
+    } catch (err) {
+      toast.error("保存第三方卡失败", err instanceof Error ? err.message : undefined);
+    } finally {
+      setCardSaving(false);
+    }
+  };
 
   const beginEdit = (record: ManagedRecord) => {
     const item = record.item;
@@ -362,6 +388,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
         icon={isHomework ? <BookCheck className="h-5 w-5" /> : <ClipboardList className="h-5 w-5" />}
         action={<>
           {!isHomework && <Link to="/homework-exams/exams/blank-answer-sheet" className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><FileText className="h-4 w-4" />制作空白答题卡</Link>}
+          {isHomework && <Link to="/scanner" className="btn-outline flex items-center gap-1.5 px-3 py-2 text-sm">扫描第三方卡</Link>}
           {isHomework && <Link to="/my-resources/exam-papers?create=homework" className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><Plus className="h-4 w-4" />出作业</Link>}
           <Button variant="outline" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading}><RefreshCw className="h-4 w-4" />刷新</Button>
         </>}
@@ -392,23 +419,41 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
             </select>
             <Link to={isHomework ? "/my-lessons?tab=homework" : "/my-resources/exam-papers"} className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><Plus className="h-4 w-4" />{isHomework ? "布置作业" : "查看试卷库"}</Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+          <div className="overflow-x-auto" aria-label={isHomework ? "作业管理表格，可横向滚动查看后续列" : "考试管理表格"} role="region" tabIndex={0}>
+            <table className={`w-full text-left text-sm ${isHomework ? "min-w-[1600px] table-fixed" : "min-w-[1000px]"}`}>
+              {isHomework && <colgroup>
+                <col className="w-56" /><col className="w-64" /><col className="w-56" /><col className="w-24" /><col className="w-20" /><col className="w-20" /><col className="w-48" /><col className="w-48" /><col className="w-24" /><col />
+              </colgroup>}
               <thead className="bg-ink-50 text-ink-700">
                 {isHomework ? (
-                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
+                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title, index) => <th key={title} scope="col" className={`whitespace-nowrap px-4 py-3 font-medium ${index === 0 ? "sticky left-0 z-10 bg-ink-50" : index === 1 ? "sticky left-56 z-10 bg-ink-50" : ""}`}>{title}</th>)}</tr>
                 ) : (
                   <tr>{["考试名称", "使用对象", "类型", "发布时间", "解锁时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 )}
               </thead>
               <tbody className="divide-y divide-ink-100">
-                {isHomework ? visibleRecords.map((record) => {
-                  const status = recordStatus(record, now);
-                  const counts = record.kind === "classroom" ? homeworkSubmissionDetails(record.item, attendance) : null;
-                  return (
-                    <tr key={`${record.kind}-${record.item.id}`} className="align-top hover:bg-mist/40">
-                      <td className="max-w-72 break-words px-4 py-3 font-medium text-ink-900">{recordTitle(record)}</td>
-                      <td className="max-w-64 break-all px-4 py-3 text-ink-600">
+                {isHomework ? <>
+                  {visibleScannedCards.map((card) => (
+                    <tr key={`third-party-${card.id}`} className="group align-top hover:bg-mist/40">
+                      <td className="sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist">{card.fileName}<span className="ml-2 text-xs font-normal text-ink-500">第三方卡</span></td>
+                      <td className="sticky left-56 z-10 break-all bg-paper px-4 py-3 group-hover:bg-mist"><button className="text-teal-700 hover:underline" onClick={() => setEditingCard(card)}>{card.fileName}</button></td>
+                      <td className="px-4 py-3 text-ink-600">{papers.find((paper) => paper.id === card.paperId)?.title || "未关联试卷"}</td>
+                      <td className="px-4 py-3 text-ink-600">—</td>
+                      <td className="px-4 py-3 text-ink-600">—</td>
+                      <td className="px-4 py-3 text-ink-600">—</td>
+                      <td className="px-4 py-3 text-ink-600">—</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(card.createdAt)}</td>
+                      <td className="px-4 py-3"><Badge variant="amber">草稿</Badge></td>
+                      <td className="px-4 py-3"><button className="text-teal-700 hover:underline" onClick={() => setEditingCard(card)}>编辑标注</button></td>
+                    </tr>
+                  ))}
+                  {visibleRecords.map((record) => {
+                    const status = recordStatus(record, now);
+                    const counts = record.kind === "classroom" ? homeworkSubmissionDetails(record.item, attendance) : null;
+                    return (
+                    <tr key={`${record.kind}-${record.item.id}`} className="group align-top hover:bg-mist/40">
+                      <td className="sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist">{recordTitle(record)}</td>
+                      <td className="sticky left-56 z-10 break-all bg-paper px-4 py-3 text-ink-600 group-hover:bg-mist">
                         {record.kind === "paper" ? (
                           <Link className="text-teal-700 hover:underline" to={paperPreviewUrl(record.item)}>{fileName(record)}</Link>
                         ) : record.item.attachments?.length ? (
@@ -434,10 +479,10 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "classroom" ? record.item.publishAt : record.item.createdAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                      <td className="whitespace-nowrap px-4 py-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button></td>
+                      <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link></div></td>
                     </tr>
                   );
-                }) : <>
+                })}</> : <>
                   {displayedPublications.map((item) => {
                     const status = publicationStatus(item, now);
                     const targets = item.targetType === "otherSchool"
@@ -465,7 +510,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                         <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "paper" ? record.item.createdAt : record.item.publishAt)}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                         <td className="px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                        <td className="whitespace-nowrap px-4 py-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button></td>
+                        <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link></div></td>
                       </tr>
                     );
                   })}
@@ -473,12 +518,13 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
               </tbody>
             </table>
           </div>
-          {(visibleRecords.length + displayedPublications.length) === 0 && (
+          {(visibleRecords.length + displayedPublications.length + visibleScannedCards.length) === 0 && (
             <p className="px-4 py-12 text-center text-sm text-ink-500">{query || statusFilter !== "all" ? "没有符合筛选条件的记录" : isHomework ? "暂无作业" : "暂无已管理的考试"}</p>
           )}
           {isHomework && <p className="border-t border-ink-100 px-4 py-3 text-xs text-ink-400">未交人数来自班级当日作业点名（未交不含请假学生），不区分同日不同作业；点击未交人数可查看名单。未点名、跨日期或尚未布置的文档显示“—”。</p>}
         </Card>
       )}
+      {editingCard && <ThirdPartyCardEditor key={editingCard.id} card={editingCard} papers={papers.filter((paper) => paper.teacherId === teacherId && paper.schoolId === schoolId)} saving={cardSaving} onClose={() => setEditingCard(null)} onSave={(patch) => void saveCard(patch)} />}
       <Modal open={!!missingList} onClose={() => setMissingList(null)} title={`未交作业名单 · ${missingList?.title || ""}`} description={`共 ${missingList?.students.length || 0} 人，已排除请假学生`}>
         <div className="divide-y divide-ink-100">
           {missingList?.students.map(({ classId, studentId }) => {

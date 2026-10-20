@@ -1,7 +1,7 @@
 import { useMemo, useRef, type ChangeEvent, type FormEvent, type FocusEvent, type PointerEvent } from "react";
 import "katex/dist/katex.min.css";
 import { renderMathHtml } from "@/lib/math-html";
-import type { AnswerSheetInlineImageLayout } from "@/lib/answer-sheet";
+import { answerSheetImageWrap, type AnswerSheetInlineImageLayout } from "@/lib/answer-sheet";
 
 interface QuestionImagesProps {
   markup: string;
@@ -28,9 +28,11 @@ function buildImageMarkup(markup: string, editable: boolean, number: number | st
     const wrapper = document.createElement("span");
     wrapper.className = "answer-sheet-inline-image";
     wrapper.dataset.imageIndex = String(index);
-    wrapper.dataset.wrap = layout?.wrap || "left";
-    wrapper.style.left = `${layout?.x || 0}px`;
-    wrapper.style.top = `${layout?.y || 0}px`;
+    const wrap = answerSheetImageWrap(layout?.wrap);
+    wrapper.dataset.wrap = wrap;
+    wrapper.style.marginTop = `${4 + Math.max(0, layout?.y || 0)}px`;
+    if (wrap === "left") wrapper.style.marginLeft = `${Math.max(0, layout?.x || 0)}px`;
+    else wrapper.style.marginRight = `${Math.max(0, layout?.x || 0)}px`;
 
     image.classList.add("answer-sheet-floating-image");
     image.draggable = false;
@@ -44,7 +46,7 @@ function buildImageMarkup(markup: string, editable: boolean, number: number | st
       const select = document.createElement("select");
       select.dataset.imageWrap = "";
       select.setAttribute("aria-label", `第${number}题${partLabel}第${index + 1}张图片环绕模式`);
-      for (const [value, label] of [["left", "左侧环绕"], ["right", "右侧环绕"], ["none", "不环绕"]]) {
+      for (const [value, label] of [["left", "四周环绕（靠左）"], ["right", "四周环绕（靠右）"]]) {
         const option = document.createElement("option");
         option.value = value;
         option.textContent = label;
@@ -81,14 +83,15 @@ export function QuestionImages({ markup, className, editable, number, part, layo
     index: number;
     x: number;
     y: number;
+    wrap: "left" | "right";
     startX: number;
     startY: number;
   } | null>(null);
 
   const readLayout = (index: number): AnswerSheetInlineImageLayout => ({
-    wrap: layouts?.[index]?.wrap || "left",
-    x: layouts?.[index]?.x || 0,
-    y: layouts?.[index]?.y || 0,
+    wrap: answerSheetImageWrap(layouts?.[index]?.wrap),
+    x: Math.max(0, layouts?.[index]?.x || 0),
+    y: Math.max(0, layouts?.[index]?.y || 0),
     caption: layouts?.[index]?.caption || "",
   });
 
@@ -109,6 +112,7 @@ export function QuestionImages({ markup, className, editable, number, part, layo
       ...target,
       x: layout.x,
       y: layout.y,
+      wrap: answerSheetImageWrap(layout.wrap),
       startX: event.clientX,
       startY: event.clientY,
     };
@@ -116,13 +120,24 @@ export function QuestionImages({ markup, className, editable, number, part, layo
     event.preventDefault();
   };
 
+  const dragX = (drag: NonNullable<typeof dragRef.current>, pointerX: number) => {
+    const direction = drag.wrap === "left" ? 1 : -1;
+    const desired = Math.max(0, Math.round(drag.x + (pointerX - drag.startX) * direction));
+    const containerWidth = rootRef.current?.clientWidth || 0;
+    const imageWidth = drag.wrapper.offsetWidth;
+    return containerWidth && imageWidth
+      ? Math.min(desired, Math.max(0, containerWidth - imageWidth - 6))
+      : desired;
+  };
+
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || event.pointerId !== drag.pointerId) return;
-    const x = Math.round(drag.x + event.clientX - drag.startX);
-    const y = Math.round(drag.y + event.clientY - drag.startY);
-    drag.wrapper.style.left = `${x}px`;
-    drag.wrapper.style.top = `${y}px`;
+    const x = dragX(drag, event.clientX);
+    const y = Math.max(0, Math.round(drag.y + event.clientY - drag.startY));
+    if (drag.wrap === "left") drag.wrapper.style.marginLeft = `${x}px`;
+    else drag.wrapper.style.marginRight = `${x}px`;
+    drag.wrapper.style.marginTop = `${4 + y}px`;
   };
 
   const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
@@ -132,12 +147,13 @@ export function QuestionImages({ markup, className, editable, number, part, layo
     if (event.type === "pointerup") {
       onLayoutChange(drag.index, {
         ...readLayout(drag.index),
-        x: Math.round(drag.x + event.clientX - drag.startX),
-        y: Math.round(drag.y + event.clientY - drag.startY),
+        x: dragX(drag, event.clientX),
+        y: Math.max(0, Math.round(drag.y + event.clientY - drag.startY)),
       });
     } else {
-      drag.wrapper.style.left = `${drag.x}px`;
-      drag.wrapper.style.top = `${drag.y}px`;
+      if (drag.wrap === "left") drag.wrapper.style.marginLeft = `${drag.x}px`;
+      else drag.wrapper.style.marginRight = `${drag.x}px`;
+      drag.wrapper.style.marginTop = `${4 + drag.y}px`;
     }
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
