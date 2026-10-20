@@ -499,6 +499,7 @@ export function StudentHomeworkRecordPage() {
                 classInfo={selectedClass}
                 students={classMembers}
                 teacherId={teacher.id}
+                followedStudentIds={followedStudentIds}
               />
             ) : !selectedStudent ? (
               <EmptyState
