@@ -765,15 +765,13 @@ export function ExtractReviewModal({
         return;
       }
 
-      const duplicateResults = await Promise.all(
-        extractedQuestions.map(async (item) => ({
-          item,
-          candidates: await questionService.findSimilarQuestions(
-            item.stem,
-            teacher.schoolId!,
-          ),
-        })),
+      const candidateGroups = await questionService.findSimilarQuestionsBatch(
+        extractedQuestions.map((item) => item.stem), teacher.schoolId!,
       );
+      const duplicateResults = extractedQuestions.map((item, index) => ({
+        item,
+        candidates: candidateGroups[index],
+      }));
       const nextDuplicateChecks: Record<string, DuplicateCheck> = {};
       for (const { item, candidates } of duplicateResults) {
         const candidate = candidates[0];
@@ -827,26 +825,6 @@ export function ExtractReviewModal({
         duplicateOf: b.duplicateOf as Material | undefined,
       }));
 
-      const {
-        createdQuestions,
-        mergedQuestions,
-        createdMaterials,
-        questionIdByItemId,
-        materialIdByItemId,
-      } = await extractService.confirmExtract(
-        teacher.id,
-        teacher.schoolId!,
-        { questions: resolvedQuestions, knowledgeBlocks: extractedKnowledge },
-        chapterIds,
-        knowledgePointIds,
-        grade,
-        schoolYear,
-        semester,
-        resourceId,
-        questionSourceType,
-        questionCategory,
-      );
-
       const extractedQuestionById = new Map(extractedQuestions.map((item) => [item.id, item]));
       const extractedKnowledgeById = new Map(extractedKnowledge.map((item) => [item.id, item]));
       const extractCopyBlocks: ExtractedDocumentBlock[] = blocks.map((block) => {
@@ -862,7 +840,6 @@ export function ExtractReviewModal({
             content,
             ...(customLabel ? { customLabel } : {}),
             questionType: item?.type || block.questionType || subjectDefaultQuestionType,
-            questionId: questionIdByItemId[block.id],
           };
         }
         if (block.type === "knowledge") {
@@ -872,35 +849,26 @@ export function ExtractReviewModal({
             type: "knowledge",
             title: item?.title || block.knowledgeTitle,
             content: item?.content || block.content,
-            materialId: materialIdByItemId[block.id],
           };
         }
-        if (block.type === "documentTitle") {
-          return {
-            id: block.id,
-            type: "documentTitle",
-            content: block.content,
-          };
-        }
-        if (block.type === "groupTitle") {
-          return {
-            id: block.id,
-            type: "groupTitle",
-            content: block.content,
-          };
-        }
-        return {
-          id: block.id,
-          type: "documentInfo",
-          content: block.content,
-        };
+        return { id: block.id, type: block.type, content: block.content };
       });
 
-      if (resourceType === "examPaper") {
-        await examPaperService.createExtractCopy(resourceId, extractCopyBlocks);
-      } else {
-        await lectureService.createExtractCopy(resourceId, extractCopyBlocks);
-      }
+      const { createdQuestions, mergedQuestions, createdMaterials } = await extractService.confirmExtract(
+        teacher.id,
+        teacher.schoolId!,
+        { questions: resolvedQuestions, knowledgeBlocks: extractedKnowledge },
+        chapterIds,
+        knowledgePointIds,
+        grade,
+        schoolYear,
+        semester,
+        resourceId,
+        questionSourceType,
+        questionCategory,
+        resourceType,
+        extractCopyBlocks,
+      );
 
       toast.success(
         "入库成功",

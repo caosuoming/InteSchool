@@ -256,6 +256,14 @@ describe("StudentHomeworkRecordPage", () => {
     });
   });
 
+  it("passes the existing follow state to the class homework roll call", async () => {
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue(["student-1"]);
+    const user = userEvent.setup();
+    render(<StudentHomeworkRecordPage />);
+    await user.click(await screen.findByRole("button", { name: /高一（1）班/ }));
+    expect(await screen.findByRole("img", { name: "甲同学已关注" })).toHaveClass("fill-red-600");
+  });
+
   it("shows the class homework overview and saves attendance for the whole class", async () => {
     const user = userEvent.setup();
     render(<StudentHomeworkRecordPage />);

@@ -96,7 +96,7 @@
 .blank-sheet-marker.bottom-right { right: 7mm; bottom: 3mm; }
 .blank-sheet-columns {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--blank-columns, 3), minmax(0, 1fr));
   gap: 3mm;
   height: 100%;
 }
@@ -110,6 +110,7 @@
   border-radius: 3mm;
   overflow: hidden;
 }
+.blank-sheet-identity { width: 117mm; max-width: 100%; }
 .blank-sheet-heading {
   min-height: 13mm;
   display: flex;
@@ -143,6 +144,7 @@
   height: 25mm;
   overflow: hidden;
 }
+.blank-sheet-instructions-empty { border-color: transparent; }
 .blank-sheet-instructions b { display: block; color: var(--blank-accent); font-size: 7pt; margin-bottom: .5mm; }
 .blank-sheet-barcode {
   min-width: 0;
@@ -160,19 +162,36 @@
   gap: 2mm;
 }
 .blank-sheet-barcode small { font-size: 5pt; }
-.blank-sheet-exam-number { flex: 2; min-width: 0; color: var(--blank-accent); }
+.blank-sheet-exam-number { flex: 0 0 54mm; min-width: 0; color: var(--blank-accent); }
 .blank-sheet-exam-number > b { display: block; font-size: 6pt; text-align: center; margin-bottom: 1mm; }
-.blank-sheet-number-columns { display: flex; justify-content: space-evenly; align-items: flex-start; gap: .3mm; }
+.blank-sheet-number-columns { display: flex; justify-content: center; align-items: flex-start; gap: .5mm; }
 .blank-sheet-number-column { display: flex; flex-direction: column; gap: .7mm; align-items: center; font-size: 5pt; }
-.blank-sheet-bubble {
-  width: 3.2mm;
-  height: 2.8mm;
-  border: .2mm solid var(--blank-accent);
-  border-radius: 45%;
-  font-size: 5pt;
-  line-height: 2.4mm;
-  text-align: center;
+/* All optical-mark cells use the same physical dimensions and center openings. */
+.blank-sheet-bubble, .blank-sheet-choice {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.4mm;
+  height: 3.25mm;
+  border: .25mm solid var(--blank-accent);
+  color: var(--blank-accent);
+  font-size: 6pt;
+  line-height: 1;
+  flex: none;
 }
+.blank-sheet-bubble::before, .blank-sheet-bubble::after,
+.blank-sheet-choice::before, .blank-sheet-choice::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1.1mm;
+  height: .4mm;
+  background: #fff;
+}
+.blank-sheet-bubble::before, .blank-sheet-choice::before { top: -.3mm; }
+.blank-sheet-bubble::after, .blank-sheet-choice::after { bottom: -.3mm; }
 .blank-sheet-column-warning, .blank-sheet-column-footer {
   margin: 0;
   color: var(--blank-accent);
@@ -193,29 +212,18 @@
   color: #222;
 }
 .blank-sheet-choice-groups { display: flex; gap: 2mm; padding: .5mm 1mm; }
+.blank-sheet-choice-groups.vertical { flex-direction: column; gap: .75mm; }
 .blank-sheet-choice-group { display: flex; flex-direction: column; flex: 1; gap: .75mm; min-width: 0; }
 .blank-sheet-choice-row { display: flex; gap: .7mm; align-items: center; font-size: 6pt; height: 3.95mm; white-space: nowrap; }
 .blank-sheet-number { width: 8mm; flex: none; }
-.blank-sheet-choice {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 4.4mm;
-  height: 3.25mm;
-  border: .25mm solid var(--blank-accent);
-  color: var(--blank-accent);
-  font-size: 6pt;
-  line-height: 1;
-  flex: none;
-}
 .blank-sheet-fill-rows { display: flex; flex-direction: column; gap: 1mm; padding: 1mm 1.5mm; }
 .blank-sheet-fill-row { display: flex; gap: 2mm; align-items: flex-end; font-size: 7pt; height: 8.5mm; }
 .blank-sheet-fill-row i { width: 70%; height: 3mm; border-bottom: .2mm solid var(--blank-accent); }
 .blank-sheet-essay-box { position: relative; padding: 2mm 1.5mm; font-size: 7pt; border-top: .2mm solid #acb4ba; }
 .blank-sheet-page-footer { position: absolute; bottom: 3mm; left: 0; right: 0; text-align: center; font-size: 6pt; color: var(--blank-accent); }
-.blank-sheet-paper-a4 { page: blank-sheet-a4; }
+.blank-sheet-paper-8k { page: blank-sheet-8k; }
 .blank-sheet-paper-a3 { page: blank-sheet-a3; }
-@page blank-sheet-a4 { size: A4 landscape; margin: 0; }
+@page blank-sheet-8k { size: 390mm 270mm; margin: 0; }
 @page blank-sheet-a3 { size: A3 landscape; margin: 0; }
 @media (max-width: 1100px) { .blank-sheet-workspace { grid-template-columns: minmax(0, 1fr); } }
 @media print {
@@ -235,3 +243,8 @@
   }
   .blank-sheet-page:last-child { break-after: auto; }
 }
+
+.blank-sheet-essay-custom summary { cursor: pointer; font-size: 12px; color: #334e68; }
+.blank-sheet-essay-custom-fields { display: grid; gap: 8px; margin-top: 10px; max-height: 250px; overflow-y: auto; }
+.blank-sheet-essay-custom-fields label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #334e68; }
+.blank-sheet-essay-custom-fields input { width: 75px; border: 1px solid #cbd5e1; border-radius: 5px; padding: 5px; background: #fff; color: #102a43; }

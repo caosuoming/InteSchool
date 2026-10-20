@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getLecture: vi.fn(),
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
-  findSimilarQuestions: vi.fn(),
+  findSimilarQuestionsBatch: vi.fn(),
   confirmExtract: vi.fn(),
   createLectureExtractCopy: vi.fn(),
   createExamExtractCopy: vi.fn(),
@@ -81,7 +81,7 @@ vi.mock("@/services/extract", () => ({
 
 vi.mock("@/services/question", () => ({
   questionService: {
-    findSimilarQuestions: mocks.findSimilarQuestions,
+    findSimilarQuestionsBatch: mocks.findSimilarQuestionsBatch,
   },
 }));
 
@@ -104,7 +104,7 @@ describe("ExtractReviewModal", () => {
       originalFileName: "lecture.docx",
     });
     mocks.extractStoredFile.mockResolvedValue({ text: "mock document" });
-    mocks.findSimilarQuestions.mockResolvedValue([]);
+    mocks.findSimilarQuestionsBatch.mockImplementation(async (stems: string[]) => stems.map(() => []));
     mocks.confirmExtract.mockResolvedValue({
       createdQuestions: [{ id: "question-created" }],
       mergedQuestions: [],
@@ -308,8 +308,8 @@ describe("ExtractReviewModal", () => {
     await user.click(screen.getByRole("button", { name: "确认入库" }));
     await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject(expected);
-    await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
-    expect(mocks.createLectureExtractCopy.mock.calls[0][1]).toEqual([
+    expect(mocks.createLectureExtractCopy).not.toHaveBeenCalled();
+    expect(mocks.confirmExtract.mock.calls[0][12]).toEqual([
       expect.objectContaining({ id: "block-question", type: "question", content: expected.stem }),
     ]);
   });
@@ -411,8 +411,8 @@ describe("ExtractReviewModal", () => {
     expect(await screen.findByText("方程的根为______。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /确认入库/ }));
-    await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
-    expect(mocks.createLectureExtractCopy.mock.calls[0][1]).toContainEqual(
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][12]).toContainEqual(
       expect.objectContaining({
         id: "fill-blank-review",
         type: "question",
@@ -659,9 +659,9 @@ describe("ExtractReviewModal", () => {
       answer: "A",
       analysis: "已有解析",
     };
-    mocks.findSimilarQuestions.mockResolvedValue([
+    mocks.findSimilarQuestionsBatch.mockResolvedValue([[
       { question: duplicateQuestion, similarity: 0.96 },
-    ]);
+    ]]);
 
     render(
       <ExtractReviewModal
@@ -710,7 +710,7 @@ describe("ExtractReviewModal", () => {
 
   it("disables merging another teacher's question and allows adding a new one", async () => {
     const user = userEvent.setup();
-    mocks.findSimilarQuestions.mockResolvedValue([{
+    mocks.findSimilarQuestionsBatch.mockResolvedValue([[{
       question: {
         id: "question-shared",
         teacherId: "teacher-2",
@@ -720,7 +720,7 @@ describe("ExtractReviewModal", () => {
         analysis: "共享解析",
       },
       similarity: 0.93,
-    }]);
+    }]]);
 
     render(
       <ExtractReviewModal
@@ -818,8 +818,10 @@ describe("ExtractReviewModal", () => {
     await screen.findByText("文档标题 1");
     fireEvent.click(screen.getByRole("button", { name: /确认入库/ }));
 
-    await waitFor(() => expect(mocks.createLectureExtractCopy).toHaveBeenCalledTimes(1));
-    expect(mocks.createLectureExtractCopy).toHaveBeenCalledWith("lecture-1", [
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][11]).toBe("lecture");
+    expect(mocks.createLectureExtractCopy).not.toHaveBeenCalled();
+    expect(mocks.confirmExtract.mock.calls[0][12]).toEqual([
       {
         id: "block-title",
         type: "documentTitle",
@@ -841,14 +843,12 @@ describe("ExtractReviewModal", () => {
         content: "拓展题1 示例题目",
         customLabel: "拓展题1",
         questionType: "single",
-        questionId: "question-created",
       },
       {
         id: "block-knowledge",
         type: "knowledge",
         title: "示例知识",
         content: "示例知识内容",
-        materialId: "material-created",
       },
     ]);
   });

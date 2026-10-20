@@ -265,6 +265,46 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(prepService.checkDuplicateQuestion).not.toHaveBeenCalled();
   });
 
+  it("shows each question’s thought methods after the knowledge points", async () => {
+    const question: Question = {
+      id: "question-method",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      type: "short",
+      stem: "含思想方法的题目",
+      answer: "42",
+      analysis: "",
+      chapterIds: [],
+      knowledgePointIds: ["knowledge-1"],
+      thoughtMethodIds: ["method-1"],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [question], total: 1 });
+    vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue({
+      ...knowledgeTree,
+      children: [{ id: "knowledge-1", name: "集合概念", type: "knowledge", count: 1, children: [] }],
+    });
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
+      id: "root", name: "全部思想方法", type: "method", count: 1,
+      children: [{ id: "method-1", name: "数形结合", type: "method", count: 1, children: [] }],
+    });
+
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+
+    expect(await screen.findByText("含思想方法的题目")).toBeInTheDocument();
+    expect(await screen.findByText("数形结合")).toBeInTheDocument();
+    const row = screen.getByText("含思想方法的题目").closest(".card-base") ?? document.body;
+    const text = row.textContent || "";
+    expect(text.indexOf("集合概念")).toBeLessThan(text.indexOf("思想方法："));
+    expect(text.indexOf("思想方法：")).toBeLessThan(text.indexOf("数形结合"));
+  });
+
   it("keeps the chapter and knowledge directory trees read-only", async () => {
     render(
       <MemoryRouter>
