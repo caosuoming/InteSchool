@@ -1713,6 +1713,8 @@ export interface ExamPaper {
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
     stemFontSize?: number;
+    questionGapPx?: number;
+    questionGapOverrides?: Record<string, number>;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
@@ -2331,6 +2333,8 @@ export interface Lecture {
     a4Columns?: 1 | 2;
     answerBoxStyle?: "solid" | "dashed";
     stemFontSize?: number;
+    questionGapPx?: number;
+    questionGapOverrides?: Record<string, number>;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;

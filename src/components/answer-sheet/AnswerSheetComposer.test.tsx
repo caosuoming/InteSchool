@@ -532,6 +532,82 @@ describe("AnswerSheetComposer", () => {
     }
   });
 
+  it("edits shared and per-question spacing and retains it in preview and after reloading", () => {
+    const onSettingsChange = vi.fn();
+    const { container, unmount } = renderComposer({
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+    });
+    const row = (id: string) => container.querySelector<HTMLElement>(`[data-question-id="${id}"]`)!;
+    expect(row("q1")).toHaveStyle({ paddingBottom: "12px" });
+    fireEvent.change(screen.getByLabelText("统一题后间距（px）"), { target: { value: "14" } });
+    expect(row("q1")).toHaveStyle({ paddingBottom: "26px" });
+    expect(row("q2")).toHaveStyle({ paddingBottom: "26px" });
+    expect(row("q3")).toHaveStyle({ paddingBottom: "26px" });
+
+    fireEvent.change(screen.getByLabelText("调整题号"), { target: { value: "q2" } });
+    fireEvent.change(screen.getByLabelText("该题后间距（px）"), { target: { value: "30" } });
+    expect(row("q2")).toHaveStyle({ paddingBottom: "42px" });
+    expect(row("q1")).toHaveStyle({ paddingBottom: "26px" });
+    const saved = onSettingsChange.mock.lastCall?.[0];
+    expect(saved).toMatchObject({ questionGapPx: 14, questionGapOverrides: { q2: 30 } });
+
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(row("q2")).toHaveStyle({ paddingBottom: "42px" });
+    expect(row("q3")).toHaveStyle({ paddingBottom: "26px" });
+    unmount();
+    const reloaded = renderComposer({ initialSettings: saved, initialViewMode: "preview" });
+    expect(reloaded.container.querySelector('[data-question-id="q2"]')).toHaveStyle({ paddingBottom: "42px" });
+    fireEvent.click(screen.getByRole("button", { name: "编辑答题卡" }));
+    expect(screen.getByLabelText("统一题后间距（px）")).toHaveValue(14);
+    fireEvent.change(screen.getByLabelText("调整题号"), { target: { value: "q2" } });
+    expect(screen.getByLabelText("该题后间距（px）")).toHaveValue(30);
+    fireEvent.click(screen.getByRole("button", { name: "跟随统一间距" }));
+    expect(reloaded.container.querySelector('[data-question-id="q2"]')).toHaveStyle({ paddingBottom: "26px" });
+  });
+
+  it("keeps spacing controls exclusive to the show-stem layout and bounds invalid saved values", () => {
+    const { container } = renderComposer({
+      initialSettings: { mode: "with-questions", questionGapPx: -3, questionGapOverrides: { q2: 1000 } },
+    });
+    expect(container.querySelector('[data-question-id="q1"]')).toHaveStyle({ paddingBottom: "12px" });
+    expect(container.querySelector('[data-question-id="q2"]')).toHaveStyle({ paddingBottom: "132px" });
+    fireEvent.click(screen.getByLabelText("不显题干"));
+    expect(screen.queryByTestId("answer-sheet-spacing-controls")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-question-id="q2"]')!).not.toHaveStyle({ paddingBottom: "132px" });
+  });
+
+  it("captures native resize gestures ending outside the fill and essay boxes", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+      questions: [
+        { id: "fill", type: "short", stem: "填空", score: 5 },
+        { id: "essay", type: "essay", stem: "解答", score: 10 },
+      ],
+      onSettingsChange,
+    });
+    const [fill, essay] = screen.getAllByTestId("answer-box");
+    let fillRect = { left: 0, top: 0, right: 200, bottom: 150, width: 200, height: 150 } as DOMRect;
+    let essayRect = { left: 0, top: 0, right: 300, bottom: 180, width: 300, height: 180 } as DOMRect;
+    vi.spyOn(fill, "getBoundingClientRect").mockImplementation(() => fillRect);
+    vi.spyOn(essay, "getBoundingClientRect").mockImplementation(() => essayRect);
+    fireEvent.pointerDown(fill, { button: 0, clientX: 195, clientY: 145 });
+    fillRect = { ...fillRect, width: 180, height: 130, right: 180, bottom: 130 } as DOMRect;
+    fireEvent.pointerUp(window);
+    fireEvent.pointerDown(essay, { button: 0, clientX: 295, clientY: 175 });
+    essayRect = { ...essayRect, height: 260, bottom: 260 } as DOMRect;
+    fireEvent.pointerUp(window);
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      answerBoxHeights: { fill: 130, essay: 260 }, answerBoxWidths: { fill: 180 },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    const [previewFill, previewEssay] = screen.getAllByTestId("answer-box");
+    expect(previewFill).toHaveStyle({ width: "180px", height: "130px", resize: "none" });
+    expect(previewEssay).toHaveStyle({ height: "260px", resize: "none" });
+  });
+
   it("persists both width and height when resizing concentrated fill areas", () => {
     const onSettingsChange = vi.fn();
     renderComposer({

@@ -22,6 +22,7 @@ import {
   MAX_STUDENT_NUMBER_DIGITS,
   MIN_STUDENT_NUMBER_DIGITS,
   normalizeAnswerSheetStemFontSize,
+  normalizeAnswerSheetQuestionGap,
   normalizeStudentNumberDigits,
   type AnswerSheetBoxStyle,
   type AnswerSheetOptionBreak,
@@ -367,8 +368,37 @@ function AnswerBox({
   onWidthChange?: (width: number) => void;
   children?: ReactNode;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const resizePendingRef = useRef(false);
+  const saveSize = useCallback(() => {
+    if (!editable || !boxRef.current) return;
+    const rect = boxRef.current.getBoundingClientRect();
+    const nextHeight = Math.round(rect.height);
+    if (onHeightChange && nextHeight > 0 && nextHeight !== height) onHeightChange(nextHeight);
+    const nextWidth = Math.round(rect.width);
+    if (resizableBoth && onWidthChange && nextWidth > 0 && nextWidth !== width) onWidthChange(nextWidth);
+  }, [editable, height, onHeightChange, onWidthChange, resizableBoth, width]);
+
+  useEffect(() => {
+    if (!editable) return undefined;
+    // Native CSS resize can finish outside the box; its pointerup does not always
+    // target the resized element. Persist the dimensions at the window level.
+    const finishResize = () => {
+      if (!resizePendingRef.current) return;
+      resizePendingRef.current = false;
+      saveSize();
+    };
+    window.addEventListener("pointerup", finishResize, true);
+    window.addEventListener("pointercancel", finishResize, true);
+    return () => {
+      window.removeEventListener("pointerup", finishResize, true);
+      window.removeEventListener("pointercancel", finishResize, true);
+    };
+  }, [editable, saveSize]);
+
   return (
     <div
+      ref={boxRef}
       className={`answer-sheet-answer-box relative box-border w-full border border-ink-800 p-2 ${boxStyle === "dashed" ? "border-dashed" : "border-solid"}`}
       style={{
         height: height ? `${height}px` : undefined,
@@ -379,13 +409,16 @@ function AnswerBox({
         resize: editable ? (resizableBoth ? "both" : "vertical") : "none",
         overflow: "hidden",
       }}
-      onPointerUp={(event) => {
-        if (!editable || event.target !== event.currentTarget) return;
+      onPointerDown={(event) => {
+        if (!editable || event.button !== 0) return;
         const rect = event.currentTarget.getBoundingClientRect();
-        const nextHeight = Math.round(rect.height);
-        if (onHeightChange && nextHeight > 0 && nextHeight !== height) onHeightChange(nextHeight);
-        const nextWidth = Math.round(rect.width);
-        if (resizableBoth && onWidthChange && nextWidth > 0 && nextWidth !== width) onWidthChange(nextWidth);
+        resizePendingRef.current = event.clientX >= rect.right - 24
+          && event.clientX <= rect.right && event.clientY >= rect.bottom - 24
+          && event.clientY <= rect.bottom;
+      }}
+      onPointerUp={(event) => {
+        if (event.target === event.currentTarget) saveSize();
+        resizePendingRef.current = false;
       }}
       data-testid="answer-box"
       data-answer-box-style={boxStyle}
@@ -761,6 +794,12 @@ function buildInitialSettings(initialSettings?: Partial<AnswerSheetSettings>): A
     stemFontSize: normalizeAnswerSheetStemFontSize(
       initialSettings?.stemFontSize ?? DEFAULT_ANSWER_SHEET_SETTINGS.stemFontSize,
     ),
+    questionGapPx: normalizeAnswerSheetQuestionGap(initialSettings?.questionGapPx ?? 0),
+    questionGapOverrides: Object.fromEntries(
+      Object.entries(initialSettings?.questionGapOverrides ?? {})
+        .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
+        .map(([id, value]) => [id, normalizeAnswerSheetQuestionGap(value)]),
+    ),
   };
 }
 
@@ -788,6 +827,7 @@ export function AnswerSheetComposer({
   const [pageStarts, setPageStarts] = useState<number[]>([0]);
   const [publishing, setPublishing] = useState(false);
   const [selectedChoiceId, setSelectedChoiceId] = useState("");
+  const [selectedSpacingId, setSelectedSpacingId] = useState("");
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
 
@@ -800,6 +840,7 @@ export function AnswerSheetComposer({
     [numberedQuestions],
   );
   const selectedChoice = choiceItems.find(({ question }) => question.id === selectedChoiceId) ?? choiceItems[0];
+  const selectedSpacingQuestion = numberedQuestions.find(({ question }) => question.id === selectedSpacingId) ?? numberedQuestions[0];
   const fillItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isFillQuestion(question)),
     [numberedQuestions],
@@ -839,6 +880,18 @@ export function AnswerSheetComposer({
     if (published) return;
     setSettings((current) => {
       const next = { ...current, ...patch };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateQuestionGap = (questionId: string, gap: number | null) => {
+    if (published) return;
+    setSettings((current) => {
+      const overrides = { ...current.questionGapOverrides };
+      if (gap === null) delete overrides[questionId];
+      else overrides[questionId] = normalizeAnswerSheetQuestionGap(gap);
+      const next = { ...current, questionGapOverrides: overrides };
       onSettingsChange?.(next);
       return next;
     });
@@ -1025,6 +1078,7 @@ export function AnswerSheetComposer({
     columnWidthMm, pageStarts, recalculatePagination, settings.answerBoxStyle,
     settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits,
     settings.choiceOptionBreaks, settings.concentratedChoiceDirection, settings.stemFontSize,
+    settings.questionGapPx, settings.questionGapOverrides,
     settings.questionImageLayouts, settings.essayImageLayouts, viewMode,
   ]);
 
@@ -1233,6 +1287,11 @@ export function AnswerSheetComposer({
         <div
           className={`border-x border-ink-800 ${flowItem.item.question.type === "essay" ? "px-[1mm]" : "px-3"} py-2 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
+          data-question-id={flowItem.item.question.id}
+          style={settings.mode === "with-questions" ? {
+            paddingBottom: `${(flowItem.last ? 12 : 8) + (settings.questionGapOverrides?.[flowItem.item.question.id]
+              ?? settings.questionGapPx ?? 0)}px`,
+          } : undefined}
         >
           {renderGroupItem(flowItem.item)}
         </div>
@@ -1426,6 +1485,57 @@ export function AnswerSheetComposer({
                   {typeof totalScore === "number" && <Badge variant="gold">{totalScore}分</Badge>}
                 </div>
               </div>
+              {settings.mode === "with-questions" && numberedQuestions.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-200 pt-4" data-testid="answer-sheet-spacing-controls">
+                  <div className="w-40">
+                    <Input
+                      label="统一题后间距（px）"
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={settings.questionGapPx ?? 0}
+                      onChange={(event) => updateSettings({
+                        questionGapPx: normalizeAnswerSheetQuestionGap(Number(event.target.value)),
+                      })}
+                    />
+                  </div>
+                  <div className="w-36">
+                    <Select
+                      label="调整题号"
+                      value={selectedSpacingQuestion?.question.id ?? ""}
+                      onChange={(event) => setSelectedSpacingId(event.target.value)}
+                      options={numberedQuestions.map(({ question, number }) => ({
+                        value: question.id,
+                        label: `第${question.label || number}题`,
+                      }))}
+                    />
+                  </div>
+                  {selectedSpacingQuestion && (
+                    <>
+                      <div className="w-40">
+                        <Input
+                          label="该题后间距（px）"
+                          type="number"
+                          min={0}
+                          max={120}
+                          value={settings.questionGapOverrides?.[selectedSpacingQuestion.question.id]
+                            ?? settings.questionGapPx ?? 0}
+                          onChange={(event) => updateQuestionGap(
+                            selectedSpacingQuestion.question.id, Number(event.target.value),
+                          )}
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        disabled={settings.questionGapOverrides?.[selectedSpacingQuestion.question.id] === undefined}
+                        onClick={() => updateQuestionGap(selectedSpacingQuestion.question.id, null)}
+                      >
+                        跟随统一间距
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
               {settings.mode === "with-questions" && choiceItems.length > 0 && (
                 <div className="mt-4 flex flex-wrap items-end gap-4 border-t border-ink-200 pt-4" data-testid="answer-sheet-choice-controls">
                   <div className="w-36">
