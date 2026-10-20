@@ -155,6 +155,29 @@ describe("pending question assignments", () => {
     });
   });
 
+  it("includes questions referenced by imported document blocks and linked exam entries", async () => {
+    const appState = state();
+    (appState.lectures as Lecture[]).push({
+      ...lecture("lecture-block-only", ["class-1"], [], []),
+      contentBlocks: [{ id: "block-1", type: "question", content: "题目", questionId: "q-from-lecture-block" }],
+    });
+    (appState.examPapers as ExamPaper[]).push({
+      ...paper("paper-linked-block", ["class-1"], [], ["q-placeholder"]),
+      questions: [{
+        id: "entry-linked", stem: "题目", answer: "A", analysis: "", score: 10, type: "single",
+      }],
+      contentBlocks: [{
+        id: "block-linked", type: "question", content: "题目", questionId: "q-from-paper-block",
+        examPaperQuestionId: "entry-linked",
+      }],
+    });
+    await runWithState(appState, async () => {
+      const assignments = await analyticsService.listPendingQuestionAssignments(["student-school"]);
+      expect(asKeys(assignments)).toContain("student-school:q-from-lecture-block");
+      expect(asKeys(assignments)).toContain("student-school:q-from-paper-block");
+    });
+  });
+
   it("removes the derived pending state when the document audience is cleared", async () => {
     const appState = state();
 

@@ -81,6 +81,27 @@ function collectLectureQuestionIds(sections: LectureSection[], ids = new Set<str
   return ids;
 }
 
+function collectDocumentQuestionIds(document: Lecture | ExamPaper): Set<string> {
+  const contentBlocks = document.contentBlocks || [];
+  if ("questions" in document) {
+    const linkedQuestionIds = new Map(
+      contentBlocks
+        .filter((block) => block.type === "question" && block.examPaperQuestionId && block.questionId)
+        .map((block) => [block.examPaperQuestionId!, block.questionId!]),
+    );
+    const ids = new Set(document.questions
+      .map((question) => question.questionId || linkedQuestionIds.get(question.id))
+      .filter((id): id is string => Boolean(id)));
+    if (ids.size) return ids;
+  } else {
+    const ids = collectLectureQuestionIds(document.sections || []);
+    if (ids.size) return ids;
+  }
+  return new Set(contentBlocks
+    .filter((block) => block.type === "question" && block.questionId)
+    .map((block) => block.questionId!));
+}
+
 function selectedAudienceStudentIds(
   classIds: string[] | undefined,
   directStudentIds: string[] | undefined,
@@ -189,7 +210,7 @@ export const analyticsService = {
       addDocumentAssignments(
         lecture.classIds,
         lecture.studentIds,
-        collectLectureQuestionIds(lecture.sections || []),
+        collectDocumentQuestionIds(lecture),
       );
     }
 
@@ -197,7 +218,7 @@ export const analyticsService = {
       addDocumentAssignments(
         paper.classIds,
         paper.studentIds,
-        paper.questions.map((question) => question.questionId).filter((id): id is string => Boolean(id)),
+        collectDocumentQuestionIds(paper),
       );
     }
 

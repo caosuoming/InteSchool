@@ -59,7 +59,7 @@ import { questionStemSimilarity } from "@/lib/question-similarity";
 import { subjectAwareDefaultQuestionScore } from "@/lib/question-default-score";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { StudentPickerModal } from "@/components/student/StudentPickerModal";
-import { documentStudentProgressLabel } from "@/lib/document-student-progress";
+import { documentStudentProgressLabel, type PendingQuestionAssignment } from "@/lib/document-student-progress";
 import {
   QuestionDuplicateReviewModal,
   type QuestionDuplicateResolution,
@@ -808,6 +808,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     key: string;
     status: "loading" | "success" | "error";
     records: AnswerRecord[];
+    pendingAssignments: PendingQuestionAssignment[];
   } | null>(null);
   const selectedResourceStudentKey = selectedResourceStudentIds.join(",");
   const [resourceAudienceClasses, setResourceAudienceClasses] = useState<AnyClass[]>([]);
@@ -1145,13 +1146,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
     let cancelled = false;
     const key = selectedResourceStudentKey;
-    setResourceStudentQuery({ key, status: "loading", records: [] });
-    analyticsService.listAnswerRecordsByStudents(selectedResourceStudentIds)
-      .then((records) => {
-        if (!cancelled) setResourceStudentQuery({ key, status: "success", records });
+    setResourceStudentQuery({ key, status: "loading", records: [], pendingAssignments: [] });
+    Promise.all([
+      analyticsService.listAnswerRecordsByStudents(selectedResourceStudentIds),
+      analyticsService.listPendingQuestionAssignments(selectedResourceStudentIds),
+    ])
+      .then(([records, pendingAssignments]) => {
+        if (!cancelled) setResourceStudentQuery({ key, status: "success", records, pendingAssignments });
       })
       .catch(() => {
-        if (!cancelled) setResourceStudentQuery({ key, status: "error", records: [] });
+        if (!cancelled) setResourceStudentQuery({ key, status: "error", records: [], pendingAssignments: [] });
       });
     return () => { cancelled = true; };
   }, [activeTab, selectedResourceStudentIds, selectedResourceStudentKey]);
@@ -1161,14 +1165,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (!resourceStudentQuery || resourceStudentQuery.key !== selectedResourceStudentKey
       || resourceStudentQuery.status === "loading") return "学生题目统计加载中...";
     if (resourceStudentQuery.status === "error") return "学生题目统计加载失败";
-    return documentStudentProgressLabel(document, selectedResourceStudentIds, resourceStudentQuery.records);
+    return documentStudentProgressLabel(
+      document, selectedResourceStudentIds, resourceStudentQuery.records, resourceStudentQuery.pendingAssignments,
+    );
   };
 
-  const documentDescription = (document: ExamPaper | Lecture): string => {
-    const usage = documentResourceUsageSummary(document, resourceAudienceClasses, usedDocumentIds);
-    const progress = studentProgressDescription(document);
-    return progress ? `${usage} · ${progress}` : usage;
-  };
+  const documentDescription = (document: ExamPaper | Lecture): string =>
+    documentResourceUsageSummary(document, resourceAudienceClasses, usedDocumentIds);
 
   // 资源篮加载逻辑
   useEffect(() => {
@@ -2878,7 +2881,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         onChange={setSelectedResourceStudentIds}
         students={resourceStudents}
         classes={resourceStudentClasses}
-        description="选择学生后，题库显示训练关联，试卷库与讲义库显示每份文档的已做、待做题目数量"
+        description="选择学生后，题库显示训练关联，试卷库与讲义库显示每份文档的做过、待做、未做题目数量"
       />
 
       {/* Tab 切换 */}
@@ -3734,6 +3737,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       title={mainLecture.title}
                       remark={mainLecture.description}
                       description={documentDescription(mainLecture)}
+                      studentProgress={studentProgressDescription(mainLecture)}
                       titleIcon={item.originalFileUrl ? (
                         <DocumentFormatIcon
                           fileType={item.originalFileType}
@@ -3875,6 +3879,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         title={copy.title}
                         remark={copy.description}
                         description={documentDescription(copy)}
+                        studentProgress={studentProgressDescription(copy)}
                         titleActions={hasCompletedLesson("examPaper", copy.id)
                           || hasCompletedLesson("examPaper", item.id)
                           ? <Badge variant="green">已上课</Badge>
@@ -3942,6 +3947,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           title={item.title}
                           remark={item.description}
                           description={documentDescription(item)}
+                          studentProgress={studentProgressDescription(item)}
                           titleIcon={item.originalFileUrl ? (
                             <DocumentFormatIcon
                               fileType={item.originalFileType}
@@ -5043,6 +5049,7 @@ interface ResourceCardProps {
   titleActions?: React.ReactNode;
   primaryActions?: React.ReactNode;
   description?: string;
+  studentProgress?: string;
   remark?: string;
   meta: { label: string; value: string }[];
   content?: string;
@@ -5079,7 +5086,7 @@ interface ResourceCardProps {
   additionalActions?: ConfigurableResourceAction[];
 }
 
-export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
+export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, studentProgress, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -5322,7 +5329,12 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
               </div>
             )}
             {description && (
-              <div className="text-xs text-ink-500 mb-2 line-clamp-1">{description}</div>
+              <div className={cn("text-xs text-ink-500 line-clamp-1", studentProgress ? "mb-1" : "mb-2")}>{description}</div>
+            )}
+            {studentProgress && (
+              <div data-testid="resource-card-student-progress" className="mb-2 text-xs text-ink-600">
+                {studentProgress}
+              </div>
             )}
             {content && !isImage && (
               isKnowledgeBlock ? (

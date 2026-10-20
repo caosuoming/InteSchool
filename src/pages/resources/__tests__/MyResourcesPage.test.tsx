@@ -391,6 +391,27 @@ describe("ResourceCard", () => {
     expect(onEditProperties).toHaveBeenCalledOnce();
   });
 
+  it("shows the selected student question status on its own line below usage", () => {
+    const { rerender } = render(
+      <ResourceCard
+        title="函数单元测试卷"
+        description="适用对象：高一一班 · 未用"
+        studentProgress="做过 1 题 · 待做 2 题 · 未做 3 题"
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+      />,
+    );
+    const progress = screen.getByTestId("resource-card-student-progress");
+    expect(progress).toHaveTextContent("做过 1 题 · 待做 2 题 · 未做 3 题");
+    expect(progress.previousElementSibling).toHaveTextContent("适用对象：高一一班 · 未用");
+    expect(progress.previousElementSibling).not.toHaveTextContent("待做 2 题");
+
+    rerender(
+      <ResourceCard title="函数单元测试卷" description="未用" meta={[]} updatedAt="2026-07-30T00:00:00.000Z" />,
+    );
+    expect(screen.queryByTestId("resource-card-student-progress")).not.toBeInTheDocument();
+  });
+
   it("renders document metadata below the main row at full card width", () => {
     render(
       <ResourceCard
