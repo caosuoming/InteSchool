@@ -2,25 +2,35 @@
 
 InteSchool 在浏览器中无法直接调用 TWAIN、WIA 或 SANE 扫描仪驱动。连接扫描仪的电脑必须安装驱动并启动**本机扫描桥接程序**。网页里的学校绑定仅用于筛选已发布答题卡；上传及后续处理扫描记录则必须登录对应学校的教师账号。
 
-## 安装和启动
+## Windows：一键安装（推荐）
 
-1. 安装 Node.js 22 或以上版本，在连接扫描仪的电脑上获取本仓库的 `scripts/scanner-bridge.mjs`、`scripts/scanner-devices.mjs`、`scripts/scanner-wia.ps1`（三者须位于同一 `scripts` 目录）。
-2. **Windows**：安装设备厂商驱动（如虹光 AV640 的 TWAIN 驱动）。如果设备不在系统 WIA 列表中，或需要自动进纸器双面扫描，请另行安装 [NAPS2](https://www.naps2.com/)；桥接通过其 `NAPS2.Console.exe` 使用原厂 TWAIN 驱动。NAPS2 默认安装在 `C:\Program Files\NAPS2`，自定义路径可使用环境变量 `NAPS2_CONSOLE` 指向 `NAPS2.Console.exe`。仅有 WIA 时可选择 WIA 通道单面采集，但无法保证双面进纸。
-3. **Linux**：安装 `sane-utils` 和设备对应的 SANE 后端，确保 `scanimage -L` 能列出扫描仪。无双面进纸源的设备需关闭网页中的双面选项。
-4. 在**仓库根目录**启动桥接，来源应是浏览器地址栏的实际网站来源：
+1. 在学校的 InteSchool 网页中打开“我要扫描”。当本机服务不可用时，点击 **下载 Windows 安装包**，安装 `InteSchool-Scanner-Setup.exe`。支持 Windows x64，无需另外安装 Node.js 或手动配置服务来源；安装后在当前用户登录时自动启动，服务仅监听 `127.0.0.1:17380`。
+2. 返回扫描页面点击 **授权连接本站**，浏览器弹窗选择打开 InteSchool 扫描桥接，在 Windows 确认框检查网站来源并点击“是”。该授权仅赋予确认过的网站本地扫描权限，其他站点会被桥接拒绝。
+3. 点击 **刷新设备**。安装扫描仪厂商驱动后即可使用。需要 TWAIN 双面自动进纸时还需安装 [NAPS2](https://www.naps2.com/)（或使用设备厂商支持的 WIA 通道）；NAPS2 安装在默认路径时可自动检测。
+
+若出现 Windows SmartScreen 未知发布者提示，安装包尚无代码签名，请先从官方发布页核对来源及 SHA256 校验和，切勿运行来源不明的程序。
+
+## 开发者：从源码启动
+
+1. 安装 Node.js 22 或更新版本，克隆 InteSchool 仓库。
+2. Windows 安装扫描仪设备驱动；需要 TWAIN 时安装 [NAPS2](https://www.naps2.com/)。
+3. Linux 安装 `sane-utils` 和设备对应的 SANE 后端，检查 `scanimage -L`。
+4. 在仓库根目录启动扫描桥接；`SCANNER_ALLOWED_ORIGIN` 必须与浏览器地址栏的实际来源完全一致（协议、域名和端口）：
 
 ```powershell
-# Windows PowerShell
 $env:SCANNER_ALLOWED_ORIGIN = "https://你的InteSchool域名"
 node scripts/scanner-bridge.mjs
 ```
 
 ```sh
-# Linux
 SCANNER_ALLOWED_ORIGIN=https://你的InteSchool域名 node scripts/scanner-bridge.mjs
 ```
 
-本地开发时可以设为 `http://localhost:5173`。来源必须完全一致（包括协议、域名和端口）。桥接仅监听 `127.0.0.1:17380`；不会暴露至局域网。首次连接时需允许浏览器访问本地网络。
+本地开发可使用 `http://localhost:5173`。所有跨域请求仍需来源与自定义请求头检查。
+
+## 构建 Windows 安装包
+
+发布工作流 `.github/workflows/scanner-installer.yml` 在 Windows runner 上使用 Node.js 22 官方运行时及 Inno Setup，生成自包含 x64 安装程序，上传到固定的 `scanner-bridge-latest` GitHub Release。使用工作流手动触发更新包；上传前需通过 Windows 安装与 HTTP 接口烟测。此安装包不包括设备专用驱动或 NAPS2。
 
 ## 使用流程
 
@@ -33,7 +43,7 @@ SCANNER_ALLOWED_ORIGIN=https://你的InteSchool域名 node scripts/scanner-bridg
 
 ## 排障
 
-- 网页提示“无法连接本机扫描服务”：检查本机 Node 22 进程、网址来源配置、浏览器本地网络权限以及 `127.0.0.1:17380` 端口占用。
+- 网页提示“无法连接本机扫描服务”：Windows 先安装桥接并点击“授权连接本站”，源码模式检查 Node 22 进程和网址来源配置、浏览器本地网络权限以及 `127.0.0.1:17380` 端口占用。
 - 网页提示“未发现扫描仪”：Windows 在 NAPS2 GUI 中尝试切换 TWAIN/WIA 并检查系统设备管理器；Linux 使用 `scanimage -L` 检查 SANE 枚举。如果扫描仪仅提供 TWAIN，安装 Windows 设备驱动**并不等于** WIA 能访问它。
 - 需要双面扫描却只找到 WIA：安装 NAPS2 并选择其 TWAIN 设备条目，或更新设备对应的 WIA 驱动；不能通过切换网页勾选框强行让单面设备变成双面。
 - 显示驱动拒绝纸源、无法自动进纸、页序错误：检查进纸器/双面器是否真实支持及驱动纸源选项，再用 NAPS2 GUI 或厂商自带软件扫描测试。

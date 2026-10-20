@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_PAGE = 25 * 1024 * 1024;
 const MAX_PAGES = 40;
 const MAX_BATCH = 120 * 1024 * 1024;
-const SCRIPT = resolve(process.env.SCANNER_SCRIPTS_DIR || resolve(process.cwd(), "scripts"), "scanner-wia.ps1");
+const SCRIPT = resolve(process.env.SCANNER_SCRIPTS_DIR || dirname(fileURLToPath(import.meta.url)), "scanner-wia.ps1");
 
 export function execScanner(command, args, timeout = 120_000) {
   return new Promise((resolve, reject) => {

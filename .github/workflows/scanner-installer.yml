@@ -1,0 +1,88 @@
+name: Windows scanner installer
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate scanner scripts on Windows
+        shell: pwsh
+        run: |
+          foreach ($script in @('scanner-bridge.mjs','scanner-devices.mjs','scanner-launcher.mjs','scanner-pairing.mjs')) {
+            node --check "scripts/$script"
+            if ($LASTEXITCODE -ne 0) { throw "Invalid script $script" }
+          }
+          node --input-type=module -e "await import('./scripts/scanner-bridge.mjs'); await import('./scripts/scanner-pairing.mjs');"
+          if ($LASTEXITCODE -ne 0) { throw "Scanner scripts cannot be imported" }
+      - name: Prepare bundled Node runtime
+        shell: pwsh
+        run: |
+          New-Item -Force -ItemType Directory packaging/windows/stage | Out-Null
+          Copy-Item (Get-Command node).Source packaging/windows/stage/node.exe
+          & packaging/windows/stage/node.exe --version
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress --yes
+          $compiler = Get-ChildItem "${env:ProgramFiles(x86)}" -Directory -Filter "Inno Setup*" -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName "ISCC.exe" } | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$compiler) { throw "Inno Setup compiler missing" }
+          & $compiler "packaging\windows\scanner-installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup packaging failed" }
+          Get-FileHash packaging/windows/stage/output/InteSchool-Scanner-Setup.exe -Algorithm SHA256 | Format-List
+      - name: Install and smoke-test actual package
+        shell: pwsh
+        run: |
+          $installer = (Resolve-Path packaging/windows/stage/output/InteSchool-Scanner-Setup.exe).Path
+          $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\InteSchool Scanner'
+          foreach ($file in @('node.exe','scanner-launch.vbs','scripts\scanner-bridge.mjs','scripts\scanner-wia.ps1','scripts\scanner-pairing.mjs')) {
+            if (!(Test-Path (Join-Path $dir $file))) { throw "Missing installed asset $file" }
+          }
+          $env:INTESCHOOL_SCANNER_ORIGINS_FILE = Join-Path $env:TEMP 'inteschool-ci-origins.json'
+          & (Join-Path $dir 'node.exe') --input-type=module -e "import {approveOrigin} from './scripts/scanner-pairing.mjs'; await approveOrigin('https://test.inteschool.example');" 
+          $protocolCommand = (Get-ItemProperty -Path 'HKCU:\Software\Classes\inteschool-scanner\shell\open\command').'(default)'
+          if ($protocolCommand -notmatch 'scanner-launch.vbs') { throw "Protocol handler not registered" }
+          & (Join-Path $env:WINDIR 'System32\wscript.exe') (Join-Path $dir 'scanner-launch.vbs')
+          Start-Sleep -Seconds 3
+          $code = @'
+          import http from 'node:http';
+          for (const [origin, expected] of [['https://test.inteschool.example', 200],['https://other.example',403]]) {
+            const status = await new Promise((resolve, reject) => {
+              http.get('http://127.0.0.1:17380/health', {headers:{Origin:origin,'X-InteSchool-Scanner':'scanner-v1'}}, r => {r.resume();resolve(r.statusCode)}).on('error', reject);
+            });
+            if (status !== expected) throw Error(origin + ': '+status);
+          }
+          '@
+          $code | & (Join-Path $dir 'node.exe') --input-type=module -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inteschool-scanner-windows-installer
+          path: packaging/windows/stage/output/InteSchool-Scanner-Setup.exe
+          if-no-files-found: error
+      - name: Publish installer to fixed download URL
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view scanner-bridge-latest > $null 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            gh release create scanner-bridge-latest --target "$env:GITHUB_SHA" --title "InteSchool Windows 扫描桥接" --notes "Windows x64 扫描桥接安装包（包含 Node.js 运行时）。安装后在扫描页面点击“授权连接本站”。" --latest=false
+          }
+          gh release upload scanner-bridge-latest packaging/windows/stage/output/InteSchool-Scanner-Setup.exe --clobber
+          $hash = (Get-FileHash packaging/windows/stage/output/InteSchool-Scanner-Setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  InteSchool-Scanner-Setup.exe" | Set-Content -Encoding ascii packaging/windows/stage/output/SHA256SUMS.txt
+          gh release upload scanner-bridge-latest packaging/windows/stage/output/SHA256SUMS.txt --clobber

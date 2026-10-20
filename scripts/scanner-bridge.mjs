@@ -2,21 +2,25 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { readPairedOrigins } from "./scanner-pairing.mjs";
 import { createScannerDevices } from "./scanner-devices.mjs";
 
 const PORT = 17380;
 
-export function createBridge(origin, scanner = createScannerDevices()) {
-  if (!origin || !/^https?:\/\/[^/]+$/.test(origin) || origin === "null") {
+export function createBridge(origin, scanner = createScannerDevices(), options = {}) {
+  if (origin !== undefined && (!/^https?:\/\/[^/]+$/.test(origin) || origin === "null")) {
     throw new Error("请通过 SCANNER_ALLOWED_ORIGIN 指定 InteSchool 网站来源，例如 https://school.example.com");
   }
   let scanning = false;
   return createServer(async (request, response) => {
-    if (request.headers.origin !== origin) {
+    const requestOrigin = request.headers.origin;
+    const authorized = origin ? requestOrigin === origin :
+      (typeof requestOrigin === "string" && (await readPairedOrigins(options.originsFile)).includes(requestOrigin));
+    if (!authorized) {
       response.writeHead(403).end("Forbidden origin");
       return;
     }
-    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Access-Control-Allow-Origin", requestOrigin);
     response.setHeader("Vary", "Origin");
     response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     response.setHeader("Access-Control-Allow-Headers", "X-InteSchool-Scanner, Content-Type");
@@ -58,8 +62,8 @@ export function createBridge(origin, scanner = createScannerDevices()) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const origin = process.env.SCANNER_ALLOWED_ORIGIN;
+  const origin = process.env.SCANNER_ALLOWED_ORIGIN || undefined;
   createBridge(origin).listen(PORT, "127.0.0.1", () => {
-    process.stdout.write(`InteSchool scanner bridge running at http://127.0.0.1:${PORT} (origin: ${origin})\n`);
+    process.stdout.write(`InteSchool scanner bridge running at http://127.0.0.1:${PORT} (origin: ${origin || "paired websites"})\n`);
   });
 }
