@@ -104,3 +104,37 @@ describe("question duplicate review", () => {
     });
   });
 });
+
+describe("batch similar-question lookup", () => {
+  it("matches exhaustive similarity scoring including sharing, normalization and short stems", async () => {
+    const candidates = [
+      existingQuestion(),
+      existingQuestion({ id: "shared", schoolId: "other", isShared: true, stem: "已知函数f(x) = x²求最小值" }),
+      existingQuestion({ id: "private-other", schoolId: "other", stem: "已知函数 f(x)=x²，求其最小值。" }),
+      existingQuestion({ id: "single", stem: "甲" }),
+      ...Array.from({ length: 200 }, (_, i) => existingQuestion({
+        id: `bank-${i}`, stem: `第${i}道独立物理应用题：计算速度为${i * 17}的距离`,
+      })),
+    ];
+    const stems = [
+      "<p>已知函数 f(x)=x²，求其最小值</p>", "甲", "乙", "",
+      "第42道独立物理应用题：计算速度为714的距离", "完全不相关的题目",
+    ];
+    const { HIGH_SIMILARITY_THRESHOLD, questionStemSimilarity } = await import("../../src/lib/question-similarity.js");
+    await runWithState(state(candidates), async () => {
+      const batches = await questionService.findSimilarQuestionsBatch(stems, "school-1");
+      expect(batches).toHaveLength(stems.length);
+      for (let i = 0; i < stems.length; i += 1) {
+        const expected = candidates
+          .filter((question) => question.schoolId === "school-1" || question.isShared)
+          .map((question) => ({ question, similarity: questionStemSimilarity(stems[i], question.stem) }))
+          .filter(({ similarity }) => similarity >= HIGH_SIMILARITY_THRESHOLD)
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, 5);
+        expect(batches[i]).toEqual(expected);
+      }
+      expect(batches[1][0].question.id).toBe("single");
+      expect(batches[2]).toEqual([]);
+    });
+  });
+});

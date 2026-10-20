@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, ChevronUp, ClipboardCheck, ImagePlus, Trash2, Users } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronUp, ClipboardCheck, ImagePlus, Star, Trash2, Users } from "lucide-react";
 import type {
   AnyClass,
   ClassroomHomework,
@@ -40,10 +40,12 @@ export function ClassHomeworkOverview({
   classInfo,
   students,
   teacherId,
+  followedStudentIds,
 }: {
   classInfo: AnyClass;
   students: Student[];
   teacherId: string;
+  followedStudentIds: ReadonlySet<string>;
 }) {
   const [homeworkDate, setHomeworkDate] = useState(localToday);
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
@@ -72,6 +74,19 @@ export function ClassHomeworkOverview({
   currentKeyRef.current = currentKey;
   const loadVersion = useRef(0);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [sortBy, setSortBy] = useState<"name" | "studentNo">("name");
+  const sortedStudents = useMemo(() => {
+    const collator = new Intl.Collator("zh-CN", { numeric: true });
+    return [...students].sort((a, b) => {
+      if (sortBy === "studentNo") {
+        if (!a.studentNo && b.studentNo) return 1;
+        if (a.studentNo && !b.studentNo) return -1;
+        const byNumber = collator.compare(a.studentNo || "", b.studentNo || "");
+        if (byNumber) return byNumber;
+      }
+      return collator.compare(a.name, b.name) || collator.compare(a.studentNo || "", b.studentNo || "") || a.id.localeCompare(b.id);
+    });
+  }, [sortBy, students]);
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -284,11 +299,10 @@ export function ClassHomeworkOverview({
     !submittedStudentIds.has(student.id) && !absentStudentIds.has(student.id)
   )).length, [absentStudentIds, students, submittedStudentIds]);
 
-  // 保留上游提供的原始排序，仅把已交作业的学生稳定地移到末尾。
   const orderedStudents = useMemo(() => [
-    ...students.filter((student) => !submittedStudentIds.has(student.id)),
-    ...students.filter((student) => submittedStudentIds.has(student.id)),
-  ], [students, submittedStudentIds]);
+    ...sortedStudents.filter((student) => !submittedStudentIds.has(student.id)),
+    ...sortedStudents.filter((student) => submittedStudentIds.has(student.id)),
+  ], [sortedStudents, submittedStudentIds]);
 
   const previousRecords = useMemo(
     () => history.filter((item) => item.homeworkDate !== homeworkDate),
@@ -297,8 +311,9 @@ export function ClassHomeworkOverview({
   const visibleHistory = historyExpanded ? previousRecords : previousRecords.slice(0, 3);
   const missingCounts = useMemo(() => {
     const counts = new Map<string, number>();
+    const today = localToday();
     for (const item of history) {
-      if (!item.attendanceTaken) continue;
+      if (!item.attendanceTaken || item.homeworkDate > today) continue;
       const excluded = new Set([...item.submittedStudentIds, ...item.absentStudentIds]);
       for (const id of item.studentIds) {
         if (!excluded.has(id)) counts.set(id, (counts.get(id) || 0) + 1);
@@ -410,7 +425,18 @@ export function ClassHomeworkOverview({
               勾选表示已交作业；未勾选且未请假会记为未交，并同步到“师生互动”时间线
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <div className="flex items-center gap-1" role="group" aria-label="作业点名排序">
+              {(["name", "studentNo"] as const).map((mode) => (
+                <button key={mode} type="button" aria-pressed={sortBy === mode}
+                  onClick={() => setSortBy(mode)}
+                  className={cn("rounded-md border px-2 py-1 transition-colors",
+                    sortBy === mode ? "border-gold-500 bg-gold-50 font-medium text-gold-800" : "border-ink-200 bg-paper text-ink-500 hover:border-gold-300")}
+                >
+                  {mode === "name" ? "按姓名排序" : "按学号排序"}
+                </button>
+              ))}
+            </div>
             <span className="text-emerald-700">已交 {submittedStudentIds.size}</span>
             <span className="text-red-600">未交 {currentMissingCount}</span>
             <span className="text-amber-700">请假 {absentStudentIds.size}</span>
@@ -448,6 +474,12 @@ export function ClassHomeworkOverview({
                       aria-label={`${student.name}已交作业`}
                     />
                     <span className="truncate text-sm font-medium text-ink-800">{student.name}</span>
+                    {followedStudentIds.has(student.id) && (
+                      <Star className="h-3.5 w-3.5 shrink-0 fill-red-600 text-red-600" role="img" aria-label={`${student.name}已关注`} />
+                    )}
+                    <span className="shrink-0 text-[11px] text-ink-500" title={`截至今天未交作业 ${missingCounts.get(student.id) || 0} 次`}>
+                      （{missingCounts.get(student.id) || 0}次）
+                    </span>
                     {student.studentNo && <span className="shrink-0 text-[10px] text-ink-400">{student.studentNo}</span>}
                   </label>
                   <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-amber-700">

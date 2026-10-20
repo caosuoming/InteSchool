@@ -24,6 +24,11 @@ export interface AnswerSheetInlineImageLayout {
   caption?: string;
 }
 
+/** Legacy "none" layouts must also remain in the text flow. */
+export function answerSheetImageWrap(wrap?: "left" | "right" | "none"): "left" | "right" {
+  return wrap === "right" ? "right" : "left";
+}
+
 export interface AnswerSheetSettings {
   paperSize: AnswerSheetPaperSize;
   mode: AnswerSheetMode;
@@ -34,6 +39,10 @@ export interface AnswerSheetSettings {
   a4Columns: 1 | 2;
   answerBoxStyle: AnswerSheetBoxStyle;
   stemFontSize: number;
+  /** Extra space following each question in the stem-visible layout, in CSS pixels. */
+  questionGapPx?: number;
+  /** Per-question overrides of the default gap (keyed by question ID). */
+  questionGapOverrides?: Record<string, number>;
   answerBoxHeights?: Record<string, number>;
   answerBoxWidths?: Record<string, number>;
   choiceOptionBreaks?: Record<string, Record<number, AnswerSheetOptionBreak>>;
@@ -41,8 +50,14 @@ export interface AnswerSheetSettings {
   questionImageLayouts?: Record<string, Record<string, AnswerSheetInlineImageLayout[]>>;
 }
 
+export interface AnswerSheetProject {
+  id: string;
+  name: string;
+}
+
 export interface AnswerSheetQuestion {
   id: string;
+  projectId?: string;
   label?: string;
   type: QuestionType;
   stem: string;
@@ -64,11 +79,17 @@ export const DEFAULT_ANSWER_SHEET_SETTINGS: AnswerSheetSettings = {
   a4Columns: 1,
   answerBoxStyle: "solid",
   stemFontSize: 12,
+  questionGapPx: 0,
 };
 
 export function normalizeAnswerSheetStemFontSize(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_ANSWER_SHEET_SETTINGS.stemFontSize;
   return Math.min(20, Math.max(10, Math.round(value)));
+}
+
+export function normalizeAnswerSheetQuestionGap(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(120, Math.max(0, Math.round(value)));
 }
 
 export function normalizeStudentNumberDigits(value: number): number {

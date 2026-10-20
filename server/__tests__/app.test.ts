@@ -179,6 +179,44 @@ afterEach(async () => {
   await rm(workDir, { recursive: true, force: true });
 });
 
+describe("third-party scanner card upload", () => {
+  it("requires the correct teacher session and image ownership to create a persistent record", async () => {
+    const unauthorized = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      payload: { fileId: randomUUID(), fileName: "外部卡.png" } });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const owner = await login(built.app);
+    const payload = multipartPayload("外部卡.png", "fake png bytes", "image/png");
+    const upload = await built.app.inject({ method: "POST", url: "/api/files", payload: payload.body,
+      headers: { cookie: owner.cookie, "x-inteschool-csrf": owner.csrfToken, "content-type": payload.contentType } });
+    expect(upload.statusCode).toBe(200);
+    const uploadedId = upload.json<{ id: string }>().id;
+
+    const missingCsrf = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      headers: { cookie: owner.cookie }, payload: { fileId: uploadedId, fileName: "外部卡.png" } });
+    expect(missingCsrf.statusCode).not.toBe(200);
+
+    const outsider = await register(built.app, "thirdparty-outsider@example.com");
+    const foreign = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      headers: { cookie: outsider.cookie, "x-inteschool-csrf": outsider.csrfToken },
+      payload: { fileId: uploadedId, fileName: "外部卡.png" } });
+    expect(foreign.statusCode).toBe(403);
+
+    const created = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      headers: { cookie: owner.cookie, "x-inteschool-csrf": owner.csrfToken },
+      payload: { fileId: uploadedId, fileName: "外部卡.png" } });
+    expect(created.statusCode).toBe(200);
+    const card = created.json<{ result: { id: string; imageUrl: string } }>().result;
+    expect(card.imageUrl).toBe(`/api/files/${uploadedId}`);
+
+    const listed = await built.app.inject({ method: "POST", url: "/api/rpc",
+      headers: { cookie: owner.cookie, "x-inteschool-csrf": owner.csrfToken },
+      payload: { service: "scanner", method: "listThirdPartyCards", args: ["sch-1"] } });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json<{ result: Array<{ id: string }> }>().result.some((item) => item.id === card.id)).toBe(true);
+  });
+});
+
 describe("production backend", () => {
   it("reuses a deeply frozen state snapshot for read-only RPCs", () => {
     const first = built.store.readState();
@@ -732,6 +770,53 @@ describe("production backend", () => {
     ]));
   });
 
+  it("switches only approved teaching subjects for the current school", async () => {
+    const teacherSession = await login(built.app);
+    const before = built.store.loadState();
+    const state = structuredClone(before);
+    const subjectTeacher = state.teachers.find((item) => item.id === teacherSession.teacher.id)!;
+    const active = subjectTeacher.affiliations.find((item) => item.id === subjectTeacher.currentAffiliationId)!;
+    active.subjects = ["数学", "物理"];
+    active.subject = "数学";
+    subjectTeacher.subject = "数学";
+    subjectTeacher.subjects = ["数学", "物理"];
+    await built.store.saveState(before, state);
+
+    const url = `/api/auth/affiliations/${active.id}/subject`;
+    const invalid = await built.app.inject({
+      method: "POST", url,
+      headers: { cookie: teacherSession.cookie, "x-inteschool-csrf": teacherSession.csrfToken },
+      payload: { subject: "化学" },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const csrfBlocked = await built.app.inject({
+      method: "POST", url, headers: { cookie: teacherSession.cookie }, payload: { subject: "物理" },
+    });
+    expect(csrfBlocked.statusCode).toBe(400);
+    const wrongAffiliation = await built.app.inject({
+      method: "POST", url: "/api/auth/affiliations/aff-wrong/subject",
+      headers: { cookie: teacherSession.cookie, "x-inteschool-csrf": teacherSession.csrfToken },
+      payload: { subject: "物理" },
+    });
+    expect(wrongAffiliation.statusCode).toBe(400);
+
+    const updated = await built.app.inject({
+      method: "POST", url,
+      headers: { cookie: teacherSession.cookie, "x-inteschool-csrf": teacherSession.csrfToken },
+      payload: { subject: "物理" },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    expect(updated.json()).toMatchObject({ subject: "物理", subjects: ["数学", "物理"] });
+    const refreshed = await built.app.inject({
+      method: "GET", url: "/api/auth/current", headers: { cookie: teacherSession.cookie },
+    });
+    expect(refreshed.json()).toMatchObject({ teacher: {
+      subject: "物理", affiliations: expect.arrayContaining([
+        expect.objectContaining({ id: active.id, subject: "物理", subjects: ["数学", "物理"] }),
+      ]),
+    } });
+  });
+
   it("keeps platform authority across school switches and supports user and school suspension", async () => {
     const target = await register(built.app, "suspend-target@example.com");
     const targetTeacherId = String(target.teacher.id);
@@ -853,7 +938,7 @@ describe("production backend", () => {
     expect((built.store.loadState().notifications as AppNotification[]).some((notification) =>
       notification.recipientTeacherId === "tch-1"
       && notification.title === "新的教师权限申请"
-      && notification.actionUrl === "/admin/permission-applications"
+      && notification.actionUrl === "/admin/permission-applications#review"
       && notification.readAt === null,
     )).toBe(true);
 
@@ -927,7 +1012,7 @@ describe("production backend", () => {
     const applicant = await login(built.app, "min.wang@bj04.edu.cn", "TeacherPass123");
     const admin = await login(built.app);
     const requested = {
-      roles: ["teacher", "gradeLeader"],
+      roles: ["teacher", "gradeLeader"], subjects: ["数学", "物理"],
       teachingClassIds: ["cls-1"],
       homeroomClassIds: ["cls-2"],
       position: "年级教学负责人",
@@ -982,7 +1067,7 @@ describe("production backend", () => {
     expect(foreignReview.statusCode).toBe(403);
 
     const fields = {
-      roles: ["teacher", "subjectLeader"],
+      roles: ["teacher", "subjectLeader"], subjects: ["数学", "物理", "化学"],
       teachingClassIds: ["cls-2"],
       homeroomClassIds: ["cls-1"],
       position: "学科教研组负责人",
@@ -996,6 +1081,7 @@ describe("production backend", () => {
     const updated = built.store.loadState().teachers.find((item) => item.id === "tch-2");
     expect(updated?.affiliations.find((item) => item.schoolId === "sch-1")).toMatchObject({
       assignedRoles: ["teacher", "subjectLeader", "headTeacher"],
+      subjects: ["数学", "物理", "化学"],
       teachingClassIds: ["cls-2"],
       homeroomClassIds: ["cls-1"],
       position: "学科教研组负责人",
@@ -1015,6 +1101,63 @@ describe("production backend", () => {
       payload: { approved: true },
     });
     expect(repeatReview.statusCode).toBe(403);
+  });
+
+  it("lets a school administrator adjust legacy teacher role requests and records the granted roles", async () => {
+    await built.store.createUser("tch-2", "legacy-roles@example.com", "TeacherPass123");
+    const applicant = await login(built.app, "legacy-roles@example.com", "TeacherPass123");
+    const admin = await login(built.app);
+    const submission = await built.app.inject({
+      method: "POST", url: "/api/auth/role-applications",
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: { roles: ["teacher", "gradeLeader"], reason: "负责高一年级教师团队工作" },
+    });
+    expect(submission.statusCode, submission.body).toBe(200);
+    const { id } = submission.json<{ id: string }>();
+
+    const invalid = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: false, approvedRoles: ["subjectLeader"] },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const denied = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${id}/review`,
+      headers: { cookie: applicant.cookie, "x-inteschool-csrf": applicant.csrfToken },
+      payload: { approved: true, approvedRoles: ["principal"] },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const approved = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${id}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: true, approvedRoles: ["subjectLeader"] },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const target = built.store.loadState().teachers.find((item) => item.id === "tch-2");
+    const roles = target?.affiliations.find((item) => item.schoolId === "sch-1")?.roles;
+    expect(roles).toContain("subjectLeader");
+    expect(roles).not.toContain("gradeLeader");
+    const mine = await built.app.inject({
+      method: "GET", url: "/api/auth/role-applications/mine",
+      headers: { cookie: applicant.cookie },
+    });
+    expect(mine.json<Array<Record<string, unknown>>>().find((item) => item.id === id)).toMatchObject({
+      requestedRoles: ["gradeLeader"], approvedRoles: ["subjectLeader"], status: "approved",
+    });
+    const ownSubmission = await built.app.inject({
+      method: "POST", url: "/api/auth/role-applications",
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { roles: ["teacher", "principal"], reason: "申请新的学校管理教学职责" },
+    });
+    expect(ownSubmission.statusCode, ownSubmission.body).toBe(200);
+    const ownId = ownSubmission.json<{ id: string }>().id;
+    const ownReview = await built.app.inject({
+      method: "POST", url: `/api/auth/role-applications/${ownId}/review`,
+      headers: { cookie: admin.cookie, "x-inteschool-csrf": admin.csrfToken },
+      payload: { approved: true },
+    });
+    expect(ownReview.statusCode).toBe(403);
   });
 
   it("rejects permission adjustments without changing the teacher profile", async () => {
@@ -1185,8 +1328,15 @@ describe("production backend", () => {
       headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
       payload: { subject: "英语", teachingGrades: ["高二"] },
     });
-    expect(selfUpdate.statusCode).toBe(200);
-    expect(selfUpdate.json()).toMatchObject({ subject: "英语", teachingGrades: ["高二"] });
+    expect(selfUpdate.statusCode).toBe(400);
+    expect(selfUpdate.json()).toEqual({ error: "只能选择已批准的任教学科，请先提交权限申请" });
+    const selfGradesUpdate = await built.app.inject({
+      method: "PATCH", url: "/api/auth/profile",
+      headers: { cookie: target.cookie, "x-inteschool-csrf": target.csrfToken },
+      payload: { teachingGrades: ["高二"] },
+    });
+    expect(selfGradesUpdate.statusCode).toBe(200);
+    expect(selfGradesUpdate.json()).toMatchObject({ subject: "数学", teachingGrades: ["高二"] });
 
     const selfAssignedClass = await built.app.inject({
       method: "PATCH",
@@ -1226,7 +1376,7 @@ describe("production backend", () => {
       method: "PATCH",
       url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
       headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
-      payload: { subject: "物理" },
+      payload: { subject: "物理", subjects: ["数学", "物理"] },
     });
     expect(leaderManaged.statusCode, leaderManaged.body).toBe(200);
     expect(leaderManaged.json()).toMatchObject({ subject: "物理", teachingGrades: ["高二"] });
@@ -1302,7 +1452,7 @@ describe("production backend", () => {
       url: `/api/auth/teachers/${String(target.teacher.id)}/teaching-profile`,
       headers: { cookie: manager.cookie, "x-inteschool-csrf": manager.csrfToken },
       payload: {
-        subject: "语文",
+        subject: "语文", subjects: ["数学", "物理", "语文"],
         teachingGrades: ["高三"],
         teachingClassIds: [],
         homeroomClassIds: [managedClassId],
