@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type PointerEvent } from "react";
-import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
+import { answerSheetImageWrap, type AnswerSheetImageLayout } from "@/lib/answer-sheet";
 import { renderMathHtml } from "@/lib/math-html";
 
 interface EssayImage {
@@ -41,6 +41,7 @@ function MovableEssayImage({
     x: 8,
     y: 10 + index * 25,
     width: clamp(image.width, 40, 180),
+    wrap: "left" as const,
   };
   const [layout, setLayout] = useState<AnswerSheetImageLayout>(initialLayout || defaultLayout);
   const currentLayout = useRef(layout);
@@ -94,7 +95,8 @@ function MovableEssayImage({
     } else {
       updateLayout({
         ...start.layout,
-        x: clamp(start.layout.x + dx, 0, Math.max(0, box.clientWidth - start.layout.width - 2)),
+        x: clamp(start.layout.x + dx * (answerSheetImageWrap(start.layout.wrap) === "left" ? 1 : -1),
+          0, Math.max(0, box.clientWidth - start.layout.width - 2)),
         y: clamp(start.layout.y + dy, 0, Math.max(0, box.clientHeight - event.currentTarget.offsetHeight - 2)),
       });
     }
@@ -103,25 +105,26 @@ function MovableEssayImage({
   const finishGesture = (event: PointerEvent<HTMLDivElement>) => {
     if (gesture.current?.pointerId !== event.pointerId) return;
     gesture.current = null;
-    onCommit(currentLayout.current);
+    onCommit({ ...currentLayout.current, wrap: answerSheetImageWrap(currentLayout.current.wrap) });
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
 
-  const wrap = layout.wrap || "none";
+  const wrap = answerSheetImageWrap(layout.wrap);
 
   return (
     <div
       className="answer-sheet-essay-image"
       data-wrap={wrap}
       style={{
-        left: layout.x,
-        top: layout.y,
         width: layout.width,
+        marginLeft: wrap === "left" ? Math.max(0, layout.x) : 0,
+        marginRight: wrap === "right" ? Math.max(0, layout.x) : 6,
+        marginTop: Math.max(0, layout.y),
+        position: "static",
+        float: wrap,
         cursor: editable ? "grab" : "default",
-        position: wrap === "none" ? "absolute" : "relative",
-        float: wrap === "none" ? undefined : wrap,
         touchAction: editable ? "none" : "auto",
       }}
       data-testid="essay-image"
@@ -143,9 +146,8 @@ function MovableEssayImage({
               onCommit(next);
             }}
           >
-            <option value="none">自由定位</option>
-            <option value="left">左侧环绕</option>
-            <option value="right">右侧环绕</option>
+            <option value="left">四周环绕（靠左）</option>
+            <option value="right">四周环绕（靠右）</option>
           </select>
         </div>
       )}

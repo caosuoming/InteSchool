@@ -24,6 +24,11 @@ export interface AnswerSheetInlineImageLayout {
   caption?: string;
 }
 
+/** Legacy "none" layouts must also remain in the text flow. */
+export function answerSheetImageWrap(wrap?: "left" | "right" | "none"): "left" | "right" {
+  return wrap === "right" ? "right" : "left";
+}
+
 export interface AnswerSheetSettings {
   paperSize: AnswerSheetPaperSize;
   mode: AnswerSheetMode;
