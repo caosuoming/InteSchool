@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { toast } from "@/stores/ui";
 import {
   BLANK_PAPER_MM, BLANK_QUESTION_TYPES, DEFAULT_BLANK_ANSWER_SHEET,
-  blankAnswerSheetTotal, paginateBlankAnswerSheet,
+  blankAnswerSheetColumns, blankAnswerSheetTotal, blankEssaySpace, blankIdentityHeight, paginateBlankAnswerSheet,
   type BlankAnswerSheetConfig, type BlankQuestionType, type BlankSheetBlock,
 } from "@/lib/blank-answer-sheet";
 import "./BlankAnswerSheetPage.css";
@@ -17,7 +17,7 @@ const INSTRUCTIONS = "请在各题目的答题区域作答，超出答题区域�
 
 function Identity({ config }: { config: BlankAnswerSheetConfig }) {
   return (
-    <div className="blank-sheet-identity" data-testid="blank-sheet-identity">
+    <div className="blank-sheet-identity" data-testid="blank-sheet-identity" style={{ minHeight: blankIdentityHeight(config) + "mm" }}>
       <div className="blank-sheet-heading">
         <strong>{config.title.trim() || "考试答题卡"}</strong>
         <span>{config.subtitle.trim() || "答题卡"}</span>
@@ -26,20 +26,17 @@ function Identity({ config }: { config: BlankAnswerSheetConfig }) {
         <span>姓名：<i /></span><span>班级：<i /></span><span>考号：<i /></span>
       </div>
       <div className="blank-sheet-notice-grid">
-        {config.showInstructions && (
-          <div className="blank-sheet-instructions">
-            <b>注意事项</b>
-            <div>{config.instructions}</div>
-          </div>
-        )}
+        <div className="blank-sheet-instructions">
+          {config.showInstructions && <><b>注意事项</b><div>{config.instructions}</div></>}
+        </div>
         {config.identityMode === "barcode" ? (
           <div className="blank-sheet-barcode" aria-label="条形码粘贴区">
             <span>条形码粘贴区</span>
             <small>请将条形码粘贴在框内</small>
           </div>
         ) : (
-          <div className="blank-sheet-exam-number" aria-label={config.examNumberDigits + "位考试号涂填区"}>
-            <b>考试号涂填区（2B铅笔）</b>
+          <div className="blank-sheet-exam-number" aria-label={config.examNumberDigits + "位学号填涂区"}>
+            <b>学号填涂区（2B铅笔）</b>
             <div className="blank-sheet-number-columns">
               {Array.from({ length: config.examNumberDigits }, (_, digit) => (
                 <div key={digit} className="blank-sheet-number-column">
@@ -55,14 +52,14 @@ function Identity({ config }: { config: BlankAnswerSheetConfig }) {
   );
 }
 
-function QuestionBlock({ block }: { block: BlankSheetBlock }) {
+function QuestionBlock({ block, choiceDirection }: { block: BlankSheetBlock; choiceDirection: BlankAnswerSheetConfig["choiceDirection"] }) {
   const isChoice = block.type === "single" || block.type === "multiple" || block.type === "judge";
   const groups = [block.numbers.slice(0, 5), block.numbers.slice(5)];
   return (
     <section className="blank-sheet-question-block" style={{ height: block.heightMm + "mm" }} data-question-type={block.type}>
-      <h3>{block.heading}</h3>
+      {block.heading && <h3>{block.heading}</h3>}
       {isChoice ? (
-        <div className="blank-sheet-choice-groups">
+        <div className={"blank-sheet-choice-groups " + choiceDirection}>
           {groups.filter((group) => group.length > 0).map((group) => (
             <div className="blank-sheet-choice-group" key={group[0]}>
               {group.map((number) => (
@@ -121,12 +118,15 @@ export default function BlankAnswerSheetPage() {
   const [config, setConfig] = useState<BlankAnswerSheetConfig>(() => ({
     ...DEFAULT_BLANK_ANSWER_SHEET,
     sections: DEFAULT_BLANK_ANSWER_SHEET.sections.map((section) => ({ ...section })),
+    essaySpaceByQuestion: {},
   }));
   const [exporting, setExporting] = useState(false);
   const pagesRef = useRef<HTMLDivElement>(null);
   const pages = useMemo(() => paginateBlankAnswerSheet(config), [config]);
   const totalQuestions = config.sections.reduce((sum, section) => sum + section.count, 0);
   const totalScore = blankAnswerSheetTotal(config.sections);
+  const essayCount = config.sections.find((section) => section.type === "essay")?.count ?? 0;
+  const essayFirstNumber = totalQuestions - essayCount + 1;
 
   const update = <K extends keyof BlankAnswerSheetConfig>(key: K, value: BlankAnswerSheetConfig[K]) => {
     setConfig((current) => ({ ...current, [key]: value }));
@@ -138,6 +138,13 @@ export default function BlankAnswerSheetPage() {
       ...current,
       sections: current.sections.map((section) =>
         section.type === type ? { ...section, [key]: key === "count" ? Math.trunc(next) : Math.round(next * 10) / 10 } : section),
+    }));
+  };
+
+  const updateEssaySpace = (ordinal: number, value: number) => {
+    setConfig((current) => ({
+      ...current,
+      essaySpaceByQuestion: { ...current.essaySpaceByQuestion, [ordinal]: blankEssaySpace(value) },
     }));
   };
 
@@ -160,7 +167,7 @@ export default function BlankAnswerSheetPage() {
       <div className="no-print">
         <PageHeader
           title="制作空白答题卡"
-          description="无需先创建试卷，设定题型、分值与考生信息即可生成可打印的答题卡。"
+          description="数学专用答题卡模板，无需创建试卷。可设置题型、书写区域与双面排版。"
           action={<Link to="/homework-exams/exams" className="btn-outline flex items-center gap-1.5 px-3 py-2 text-sm"><ArrowLeft className="h-4 w-4" />返回考试管理</Link>}
         />
       </div>
@@ -168,15 +175,23 @@ export default function BlankAnswerSheetPage() {
         <aside className="blank-sheet-controls no-print">
           <div className="blank-sheet-control-heading">
             <h2>答题卡设置</h2>
-            <Button size="sm" variant="ghost" onClick={() => setConfig({ ...DEFAULT_BLANK_ANSWER_SHEET, sections: DEFAULT_BLANK_ANSWER_SHEET.sections.map((item) => ({ ...item })) })}>
+            <Button size="sm" variant="ghost" onClick={() => setConfig({ ...DEFAULT_BLANK_ANSWER_SHEET, sections: DEFAULT_BLANK_ANSWER_SHEET.sections.map((item) => ({ ...item })), essaySpaceByQuestion: {} })}>
               <RotateCcw className="h-3.5 w-3.5" />恢复默认
             </Button>
           </div>
           <div className="blank-sheet-control-body">
             <Input label="考试名称" maxLength={60} value={config.title} onChange={(event) => update("title", event.target.value)} />
             <Input label="副标题" maxLength={50} value={config.subtitle} onChange={(event) => update("subtitle", event.target.value)} />
-            <Select label="纸张规格" value={config.paperSize} onChange={(event) => update("paperSize", event.target.value as BlankAnswerSheetConfig["paperSize"])}
-              options={[{ label: "A4 横向（三栏）", value: "A4" }, { label: "A3 横向（三栏）", value: "A3" }]} />
+            <Select label="纸张规格" value={`${config.paperSize}-${blankAnswerSheetColumns(config)}`} onChange={(event) => {
+              const value = event.target.value;
+              setConfig((current) => ({ ...current, paperSize: value === "A3-3" ? "A3" : "8K", columns: value === "8K-2" ? 2 : 3 }));
+            }} options={[
+              { label: "8K 横向（两栏）", value: "8K-2" },
+              { label: "8K 横向（三栏）", value: "8K-3" },
+              { label: "A3 横向（三栏）", value: "A3-3" },
+            ]} />
+            <Select label="选择题排列方向" value={config.choiceDirection} onChange={(event) => update("choiceDirection", event.target.value as BlankAnswerSheetConfig["choiceDirection"])}
+              options={[{ label: "横向（每组五题，并列排列）", value: "horizontal" }, { label: "竖向（每组五题，顺序排列）", value: "vertical" }]} />
             <div className="blank-sheet-control-section">
               <h3>题型与分值</h3>
               <p>题号按下列顺序连续编排，题量为 0 的题型不打印。</p>
@@ -196,17 +211,29 @@ export default function BlankAnswerSheetPage() {
                 })}
               </div>
               <div className="blank-sheet-total">{totalQuestions} 题 · 满分 {totalScore} 分 · {pages.length} 页</div>
-              <Input label="每道解答题答题区高度（毫米）" type="number" min={30} max={150} step={5} value={config.essaySpaceMm}
-                onChange={(event) => update("essaySpaceMm", Math.max(30, Math.min(150, Number(event.target.value) || 30)))} />
+              <Input label="解答题默认答题区高度（毫米）" type="number" min={30} max={150} step={5} value={config.essaySpaceMm}
+                onChange={(event) => update("essaySpaceMm", blankEssaySpace(Number(event.target.value)))} />
+              {essayCount > 0 && <details className="blank-sheet-essay-custom">
+                <summary>逐题设置解答题书写区域</summary>
+                <div className="blank-sheet-essay-custom-fields">
+                  {Array.from({ length: essayCount }, (_, index) => (
+                    <label key={index}>第 {essayFirstNumber + index} 题（毫米）
+                      <input type="number" min={30} max={150} step={5}
+                        value={config.essaySpaceByQuestion[index + 1] ?? config.essaySpaceMm}
+                        onChange={(event) => updateEssaySpace(index + 1, Number(event.target.value))} />
+                    </label>
+                  ))}
+                </div>
+              </details>}
             </div>
             <div className="blank-sheet-control-section">
               <h3>考生信息</h3>
               <div className="blank-sheet-radio-list">
                 <label><input type="radio" name="blank-identity" checked={config.identityMode === "barcode"} onChange={() => update("identityMode", "barcode")} />条形码粘贴区</label>
-                <label><input type="radio" name="blank-identity" checked={config.identityMode === "examNumber"} onChange={() => update("identityMode", "examNumber")} />考试号填涂区</label>
+                <label><input type="radio" name="blank-identity" checked={config.identityMode === "examNumber"} onChange={() => update("identityMode", "examNumber")} />学号填涂区</label>
               </div>
               {config.identityMode === "examNumber" && (
-                <Input label="考试号位数" type="number" min={4} max={10} step={1} value={config.examNumberDigits}
+                <Input label="学号位数" type="number" min={4} max={10} step={1} value={config.examNumberDigits}
                   onChange={(event) => update("examNumberDigits", Math.max(4, Math.min(10, Math.trunc(Number(event.target.value) || 4))))} />
               )}
             </div>
@@ -218,7 +245,7 @@ export default function BlankAnswerSheetPage() {
         </aside>
         <div className="blank-sheet-preview">
           <div className="blank-sheet-preview-bar no-print">
-            <div><strong>打印预览</strong><span>{config.paperSize} 横向 · {pages.length} 页，打印时请使用 100% 比例</span></div>
+            <div><strong>打印预览</strong><span>{config.paperSize} 横向（{blankAnswerSheetColumns(config)}栏） · {pages.length} 面，双面打印请使用 100% 比例，并确认翻转方向</span></div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => window.print()}><Printer className="h-4 w-4" />打印</Button>
               <Button variant="gold" loading={exporting} disabled={exporting} onClick={() => void download()}><Download className="h-4 w-4" />下载 PDF</Button>
@@ -229,19 +256,21 @@ export default function BlankAnswerSheetPage() {
               <div
                 key={pageIndex}
                 className={"blank-sheet-page blank-sheet-paper-" + config.paperSize.toLowerCase()}
-                style={{ width: BLANK_PAPER_MM[config.paperSize].width + "mm", height: BLANK_PAPER_MM[config.paperSize].height + "mm" }}
+                style={{ width: BLANK_PAPER_MM[config.paperSize].width + "mm", height: BLANK_PAPER_MM[config.paperSize].height + "mm", "--blank-columns": blankAnswerSheetColumns(config) } as React.CSSProperties}
                 data-testid="blank-sheet-page"
+                data-side={page.side}
               >
                 <span className="blank-sheet-marker top-left" /><span className="blank-sheet-marker top-right" />
                 <span className="blank-sheet-marker bottom-left" /><span className="blank-sheet-marker bottom-right" />
                 <div className="blank-sheet-columns">
                   {page.columns.map((blocks, columnIndex) => (
                     <div className="blank-sheet-column" key={columnIndex}>
-                      {columnIndex === 0 ? <Identity config={config} /> : config.showInstructions ? <p className="blank-sheet-column-warning">{INSTRUCTIONS}</p> : null}
+                      {page.side === "front" && columnIndex === 0 ? <Identity config={config} />
+                        : page.side === "front" && config.showInstructions ? <p className="blank-sheet-column-warning">{INSTRUCTIONS}</p> : null}
                       <div className="blank-sheet-column-content">
-                        {blocks.map((block) => <QuestionBlock key={block.type + "-" + block.numbers[0]} block={block} />)}
+                        {blocks.map((block) => <QuestionBlock key={block.type + "-" + block.numbers[0]} block={block} choiceDirection={config.choiceDirection} />)}
                       </div>
-                      {config.showInstructions && <div className="blank-sheet-column-footer">{INSTRUCTIONS}</div>}
+                      {page.side === "front" && config.showInstructions && <div className="blank-sheet-column-footer">{INSTRUCTIONS}</div>}
                     </div>
                   ))}
                 </div>
