@@ -1,5 +1,5 @@
 export const serviceParameters = {
-  "scanner": { "listPublishedAnswerSheets": ["schoolId"] },
+  "scanner": { "listPublishedAnswerSheets": ["schoolId"], "listThirdPartyCards": ["schoolId", "teacher"], "updateThirdPartyCard": ["cardId", "patch", "teacher"] },
   "help": {
     "getBoard": [
       "teacher"

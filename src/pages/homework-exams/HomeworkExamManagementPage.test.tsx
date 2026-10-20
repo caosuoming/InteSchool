@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import HomeworkExamManagementPage from "./HomeworkExamManagementPage";
 import { useAuthStore } from "@/stores/auth";
+import { scannerService } from "@/services/scanner";
 import { classService } from "@/services/class";
 import { extractStoredFile } from "@/services/api";
 import { classroomHomeworkService } from "@/services/classroomHomework";
@@ -11,6 +12,7 @@ import { examPaperService } from "@/services/examPaper";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Teacher, Student } from "@/types";
 
+vi.mock("@/services/scanner", () => ({ scannerService: { listThirdPartyCards: vi.fn(), updateThirdPartyCard: vi.fn() } }));
 vi.mock("@/services/class", () => ({ classService: { listSchoolClasses: vi.fn(), listMyStudents: vi.fn() } }));
 vi.mock("@/services/api", () => ({ extractStoredFile: vi.fn() }));
 vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn(), updateHomework: vi.fn() } }));
@@ -57,6 +59,7 @@ describe("作业考试管理页面", () => {
       teacher: { id: "teacher-1", schoolId: "school-1", name: "李老师" } as Teacher,
       getCurrentAffiliation: () => null,
     });
+    vi.mocked(scannerService.listThirdPartyCards).mockResolvedValue([]);
     vi.mocked(classService.listSchoolClasses).mockResolvedValue([one]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([
       { id: "s1", name: "张三", studentNo: "001" },
@@ -70,6 +73,35 @@ describe("作业考试管理页面", () => {
     vi.mocked(examPublishService.listPublications).mockResolvedValue([
       publication, { ...publication, id: "pub-2", title: "其他人的试卷", publisherId: "teacher-2" },
     ]);
+  });
+
+  it("lists scanned cards and saves name, paper association and marked regions", async () => {
+    const card = { id: "card-1", schoolId: "school-1", teacherId: "teacher-1", fileName: "外部卡.png",
+      fileId: "file-1", imageUrl: "/api/files/file-1", regions: [], createdAt: "2026-10-20T00:00:00Z", updatedAt: "2026-10-20T00:00:00Z" };
+    vi.mocked(scannerService.listThirdPartyCards).mockResolvedValue([card]);
+    vi.mocked(scannerService.updateThirdPartyCard).mockResolvedValue({ ...card, paperId: "paper-1", fileName: "修改.png" });
+    mount("homework");
+    expect(await screen.findByText("第三方卡")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "扫描第三方卡" })).toHaveAttribute("href", "/scanner");
+    fireEvent.click(screen.getByRole("button", { name: "编辑标注" }));
+    expect(screen.getByAltText("待标注的第三方答题卡")).toHaveAttribute("src", "/api/files/file-1");
+    const canvas = screen.getByRole("application", { name: "标注画布" });
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 500, height: 700, right: 500, bottom: 700, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent(canvas, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 50, clientY: 70 }));
+    fireEvent(canvas, new MouseEvent("pointermove", { bubbles: true, clientX: 200, clientY: 280 }));
+    fireEvent(canvas, new MouseEvent("pointerup", { bubbles: true, clientX: 200, clientY: 280 }));
+    expect(screen.getByText("已标注区域（1）")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("编辑第三方卡文件名"), { target: { value: "修改.png" } });
+    fireEvent.change(screen.getByLabelText("关联试卷"), { target: { value: "paper-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存标注" }));
+    await waitFor(() => expect(scannerService.updateThirdPartyCard).toHaveBeenCalledTimes(1));
+    const [savedId, patch] = vi.mocked(scannerService.updateThirdPartyCard).mock.calls[0];
+    expect(savedId).toBe("card-1");
+    expect(patch).toMatchObject({ fileName: "修改.png", paperId: "paper-1" });
+    expect(patch.regions).toHaveLength(1);
+    expect(patch.regions![0]).toMatchObject({ id: expect.any(String), type: "name", x: 0.1, y: 0.1 });
+    expect(patch.regions![0].width).toBeCloseTo(0.3);
+    expect(patch.regions![0].height).toBeCloseTo(0.3);
   });
 
   it("offers a standalone blank answer sheet only from exam management", async () => {
