@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PermissionApplicationsPage from "@/pages/admin/PermissionApplicationsPage";
 import { authService } from "@/services/auth";
@@ -69,8 +70,10 @@ describe("PermissionApplicationsPage", () => {
   it("lets school administrators switch between approval and complete teacher management", async () => {
     setAccount("school_admin");
     const user = userEvent.setup();
-    render(<PermissionApplicationsPage />);
-    expect(await screen.findByText("本校待审核权限申请")).toBeInTheDocument();
+    render(<MemoryRouter><PermissionApplicationsPage /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { name: "申请权限调整" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "本校教师权限审核" }));
+    expect(screen.getByRole("heading", { name: "本校待审核权限申请" })).toBeInTheDocument();
     expect(screen.queryByText("本校教师权限编辑器")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "本校教师权限管理" }));
     expect(screen.getByText("本校教师权限编辑器")).toBeInTheDocument();
@@ -80,7 +83,7 @@ describe("PermissionApplicationsPage", () => {
   it("displays current permissions and submits the selected role and classes for review", async () => {
     setAccount("teacher");
     const user = userEvent.setup();
-    render(<PermissionApplicationsPage />);
+    render(<MemoryRouter><PermissionApplicationsPage /></MemoryRouter>);
 
     expect(await screen.findByText("当前权限 · 南京测试学校")).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "年级组长" }));
@@ -112,9 +115,10 @@ describe("PermissionApplicationsPage", () => {
     };
     vi.mocked(authService.getPendingTeacherPermissionApplications).mockResolvedValue([pending]);
     const user = userEvent.setup();
-    render(<PermissionApplicationsPage />);
+    render(<MemoryRouter><PermissionApplicationsPage /></MemoryRouter>);
 
-    const section = await screen.findByText("本校待审核权限申请");
+    await user.click(screen.getByRole("button", { name: "本校教师权限审核" }));
+    const section = await screen.findByRole("heading", { name: "本校待审核权限申请" });
     const reviewArea = section.closest("section")!;
     const teaching = within(reviewArea).getByRole("group", { name: "任课班级" });
     await user.click(within(teaching).getByRole("checkbox", { name: "高一 · 二班" }));

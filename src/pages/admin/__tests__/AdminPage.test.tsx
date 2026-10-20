@@ -78,7 +78,9 @@ describe("AdminPage", () => {
     const school = screen.getByRole("region", { name: "校管理员管理" });
     expect(within(school).getByText("班级与学生")).toBeInTheDocument();
     expect(within(school).getByText("组织架构管理")).toBeInTheDocument();
-    expect(within(school).getByText("教师权限申请与管理")).toBeInTheDocument();
+    expect(within(school).getByText("本校教师权限审核")).toBeInTheDocument();
+    expect(within(school).getByRole("link", { name: /本校教师权限审核/ }))
+      .toHaveAttribute("href", "/admin/permission-applications#review");
     expect(within(school).queryByText("教师权限与教学资料")).not.toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "个人用户管理" })).getByText("我的权限申请")).toBeInTheDocument();
     expect(within(school).getByText("教师入校审核")).toBeInTheDocument();

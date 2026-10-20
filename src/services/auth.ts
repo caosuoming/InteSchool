@@ -296,10 +296,10 @@ export const authService = {
     return apiRequest<TeacherRoleApplication[]>("/api/auth/role-applications/pending");
   },
 
-  async reviewTeacherRoleApplication(id: string, approved: boolean): Promise<void> {
+  async reviewTeacherRoleApplication(id: string, approved: boolean, approvedRoles?: TeacherRole[]): Promise<void> {
     await apiRequest(`/api/auth/role-applications/${encodeURIComponent(id)}/review`, {
       method: "POST",
-      body: JSON.stringify({ approved }),
+      body: JSON.stringify({ approved, ...(approvedRoles ? { approvedRoles } : {}) }),
     }, true);
   },
 
