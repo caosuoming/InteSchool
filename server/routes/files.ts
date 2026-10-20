@@ -55,7 +55,7 @@ function buildSections(text: string): Array<{
 
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
-  ".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+  ".md", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp",
   ".mp3", ".mp4", ".wav", ".webm", ".ggb",
 ]);
 
@@ -72,6 +72,7 @@ const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
+  ".bmp": "image/bmp",
   ".gif": "image/gif",
   ".webp": "image/webp",
   ".mp3": "audio/mpeg",
@@ -82,7 +83,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const INLINE_EXTENSIONS = new Set([
-  ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+  ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp",
   ".mp3", ".mp4", ".wav", ".webm", ".ggb",
 ]);
 

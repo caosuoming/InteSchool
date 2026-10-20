@@ -179,6 +179,44 @@ afterEach(async () => {
   await rm(workDir, { recursive: true, force: true });
 });
 
+describe("third-party scanner card upload", () => {
+  it("requires the correct teacher session and image ownership to create a persistent record", async () => {
+    const unauthorized = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      payload: { fileId: randomUUID(), fileName: "外部卡.png" } });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const owner = await login(built.app);
+    const payload = multipartPayload("外部卡.png", "fake png bytes", "image/png");
+    const upload = await built.app.inject({ method: "POST", url: "/api/files", payload: payload.body,
+      headers: { cookie: owner.cookie, "x-inteschool-csrf": owner.csrfToken, "content-type": payload.contentType } });
+    expect(upload.statusCode).toBe(200);
+    const uploadedId = upload.json<{ id: string }>().id;
+
+    const missingCsrf = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      headers: { cookie: owner.cookie }, payload: { fileId: uploadedId, fileName: "外部卡.png" } });
+    expect(missingCsrf.statusCode).not.toBe(200);
+
+    const outsider = await register(built.app, "thirdparty-outsider@example.com");
+    const foreign = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      headers: { cookie: outsider.cookie, "x-inteschool-csrf": outsider.csrfToken },
+      payload: { fileId: uploadedId, fileName: "外部卡.png" } });
+    expect(foreign.statusCode).toBe(403);
+
+    const created = await built.app.inject({ method: "POST", url: "/api/scanner/third-party",
+      headers: { cookie: owner.cookie, "x-inteschool-csrf": owner.csrfToken },
+      payload: { fileId: uploadedId, fileName: "外部卡.png" } });
+    expect(created.statusCode).toBe(200);
+    const card = created.json<{ result: { id: string; imageUrl: string } }>().result;
+    expect(card.imageUrl).toBe(`/api/files/${uploadedId}`);
+
+    const listed = await built.app.inject({ method: "POST", url: "/api/rpc",
+      headers: { cookie: owner.cookie, "x-inteschool-csrf": owner.csrfToken },
+      payload: { service: "scanner", method: "listThirdPartyCards", args: ["sch-1"] } });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json<{ result: Array<{ id: string }> }>().result.some((item) => item.id === card.id)).toBe(true);
+  });
+});
+
 describe("production backend", () => {
   it("reuses a deeply frozen state snapshot for read-only RPCs", () => {
     const first = built.store.readState();
