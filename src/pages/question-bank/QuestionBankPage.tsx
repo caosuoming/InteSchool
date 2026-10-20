@@ -219,9 +219,10 @@ export default function QuestionBankPage({
   const [baskets, setBaskets] = useState<{ id: string; name: string; isDefault?: boolean; questionIds?: string[] }[]>([]);
   const [addToBasketFor, setAddToBasketFor] = useState<Question | null>(null);
 
-  // 章节/知识点名称映射（用于卡片显示）
+  // 章节、知识点和思想方法名称映射（用于卡片显示）
   const [chapterMap, setChapterMap] = useState<Map<string, string>>(new Map());
   const [knowledgeMap, setKnowledgeMap] = useState<Map<string, string>>(new Map());
+  const [methodMap, setMethodMap] = useState<Map<string, string>>(new Map());
 
   const [showStudentPicker, setShowStudentPicker] = useState(false);
   const [localStudentIds, setLocalStudentIds] = useState<string[]>([]);
@@ -478,6 +479,7 @@ export default function QuestionBankPage({
       setStudents(stus);
       setChapterMap(treeNameMap(ch));
       setKnowledgeMap(treeNameMap(kp));
+      setMethodMap(treeNameMap(methods));
     };
     load();
   }, [teacher]);
@@ -1292,6 +1294,7 @@ export default function QuestionBankPage({
                   mode={mode}
                   chapterMap={chapterMap}
                   knowledgeMap={knowledgeMap}
+                  methodMap={methodMap}
                   teacher={teacher}
                   students={students}
                   selectedStudentIds={selectedStudentIds}
@@ -1908,7 +1911,7 @@ function ToggleFilter({
 }
 
 function QuestionRow({
-  question, schoolStat, mode, chapterMap, knowledgeMap, teacher,
+  question, schoolStat, mode, chapterMap, knowledgeMap, methodMap, teacher,
   students, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion, examPapersUsingQuestion,
@@ -1933,6 +1936,7 @@ function QuestionRow({
   mode: Mode;
   chapterMap: Map<string, string>;
   knowledgeMap: Map<string, string>;
+  methodMap: Map<string, string>;
   teacher: any;
   students: Student[];
   selectedStudentIds: string[];
@@ -1982,6 +1986,7 @@ function QuestionRow({
   const [editingAnswers, setEditingAnswers] = useState(false);
   const chapterNames = question.chapterIds.map((id) => chapterMap.get(id)).filter(Boolean) as string[];
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
+  const methodNames = (question.thoughtMethodIds || []).map((id) => methodMap.get(id)).filter(Boolean) as string[];
   const hasChapter = chapterNames.length > 0;
   const hasPoint = pointNames.length > 0;
   const usageResources = useMemo(() => [
@@ -2370,6 +2375,28 @@ function QuestionRow({
                       title="点击编辑知识点"
                     >
                       未关联知识点
+                    </button>
+                  )}
+                </div>
+              )}
+              {showKnowledge !== false && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Lightbulb className="w-3 h-3 text-teal-500 flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-ink-500">思想方法：</span>
+                  {methodNames.length > 0 ? (
+                    methodNames.map((name) => (
+                      <span key={name} className="tag-teal text-xs py-0.5">{name}</span>
+                    ))
+                  ) : (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onQuickEdit(question);
+                      }}
+                      className="text-xs text-ink-400 italic hover:text-teal-600 cursor-pointer"
+                      title="点击编辑思想方法"
+                    >
+                      未关联思想方法
                     </button>
                   )}
                 </div>
