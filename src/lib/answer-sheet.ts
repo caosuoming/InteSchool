@@ -41,8 +41,14 @@ export interface AnswerSheetSettings {
   questionImageLayouts?: Record<string, Record<string, AnswerSheetInlineImageLayout[]>>;
 }
 
+export interface AnswerSheetProject {
+  id: string;
+  name: string;
+}
+
 export interface AnswerSheetQuestion {
   id: string;
+  projectId?: string;
   label?: string;
   type: QuestionType;
   stem: string;

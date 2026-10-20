@@ -30,6 +30,7 @@ import {
   type AnswerSheetPaperSize,
   type AnswerSheetInlineImageLayout,
   type AnswerSheetQuestion,
+  type AnswerSheetProject,
   type AnswerSheetResourceType,
   type AnswerSheetSettings,
   type AnswerSheetWideColumns,
@@ -90,6 +91,8 @@ const typeLabels: Record<string, string> = {
   essay: "解答题",
   comprehensive: "综合题",
 };
+
+const EMPTY_PROJECTS: AnswerSheetProject[] = [];
 
 const answerSheetTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
 
@@ -241,6 +244,20 @@ function groupQuestions(questions: AnswerSheetQuestion[], consolidateTypes = fal
     groups.sort((left, right) => priority(left.type) - priority(right.type));
   }
   return groups;
+}
+
+function groupProjectQuestions(questions: AnswerSheetQuestion[], projects: AnswerSheetProject[]): QuestionGroup[] {
+  const projectIds = new Set(projects.map((project) => project.id));
+  const numbered = questions.map((question, index) => ({ question, number: index + 1 }));
+  const ungrouped = numbered.filter(({ question }) => !question.projectId || !projectIds.has(question.projectId));
+  return [
+    ...(ungrouped.length ? [{ type: "project", label: "未分组", items: ungrouped }] : []),
+    ...projects.map((project) => ({
+      type: "project",
+      label: project.name,
+      items: numbered.filter(({ question }) => question.projectId === project.id),
+    })).filter((group) => group.items.length > 0),
+  ];
 }
 
 function StudentNumberGrid({ digits }: { digits: number }) {
@@ -778,6 +795,7 @@ interface AnswerSheetComposerProps {
   resourceLabel: "试卷" | "讲义";
   questions: AnswerSheetQuestion[];
   sourceLayoutMode?: "grouped" | "flat";
+  projects?: AnswerSheetProject[];
   totalScore?: number;
   initialSettings?: Partial<AnswerSheetSettings>;
   initialViewMode?: "edit" | "preview";
@@ -815,6 +833,7 @@ export function AnswerSheetComposer({
   resourceLabel,
   questions,
   sourceLayoutMode,
+  projects = EMPTY_PROJECTS,
   totalScore,
   initialSettings,
   initialViewMode = "edit",
@@ -831,9 +850,10 @@ export function AnswerSheetComposer({
   const flowItemRefs = useRef(new Map<number, HTMLDivElement>());
   const headerRef = useRef<HTMLElement>(null);
 
-  const consolidateTypes = sourceLayoutMode === "flat"
-    && (settings.mode === "blank" || settings.choiceLayout === "concentrated");
-  const groups = useMemo(() => groupQuestions(questions, consolidateTypes), [questions, consolidateTypes]);
+  const groups = useMemo(
+    () => sourceLayoutMode === "flat" ? groupProjectQuestions(questions, projects) : groupQuestions(questions),
+    [questions, projects, sourceLayoutMode],
+  );
   const numberedQuestions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const choiceItems = useMemo(
     () => numberedQuestions.filter(({ question }) => isChoiceQuestion(question)),
