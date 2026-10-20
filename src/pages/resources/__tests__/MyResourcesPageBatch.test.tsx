@@ -199,6 +199,8 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/analytics", () => ({
   analyticsService: {
     listUsedDocumentIds: vi.fn().mockResolvedValue([]),
+    listAnswerRecordsByStudents: vi.fn().mockResolvedValue([]),
+    listPendingQuestionAssignments: vi.fn().mockResolvedValue([]),
   },
 }));
 vi.mock("@/services/share", () => ({
@@ -623,6 +625,61 @@ describe("MyResourcesPage batch actions", () => {
     expect(coursewareService.listCoursewares).not.toHaveBeenCalled();
     expect(lessonCoursewareService.listCoursewares).not.toHaveBeenCalled();
   });
+
+  it.each(["examPaper", "lecture"] as const)(
+    "shows accurate selected-student progress on its own row in the %s library",
+    async (tab) => {
+      const questionIds = ["q-1", "q-2", "q-3"];
+      const paper: ExamPaper = {
+        ...examPaper,
+        classIds: ["class-1"],
+        questions: questionIds.map((questionId, index) => ({
+          id: `entry-${index}`, questionId, stem: "测试题", answer: "A", analysis: "", score: 5, type: "single",
+        })),
+      };
+      const lecture: Lecture = {
+        ...answerSheetLecture,
+        classIds: ["class-1"],
+        hasAnswerSheet: false,
+        sections: questionIds.map((questionId) => ({
+          id: `section-${questionId}`, title: "测试题", type: "question", content: "测试题", questionId, children: [],
+        })),
+      };
+      vi.mocked(examPaperService.listPapers).mockResolvedValue(tab === "examPaper" ? [paper] : []);
+      vi.mocked(lectureService.listLectures).mockResolvedValue(tab === "lecture" ? [lecture] : []);
+      vi.mocked(classService.listMyStudents).mockResolvedValue([{
+        id: "student-1", name: "测试学生甲", studentNo: "001", classId: "class-1",
+        schoolId: "school-1", grade: "高一", status: "active",
+      }]);
+      vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([{
+        id: "record-1", studentId: "student-1", questionId: "q-1", lectureId: "unrelated-document",
+        isCorrect: true, answeredAt: "2026-10-01T00:00:00.000Z",
+      }]);
+      vi.mocked(analyticsService.listPendingQuestionAssignments).mockResolvedValue([
+        { studentId: "student-1", questionId: "q-1" },
+        { studentId: "student-1", questionId: "q-2" },
+      ]);
+
+      renderPage(tab);
+      expect(await screen.findByText(tab === "examPaper" ? paper.title : lecture.title)).toBeInTheDocument();
+      expect(screen.queryByTestId("resource-card-student-progress")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
+      fireEvent.click(await screen.findByText("测试学生甲"));
+      fireEvent.click(screen.getByRole("button", { name: "确定（1 人）" }));
+
+      await waitFor(() => {
+        expect(analyticsService.listAnswerRecordsByStudents).toHaveBeenCalledWith(["student-1"]);
+        expect(analyticsService.listPendingQuestionAssignments).toHaveBeenCalledWith(["student-1"]);
+        expect(screen.getByTestId("resource-card-student-progress"))
+          .toHaveTextContent("做过 1 题 · 待做 1 题 · 未做 1 题");
+      });
+      const progress = screen.getByTestId("resource-card-student-progress");
+      expect(progress.previousElementSibling).toHaveTextContent("适用对象：1 个班级 · 未用");
+      fireEvent.click(screen.getByRole("button", { name: /测试学生甲/ }));
+      fireEvent.click(screen.getByRole("button", { name: "清空选择" }));
+      await waitFor(() => expect(screen.queryByTestId("resource-card-student-progress")).not.toBeInTheDocument());
+    },
+  );
 
   it("filters the exam-paper library to issued documents with no recorded answers", async () => {
     const pendingPaper: ExamPaper = {

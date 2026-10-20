@@ -2,6 +2,8 @@ import type { AnswerRecord, ExamPaper, Lecture, LectureSection } from "@/types";
 
 type DocumentQuestion = { key: string; questionId?: string };
 
+export type PendingQuestionAssignment = { studentId: string; questionId: string };
+
 function lectureQuestions(sections: LectureSection[]): DocumentQuestion[] {
   return sections.flatMap((section) => [
     ...(section.type === "question"
@@ -33,28 +35,38 @@ export function documentStudentProgress(
   document: ExamPaper | Lecture,
   studentIds: string[],
   records: AnswerRecord[],
-): { done: number; pending: number } {
+  pendingAssignments: PendingQuestionAssignment[],
+): { done: number; pending: number; undone: number } {
   const questions = documentQuestionRefs(document);
   const answered = new Set(
     records
       .filter((record) => studentIds.includes(record.studentId))
       .map((record) => `${record.studentId}:${record.questionId}`),
   );
+  const pendingKeys = new Set(pendingAssignments.map((assignment) =>
+    `${assignment.studentId}:${assignment.questionId}`,
+  ));
   let done = 0;
-  for (const studentId of studentIds) {
+  let pending = 0;
+  let undone = 0;
+  for (const studentId of new Set(studentIds)) {
     for (const question of questions) {
-      if (question.questionId && answered.has(`${studentId}:${question.questionId}`)) done += 1;
+      const key = `${studentId}:${question.questionId}`;
+      if (question.questionId && answered.has(key)) done += 1;
+      else if (question.questionId && pendingKeys.has(key)) pending += 1;
+      else undone += 1;
     }
   }
-  return { done, pending: questions.length * studentIds.length - done };
+  return { done, pending, undone };
 }
 
 export function documentStudentProgressLabel(
   document: ExamPaper | Lecture,
   studentIds: string[],
   records: AnswerRecord[],
+  pendingAssignments: PendingQuestionAssignment[],
 ): string {
-  const { done, pending } = documentStudentProgress(document, studentIds, records);
-  const unit = studentIds.length > 1 ? "题次" : "题";
-  return `已做 ${done} ${unit} · 待做 ${pending} ${unit}`;
+  const { done, pending, undone } = documentStudentProgress(document, studentIds, records, pendingAssignments);
+  const unit = new Set(studentIds).size > 1 ? "题次" : "题";
+  return `做过 ${done} ${unit} · 待做 ${pending} ${unit} · 未做 ${undone} ${unit}`;
 }
