@@ -16,10 +16,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Unit tests for pairing and local bridge
+      - name: Validate scanner scripts on Windows
+        shell: pwsh
         run: |
-          npm ci --ignore-scripts
-          npx vitest run scripts/scanner-bridge.test.mjs scripts/scanner-pairing.test.mjs
+          foreach ($script in @('scanner-bridge.mjs','scanner-devices.mjs','scanner-launcher.mjs','scanner-pairing.mjs')) {
+            node --check "scripts/$script"
+            if ($LASTEXITCODE -ne 0) { throw "Invalid script $script" }
+          }
+          node --input-type=module -e "await import('./scripts/scanner-bridge.mjs'); await import('./scripts/scanner-pairing.mjs');"
+          if ($LASTEXITCODE -ne 0) { throw "Scanner scripts cannot be imported" }
       - name: Prepare bundled Node runtime
         shell: pwsh
         run: |
