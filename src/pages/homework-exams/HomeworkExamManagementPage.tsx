@@ -17,7 +17,7 @@ import { examPublishService } from "@/services/examPublish";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
-import type { ClassroomHomework, ExamPaper, ExamPaperQuestion, ExamPublication, HomeworkClassOverviewRecord, SchoolClass, Student, ClassroomHomeworkAttachment } from "@/types";
+import type { AnyClass, ClassroomHomework, ExamPaper, ExamPaperQuestion, ExamPublication, HomeworkClassOverviewRecord, Student, ClassroomHomeworkAttachment } from "@/types";
 import {
   homeworkStatus, homeworkSubmissionDetails, homeworkTitle, paperHomeworkStatus, publicationStatus,
 } from "@/lib/homework-exam-management";
@@ -127,7 +127,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [publications, setPublications] = useState<ExamPublication[]>([]);
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [classes, setClasses] = useState<AnyClass[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [attendance, setAttendance] = useState<Map<string, HomeworkClassOverviewRecord[]>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -170,7 +170,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     const load = async () => {
       try {
         const [classItems, homeworkItems, paperItems, publicationItems, studentResult] = await Promise.all([
-          classService.listSchoolClasses(schoolId),
+          classService.listAllClasses(schoolId, teacherId),
           classroomHomeworkService.listHomeworks({ schoolId, teacherId }),
           examPaperService.listPapers({ schoolId, teacherId }),
           section === "exams" ? examPublishService.listPublications(schoolId) : Promise.resolve([]),
@@ -204,7 +204,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   }, [schoolId, teacherId, section, refreshKey]);
 
   const classNames = useMemo(() => new Map(classes.map((item) => [
-    item.id, `${item.grade} · ${item.name}`,
+    item.id, item.type === "personal" ? `个人班级 · ${item.name}` : `${item.grade} · ${item.name}`,
   ])), [classes]);
 
   const studentNames = useMemo(() => new Map(students.map((item) => [item.id, item])), [students]);
@@ -233,7 +233,8 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const managedRecords: ManagedRecord[] = [
     ...homeworks.filter((item) => (item.managementCategory === "exam") !== isHomework)
       .map((item): ManagedRecord => ({ kind: "classroom", item })),
-    ...papers.filter((item) => (item.managementCategory === "exam") !== isHomework)
+    ...papers.filter((item) => (item.managementCategory === "exam") !== isHomework
+      && (!isHomework || (!item.originalFileUrl && !item.isExtractCopy)))
       .map((item): ManagedRecord => ({ kind: "paper", item })),
   ].filter(matchesRecord).sort((left, right) =>
     right.item.updatedAt.localeCompare(left.item.updatedAt));
