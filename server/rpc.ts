@@ -7,6 +7,7 @@ import { serviceParameters } from "./service-metadata.js";
 import type { DatabaseStore } from "./database.js";
 import { EXAM_MANAGER_ROLES } from "../src/lib/exam-permissions.js";
 import { personalResourceScopeId } from "../src/lib/personal-resource-scope.js";
+import { captureResourceIds, filterPersonalResources, selectedSubject, tagNewPersonalResources } from "./lib/resource-subject.js";
 import {
   canHomeroomUpdateStudentStatus,
   canManageStudentArchive,
@@ -432,6 +433,7 @@ function isShareRecipient(record: Record<string, unknown>, teacher: TeacherRecor
 }
 
 function filterAuthorizedResult(
+  state: AppState,
   service: ServiceName,
   method: string,
   result: unknown,
@@ -440,6 +442,15 @@ function filterAuthorizedResult(
   if (teacher && (service === "examPaper" || service === "lecture") && method === "listPublishedAnswerSheets" && Array.isArray(result)) {
     const schoolId = teacher.schoolId || personalResourceScopeId(teacher.id);
     return result.filter((item) => item && typeof item === "object" && (item as { schoolId?: string }).schoolId === schoolId);
+  }
+  if (teacher && service === "basket" && method === "getDefaultBasket" && result && typeof result === "object") {
+    return filterPersonalResources(state, teacher, [result as Record<string, unknown>])[0] || null;
+  }
+  if (teacher && ["examPaper.listPapers", "lecture.listLectures", "courseware.listCoursewares",
+    "material.listMaterials", "resourceFolder.listFolders", "basket.listBaskets"].includes(`${service}.${method}`)
+    && Array.isArray(result)) {
+    // Subject is persisted on new records; older records stay in the original subject.
+    return filterPersonalResources(state, teacher, result as Record<string, unknown>[]);
   }
   if (
     teacher
@@ -494,6 +505,17 @@ function authorize(
   const admin = isAdmin(teacher);
   const personalResourceAccess = !teacher.schoolId && PERSONAL_RESOURCE_SERVICES.has(service);
   const allowedSchoolId = teacher.schoolId || (personalResourceAccess ? personalResourceScopeId(teacher.id) : null);
+  if (service === "question" && ["listQuestions", "listQuestionPage"].includes(method)) {
+    const subject = selectedSubject(teacher);
+    const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId);
+    const multipleSubjects = Array.isArray(affiliation?.subjects) && affiliation.subjects.length > 1;
+    const hasOtherSubjectRecords = Array.isArray(state.questions) && state.questions.some((item) =>
+      item.teacherId === teacher.id && item.subject && item.subject !== subject);
+    // Keep indexed queries available for single-subject teachers without historical cross-subject records.
+    if (subject && (multipleSubjects || hasOtherSubjectRecords)) {
+      args = [{ ...(args[0] as Record<string, unknown> || {}), subject }, ...args.slice(1)];
+    }
+  }
   const params = (serviceParameters as Record<string, Record<string, readonly string[]>>)[service]?.[method] || [];
   const normalizedArgs = [...args];
   const personalDirectoryScopeIndex = service === "knowledge"
@@ -776,12 +798,29 @@ export async function invokeRpc(
   const runWithDatabaseState = isReadOnly(serviceKey, methodName) ? withReadOnlyState : withSerializedState;
   return runWithDatabaseState(store, async (state) => {
     const authorized = authorize(state, session, serviceName as ServiceName, methodName, args);
+    const trackNewResources = authorized.teacher && !isReadOnly(serviceKey, methodName)
+      && ["question", "examPaper", "lecture", "courseware", "material", "resourceFolder",
+        "basket", "extract", "donation", "share"].includes(serviceName)
+      ? captureResourceIds(state) : null;
     const result = await runWithState(state, () => Reflect.apply(
       method as (...values: unknown[]) => unknown,
       service,
       authorized.args,
     ), store);
+    if (trackNewResources && authorized.teacher) {
+      tagNewPersonalResources(state, authorized.teacher, trackNewResources);
+      if (result && typeof result === "object" && !Array.isArray(result)) {
+        const record = result as Record<string, unknown>;
+        if (record.teacherId === authorized.teacher.id && typeof record.id === "string" && !record.subject) {
+          const corresponding = (["questions", "examPapers", "lectures", "coursewares", "materials", "resourceFolders", "baskets"] as const)
+            .flatMap((collection) => (state[collection] || []) as Array<Record<string, unknown>>)
+            .find((item) => item.id === record.id);
+          if (corresponding?.subject) record.subject = corresponding.subject;
+        }
+      }
+    }
     return sanitize(filterAuthorizedResult(
+      state,
       serviceName as ServiceName,
       methodName,
       result,

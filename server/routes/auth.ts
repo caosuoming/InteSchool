@@ -144,6 +144,7 @@ const roleApplicationSchema = z.object({
 
 const permissionFieldsBaseSchema = z.object({
   roles: z.array(z.enum(TEACHER_ROLES)).min(1).max(TEACHER_ROLES.length),
+  subjects: z.array(z.string().trim().min(1).max(50)).min(1).max(20).optional(),
   teachingClassIds: z.array(z.string().min(1).max(100)).max(100),
   homeroomClassIds: z.array(z.string().min(1).max(100)).max(20),
   position: z.string().trim().max(50),
@@ -170,6 +171,9 @@ function permissionFieldsFor(teacher: TeacherRecord, schoolId: string): Permissi
   return {
     roles: normalizeTeacherRoles((Array.isArray(roles) ? roles : ["teacher"])
       .filter((role): role is TeacherRole => TEACHER_ROLES.includes(role as TeacherRole))),
+    subjects: Array.isArray(affiliation.subjects) && affiliation.subjects.length
+      ? affiliation.subjects.filter((subject): subject is string => typeof subject === "string")
+      : [String(affiliation.subject || teacher.subject)],
     teachingClassIds: Array.isArray(affiliation.teachingClassIds) ? affiliation.teachingClassIds as string[] : [],
     homeroomClassIds: Array.isArray(affiliation.homeroomClassIds) ? affiliation.homeroomClassIds as string[] : [],
     position: typeof affiliation.position === "string" ? affiliation.position : "",
@@ -179,6 +183,7 @@ function permissionFieldsFor(teacher: TeacherRecord, schoolId: string): Permissi
 function normalizedPermissionFields(fields: PermissionFields): PermissionFields {
   return {
     ...fields,
+    subjects: fields.subjects ? [...new Set(fields.subjects)] : undefined,
     roles: normalizeTeacherRoles([
       ...fields.roles,
       ...(fields.homeroomClassIds.length > 0 ? ["headTeacher" as TeacherRole] : []),
@@ -198,6 +203,8 @@ function applyPermissionFields(state: AppState, teacherIndex: number, schoolId: 
   const affiliations = teacher.affiliations.map((item) => item.schoolId === schoolId
     ? {
       ...item, assignedRoles: fields.roles, roles,
+      ...(fields.subjects ? { subjects: fields.subjects, subject: fields.subjects.includes(String(item.subject))
+        ? item.subject : fields.subjects[0] } : {}),
       teachingClassIds: fields.teachingClassIds,
       homeroomClassIds: fields.homeroomClassIds,
       position: fields.position,
@@ -208,6 +215,7 @@ function applyPermissionFields(state: AppState, teacherIndex: number, schoolId: 
     ...teacher, affiliations,
     ...(active?.schoolId === schoolId ? {
       roles,
+      ...(fields.subjects ? { subjects: fields.subjects, subject: String(active?.subject || fields.subjects[0]) } : {}),
       teachingClassIds: fields.teachingClassIds,
       homeroomClassIds: fields.homeroomClassIds,
       position: fields.position,
@@ -216,6 +224,7 @@ function applyPermissionFields(state: AppState, teacherIndex: number, schoolId: 
 }
 
 const managedTeachingProfileSchema = z.object({
+  subjects: z.array(z.string().trim().min(1).max(50)).min(1).max(20).optional(),
   subject: z.string().trim().min(1).max(50).optional(),
   teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
   teachingClassIds: z.array(z.string().min(1).max(100)).max(100).optional(),
@@ -388,6 +397,7 @@ function updateTeacherTeachingProfile(
   schoolId: string | null,
   patch: {
     subject?: string;
+    subjects?: string[];
     teachingGrades?: string[];
     teachingClassIds?: string[];
     homeroomClassIds?: string[];
@@ -403,9 +413,13 @@ function updateTeacherTeachingProfile(
       : patch.homeroomClassIds.length > 0
         ? [...new Set([...currentRoles, "headTeacher"])]
         : currentRoles.filter((role) => role !== "headTeacher");
+    const subjects = patch.subjects ?? (Array.isArray(item.subjects) && item.subjects.length ? item.subjects as string[] : [String(item.subject)]);
+    const subject = patch.subject ?? (subjects.includes(String(item.subject)) ? String(item.subject) : subjects[0]);
+    if (!subjects.includes(subject)) throw new Error("当前学科不在授权任教学科中");
     return {
       ...item,
-      ...(patch.subject !== undefined ? { subject: patch.subject } : {}),
+      ...(patch.subjects !== undefined ? { subjects } : {}),
+      ...(patch.subject !== undefined || patch.subjects !== undefined ? { subject } : {}),
       ...(patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
       ...(patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
       ...(patch.homeroomClassIds !== undefined ? { homeroomClassIds: patch.homeroomClassIds } : {}),
@@ -416,7 +430,7 @@ function updateTeacherTeachingProfile(
   const isCurrent = target.id === teacher.currentAffiliationId || target.isCurrent === true;
   return {
     ...teacher,
-    ...(isCurrent && patch.subject !== undefined ? { subject: patch.subject } : {}),
+    ...(isCurrent && (patch.subject !== undefined || patch.subjects !== undefined) ? { subject: String(target.subject || ""), subjects: Array.isArray(target.subjects) ? target.subjects as string[] : undefined } : {}),
     ...(isCurrent && patch.teachingGrades !== undefined ? { teachingGrades: patch.teachingGrades } : {}),
     ...(isCurrent && patch.teachingClassIds !== undefined ? { teachingClassIds: patch.teachingClassIds } : {}),
     ...(isCurrent && patch.homeroomClassIds !== undefined ? { homeroomClassIds: patch.homeroomClassIds } : {}),
@@ -1028,6 +1042,10 @@ export async function registerAuthRoutes(
       let teacher = state.teachers[index];
       const current = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
         || teacher.affiliations.find((item) => item.isCurrent);
+      if (input.subject !== undefined && typeof current?.schoolId === "string") {
+        const allowed = Array.isArray(current.subjects) && current.subjects.length ? current.subjects : [current.subject];
+        if (!allowed.includes(input.subject)) throw new Error("只能选择已批准的任教学科，请先提交权限申请");
+      }
       if (input.subject !== undefined || input.teachingGrades !== undefined) {
         teacher = updateTeacherTeachingProfile(
           teacher,
@@ -1149,12 +1167,14 @@ export async function registerAuthRoutes(
       if (!schoolId || affiliation?.status !== "active") throw new Error("请先切换到有效的学校身份");
       const school = (state.schools as Array<{ id: string; name: string }>).find((item) => item.id === schoolId);
       if (!school) throw new Error("学校不存在");
-      const requested = normalizedPermissionFields(input);
+      const requested = normalizedPermissionFields({ ...input, subjects: input.subjects || permissionFieldsFor(teacher, schoolId).subjects });
       validateTeachingClassIds(state, schoolId, [...requested.teachingClassIds, ...requested.homeroomClassIds]);
       const current = normalizedPermissionFields(permissionFieldsFor(teacher, schoolId));
       const same = (left: PermissionFields, right: PermissionFields) =>
         left.position === right.position
         && left.roles.length === right.roles.length && left.roles.every((role) => right.roles.includes(role))
+        && (left.subjects || []).length === (right.subjects || []).length
+        && (left.subjects || []).every((subject) => right.subjects?.includes(subject))
         && left.teachingClassIds.length === right.teachingClassIds.length
         && left.teachingClassIds.every((id) => right.teachingClassIds.includes(id))
         && left.homeroomClassIds.length === right.homeroomClassIds.length
@@ -1170,6 +1190,7 @@ export async function registerAuthRoutes(
         teacherId: teacher.id, teacherName: teacher.name,
         schoolId, schoolName: school.name,
         requestedRoles: requested.roles,
+        requestedSubjects: requested.subjects,
         requestedTeachingClassIds: requested.teachingClassIds,
         requestedHomeroomClassIds: requested.homeroomClassIds,
         requestedPosition: requested.position,
@@ -1230,6 +1251,7 @@ export async function registerAuthRoutes(
         )) throw new Error("申请教师已不属于该学校");
         const requested = input.adjustments ?? {
           roles: application.requestedRoles,
+          subjects: application.requestedSubjects || (application.previous as { subjects?: string[] } | undefined)?.subjects,
           teachingClassIds: application.requestedTeachingClassIds,
           homeroomClassIds: application.requestedHomeroomClassIds,
           position: application.requestedPosition,
@@ -1405,6 +1427,9 @@ export async function registerAuthRoutes(
         ?? [];
       validateTeachingClassIds(state, manager.schoolId, classIds);
       validateTeachingClassIds(state, manager.schoolId, homeroomClassIds);
+      if (input.subjects && input.subject && !input.subjects.includes(input.subject)) {
+        throw new Error("当前学科必须包含在任教学科列表中");
+      }
       state.teachers[index] = updateTeacherTeachingProfile(target, manager.schoolId, input);
       return publicTeacher(state.teachers[index]);
     });
@@ -1612,6 +1637,30 @@ export async function registerAuthRoutes(
     });
   });
 
+  app.post("/api/auth/affiliations/:id/subject", async (request) => {
+    const session = await requireSession(request, store);
+    requireCsrf(request, session);
+    const affiliationId = z.string().min(1).parse((request.params as { id?: string }).id);
+    const { subject } = z.object({ subject: z.string().trim().min(1).max(50) }).parse(request.body);
+    return withSerializedState(store, (state) => {
+      const index = state.teachers.findIndex((item) => item.id === session.teacherId);
+      if (index < 0) throw new Error("教师不存在");
+      const teacher = state.teachers[index];
+      if (teacher.currentAffiliationId !== affiliationId && !teacher.affiliations.some((item) => item.id === affiliationId && item.isCurrent)) throw new Error("请先切换到所属学校");
+      const target = teacher.affiliations.find((item) => item.id === affiliationId);
+      if (!target || target.status !== "active" || !target.schoolId) throw new Error("当前学校身份不可用");
+      const school = (state.schools as Array<{ id: string; accountsDisabled?: boolean }>).find((item) => item.id === target.schoolId);
+      if (!school || school.accountsDisabled) throw new Error("当前学校身份不可用");
+      const subjects = Array.isArray(target.subjects) && target.subjects.length ? target.subjects : [target.subject];
+      if (!subjects.includes(subject)) throw new Error("不能切换到未经学校批准的学科");
+      state.teachers[index] = {
+        ...teacher, subject, subjects, currentAffiliationId: affiliationId,
+        affiliations: teacher.affiliations.map((item) => item.id === affiliationId ? { ...item, subject, subjects } : item),
+      };
+      return publicTeacher(state.teachers[index]);
+    });
+  });
+
   app.post("/api/auth/affiliations/:id/activate", async (request) => {
     const session = await requireSession(request, store);
     requireCsrf(request, session);
@@ -1633,6 +1682,7 @@ export async function registerAuthRoutes(
         ...teacher,
         schoolId: (target.schoolId as string | null) || null,
         subject: String(target.subject || ""),
+        subjects: Array.isArray(target.subjects) && target.subjects.length ? target.subjects as string[] : [String(target.subject || "")],
         teachingGrades: Array.isArray(target.teachingGrades) ? target.teachingGrades as string[] : [],
         teachingClassIds: Array.isArray(target.teachingClassIds) ? target.teachingClassIds as string[] : [],
         homeroomClassIds: Array.isArray(target.homeroomClassIds) ? target.homeroomClassIds as string[] : [],

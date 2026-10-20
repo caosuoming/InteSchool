@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import TeacherProfilesPage from "./TeacherProfilesPage";
 import { isPlatformAdminAccount } from "@/lib/platform-admin";
 import { TEACHER_ROLES } from "@/lib/teacher-roles";
+import { SUBJECT_OPTIONS } from "@/lib/education";
 import { authService } from "@/services/auth";
 import { classService } from "@/services/class";
 import { roleLabels } from "@/services/organization";
@@ -42,6 +43,21 @@ function PermissionEditor({
 
   return (
     <div className="space-y-5">
+      <fieldset disabled={disabled}>
+        <legend className="mb-2 font-medium text-ink-700 text-sm">任教学科</legend>
+        <div className="flex flex-wrap gap-2">
+          {SUBJECT_OPTIONS.map((subject) => (
+            <label key={subject} className="flex items-center gap-2 rounded-md border border-ink-200 px-3 py-2 text-sm">
+              <input type="checkbox" checked={(fields.subjects || []).includes(subject)}
+                onChange={() => {
+                  const next = changeSelection(fields.subjects || [], subject);
+                  if (next.length) set("subjects", next);
+                }} />
+              {subject}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <fieldset disabled={disabled}>
         <legend className="mb-2 font-medium text-ink-700 text-sm">行政职务与角色</legend>
         <div className="flex flex-wrap gap-2">
@@ -94,6 +110,7 @@ function PermissionEditor({
 function PermissionSummary({ fields, classes }: { fields: TeacherPermissionFields; classes: SchoolClass[] }) {
   return (
     <div className="space-y-1 text-sm text-ink-600">
+      <p>任教学科：{(fields.subjects || []).join("、") || "未设置"}</p>
       <p>职务权限：{roleNames(fields.roles)}</p>
       <p>行政职务：{fields.position || "未设置"}</p>
       <p>任课班级：{fields.teachingClassIds.map((id) => classLabel(classes, id)).join("、") || "无"}</p>
@@ -105,6 +122,7 @@ function PermissionSummary({ fields, classes }: { fields: TeacherPermissionField
 function applicationFields(item: TeacherPermissionApplication): TeacherPermissionFields {
   return {
     roles: item.requestedRoles,
+    subjects: item.requestedSubjects || item.previous?.subjects,
     teachingClassIds: item.requestedTeachingClassIds,
     homeroomClassIds: item.requestedHomeroomClassIds,
     position: item.requestedPosition,
@@ -120,10 +138,11 @@ export default function PermissionApplicationsPage() {
   const [view, setView] = useState<"applications" | "management">("applications");
   const current = useMemo<TeacherPermissionFields>(() => ({
     roles: affiliation?.assignedRoles?.length ? affiliation.assignedRoles : affiliation?.roles || ["teacher"],
+    subjects: affiliation?.subjects?.length ? affiliation.subjects : [affiliation?.subject || teacher?.subject || "数学"],
     teachingClassIds: affiliation?.teachingClassIds || [],
     homeroomClassIds: affiliation?.homeroomClassIds || [],
     position: affiliation?.position || "",
-  }), [affiliation]);
+  }), [affiliation, teacher?.subject]);
   const [draft, setDraft] = useState<TeacherPermissionFields>(current);
   const [reason, setReason] = useState("");
   const [classes, setClasses] = useState<SchoolClass[]>([]);

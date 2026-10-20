@@ -16,6 +16,7 @@ import type {
 import type { TeacherRecord } from "../types.js";
 import { db, computeDuplicateHash, type QuestionSortKey } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { resourceSubject } from "../lib/resource-subject.js";
 import { knowledgeService } from "./knowledge.js";
 import { assertResourceCapacity } from "./quota.js";
 import {
@@ -191,6 +192,8 @@ function expandKnowledgePointAliases(
 }
 
 function matchFilter(q: Question, filter: QuestionFilter): boolean {
+  if (filter.subject && resourceSubject({ teachers: db.read("teachers") } as unknown as import("../types.js").AppState,
+    q as unknown as Record<string, unknown>) !== filter.subject) return false;
   if (filter.keyword) {
     const kw = filter.keyword.trim().toLowerCase();
     const searchFields = filter.searchFields?.length
@@ -341,7 +344,7 @@ export function createVerifiedExtractQuestions(
 
 export const questionService = {
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
-    const indexed = await db.searchQuestions(filter);
+    const indexed = filter.subject ? null : await db.searchQuestions(filter);
     if (indexed) return withCurrentUsageCounts(indexed);
     await delay(300);
     const all = db.read("questions");
@@ -356,7 +359,7 @@ export const questionService = {
     teacher: TeacherRecord,
   ): Promise<{ items: Question[]; total: number }> {
     const requiresCurrentUsageSort = sortKey === "usage" || sortKey === "weakness";
-    if (!requiresCurrentUsageSort) {
+    if (!requiresCurrentUsageSort && !filter.subject) {
       const indexed = await db.searchQuestionPage(filter, page, pageSize, sortKey, teacher.id);
       if (indexed) {
         return {

@@ -278,6 +278,7 @@ export interface TeacherRoleApplication {
 }
 
 export interface TeacherPermissionFields {
+  subjects?: string[];
   roles: TeacherRole[];
   teachingClassIds: string[];
   homeroomClassIds: string[];
@@ -291,6 +292,7 @@ export interface TeacherPermissionApplication {
   schoolId: string;
   schoolName: string;
   requestedRoles: TeacherRole[];
+  requestedSubjects?: string[];
   requestedTeachingClassIds: string[];
   requestedHomeroomClassIds: string[];
   requestedPosition: string;
@@ -1527,6 +1529,8 @@ export interface QuestionAdaptationInput {
 }
 
 export interface Question {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   schoolId: string;
@@ -1645,6 +1649,8 @@ export interface ExtractedDocumentBlock {
 
 /** 试卷 */
 export interface ExamPaper {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   schoolId: string;
@@ -1730,6 +1736,8 @@ export type CoursewareType = "ppt" | "ggb" | "pdf" | "video" | "image" | "other"
 
 /** 课件 */
 export interface Courseware {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   schoolId: string;
@@ -1774,6 +1782,8 @@ export type MaterialType = "text" | "image" | "audio" | "video" | "link" | "file
 
 /** 素材 */
 export interface Material {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   schoolId: string;
@@ -1834,6 +1844,8 @@ export type ShareableResourceType = "question" | "examPaper" | "lecture" | "cour
 export type ResourceFolderType = "examPaper" | "lecture" | "courseware";
 
 export interface ResourceFolder {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   schoolId: string;
@@ -2205,6 +2217,7 @@ export type FilterLogic = "or" | "and";
 export type QuestionSearchField = "stem" | "analysis" | "summary" | "remark";
 
 export interface QuestionFilter {
+  subject?: string;
   keyword?: string;
   /** 关键词搜索范围；未设置或为空时搜索全部支持字段 */
   searchFields?: QuestionSearchField[];
@@ -2266,6 +2279,8 @@ export interface LectureColumnTemplate {
 export type LectureStatus = "draft" | "published";
 
 export interface Lecture {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   schoolId: string;
@@ -2370,6 +2385,8 @@ export interface LectureFilter {
 }
 
 export interface Basket {
+  /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
+  subject?: string;
   id: string;
   teacherId: string;
   name: string;
