@@ -12,8 +12,8 @@ import { examPaperService } from "@/services/examPaper";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, PersonalClass, SchoolClass, Teacher, Student } from "@/types";
 
-vi.mock("@/services/scanner", () => ({ scannerService: { listThirdPartyCards: vi.fn(), updateThirdPartyCard: vi.fn() } }));
-vi.mock("@/services/class", () => ({ classService: { listAllClasses: vi.fn(), listMyStudents: vi.fn() } }));
+vi.mock("@/services/scanner", () => ({ scannerService: { listThirdPartyCards: vi.fn(), updateThirdPartyCard: vi.fn(), listPages: vi.fn(), assignPage: vi.fn() } }));
+vi.mock("@/services/class", () => ({ classService: { listAllClasses: vi.fn(), listMyStudents: vi.fn(), listStudentsBySchool: vi.fn() } }));
 vi.mock("@/services/api", () => ({ extractStoredFile: vi.fn() }));
 vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn(), updateHomework: vi.fn() } }));
 vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn(), getPaper: vi.fn(), updatePaper: vi.fn() } }));
@@ -64,12 +64,15 @@ describe("作业考试管理页面", () => {
       getCurrentAffiliation: () => null,
     });
     vi.mocked(scannerService.listThirdPartyCards).mockResolvedValue([]);
+    vi.mocked(scannerService.listPages).mockResolvedValue([]);
     vi.mocked(classService.listAllClasses).mockResolvedValue([one]);
-    vi.mocked(classService.listMyStudents).mockResolvedValue([
+    const studentData = [
       { id: "s1", name: "张三", studentNo: "001" },
       { id: "s2", name: "李四", studentNo: "002" },
       { id: "s3", name: "王五", studentNo: "003" },
-    ] as Student[]);
+    ] as Student[];
+    vi.mocked(classService.listMyStudents).mockResolvedValue(studentData);
+    vi.mocked(classService.listStudentsBySchool).mockResolvedValue(studentData);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([homework]);
     vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([attendance]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
