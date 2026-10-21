@@ -1,4 +1,4 @@
-import { AUTO_QUESTION_CATEGORIES } from "@/lib/question-category-detection";
+import { mergeQuestionCategoryOptions, normalizeQuestionCategory, expandQuestionCategoryFilter } from "@/lib/question-category-options";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { settingsService } from "@/services/settings";
 import type { ResourceSelectOption } from "@/hooks/useSchoolResourceOptions";
@@ -26,14 +26,6 @@ function configuredOptions(
   return enabled.length > 0 ? enabled : fallback;
 }
 
-function withAutoQuestionCategories(options: ResourceSelectOption[]): ResourceSelectOption[] {
-  return [
-    ...options,
-    ...AUTO_QUESTION_CATEGORIES.filter((label) => !options.some((option) => option.value === label))
-      .map((label) => ({ value: label, label })),
-  ];
-}
-
 export function includeCurrentMetadataOption(
   options: ResourceSelectOption[],
   currentValue?: string,
@@ -45,7 +37,10 @@ export function includeCurrentMetadataOption(
 
 export function useQuestionMetadataOptions(schoolId?: string | null) {
   const [sourceOptions, setSourceOptions] = useState<ResourceSelectOption[]>([]);
-  const [categoryOptions, setCategoryOptions] = useState<ResourceSelectOption[]>([]);
+  const [categoryMetadata, setCategoryMetadata] = useState(() => ({
+    options: [] as ResourceSelectOption[],
+    aliases: {} as Record<string, string[]>,
+  }));
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -53,13 +48,13 @@ export function useQuestionMetadataOptions(schoolId?: string | null) {
     setReady(false);
     if (!schoolId) {
       setSourceOptions(DEFAULT_SOURCE_OPTIONS);
-      setCategoryOptions(withAutoQuestionCategories(DEFAULT_CATEGORY_OPTIONS));
+      setCategoryMetadata(mergeQuestionCategoryOptions(DEFAULT_CATEGORY_OPTIONS));
       setReady(true);
       return () => { cancelled = true; };
     }
 
     setSourceOptions([]);
-    setCategoryOptions([]);
+    setCategoryMetadata({ options: [], aliases: {} });
 
     Promise.all([
       settingsService.listSettings(schoolId, "source"),
@@ -67,17 +62,19 @@ export function useQuestionMetadataOptions(schoolId?: string | null) {
     ]).then(([sources, categories]) => {
       if (cancelled) return;
       setSourceOptions(configuredOptions(sources, DEFAULT_SOURCE_OPTIONS));
-      setCategoryOptions(withAutoQuestionCategories(configuredOptions(categories, DEFAULT_CATEGORY_OPTIONS)));
+      setCategoryMetadata(mergeQuestionCategoryOptions(configuredOptions(categories, DEFAULT_CATEGORY_OPTIONS)));
       setReady(true);
     }).catch(() => {
       if (cancelled) return;
       setSourceOptions(DEFAULT_SOURCE_OPTIONS);
-      setCategoryOptions(withAutoQuestionCategories(DEFAULT_CATEGORY_OPTIONS));
+      setCategoryMetadata(mergeQuestionCategoryOptions(DEFAULT_CATEGORY_OPTIONS));
       setReady(true);
     });
 
     return () => { cancelled = true; };
   }, [schoolId]);
+
+  const { options: categoryOptions, aliases: categoryAliases } = categoryMetadata;
 
   const sourceLabels = useMemo(
     () => new Map([...DEFAULT_SOURCE_OPTIONS, ...sourceOptions].map((item) => [item.value, item.label])),
@@ -92,8 +89,16 @@ export function useQuestionMetadataOptions(schoolId?: string | null) {
     [sourceLabels],
   );
   const getCategoryLabel = useCallback(
-    (value?: string) => value ? categoryLabels.get(value) || value : "未指定",
-    [categoryLabels],
+    (value?: string) => value ? categoryLabels.get(normalizeQuestionCategory(value, categoryAliases)) || value : "未指定",
+    [categoryLabels, categoryAliases],
+  );
+  const normalizeCategory = useCallback(
+    (value: string) => normalizeQuestionCategory(value, categoryAliases),
+    [categoryAliases],
+  );
+  const expandCategoryFilter = useCallback(
+    (values: string[]) => expandQuestionCategoryFilter(values, categoryAliases),
+    [categoryAliases],
   );
 
   return useMemo(() => ({
@@ -103,6 +108,8 @@ export function useQuestionMetadataOptions(schoolId?: string | null) {
     defaultCategory: ready ? categoryOptions[0]?.value || "practice" : "",
     getSourceLabel,
     getCategoryLabel,
+    normalizeCategory,
+    expandCategoryFilter,
     ready,
-  }), [sourceOptions, categoryOptions, getSourceLabel, getCategoryLabel, ready]);
+  }), [sourceOptions, categoryOptions, getSourceLabel, getCategoryLabel, normalizeCategory, expandCategoryFilter, ready]);
 }

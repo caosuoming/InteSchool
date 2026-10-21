@@ -108,6 +108,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     defaultCategory,
     getSourceLabel,
     getCategoryLabel,
+    normalizeCategory,
     ready: metadataReady,
   } = useQuestionMetadataOptions(teacher?.schoolId);
   const [form, setForm] = useState({
@@ -151,9 +152,11 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
     setForm((current) => ({
       ...current,
       sourceType: current.sourceType || defaultSource,
-      category: current.category || defaultCategory,
+      category: normalizeCategory(current.category) || defaultCategory,
+      categories: [...new Set(current.categories.map(normalizeCategory))]
+        .filter((value) => value !== (normalizeCategory(current.category) || defaultCategory)),
     }));
-  }, [defaultCategory, defaultSource, metadataReady]);
+  }, [defaultCategory, defaultSource, metadataReady, normalizeCategory]);
 
   useEffect(() => {
     if (!teacher) return;
