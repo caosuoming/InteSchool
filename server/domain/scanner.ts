@@ -11,6 +11,7 @@ export interface PublishedScannerSheet {
   grade: string;
   schoolYear: string;
   publishedAt: string;
+  answerSheetRevisionId?: string;
   subject: string;
   classes: { id: string; name: string }[];
 }
@@ -62,6 +63,7 @@ export const scannerService = {
     const mapItem = (item: ExamPaper | Lecture, type: "paper" | "lecture"): PublishedScannerSheet => ({
       id: item.id, type, title: item.title, grade: item.grade, schoolYear: item.schoolYear,
       publishedAt: item.answerSheetPublishedAt!,
+      ...(item.answerSheetRevisionId ? { answerSheetRevisionId: item.answerSheetRevisionId } : {}),
       subject: teachers.find((teacher) => teacher.id === item.teacherId)?.subject || "未分类",
       classes: (item.classIds || []).flatMap((id) => {
         const found = classes.find((entry) => entry.id === id && entry.schoolId === schoolId);

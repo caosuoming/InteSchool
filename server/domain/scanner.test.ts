@@ -18,12 +18,12 @@ describe("scanner device resource list", () => {
       schoolClasses: [{ id: "class-1", schoolId: "school-1", grade: "高一", name: "一班" }],
       schools: [{ id: "school-1" }, { id: "school-2" }],
       examPapers: [{ ...sheet("a", "school-1"), classIds: ["class-1"] }, sheet("draft", "school-1", false), sheet("foreign", "school-2")],
-      lectures: [{ ...sheet("b", "school-1"), answerSheetPublishedAt: "2026-10-19T00:00:00Z" }],
+      lectures: [{ ...sheet("b", "school-1"), answerSheetRevisionId: "rev-b", answerSheetPublishedAt: "2026-10-19T00:00:00Z" }],
     };
     await runWithState(state, async () => {
       const items = await scannerService.listPublishedAnswerSheets("school-1");
       expect(items).toEqual([
-        { id: "b", type: "lecture", title: "资源 b", grade: "高一", schoolYear: "2026-2027", publishedAt: "2026-10-19T00:00:00Z", subject: "数学", classes: [] },
+        { id: "b", type: "lecture", title: "资源 b", grade: "高一", schoolYear: "2026-2027", answerSheetRevisionId: "rev-b", publishedAt: "2026-10-19T00:00:00Z", subject: "数学", classes: [] },
         { id: "a", type: "paper", title: "资源 a", grade: "高一", schoolYear: "2026-2027", publishedAt: "2026-10-18T00:00:00Z", subject: "数学", classes: [{ id: "class-1", name: "高一 · 一班" }] },
       ]);
       expect(JSON.stringify(items)).not.toContain("secret");

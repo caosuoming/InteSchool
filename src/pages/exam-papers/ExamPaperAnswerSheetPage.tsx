@@ -77,6 +77,7 @@ export default function ExamPaperAnswerSheetPage() {
       description={`${paper.grade} · ${paper.schoolYear} · ${paper.duration}分钟`}
       resourceType="exam-paper"
       resourceId={paper.id}
+      answerSheetRevisionId={paper.answerSheetRevisionId}
       resourceLabel="试卷"
       questions={answerQuestions}
       sourceLayoutMode={paper.layoutMode}

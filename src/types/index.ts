@@ -1707,6 +1707,8 @@ export interface ExamPaper {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 本次制作的答题卡唯一版本；旧数据无版本时使用 v1 二维码。 */
+  answerSheetRevisionId?: string;
   /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
@@ -2336,6 +2338,8 @@ export interface Lecture {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 本次制作的答题卡唯一版本；旧数据无版本时使用 v1 二维码。 */
+  answerSheetRevisionId?: string;
   /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */

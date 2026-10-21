@@ -117,7 +117,7 @@ export default function ScannerPage() {
   const deviceOptions = useMemo(() => devices.map((device) => ({
     value: device.id, label: `${device.name} · ${device.driver}`,
   })), [devices]);
-  const expectedQr = selected ? buildAnswerSheetQrPayload(selected.type === "paper" ? "exam-paper" : "lecture", selected.id) : "";
+  const expectedQr = selected ? buildAnswerSheetQrPayload(selected.type === "paper" ? "exam-paper" : "lecture", selected.id, selected.answerSheetRevisionId) : "";
   const pendingCount = scans.filter((image) => !image.uploaded && (!image.qrPayload || image.qrPayload === expectedQr)).length;
 
   const clearImages = () => {

@@ -17,14 +17,14 @@ export async function readAnswerSheetQr(image: Blob): Promise<string | null> {
       return jsQR(pixels.data, width, height, { inversionAttempts: "attemptBoth" })?.data ?? null;
     };
     const all = decode(0, 0, canvas.width, canvas.height);
-    if (all?.startsWith("intes://answer-sheet/v1/")) return all;
+    if (/^intes:\/\/answer-sheet\/v[12]\//.test(all || "")) return all;
     // Localized search avoids a small QR code being drowned out by printed questions.
     const halfW = Math.ceil(canvas.width / 2);
     const halfH = Math.ceil(canvas.height / 2);
     for (const y of [0, canvas.height - halfH]) {
       for (const x of [0, canvas.width - halfW]) {
         const result = decode(x, y, halfW, halfH);
-        if (result?.startsWith("intes://answer-sheet/v1/")) return result;
+        if (/^intes:\/\/answer-sheet\/v[12]\//.test(result || "")) return result;
       }
     }
     return all;
