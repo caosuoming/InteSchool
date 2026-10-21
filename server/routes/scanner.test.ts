@@ -76,6 +76,24 @@ describe("scanned page persistence and permissions", () => {
     const change = await built.app.inject({ method: "PATCH", url: `/api/scanner/pages/${exceptional.json().id}`, headers: { cookie, "x-inteschool-csrf": csrf }, payload: { studentId: student.id } });
     expect(change.statusCode).toBe(200);
     expect(change.json()).toMatchObject({ studentId: student.id, status: "assigned" });
+    const update = async (id: string, patch: Record<string, unknown>) => built.app.inject({
+      method: "PATCH", url: `/api/scanner/pages/${id}`,
+      headers: { cookie, "x-inteschool-csrf": csrf }, payload: patch,
+    });
+    const confirmed = await update(exceptional.json().id, { reviewed: true });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json()).toMatchObject({ studentId: student.id, reviewedBy: "tch-1" });
+    expect(confirmed.json().reviewedAt).toBeTruthy();
+    const reset = await update(exceptional.json().id, { studentId: null });
+    expect(reset.json()).toMatchObject({ studentId: null, reviewedAt: null, reviewedBy: null });
+    const denied = await update(exceptional.json().id, { reviewed: true });
+    expect(denied.statusCode).toBe(400);
+    const empty = await update(exceptional.json().id, {});
+    expect(empty.statusCode).toBe(400);
+    const same = await update(exceptional.json().id, { studentId: student.id, reviewed: true });
+    expect(same.json().reviewedAt).toBeTruthy();
+    const recordAfterReload = await built.app.inject({ method: "GET", url: `/api/scanner/pages?schoolId=${schoolId}`, headers: { cookie } });
+    expect(recordAfterReload.json().find((row: { id: string }) => row.id === exceptional.json().id).reviewedAt).toBeTruthy();
     const image = await built.app.inject({ method: "GET", url: `/api/files/${verified.json().fileId}`, headers: { cookie } });
     expect(image.statusCode).toBe(200);
     expect(image.rawPayload.subarray(0, 8)).toEqual(png.subarray(0, 8));

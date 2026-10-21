@@ -23,6 +23,8 @@ interface ScannerPageRecord {
   verified: boolean;
   studentId: string | null;
   status: "pending" | "assigned";
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
   createdAt: string;
 }
 
@@ -33,7 +35,12 @@ const scanSchema = z.object({
   sheetId: z.string().min(1).max(160),
   qrPayload: z.string().max(500).optional(),
 });
-const assignmentSchema = z.object({ studentId: z.string().min(1).max(160).nullable() });
+const assignmentSchema = z.object({
+  studentId: z.string().min(1).max(160).nullable().optional(),
+  reviewed: z.boolean().optional(),
+}).refine((value) => value.studentId !== undefined || value.reviewed !== undefined, {
+  message: "至少需要修改一项扫描记录信息",
+});
 const RECORD_MIME = new Map([["image/png", ".png"], ["image/jpeg", ".jpg"]]);
 
 function sheetFor(state: Record<string, unknown>, type: "paper" | "lecture", id: string) {
@@ -104,7 +111,7 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
       id: randomUUID(), schoolId: teacher.schoolId, teacherId: teacher.id,
       sheetId: input.sheetId, sheetType: input.sheetType, fileId: id,
       qrPayload: input.qrPayload ?? null, verified: false,
-      studentId: null, status: "pending", createdAt: file.createdAt,
+      studentId: null, status: "pending", reviewedAt: null, reviewedBy: null, createdAt: file.createdAt,
     };
     try {
       await store.saveFile(file);
@@ -130,15 +137,26 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
     const teacher = store.getTeacherById(session.teacherId);
     if (!teacher?.schoolId) throw new Error("无权修改扫描记录");
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const { studentId } = assignmentSchema.parse(request.body);
+    const { studentId, reviewed } = assignmentSchema.parse(request.body);
     return withSerializedState(store, (state) => {
       const record = (state.scannerPages as ScannerPageRecord[]).find((item) => item.id === id && item.schoolId === teacher.schoolId);
       if (!record) throw new Error("扫描记录不存在");
-      if (studentId && !(state.students as Array<{ id: string; schoolId: string }>).some((item) => item.id === studentId && item.schoolId === teacher.schoolId)) {
-        throw new Error("学生不属于当前学校");
+      if (studentId !== undefined) {
+        if (studentId && !(state.students as Array<{ id: string; schoolId: string }>).some((item) => item.id === studentId && item.schoolId === teacher.schoolId)) {
+          throw new Error("学生不属于当前学校");
+        }
+        if (record.studentId !== studentId) {
+          record.reviewedAt = null;
+          record.reviewedBy = null;
+        }
+        record.studentId = studentId;
+        record.status = studentId ? "assigned" : "pending";
       }
-      record.studentId = studentId;
-      record.status = studentId ? "assigned" : "pending";
+      if (reviewed !== undefined) {
+        if (reviewed && !record.studentId) throw new Error("请先匹配学生再确认复查");
+        record.reviewedAt = reviewed ? new Date().toISOString() : null;
+        record.reviewedBy = reviewed ? teacher.id : null;
+      }
       return record;
     });
   });
