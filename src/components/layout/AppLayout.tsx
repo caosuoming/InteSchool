@@ -15,6 +15,10 @@ import { shareService } from "@/services/share";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
 import { canManageSchoolExams } from "@/lib/exam-permissions";
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
+import { SUBJECT_OPTIONS } from "@/lib/education";
+import { schoolService } from "@/services/school";
+import type { School as SchoolRecord } from "@/types";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { ExtractTaskCenter } from "@/components/extract/ExtractTaskCenter";
 import { useExtractTasksStore } from "@/stores/extractTasks";
@@ -78,18 +82,26 @@ const allNavItems: NavItem[] = [
 export function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { teacher, loading, logout, switchAffiliation, switchSubject, getAffiliations, getCurrentAffiliation } = useAuthStore();
+  const { teacher, loading, logout, switchAffiliation, switchSubject, switchPlatformSchool, getAffiliations, getCurrentAffiliation } = useAuthStore();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [affiliationDropdownOpen, setAffiliationDropdownOpen] = useState(false);
   const [donationRank, setDonationRank] = useState<number | null>(null);
+  const [platformSchools, setPlatformSchools] = useState<SchoolRecord[]>([]);
+  const [schoolFilter, setSchoolFilter] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const affiliations = teacher ? getAffiliations().filter((item) => item.status === "active") : [];
   const currentAffiliation = teacher ? getCurrentAffiliation() : null;
+  const platformAdmin = isPlatformAdminAccount(teacher);
   const availableSubjects = currentAffiliation?.schoolId
-    ? (currentAffiliation.subjects?.length ? currentAffiliation.subjects : [currentAffiliation.subject])
+    ? (platformAdmin
+      ? [...new Set([...SUBJECT_OPTIONS, currentAffiliation.subject])]
+      : (currentAffiliation.subjects?.length ? currentAffiliation.subjects : [currentAffiliation.subject]))
     : [];
+  const visiblePlatformSchools = platformSchools.filter((school) =>
+    `${school.name} ${school.code} ${school.city}`.toLowerCase().includes(schoolFilter.trim().toLowerCase()),
+  );
   const currentSchoolId = currentAffiliation ? currentAffiliation.schoolId : teacher?.schoolId || null;
   const isPersonalIdentity = !currentAffiliation?.schoolId;
   const canManageExams = teacher ? canManageSchoolExams(teacher, currentAffiliation) : false;
@@ -114,6 +126,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!platformAdmin || !affiliationDropdownOpen) return;
+    let active = true;
+    schoolService.listSchools()
+      .then((schools) => { if (active) setPlatformSchools(schools); })
+      .catch((error) => {
+        if (active) toast.error("学校列表加载失败", error instanceof Error ? error.message : undefined);
+      });
+    return () => { active = false; };
+  }, [platformAdmin, affiliationDropdownOpen]);
+
+  useEffect(() => {
     if (!teacher) {
       setDonationRank(null);
       return;
@@ -132,9 +155,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, [teacher]);
 
   const handleSwitchAffiliation = async (affId: string) => {
+    const ok = await switchAffiliation(affId);
+    if (!ok) {
+      toast.error("切换身份失败", useAuthStore.getState().error || undefined);
+      return;
+    }
     useExtractTasksStore.getState().reset();
-    await switchAffiliation(affId);
     setAffiliationDropdownOpen(false);
+    navigate("/dashboard");
+  };
+
+  const handleSwitchPlatformSchool = async (schoolId: string) => {
+    const ok = await switchPlatformSchool(schoolId);
+    if (!ok) {
+      toast.error("切换学校失败", useAuthStore.getState().error || undefined);
+      return;
+    }
+    useExtractTasksStore.getState().reset();
+    setAffiliationDropdownOpen(false);
+    setSchoolFilter("");
     navigate("/dashboard");
   };
 
@@ -244,7 +283,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   {isPersonalIdentity ? "个人身份" : currentAffiliation?.schoolName}
                 </div>
                 <div className="text-[10px] text-ink-400 truncate">
-                  {currentAffiliation?.subject}教师
+                  {platformAdmin ? "平台管理员" : `${currentAffiliation?.subject}教师`}
                 </div>
               </div>
               <ChevronDown className={cn(
@@ -255,7 +294,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
             {/* 下拉菜单 */}
             {affiliationDropdownOpen && (
-              <div className="absolute left-3 right-3 top-full mt-1 bg-ink-800 border border-ink-700 rounded-md shadow-lg z-50 overflow-hidden">
+              <div className="absolute left-3 right-3 top-full mt-1 bg-ink-800 border border-ink-700 rounded-md shadow-lg z-50 overflow-hidden max-h-[70vh] overflow-y-auto">
                 <div className="text-[10px] text-ink-400 px-3 py-1.5 border-b border-ink-700/50">
                   切换所属单位
                 </div>
@@ -286,6 +325,36 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     )}
                   </button>
                 ))}
+                {platformAdmin && (
+                  <div className="border-t border-ink-700/50">
+                    <div className="text-[10px] text-ink-400 px-3 py-1.5">平台管理 · 选择学校</div>
+                    <input
+                      aria-label="搜索学校"
+                      value={schoolFilter}
+                      onChange={(event) => setSchoolFilter(event.target.value)}
+                      placeholder="搜索学校名称或代码"
+                      className="mx-2 mb-1 w-[calc(100%-1rem)] rounded bg-ink-900 border border-ink-600 px-2 py-1.5 text-xs text-ink-100"
+                    />
+                    {visiblePlatformSchools.slice(0, 40).map((school) => (
+                      <button
+                        key={school.id}
+                        type="button"
+                        onClick={() => void handleSwitchPlatformSchool(school.id)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-3 py-2 text-left text-xs hover:bg-ink-700/50",
+                          school.id === currentSchoolId ? "text-gold-300 bg-gold-400/10" : "text-ink-200",
+                        )}
+                      >
+                        <School className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="flex-1 truncate">{school.name}</span>
+                        {school.id === currentSchoolId && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    ))}
+                    {visiblePlatformSchools.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-ink-400">没有匹配的学校</div>
+                    )}
+                  </div>
+                )}
                 {currentAffiliation?.schoolId && availableSubjects.length > 1 && (
                   <>
                     <div className="text-[10px] text-ink-400 px-3 py-1.5 border-t border-ink-700/50">当前学校 · 切换学科</div>

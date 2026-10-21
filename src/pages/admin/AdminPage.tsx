@@ -185,7 +185,8 @@ export function AdminPage() {
   const activeRole = currentAffiliation?.role;
   const isPlatformAdmin = isPlatformAdminAccount(teacher);
   const isAdmin = activeRole === "school_admin" || isPlatformAdmin;
-  const isSchoolAdmin = activeRole === "school_admin" && !isPlatformAdmin;
+  const isSchoolAdmin = Boolean(currentAffiliation?.schoolId)
+    && (activeRole === "school_admin" || isPlatformAdmin);
   const canManageRoster = teacher ? canManageSchoolRoster(teacher, currentAffiliation) : false;
   const canManageProfiles = teacher ? canManageTeachingProfiles(teacher, currentAffiliation) : false;
 

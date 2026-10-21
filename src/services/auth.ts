@@ -332,6 +332,14 @@ export const authService = {
       || null;
   },
 
+  async switchPlatformSchool(schoolId: string): Promise<Teacher> {
+    const teacher = await apiRequest<Teacher>("/api/auth/platform-school/activate", {
+      method: "POST", body: JSON.stringify({ schoolId }),
+    }, true);
+    currentTeacher = teacher;
+    return teacher;
+  },
+
   async switchSubject(affiliationId: string, subject: string): Promise<Teacher> {
     const teacher = await apiRequest<Teacher>(`/api/auth/affiliations/${encodeURIComponent(affiliationId)}/subject`, {
       method: "POST", body: JSON.stringify({ subject }),

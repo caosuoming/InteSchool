@@ -817,6 +817,66 @@ describe("production backend", () => {
     } });
   });
 
+  it("lets platform admins enter any active school and use any teaching subject without joining", async () => {
+    const ordinary = await login(built.app);
+    const url = "/api/auth/platform-school/activate";
+    const headers = { cookie: ordinary.cookie, "x-inteschool-csrf": ordinary.csrfToken };
+    const denied = await built.app.inject({ method: "POST", url, headers, payload: { schoolId: "sch-3" } });
+    expect(denied.statusCode).toBe(403);
+    expect(built.store.loadState().teachers.find((item) => item.id === "tch-1")!.schoolId).not.toBe("sch-3");
+
+    const before = built.store.loadState();
+    const updated = structuredClone(before);
+    const platformTeacher = updated.teachers.find((item) => item.id === "tch-1")!;
+    platformTeacher.role = "platform_admin";
+    platformTeacher.affiliations = platformTeacher.affiliations.map((item) => item.id === "aff-1"
+      ? { ...item, role: "platform_admin" }
+      : item);
+    await built.store.saveState(before, updated);
+    const platform = await login(built.app);
+    const adminHeaders = { cookie: platform.cookie, "x-inteschool-csrf": platform.csrfToken };
+    const csrfDenied = await built.app.inject({ method: "POST", url, headers: { cookie: platform.cookie }, payload: { schoolId: "sch-3" } });
+    expect(csrfDenied.statusCode).toBe(400);
+    const unknownSchool = await built.app.inject({ method: "POST", url, headers: adminHeaders, payload: { schoolId: "not-a-school" } });
+    expect(unknownSchool.statusCode).toBe(404);
+
+    const chosen = await built.app.inject({ method: "POST", url, headers: adminHeaders, payload: { schoolId: "sch-3" } });
+    expect(chosen.statusCode, chosen.body).toBe(200);
+    const context = chosen.json<{
+      schoolId: string; role: string; currentAffiliationId: string;
+      affiliations: Array<{ id: string; role: string; schoolId: string | null; platformContext?: boolean; subject: string }>;
+    }>();
+    expect(context.schoolId).toBe("sch-3");
+    expect(context.role).toBe("teacher");
+    expect(context.affiliations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "aff-1", role: "platform_admin" }),
+      expect.objectContaining({ id: context.currentAffiliationId, schoolId: "sch-3", platformContext: true }),
+    ]));
+    const changedSubject = await built.app.inject({
+      method: "POST", url: `/api/auth/affiliations/${context.currentAffiliationId}/subject`,
+      headers: adminHeaders, payload: { subject: "地理" },
+    });
+    expect(changedSubject.statusCode, changedSubject.body).toBe(200);
+    expect(changedSubject.json()).toMatchObject({ schoolId: "sch-3", subject: "地理" });
+
+    const current = await built.app.inject({ method: "GET", url: "/api/auth/current", headers: { cookie: platform.cookie } });
+    expect(current.json()).toMatchObject({ teacher: { schoolId: "sch-3", subject: "地理" } });
+    const second = await built.app.inject({ method: "POST", url, headers: adminHeaders, payload: { schoolId: "sch-2" } });
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.json()).toMatchObject({ schoolId: "sch-2" });
+    expect(second.json().affiliations.filter((aff: { platformContext?: boolean }) => aff.platformContext)).toHaveLength(1);
+    const persisted = built.store.loadState().teachers.find((item) => item.id === "tch-1")!;
+    expect(persisted.affiliations.find((aff) => aff.id === "aff-1")?.role).toBe("platform_admin");
+
+    const saved = built.store.loadState();
+    const disabled = structuredClone(saved);
+    (disabled.schools as Array<{ id: string; accountsDisabled?: boolean }>).find((school) => school.id === "sch-3")!.accountsDisabled = true;
+    await built.store.saveState(saved, disabled);
+    const blocked = await built.app.inject({ method: "POST", url, headers: adminHeaders, payload: { schoolId: "sch-3" } });
+    expect(blocked.statusCode).toBe(404);
+    expect(built.store.loadState().teachers.find((item) => item.id === "tch-1")!.schoolId).toBe("sch-2");
+  });
+
   it("keeps platform authority across school switches and supports user and school suspension", async () => {
     const target = await register(built.app, "suspend-target@example.com");
     const targetTeacherId = String(target.teacher.id);
