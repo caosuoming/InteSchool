@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth";
 import { Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { readAnswerSheetQr } from "@/lib/scanner-qr";
+import { assertScanBatchSize, validateScanImages } from "@/lib/scanner-import";
 import { buildAnswerSheetQrPayload } from "@/lib/answer-sheet";
 import { schoolService } from "@/services/school";
 import { SCANNER_DEVICE_KEY, SCANNER_SCHOOL_KEY, scannerService, type PublishedScannerSheet, type ScannerDevice } from "@/services/scanner";
@@ -49,6 +50,9 @@ export default function ScannerPage() {
   const [error, setError] = useState("");
   const [changingSchool, setChangingSchool] = useState(false);
   const imageUrls = useRef<string[]>([]);
+  const answerImportRef = useRef<HTMLInputElement>(null);
+  const thirdPartyImportRef = useRef<HTMLInputElement>(null);
+  const pendingImportSheet = useRef<PublishedScannerSheet | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -157,6 +161,25 @@ export default function ScannerPage() {
     }
   };
 
+  const importThirdPartyImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (!files.length || scanning || uploading) return;
+    if (!canUpload) { setError("请先登录本校教师账号，才能导入第三方卡"); return; }
+    setScanning(true);
+    setError("");
+    setSavedName("");
+    try {
+      const [image] = await validateScanImages(files);
+      const url = URL.createObjectURL(image);
+      imageUrls.current.push(url);
+      setThirdPartyImage({ blob: image, url });
+      setThirdPartyName(image.name.replace(/\.(png|jpe?g)$/i, "").slice(0, 150));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "导入第三方卡失败");
+    } finally { setScanning(false); }
+  };
+
   const saveThirdParty = async () => {
     if (!thirdPartyImage || savingThirdParty) return;
     setSavingThirdParty(true);
@@ -188,24 +211,58 @@ export default function ScannerPage() {
     setError("");
   };
 
+  const addImages = async (sheet: PublishedScannerSheet, images: Blob[]) => {
+    const existing = selected?.id === sheet.id && selected.type === sheet.type ? scans.map((scan) => scan.image) : [];
+    assertScanBatchSize(images, existing);
+    const results: ScannedImage[] = [];
+    try {
+      for (const image of images) {
+        const url = URL.createObjectURL(image);
+        results.push({ url, image, qrPayload: null, uploaded: false, uploading: false,
+          name: `${sheet.type}-${sheet.id}-${Date.now()}-${results.length + 1}.${image.type === "image/jpeg" ? "jpg" : "png"}` });
+        let qrPayload: string | null = null;
+        try { qrPayload = await readAnswerSheetQr(image); } catch { /* Unreadable codes require manual review. */ }
+        results[results.length - 1].qrPayload = qrPayload;
+      }
+    } catch (error) {
+      results.forEach((result) => URL.revokeObjectURL(result.url));
+      throw error;
+    }
+    if (selected?.id !== sheet.id || selected.type !== sheet.type) clearImages();
+    imageUrls.current.push(...results.map((result) => result.url));
+    setSelected(sheet);
+    setScans((previous) => [...(selected?.id === sheet.id && selected.type === sheet.type ? previous : []), ...results]);
+  };
+
+  const chooseAnswerImages = (sheet: PublishedScannerSheet) => {
+    if (scanning || uploading) return;
+    pendingImportSheet.current = sheet;
+    answerImportRef.current?.click();
+  };
+
+  const importAnswerImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    const sheet = pendingImportSheet.current;
+    if (!sheet || !files.length || scanning || uploading) return;
+    setScanning(true);
+    setError("");
+    try {
+      const existing = selected?.id === sheet.id && selected.type === sheet.type ? scans.map((scan) => scan.image) : [];
+      const images = await validateScanImages(files, existing);
+      await addImages(sheet, images);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "导入扫描图片失败");
+    } finally { setScanning(false); }
+  };
+
   const scanSheet = async (sheet: PublishedScannerSheet) => {
     if (scanning || uploading || !deviceId) return;
-    if (selected?.id !== sheet.id || selected.type !== sheet.type) clearImages();
-    setSelected(sheet);
     setScanning(true);
     setError("");
     try {
       const images = await scannerService.scan(deviceId, duplex);
-      const results: ScannedImage[] = [];
-      for (const image of images) {
-        const url = URL.createObjectURL(image);
-        imageUrls.current.push(url);
-        let qrPayload: string | null = null;
-        try { qrPayload = await readAnswerSheetQr(image); } catch { /* Keep unreadable scans for manual review. */ }
-        results.push({ url, image, qrPayload, uploaded: false, uploading: false,
-          name: `${sheet.type}-${sheet.id}-${Date.now()}-${results.length + 1}.${image.type === "image/jpeg" ? "jpg" : "png"}` });
-      }
-      setScans((previous) => [...(selected?.id === sheet.id && selected.type === sheet.type ? previous : []), ...results]);
+      await addImages(sheet, images);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "扫描失败");
     } finally { setScanning(false); }
@@ -233,6 +290,8 @@ export default function ScannerPage() {
   return (
     <div className="min-h-screen bg-mist p-4 sm:p-8">
       <div className="mx-auto max-w-5xl space-y-6">
+        <input ref={answerImportRef} type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" multiple hidden aria-label="选择扫描图片" onChange={(event) => void importAnswerImages(event)} />
+        <input ref={thirdPartyImportRef} type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" hidden aria-label="选择第三方卡图片" onChange={(event) => void importThirdPartyImage(event)} />
         <div className="flex items-center justify-between gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate("/login")}>
             <ArrowLeft className="h-4 w-4" />返回登录页
@@ -240,6 +299,7 @@ export default function ScannerPage() {
           {selectedSchool && !changingSchool && (
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={() => void scanThirdParty()} loading={scanning} disabled={uploading || !deviceId}>扫描第三方卡</Button>
+              <Button size="sm" variant="outline" onClick={() => thirdPartyImportRef.current?.click()} disabled={scanning || uploading || !canUpload}>导入第三方卡图片</Button>
               <Button variant="outline" size="sm" disabled={scanning || uploading} onClick={() => { setSelection(schoolId); setChangingSchool(true); }}>
                 切换学校
               </Button>
@@ -281,7 +341,8 @@ export default function ScannerPage() {
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href={`inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`}>授权连接本站</a>
                     <a className="text-ink-600 underline" href="https://github.com/caosuoming/InteSchool/blob/main/docs/scanner-bridge.md" target="_blank" rel="noopener noreferrer">安装说明及故障排查</a>
                   </div>
-                  <p className="text-xs text-ink-600">连接时浏览器可能询问是否打开 InteSchool 扫描桥接；仅对可信学校网址授权。扫描仪还需安装厂商驱动。</p>
+                  <p className="text-xs text-ink-600">连接时浏览器可能询问是否打开 InteSchool 扫描桥接；仅对可信学校网址授权。扫描仪还需安装厂商驱动。若已安装仍无法连接，请在浏览器网站权限中允许“本机设备/本地网络访问”。</p>
+                  <p className="text-xs text-ink-600">无法安装桥接时，也可以用系统扫描软件先保存为 PNG/JPEG 图片，然后使用下方答题卡的“导入图片”功能，无须安装 InteSchool 客户端。</p>
                 </div>
               )}
               <Select label="扫描仪" value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem(SCANNER_DEVICE_KEY, event.target.value); }} options={deviceOptions} placeholder="请连接扫描仪并刷新" />
@@ -313,13 +374,7 @@ export default function ScannerPage() {
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2">
                       {filteredSheets.map((sheet) => (
-                        <button
-                          key={`${sheet.type}:${sheet.id}`}
-                          type="button"
-                          disabled={scanning || uploading || !deviceId}
-                          onClick={() => void scanSheet(sheet)}
-                          className="rounded-xl border border-ink-100 bg-paper p-5 text-left shadow-sm transition-colors hover:border-gold-400 hover:bg-gold-50 disabled:opacity-60"
-                        >
+                        <div key={`${sheet.type}:${sheet.id}`} className="rounded-xl border border-ink-100 bg-paper p-5 shadow-sm">
                           <div className="flex items-start justify-between gap-2">
                             <FileText className="h-5 w-5 text-gold-600" />
                             <span className="text-xs text-ink-500">{sheet.type === "paper" ? "试卷" : "讲义"}</span>
@@ -327,8 +382,13 @@ export default function ScannerPage() {
                           <h3 className="mt-3 line-clamp-2 font-semibold text-ink-900">{sheet.title}</h3>
                           <p className="mt-2 text-xs text-ink-500">{sheet.grade} · {sheet.schoolYear} · {sheet.subject}</p>
                           {!!sheet.classes?.length && <p className="mt-1 text-xs text-ink-500">{sheet.classes.map((item) => item.name).join("、")}</p>}
-                          <p className="mt-3 text-xs text-gold-700">{scanning && selected?.id === sheet.id && selected.type === sheet.type ? "正在扫描…" : "点击开始扫描"}</p>
-                        </button>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button type="button" disabled={scanning || uploading || !deviceId} onClick={() => void scanSheet(sheet)}
+                              aria-label={`使用扫描仪采集${sheet.title}`} className="text-sm text-gold-700 hover:underline disabled:opacity-50">{scanning && selected?.id === sheet.id && selected.type === sheet.type ? "正在处理…" : "使用扫描仪"}</button>
+                            <button type="button" disabled={scanning || uploading} onClick={() => chooseAnswerImages(sheet)}
+                              aria-label={`导入${sheet.title}的扫描图片`} className="text-sm text-teal-700 hover:underline disabled:opacity-50">导入图片</button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -355,7 +415,7 @@ export default function ScannerPage() {
               </div>
             )}
             {selected && <section className="space-y-4 rounded-xl border border-ink-100 bg-paper p-5 sm:p-7">
-              <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-ink-900">{selected.title}</h2><p className="mt-1 text-xs text-ink-500">已采集 {scans.length} 页 · 已上传 {scans.filter((scan) => scan.uploaded).length} 页</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void scanSheet(selected)} loading={scanning} disabled={uploading || !deviceId}><RefreshCw className="h-4 w-4" />继续扫描</Button><Button onClick={() => void uploadPending()} disabled={!canUpload || !pendingCount || scanning} loading={uploading}>确认试卷并上传 {pendingCount} 页</Button></div></div>
+              <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-ink-900">{selected.title}</h2><p className="mt-1 text-xs text-ink-500">已采集 {scans.length} 页 · 已上传 {scans.filter((scan) => scan.uploaded).length} 页</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void scanSheet(selected)} loading={scanning} disabled={uploading || !deviceId}><RefreshCw className="h-4 w-4" />继续扫描</Button><Button variant="outline" onClick={() => chooseAnswerImages(selected)} disabled={scanning || uploading}>继续导入图片</Button><Button onClick={() => void uploadPending()} disabled={!canUpload || !pendingCount || scanning} loading={uploading}>确认试卷并上传 {pendingCount} 页</Button></div></div>
               <p className="text-xs text-ink-500">逐页核对二维码与试卷名称。无法识别二维码的页面会保存为待处理异常卷；二维码指向其他试卷的页面禁止上传到当前试卷。</p>
               {scans.length > 0 && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{scans.map((scan, index) => (
                 <div key={scan.url} className="overflow-hidden rounded-lg border border-ink-100"><img src={scan.url} alt={`扫描结果第 ${index + 1} 张`} className="w-full max-h-72 object-contain bg-mist" /><div className="p-3 space-y-2"><p className="text-sm font-medium">第 {index + 1} 页 · {scan.uploaded ? "已上传" : scan.uploading ? "正在上传" : scan.qrPayload === expectedQr ? "二维码已匹配" : scan.qrPayload ? "二维码与选定试卷不符" : "二维码未识别（异常卷）"}</p><a href={scan.url} download={scan.name} className="flex items-center justify-center gap-2 text-sm text-gold-700 hover:underline"><Download className="h-4 w-4" />下载第 {index + 1} 张</a></div></div>
