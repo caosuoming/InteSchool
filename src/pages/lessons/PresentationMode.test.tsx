@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LessonSlide } from "@/types";
+import type { HomeworkClassOverviewRecord, LessonSlide } from "@/types";
 import { getMaximumContrastTextColor } from "@/lib/color-contrast";
 import { PresentationMode } from "./PresentationMode";
 
@@ -121,6 +121,26 @@ beforeEach(() => {
 });
 
 describe("PresentationMode", () => {
+  it("shows followed student markers in the first-page homework panel only when enabled", async () => {
+    const record: HomeworkClassOverviewRecord = {
+      id: "record-1", classId: "class-1", schoolId: "school-1", teacherId: "teacher-1",
+      homeworkDate: "2020-01-01", summary: "函数练习", studentIds: ["student-1", "student-2"],
+      submittedStudentIds: ["student-2"], absentStudentIds: [], attendanceTaken: true,
+      createdAt: "2020-01-01T00:00:00.000Z", updatedAt: "2020-01-01T00:00:00.000Z",
+    };
+    const props = {
+      slides, initialIndex: 0, students: [{ id: "student-1", name: "甲同学" }],
+      homeworkRecords: [record], followedStudentIds: new Set(["student-1"]),
+      relatedQuestionsById: {}, onExit: vi.fn(),
+    };
+    const user = userEvent.setup();
+    const { rerender } = render(<PresentationMode {...props} />);
+    await user.click(screen.getByRole("button", { name: "左侧作业记录" }));
+    expect(screen.getByRole("img", { name: "甲同学已关注" })).toBeInTheDocument();
+    rerender(<PresentationMode {...props} highlightFollowedHomeworkStudents={false} />);
+    expect(screen.queryByRole("img", { name: "甲同学已关注" })).not.toBeInTheDocument();
+  });
+
   it("adds another blank page from either next-page control when blank-page creation is enabled", async () => {
     const user = userEvent.setup();
     const blankSlide: LessonSlide = {

@@ -61,6 +61,7 @@ interface PresentationModeProps {
   students: { id: string; name: string }[];
   homeworkRecords?: HomeworkClassOverviewRecord[];
   followedStudentIds?: ReadonlySet<string>;
+  highlightFollowedHomeworkStudents?: boolean;
   ignoredStudentIds?: ReadonlySet<string>;
   relatedQuestionsById: Record<string, Question>;
   preferenceOwnerId?: string;
@@ -1027,6 +1028,7 @@ export function PresentationMode({
   students,
   homeworkRecords = [],
   followedStudentIds = EMPTY_STUDENT_ID_SET,
+  highlightFollowedHomeworkStudents = true,
   ignoredStudentIds = EMPTY_STUDENT_ID_SET,
   relatedQuestionsById,
   preferenceOwnerId,
@@ -2184,7 +2186,8 @@ export function PresentationMode({
   };
 
   const renderPanelContent = (tab: SideTab) => {
-    if (tab === "homework") return <HomeworkHistoryPanel records={homeworkRecords} students={students} />;
+    if (tab === "homework") return <HomeworkHistoryPanel records={homeworkRecords} students={students}
+      followedStudentIds={followedStudentIds} highlightFollowed={highlightFollowedHomeworkStudents} />;
     if (tab === "display") {
       return (
         <div role="group" aria-label="显示内容开关" className="flex items-center gap-1 whitespace-nowrap">

@@ -290,6 +290,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   const [classHomeworkRecords, setClassHomeworkRecords] = useState<HomeworkClassOverviewRecord[]>([]);
   const [students, setStudents] = useState<Array<Pick<Student, "id" | "name">>>([]);
   const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(() => new Set());
+  const [highlightFollowedHomeworkStudents, setHighlightFollowedHomeworkStudents] = useState(true);
   const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -363,7 +364,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         setClassHomeworkRecords([]);
         return;
       }
-      const [lessonData, studentData, homeworkData, noticeData, followedIds, ignoredIds, homeworkRecords] = await Promise.all([
+      const [lessonData, studentData, homeworkData, noticeData, followedIds, ignoredIds, homeworkRecords, highlightEnabled] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           schoolId: teacher.schoolId,
           classId: selectedClassId,
@@ -384,12 +385,14 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         studentInteractionService.listFollowedStudentIds().catch(() => []),
         studentInteractionService.listIgnoredStudentIds().catch(() => []),
         homeworkRecordService.listClassOverviews(selectedClassId).catch(() => []),
+        studentInteractionService.getHomeworkFollowHighlightEnabled().catch(() => true),
       ]);
       setLessons(lessonData);
       setStudents(studentData);
       setHomeworks(homeworkData);
       setClassHomeworkRecords(homeworkRecords);
       setNotices(noticeData);
+      setHighlightFollowedHomeworkStudents(highlightEnabled !== false);
       setFollowedStudentIds(new Set(followedIds));
       setIgnoredStudentIds(new Set(ignoredIds));
     } catch (error) {
@@ -695,6 +698,9 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     const presentationFollowedStudentIds = deviceAttention
       ? new Set(deviceAttention.followedStudentIds)
       : followedStudentIds;
+    const presentationHighlightFollowed = deviceAttention
+      ? deviceAttention.highlightFollowedHomeworkStudents !== false
+      : highlightFollowedHomeworkStudents;
     const presentationIgnoredStudentIds = deviceAttention
       ? new Set(deviceAttention.ignoredStudentIds)
       : ignoredStudentIds;
@@ -707,6 +713,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         students={students}
         homeworkRecords={classHomeworkRecords}
         followedStudentIds={presentationFollowedStudentIds}
+        highlightFollowedHomeworkStudents={presentationHighlightFollowed}
         ignoredStudentIds={presentationIgnoredStudentIds}
         relatedQuestionsById={{}}
         preferenceOwnerId={presenting?.teacherId || teacher?.id}

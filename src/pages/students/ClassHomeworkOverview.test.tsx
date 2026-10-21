@@ -4,9 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeworkClassOverviewRecord, SchoolClass, Student } from "@/types";
 import { uploadFile } from "@/services/api";
 import { homeworkRecordService } from "@/services/homeworkRecord";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { ClassHomeworkOverview } from "./ClassHomeworkOverview";
 
 vi.mock("@/services/api", () => ({ uploadFile: vi.fn() }));
+vi.mock("@/services/studentInteraction", () => ({ studentInteractionService: {
+  getHomeworkFollowHighlightEnabled: vi.fn(), setHomeworkFollowHighlightEnabled: vi.fn(),
+} }));
 vi.mock("@/services/homeworkRecord", () => ({ homeworkRecordService: {
   getClassOverview: vi.fn(), listClassOverviews: vi.fn(), saveClassOverview: vi.fn(),
 } }));
@@ -21,6 +25,8 @@ const students = [{ id: "student-1", name: "甲同学" }, { id: "student-2", nam
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(studentInteractionService.getHomeworkFollowHighlightEnabled).mockResolvedValue(true);
+  vi.mocked(studentInteractionService.setHomeworkFollowHighlightEnabled).mockResolvedValue();
   vi.mocked(homeworkRecordService.getClassOverview).mockResolvedValue(null);
   vi.mocked(homeworkRecordService.listClassOverviews).mockResolvedValue([]);
   vi.mocked(homeworkRecordService.saveClassOverview).mockImplementation(async (input) => ({
@@ -83,6 +89,41 @@ describe("ClassHomeworkOverview", () => {
       teacherId="teacher-1" followedStudentIds={new Set(["student-2"])} />);
     expect(screen.queryByRole("img", { name: "甲同学已关注" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "乙同学已关注" })).toBeInTheDocument();
+  });
+
+  it("enables highlighting by default and allows toggling its persistence", async () => {
+    const user = userEvent.setup();
+    render(<ClassHomeworkOverview classInfo={classInfo} students={students} teacherId="teacher-1"
+      followedStudentIds={new Set(["student-1"])} />);
+    await screen.findByText("作业点名");
+    const toggle = screen.getByRole("checkbox", { name: "关注学生凸显" });
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole("img", { name: "甲同学已关注" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "甲同学已交作业" }).closest("div.rounded-lg"))
+      .toHaveClass("ring-red-400");
+
+    await user.click(toggle);
+    await waitFor(() => expect(studentInteractionService.setHomeworkFollowHighlightEnabled).toHaveBeenCalledWith(false));
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByRole("img", { name: "甲同学已关注" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "甲同学已交作业" }).closest("div.rounded-lg"))
+      .not.toHaveClass("ring-red-400");
+    await user.click(toggle);
+    await waitFor(() => expect(studentInteractionService.setHomeworkFollowHighlightEnabled).toHaveBeenLastCalledWith(true));
+    expect(screen.getByRole("img", { name: "甲同学已关注" })).toBeInTheDocument();
+  });
+
+  it("loads a disabled setting and restores the checkbox if saving fails", async () => {
+    vi.mocked(studentInteractionService.getHomeworkFollowHighlightEnabled).mockResolvedValue(false);
+    vi.mocked(studentInteractionService.setHomeworkFollowHighlightEnabled).mockRejectedValueOnce(new Error("network"));
+    const user = userEvent.setup();
+    render(<ClassHomeworkOverview classInfo={classInfo} students={students} teacherId="teacher-1"
+      followedStudentIds={new Set(["student-1"])} />);
+    const toggle = await screen.findByRole("checkbox", { name: "关注学生凸显" });
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    expect(screen.queryByRole("img", { name: "甲同学已关注" })).not.toBeInTheDocument();
+    await user.click(toggle);
+    await waitFor(() => expect(toggle).not.toBeChecked());
   });
 
   it("updates the missing count after attendance is saved", async () => {

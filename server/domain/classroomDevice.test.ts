@@ -239,6 +239,31 @@ describe("classroomDeviceService", () => {
     });
   });
 
+  it("includes the teacher's persisted highlight setting in classroom-device attention", async () => {
+    const state = makeState();
+    state.lessonCoursewares = [{
+      id: "lesson-1", schoolId: "school-1", teacherId: "subject",
+      classIds: ["class-1"], status: "published", updatedAt: CREATED_AT,
+    }] as any;
+    state.students = [{ id: "student-1", name: "学生甲", schoolId: "school-1", classId: "class-1", status: "active" }] as any;
+    state.studentInteractionFollows = [{ teacherId: "subject", studentId: "student-1" }] as any;
+    const subject = pick(state, "subject");
+    subject.highlightFollowedHomeworkStudents = false;
+    await runWithState(state, async () => {
+      await classroomDeviceService.bindDevice({
+        schoolId: "school-1", classId: "class-1",
+        deviceToken: TOKEN_1, installationId: "installation-highlight",
+      });
+      const snapshot = await classroomDeviceService.getClassroomSnapshot(TOKEN_1);
+      expect(snapshot.studentAttentionByTeacherId?.subject).toEqual({
+        followedStudentIds: ["student-1"], ignoredStudentIds: [], highlightFollowedHomeworkStudents: false,
+      });
+      subject.highlightFollowedHomeworkStudents = true;
+      const updated = await classroomDeviceService.getClassroomSnapshot(TOKEN_1);
+      expect(updated.studentAttentionByTeacherId?.subject?.highlightFollowedHomeworkStudents).toBe(true);
+    });
+  });
+
   it("supports multiple numbered public classrooms and auto-picks the first free number for legacy clients", async () => {
     const state = makeState();
     await runWithState(state, async () => {
