@@ -45,6 +45,8 @@ export interface TeacherAffiliation {
   prepGroupIds: string[];
   /** 是否为当前激活的身份 */
   isCurrent: boolean;
+  /** 平台管理员临时选择的学校上下文，不表示真实入校任职。 */
+  platformContext?: boolean;
   joinedAt: string;
 }
 

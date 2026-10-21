@@ -135,11 +135,12 @@ export default function PermissionApplicationsPage() {
   const affiliation = getCurrentAffiliation();
   const schoolId = affiliation?.schoolId || null;
   const platformAdmin = isPlatformAdminAccount(teacher);
-  const schoolAdmin = affiliation?.role === "school_admin" && !platformAdmin;
+  const schoolAdmin = Boolean(schoolId) && (affiliation?.role === "school_admin" || platformAdmin);
   const location = useLocation();
   const navigate = useNavigate();
   const view = schoolAdmin && (location.hash === "#review" || location.hash === "#pending")
-    ? "review" : schoolAdmin && location.hash === "#management" ? "management" : "applications";
+    ? "review" : schoolAdmin && location.hash === "#management" ? "management"
+      : platformAdmin && schoolId ? "review" : "applications";
   const switchView = (next: "applications" | "review" | "management") => {
     void navigate({ pathname: location.pathname, search: location.search,
       hash: next === "applications" ? "" : `#${next}` });
@@ -167,7 +168,7 @@ export default function PermissionApplicationsPage() {
   useEffect(() => { setDraft(current); }, [current]);
 
   const load = useCallback(async () => {
-    if (!teacher || !schoolId || platformAdmin) {
+    if (!teacher || !schoolId) {
       setLoading(false);
       return;
     }
@@ -196,7 +197,7 @@ export default function PermissionApplicationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [teacher, schoolId, schoolAdmin, platformAdmin]);
+  }, [teacher, schoolId, schoolAdmin]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -241,12 +242,12 @@ export default function PermissionApplicationsPage() {
     }
   };
 
-  if (!schoolId || platformAdmin) {
+  if (!schoolId) {
     return (
       <div>
         <PageHeader title="我的权限申请" description="学校身份的权限由所属学校管理员审核" icon={<ShieldCheck className="h-5 w-5" />} />
         <Card className="p-6 text-sm text-ink-600">
-          {platformAdmin ? "平台管理员不通过校内权限申请调整职务。" : "请先切换到已加入的学校身份。"}
+          {platformAdmin ? "请先从身份菜单中选择要管理的学校。" : "请先切换到已加入的学校身份。"}
         </Card>
       </div>
     );
@@ -258,7 +259,7 @@ export default function PermissionApplicationsPage() {
         description={view === "review" ? "审核本校教师的权限申请，可拒绝、通过或调整后通过" : view === "management" ? "管理本校教师职务与任教权限" : "查看个人权限并申请调整，提交后由本校管理员审核"}
         icon={<ShieldCheck className="h-5 w-5" />} />
       {schoolAdmin && <nav aria-label="教师权限申请与管理" className="mb-6 flex flex-wrap gap-2">
-        <Button variant={view === "applications" ? "gold" : "outline"} onClick={() => switchView("applications")}>我的权限申请</Button>
+        {!platformAdmin && <Button variant={view === "applications" ? "gold" : "outline"} onClick={() => switchView("applications")}>我的权限申请</Button>}
         <Button variant={view === "review" ? "gold" : "outline"} onClick={() => switchView("review")}>本校教师权限审核</Button>
         <Button variant={view === "management" ? "gold" : "outline"} onClick={() => switchView("management")}>本校教师权限管理</Button>
       </nav>}

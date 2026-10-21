@@ -1,3 +1,4 @@
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen, Save, ShieldCheck, Users } from "lucide-react";
 import { Badge, Button, Card, Select } from "@/components/ui";
@@ -32,7 +33,7 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
   const accountRole = currentAffiliation?.role || current?.role;
   const managerRoles = currentAffiliation?.roles || current?.roles || [];
   const managerLevel = highestTeacherRoleLevel(managerRoles);
-  const isSchoolAdmin = accountRole === "school_admin" || accountRole === "platform_admin";
+  const isSchoolAdmin = accountRole === "school_admin" || isPlatformAdminAccount(current);
 
   const load = useCallback(async () => {
     if (!schoolId) return;

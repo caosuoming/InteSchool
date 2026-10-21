@@ -1,3 +1,4 @@
+import { isPlatformAdminAccount } from "./platform-admin.js";
 import type { Teacher, TeacherAffiliation } from "@/types";
 
 export const STUDENT_ARCHIVE_MANAGER_ROLES = [
@@ -23,7 +24,7 @@ export function canManageStudentArchive(
 ): boolean {
   const active = activeAffiliation(teacher, affiliation);
   const role = active?.role || teacher.role;
-  if (role === "school_admin" || role === "platform_admin") return true;
+  if (isPlatformAdminAccount(teacher) || role === "school_admin" || role === "platform_admin") return true;
   const roles = active?.roles || teacher.roles;
   return roles.some((item) => STUDENT_ARCHIVE_MANAGER_ROLES.includes(
     item as (typeof STUDENT_ARCHIVE_MANAGER_ROLES)[number],

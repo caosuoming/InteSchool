@@ -1,3 +1,4 @@
+import { isPlatformAdminAccount } from "./platform-admin.js";
 import type { Teacher, TeacherAffiliation, TeacherRole } from "../types/index.js";
 
 export const EXAM_MANAGER_ROLES: readonly TeacherRole[] = [
@@ -8,15 +9,15 @@ export const EXAM_MANAGER_ROLES: readonly TeacherRole[] = [
 ];
 
 export function isSchoolExamAdmin(
-  teacher: Pick<Teacher, "role">,
+  teacher: Pick<Teacher, "role"> & Partial<Pick<Teacher, "affiliations">>,
   affiliation?: Pick<TeacherAffiliation, "role"> | null,
 ): boolean {
   const activeRole = affiliation?.role || teacher.role;
-  return activeRole === "school_admin" || activeRole === "platform_admin";
+  return isPlatformAdminAccount(teacher) || activeRole === "school_admin" || activeRole === "platform_admin";
 }
 
 export function canManageSchoolExams(
-  teacher: Pick<Teacher, "role" | "roles">,
+  teacher: Pick<Teacher, "role" | "roles"> & Partial<Pick<Teacher, "affiliations">>,
   affiliation?: Pick<TeacherAffiliation, "role" | "roles" | "schoolId"> | null,
 ): boolean {
   if (isSchoolExamAdmin(teacher, affiliation)) return true;
@@ -26,7 +27,7 @@ export function canManageSchoolExams(
 }
 
 export function canModifyExamRecord(
-  teacher: Pick<Teacher, "id" | "role">,
+  teacher: Pick<Teacher, "id" | "role"> & Partial<Pick<Teacher, "affiliations">>,
   ownerTeacherId: string,
   affiliation?: Pick<TeacherAffiliation, "role"> | null,
 ): boolean {
