@@ -681,6 +681,44 @@ describe("MyResourcesPage batch actions", () => {
     },
   );
 
+  it("shows question counts, not student-question attempts, when selecting an entire class", async () => {
+    const paper: ExamPaper = {
+      ...examPaper,
+      questions: ["q-1", "q-2", "q-3", "q-4"].map((questionId) => ({
+        id: `entry-${questionId}`, questionId, stem: "测试题", answer: "A", analysis: "", score: 5, type: "single",
+      })),
+    };
+    const students = Array.from({ length: 49 }, (_, index) => ({
+      id: `student-${index}`, name: `学生${index}`, studentNo: String(index),
+      classId: "class-1", schoolId: "school-1", grade: "高一", status: "active" as const,
+    }));
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
+    vi.mocked(classService.listMyStudents).mockResolvedValue(students);
+    vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([{
+      id: "record-1", studentId: "student-0", questionId: "q-1", lectureId: "other-document",
+      isCorrect: true, answeredAt: "2026-10-01T00:00:00.000Z",
+    }]);
+    vi.mocked(analyticsService.listPendingQuestionAssignments).mockResolvedValue([
+      { studentId: "student-0", questionId: "q-1" },
+      { studentId: "student-1", questionId: "q-2" },
+      { studentId: "student-2", questionId: "q-2" },
+      { studentId: "student-3", questionId: "q-3" },
+      { studentId: "student-4", questionId: "q-3" },
+    ]);
+
+    renderPage("examPaper");
+    expect(await screen.findByText(paper.title)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
+    fireEvent.click(await screen.findByRole("button", { name: "全选" }));
+    fireEvent.click(screen.getByRole("button", { name: "确定（49 人）" }));
+
+    await waitFor(() => {
+      expect(analyticsService.listAnswerRecordsByStudents).toHaveBeenCalledWith(students.map((student) => student.id));
+      expect(screen.getByTestId("resource-card-student-progress"))
+        .toHaveTextContent("做过 1 题 · 待做 2 题 · 未做 1 题");
+    });
+  });
+
   it("filters the exam-paper library to issued documents with no recorded answers", async () => {
     const pendingPaper: ExamPaper = {
       ...examPaper,
