@@ -825,7 +825,7 @@ function convertSym(el: Element): string {
     "Im": "\\Im ",
     "partial": "\\partial ",
     "nabla": "\\nabla ",
-    "surd": "\\sqrt ",
+    "surd": "\\surd ",
     "mid": "\\mid ",
     "amalg": "\\amalg ",
     "cap": "\\cap ",
@@ -1162,7 +1162,7 @@ function convertSymVal(val: string): string {
     "infty": "\\infty ",
     "partial": "\\partial ",
     "nabla": "\\nabla ",
-    "surd": "\\sqrt ",
+    "surd": "\\surd ",
     "angle": "\\angle ",
     "perp": "\\perp ",
     "parallel": "\\parallel ",
@@ -1276,7 +1276,7 @@ function escapeLatex(text: string): string {
     "ς": "\\varsigma ",
     // 普通拉丁字母必须保持原样。只有显式的双线体 Unicode 字符
     // （ℕ、ℤ、ℚ、ℝ、ℂ）或 convertSym 中的集合名称才转换为 \mathbb。
-    "√": "\\sqrt",
+    "√": "\\surd ",
     "…": "\\ldots ",
     "⋯": "\\cdots ",
     "⋮": "\\vdots ",
