@@ -316,7 +316,7 @@ function canUpdateTeacherRoles(
   if (typeof teacherId !== "string" || typeof schoolId !== "string" || !Array.isArray(roles) || !roles.every(isTeacherRole)) return false;
   const target = state.teachers.find((item) => item.id === teacherId);
   if (!target || !schoolAffiliation(target, schoolId)) return false;
-  if (isPlatformAdmin(manager)) return false;
+  if (isPlatformAdmin(manager)) return manager.schoolId === schoolId;
   if (manager.schoolId !== schoolId) return false;
   if (isAdmin(manager)) return true;
   if (target.id === manager.id) return false;

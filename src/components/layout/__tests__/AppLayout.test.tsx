@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { shareService } from "@/services/share";
+import { schoolService } from "@/services/school";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
 import type { Teacher, TeacherAffiliation } from "@/types";
@@ -14,6 +15,10 @@ vi.mock("@/services/share", () => ({
       rank: null,
     }),
   },
+}));
+
+vi.mock("@/services/school", () => ({
+  schoolService: { listSchools: vi.fn().mockResolvedValue([]) },
 }));
 
 const affiliation: TeacherAffiliation = {
@@ -56,6 +61,36 @@ describe("AppLayout", () => {
       getAffiliations: () => [affiliation],
       getCurrentAffiliation: () => affiliation,
     });
+  });
+
+  it("lets platform administrators choose any school and subject from the identity menu", async () => {
+    const platformAffiliation = { ...affiliation, role: "platform_admin" as const, subjects: ["数学"] };
+    const switchSchool = vi.fn().mockResolvedValue(true);
+    const switchSubject = vi.fn().mockResolvedValue(true);
+    vi.mocked(schoolService.listSchools).mockResolvedValue([{
+      id: "school-other", name: "另一所学校", code: "OTHER", city: "南京",
+      logo: "", description: "", teacherCount: 0, studentCount: 0,
+    }]);
+    useAuthStore.setState({
+      teacher: {
+        id: "teacher-1", name: "平台管理员", avatar: "管",
+        schoolId: "school-1", subject: "数学", role: "platform_admin",
+        affiliations: [platformAffiliation], currentAffiliationId: platformAffiliation.id,
+      } as Teacher,
+      getAffiliations: () => [platformAffiliation],
+      getCurrentAffiliation: () => platformAffiliation,
+      switchPlatformSchool: switchSchool,
+      switchSubject,
+    });
+    render(<MemoryRouter initialEntries={["/dashboard"]}><AppLayout>测试</AppLayout></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: /测试学校/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /另一所学校/ })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("搜索学校"), { target: { value: "OTHER" } });
+    fireEvent.click(screen.getByRole("button", { name: /另一所学校/ }));
+    await waitFor(() => expect(switchSchool).toHaveBeenCalledWith("school-other"));
+    fireEvent.click(screen.getByRole("button", { name: /测试学校/ }));
+    fireEvent.click(screen.getByRole("button", { name: "地理" }));
+    await waitFor(() => expect(switchSubject).toHaveBeenCalledWith("地理"));
   });
 
   it("does not expose personal classes in the primary sidebar", () => {

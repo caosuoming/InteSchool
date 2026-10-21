@@ -11,6 +11,8 @@ describe("answer-sheet helpers", () => {
       .toBe("intes://answer-sheet/v1/exam-paper/paper-123");
     expect(buildAnswerSheetQrPayload("lecture", "lecture/123"))
       .toBe("intes://answer-sheet/v1/lecture/lecture%2F123");
+    expect(buildAnswerSheetQrPayload("exam-paper", "paper-123", "version/2"))
+      .toBe("intes://answer-sheet/v2/exam-paper/paper-123/version%2F2");
   });
 
   it("defaults to an 8-digit student number and normalizes the configurable digit count", () => {

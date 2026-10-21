@@ -26,6 +26,14 @@ export const studentInteractionService = {
     return rpcCall("studentInteraction", "listByTeacher", [teacherId]) as any;
   },
 
+  async getHomeworkFollowHighlightEnabled(): Promise<boolean> {
+    return rpcCall("studentInteraction", "getHomeworkFollowHighlightEnabled", []) as any;
+  },
+
+  async setHomeworkFollowHighlightEnabled(enabled: boolean): Promise<void> {
+    return rpcCall("studentInteraction", "setHomeworkFollowHighlightEnabled", [enabled]) as any;
+  },
+
   async listFollowedStudentIds(): Promise<string[]> {
     return rpcCall("studentInteraction", "listFollowedStudentIds", []) as any;
   },

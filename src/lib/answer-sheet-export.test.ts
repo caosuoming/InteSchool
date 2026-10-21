@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadAnswerSheetPdf } from "./answer-sheet-export";
+import { downloadAnswerSheetPdf, printAnswerSheet } from "./answer-sheet-export";
 import { ANSWER_SHEET_PAPER_MM, type AnswerSheetPaperSize } from "./answer-sheet";
 
 const mocks = vi.hoisted(() => ({
@@ -47,6 +47,11 @@ describe("downloadAnswerSheetPdf", () => {
       const paper = ANSWER_SHEET_PAPER_MM[paperSize];
       const orientation = paper.width > paper.height ? "landscape" : "portrait";
 
+      mocks.html2canvas.mockImplementation(async (page: HTMLElement) => {
+        expect(page.parentElement?.style.left).toBe("0px");
+        expect(page.parentElement?.style.zIndex).toBe("-1");
+        return document.createElement("canvas");
+      });
       await downloadAnswerSheetPdf(pages, "期中/考试:答题卡", paperSize);
 
       expect(mocks.construct).toHaveBeenCalledWith({
@@ -61,6 +66,7 @@ describe("downloadAnswerSheetPdf", () => {
           windowHeight: Math.round(paper.height * 96 / 25.4),
           scale: 2,
           useCORS: true,
+          foreignObjectRendering: true,
         }),
       );
       expect(mocks.addImage).toHaveBeenCalledTimes(2);
@@ -70,6 +76,46 @@ describe("downloadAnswerSheetPdf", () => {
       expect(pages[0].style.boxShadow).not.toBe("none");
     },
   );
+
+  it.each(["A4", "16K", "A3", "8K"] as AnswerSheetPaperSize[])(
+    "prints only the %s preview sheets, without the app shell", (paperSize) => {
+      const pages = makePages(2);
+      const print = vi.spyOn(window, "print").mockImplementation(() => {
+        const host = document.querySelector(".answer-sheet-standalone-print-root");
+        expect(host).not.toBeNull();
+        expect(document.body).toHaveClass("answer-sheet-printing");
+        expect(document.body.dataset.answerSheetPrintSize).toBe(paperSize);
+        expect(host?.children).toHaveLength(2);
+        expect(host?.querySelectorAll(".answer-sheet-paper")).toHaveLength(2);
+        expect(host?.firstElementChild).not.toBe(pages[0]);
+        expect(host?.firstElementChild).toHaveTextContent("第1页");
+        expect(host?.lastElementChild).toHaveTextContent("第2页");
+      });
+      try {
+        printAnswerSheet(pages, paperSize);
+        expect(print).toHaveBeenCalledTimes(1);
+        window.dispatchEvent(new Event("afterprint"));
+        expect(document.querySelector(".answer-sheet-standalone-print-root")).toBeNull();
+        expect(document.body).not.toHaveClass("answer-sheet-printing");
+        expect(document.body.dataset.answerSheetPrintSize).toBeUndefined();
+        expect(pages).toHaveLength(2);
+      } finally {
+        print.mockRestore();
+      }
+    },
+  );
+
+  it("cleans up the print host when printing throws", () => {
+    const pages = makePages(1);
+    const print = vi.spyOn(window, "print").mockImplementation(() => { throw new Error("打印失败"); });
+    try {
+      expect(() => printAnswerSheet(pages, "A4")).toThrow("打印失败");
+      expect(document.querySelector(".answer-sheet-standalone-print-root")).toBeNull();
+      expect(document.body).not.toHaveClass("answer-sheet-printing");
+    } finally {
+      print.mockRestore();
+    }
+  });
 
   it("rejects empty previews before creating a PDF", async () => {
     await expect(downloadAnswerSheetPdf([], "空白", "A4")).rejects.toThrow("暂无可下载的答题卡预览");

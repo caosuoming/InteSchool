@@ -198,6 +198,20 @@ describe("student interaction scope", () => {
     });
   });
 
+  it("stores a teacher-scoped homework highlight preference, defaulting to enabled", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      expect(await studentInteractionService.getHomeworkFollowHighlightEnabled(teacher)).toBe(true);
+      await studentInteractionService.setHomeworkFollowHighlightEnabled(false, teacher);
+      expect(await studentInteractionService.getHomeworkFollowHighlightEnabled(teacher)).toBe(false);
+      expect(await studentInteractionService.getHomeworkFollowHighlightEnabled(homeroomTeacher)).toBe(true);
+      await expect(studentInteractionService.setHomeworkFollowHighlightEnabled("false" as any, teacher))
+        .rejects.toThrow("关注学生凸显设置格式不正确");
+      await studentInteractionService.setHomeworkFollowHighlightEnabled(true, teacher);
+      expect(await studentInteractionService.getHomeworkFollowHighlightEnabled(teacher)).toBe(true);
+    });
+  });
+
   it("persists mutually exclusive follow/ignore markers and rejects inaccessible students", async () => {
     const appState = state();
     await runWithState(appState, async () => {

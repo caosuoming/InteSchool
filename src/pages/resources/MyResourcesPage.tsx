@@ -83,6 +83,7 @@ import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useDocumentTypeOptions } from "@/hooks/useDocumentTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
+import { BatchQuestionAttributesModal, type QuestionAttributePatch } from "@/components/question/BatchQuestionAttributesModal";
 import { QuestionVideoModal } from "@/components/question/QuestionVideoModal";
 import { BasketAudiencePicker } from "@/components/basket/BasketAudiencePicker";
 import {
@@ -661,6 +662,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [donating, setDonating] = useState(false);
   const [batchWorking, setBatchWorking] = useState(false);
   const [batchMergeQuestions, setBatchMergeQuestions] = useState<{ target: Question; source: Question } | null>(null);
+  const [batchAttributeIds, setBatchAttributeIds] = useState<string[] | null>(null);
   const [batchDirectoryMode, setBatchDirectoryMode] = useState<LeftTab | null>(null);
   const [batchDirectoryIds, setBatchDirectoryIds] = useState<string[]>([]);
   const [batchShareLink, setBatchShareLink] = useState("");
@@ -2402,8 +2404,43 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     }
   };
 
+  const handleApplyBatchAttributes = async (patch: QuestionAttributePatch) => {
+    if (!batchAttributeIds?.length || Object.keys(patch).length === 0) return;
+    const ids = batchAttributeIds;
+    setBatchWorking(true);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => questionService.updateQuestion(id, patch)));
+      const succeeded = ids.filter((_, index) => results[index].status === "fulfilled");
+      const failedCount = ids.length - succeeded.length;
+      if (succeeded.length > 0) {
+        setResourceSelections((current) => {
+          const next = new Set(current);
+          succeeded.forEach((id) => next.delete(batchResourceKey("question", id)));
+          return next;
+        });
+        await refreshResourceViews();
+        toast.success("批量修改属性完成", `已更新 ${succeeded.length} 道题目`);
+      }
+      if (failedCount > 0) {
+        toast.error("部分题目修改失败", `${failedCount} 道题目未能更新，仍保持选中`);
+      }
+      setBatchAttributeIds(null);
+    } catch (error) {
+      toast.error("批量修改属性失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setBatchWorking(false);
+    }
+  };
+
   const handleBatchAction = (action: string) => {
     switch (action) {
+      case "attributes": {
+        const refs = selectedResourceRefs();
+        if (refs.length >= 2 && refs.every((ref) => ref.resourceType === "question")) {
+          setBatchAttributeIds(refs.map((ref) => ref.resourceId));
+        }
+        break;
+      }
       case "mergeQuestions":
         void openBatchQuestionMerge();
         break;
@@ -4337,6 +4374,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="" disabled>
               {batchWorking || donating ? "正在处理..." : `批量操作（${resourceSelections.size}）`}
             </option>
+            {selectedResourceRefs().length >= 2 && selectedResourceRefs().every((ref) => ref.resourceType === "question") && (
+              <option value="attributes">批量修改属性</option>
+            )}
             {selectedQuestionPairRefs() && <option value="mergeQuestions">合并两题</option>}
             <option value="share">批量分享</option>
             <option value="delete">批量删除</option>
@@ -4347,6 +4387,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="method">新增统一的思想方法</option>
           </select>
         </div>
+      )}
+
+      {batchAttributeIds && (
+        <BatchQuestionAttributesModal
+          schoolId={schoolId}
+          count={batchAttributeIds.length}
+          saving={batchWorking}
+          gradeOptions={gradeOptions}
+          schoolYearOptions={schoolYearOptions}
+          semesterOptions={semesterOptions}
+          questionTypeOptions={questionTypeOptions}
+          onClose={() => { if (!batchWorking) setBatchAttributeIds(null); }}
+          onApply={(patch) => void handleApplyBatchAttributes(patch)}
+        />
       )}
 
       {batchMergeQuestions && (

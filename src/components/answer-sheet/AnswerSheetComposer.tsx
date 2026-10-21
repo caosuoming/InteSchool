@@ -31,6 +31,7 @@ import {
   type AnswerSheetChoiceDirection,
   type AnswerSheetPaperSize,
   type AnswerSheetInlineImageLayout,
+  type AnswerSheetInlineBlankLayout,
   type AnswerSheetQuestion,
   type AnswerSheetProject,
   type AnswerSheetResourceType,
@@ -38,7 +39,7 @@ import {
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
 import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
-import { downloadAnswerSheetPdf } from "@/lib/answer-sheet-export";
+import { downloadAnswerSheetPdf, printAnswerSheet } from "@/lib/answer-sheet-export";
 import { layoutChoiceOptions } from "@/lib/answer-sheet-choice-options";
 import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
 import { EssayImages } from "./EssayImages";
@@ -406,6 +407,9 @@ function AnswerBox({
   height,
   width,
   resizableBoth = false,
+  draggable = false,
+  position,
+  onPositionChange,
   onHeightChange,
   onWidthChange,
   children,
@@ -421,12 +425,40 @@ function AnswerBox({
   height?: number;
   width?: number;
   resizableBoth?: boolean;
+  draggable?: boolean;
+  position?: { x: number; y: number };
+  onPositionChange?: (position: { x: number; y: number }) => void;
   onHeightChange?: (height: number) => void;
   onWidthChange?: (width: number) => void;
   children?: ReactNode;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const resizePendingRef = useRef(false);
+  const manualResizeRef = useRef<{
+    pointerId: number; startY: number; initialHeight: number; previousHeight: string;
+  } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; x: number; y: number } | null>(null);
+  const moveBox = (pointerX: number, pointerY: number) => {
+    const drag = dragRef.current;
+    if (!drag || !boxRef.current) return null;
+    let x = drag.x + pointerX - drag.startX;
+    let y = drag.y + pointerY - drag.startY;
+    const paper = boxRef.current.closest<HTMLElement>(".answer-sheet-paper");
+    const bounds = paper?.getBoundingClientRect();
+    const rect = boxRef.current.getBoundingClientRect();
+    if (bounds?.width && bounds.height && rect.width && rect.height) {
+      const lastX = Number(boxRef.current.dataset.dragX ?? drag.x);
+      const lastY = Number(boxRef.current.dataset.dragY ?? drag.y);
+      const left = rect.left - lastX;
+      const top = rect.top - lastY;
+      x = Math.max(bounds.left - left, Math.min(x, bounds.right - rect.width - left));
+      y = Math.max(bounds.top - top, Math.min(y, bounds.bottom - rect.height - top));
+    }
+    boxRef.current.style.transform = `translate(${x}px, ${y}px)`;
+    boxRef.current.dataset.dragX = String(x);
+    boxRef.current.dataset.dragY = String(y);
+    return { x: Math.round(x), y: Math.round(y) };
+  };
   const saveSize = useCallback(() => {
     if (!editable || !boxRef.current) return;
     const rect = boxRef.current.getBoundingClientRect();
@@ -459,12 +491,34 @@ function AnswerBox({
       className={`answer-sheet-answer-box relative box-border w-full border border-ink-800 p-2 ${boxStyle === "dashed" ? "border-dashed" : "border-solid"}`}
       style={{
         height: height ? `${height}px` : undefined,
+        transform: draggable ? `translate(${position?.x || 0}px, ${position?.y || 0}px)` : undefined,
+        zIndex: draggable ? 3 : undefined,
         width: width ? `${width}px` : undefined,
         minHeight: compact ? "13mm" : "30mm",
         minWidth: resizableBoth ? "32mm" : undefined,
         maxWidth: maxWidthMm ? `${maxWidthMm}mm` : "100%",
         resize: editable ? (resizableBoth ? "both" : "vertical") : "none",
-        overflow: "hidden",
+        overflow: children ? "visible" : "hidden",
+      }}
+      onPointerMove={(event) => {
+        const resizing = manualResizeRef.current;
+        if (resizing && resizing.pointerId === event.pointerId) {
+          event.currentTarget.style.height = `${Math.max(30 * MM_TO_CSS_PX, Math.round(resizing.initialHeight + event.clientY - resizing.startY))}px`;
+          return;
+        }
+        if (dragRef.current && dragRef.current.pointerId === event.pointerId) moveBox(event.clientX, event.clientY);
+      }}
+      onPointerCancel={(event) => {
+        if (manualResizeRef.current && manualResizeRef.current.pointerId === event.pointerId) {
+          event.currentTarget.style.height = manualResizeRef.current.previousHeight;
+          manualResizeRef.current = null;
+          return;
+        }
+        if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+        dragRef.current = null;
+        event.currentTarget.style.transform = `translate(${position?.x || 0}px, ${position?.y || 0}px)`;
+        delete event.currentTarget.dataset.dragX;
+        delete event.currentTarget.dataset.dragY;
       }}
       onPointerDown={(event) => {
         if (!editable || event.button !== 0) return;
@@ -474,12 +528,64 @@ function AnswerBox({
           && event.clientY <= rect.bottom;
       }}
       onPointerUp={(event) => {
+        if (manualResizeRef.current && manualResizeRef.current.pointerId === event.pointerId) {
+          manualResizeRef.current = null;
+          saveSize();
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          return;
+        }
+        if (dragRef.current && dragRef.current.pointerId === event.pointerId) {
+          const next = moveBox(event.clientX, event.clientY);
+          dragRef.current = null;
+          delete event.currentTarget.dataset.dragX;
+          delete event.currentTarget.dataset.dragY;
+          if (next) onPositionChange?.(next);
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          return;
+        }
         if (event.target === event.currentTarget) saveSize();
         resizePendingRef.current = false;
       }}
       data-testid="answer-box"
       data-answer-box-style={boxStyle}
     >
+      {editable && children && (
+        <button
+          type="button"
+          aria-label={`调整第${number}题答题框高度`}
+          className="no-print absolute bottom-0 right-0 z-10 h-[5mm] w-[5mm] cursor-ns-resize touch-none border-l border-t border-ink-300 bg-white/90"
+          title="拖动调整答题框高度"
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !boxRef.current) return;
+            event.stopPropagation();
+            manualResizeRef.current = {
+              pointerId: event.pointerId, startY: event.clientY,
+              initialHeight: boxRef.current.getBoundingClientRect().height,
+              previousHeight: boxRef.current.style.height,
+            };
+            boxRef.current.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+          }}
+        />
+      )}
+      {editable && draggable && (
+        <button
+          type="button"
+          aria-label={`拖动第${number}题书写框`}
+          className="no-print absolute left-0 top-0 z-10 flex h-[7mm] min-w-[8mm] cursor-move touch-none items-center justify-center bg-ink-100/90 text-[10px] text-ink-700"
+          title="拖动书写框调整位置"
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.stopPropagation();
+            dragRef.current = {
+              pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+              x: position?.x || 0, y: position?.y || 0,
+            };
+            boxRef.current?.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+          }}
+        >✥</button>
+      )}
       {!hideNumber && <div className="font-mono text-xs font-semibold text-ink-800">{number}.</div>}
       {children && (
         <div className="min-h-0 flow-root pr-[14mm] pb-[9mm]" data-testid="answer-box-content">
@@ -501,6 +607,8 @@ function AnswerBox({
 
 interface QuestionImageProps {
   imageLayouts?: Record<string, AnswerSheetInlineImageLayout[]>;
+  blankLayouts?: Record<string, AnswerSheetInlineBlankLayout[]>;
+  onBlankLayoutChange: (part: string, index: number, layout: AnswerSheetInlineBlankLayout) => void;
   onImageLayoutChange: (part: string, index: number, layout: AnswerSheetInlineImageLayout) => void;
 }
 
@@ -511,7 +619,9 @@ function DraggableQuestionContent({
   number,
   part,
   imageLayouts,
+  blankLayouts,
   onImageLayoutChange,
+  onBlankLayoutChange,
 }: {
   children: string;
   className?: string;
@@ -530,6 +640,8 @@ function DraggableQuestionContent({
         number={number}
         part={part}
         layouts={imageLayouts?.[part]}
+        blankLayouts={blankLayouts?.[part]}
+        onBlankLayoutChange={(index, layout) => onBlankLayoutChange(part, index, layout)}
         onLayoutChange={(index, layout) => onImageLayoutChange(part, index, layout)}
       />
     </div>
@@ -549,7 +661,9 @@ function ChoiceOptions({
   breaks,
   labelStyle,
   imageLayouts,
+  blankLayouts,
   onImageLayoutChange,
+  onBlankLayoutChange,
 }: ChoiceQuestionProps & { labelStyle: "brackets" | "dots" }) {
   const options = useMemo(
     () => question.options?.length ? question.options : (labelStyle === "brackets" ? Array(4).fill("") as string[] : []),
@@ -625,7 +739,7 @@ function ChoiceOptions({
                   </span>
                   {options[index] && (
                     <DraggableQuestionContent className="answer-sheet-choice-option-content min-w-0 max-w-full" editable={editable}
-                      number={question.label || number} part={`option-${index}`} imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
+                      number={question.label || number} part={`option-${index}`} imageLayouts={imageLayouts} blankLayouts={blankLayouts} onImageLayoutChange={onImageLayoutChange} onBlankLayoutChange={onBlankLayoutChange}>
                       {options[index]}
                     </DraggableQuestionContent>
                   )}
@@ -640,13 +754,13 @@ function ChoiceOptions({
 }
 
 function InlineChoiceQuestion(props: ChoiceQuestionProps) {
-  const { question, number, editable, imageLayouts, onImageLayoutChange } = props;
+  const { question, number, editable, imageLayouts, blankLayouts, onImageLayoutChange, onBlankLayoutChange } = props;
   return (
     <div className="space-y-2" data-testid="inline-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-0 text-xs text-ink-800">
         <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
         <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
-        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} blankLayouts={blankLayouts} onImageLayoutChange={onImageLayoutChange} onBlankLayoutChange={onBlankLayoutChange}>
           {question.stem}
         </DraggableQuestionContent>
       </div>
@@ -656,13 +770,13 @@ function InlineChoiceQuestion(props: ChoiceQuestionProps) {
 }
 
 function ChoiceQuestionText(props: ChoiceQuestionProps) {
-  const { question, number, editable, imageLayouts, onImageLayoutChange } = props;
+  const { question, number, editable, imageLayouts, blankLayouts, onImageLayoutChange, onBlankLayoutChange } = props;
   return (
     <div className="space-y-1.5" data-testid="concentrated-choice-question" data-answer-sheet-question>
       <div className="flex items-start gap-0 text-xs text-ink-800">
         <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
         <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
-        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} blankLayouts={blankLayouts} onImageLayoutChange={onImageLayoutChange} onBlankLayoutChange={onBlankLayoutChange}>
           {question.stem}
         </DraggableQuestionContent>
       </div>
@@ -671,7 +785,7 @@ function ChoiceQuestionText(props: ChoiceQuestionProps) {
   );
 }
 
-function FillQuestionInline({ question, number, editable, imageLayouts, onImageLayoutChange }: NumberedQuestion & { editable: boolean } & QuestionImageProps) {
+function FillQuestionInline({ question, number, editable, imageLayouts, blankLayouts, onImageLayoutChange, onBlankLayoutChange }: NumberedQuestion & { editable: boolean } & QuestionImageProps) {
   const decoratedStem = useMemo(
     () => decorateFillBlankAnswerAreas(question.stem),
     [question.stem],
@@ -681,19 +795,19 @@ function FillQuestionInline({ question, number, editable, imageLayouts, onImageL
     <div className="flex items-start gap-0 text-xs text-ink-800" data-testid="inline-fill-question" data-answer-sheet-question>
       <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
       <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
-        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} blankLayouts={blankLayouts} onImageLayoutChange={onImageLayoutChange} onBlankLayoutChange={onBlankLayoutChange}>
         {decoratedStem}
       </DraggableQuestionContent>
     </div>
   );
 }
 
-function QuestionStemOnly({ question, number, editable, imageLayouts, onImageLayoutChange }: NumberedQuestion & { editable: boolean } & QuestionImageProps) {
+function QuestionStemOnly({ question, number, editable, imageLayouts, blankLayouts, onImageLayoutChange, onBlankLayoutChange }: NumberedQuestion & { editable: boolean } & QuestionImageProps) {
   return (
     <div className="flex items-start gap-0 text-xs text-ink-800" data-testid="concentrated-fill-question" data-answer-sheet-question>
       <span className="shrink-0 font-mono font-semibold">{question.label || number}.</span>
       <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
-        number={question.label || number} part="stem" imageLayouts={imageLayouts} onImageLayoutChange={onImageLayoutChange}>
+        number={question.label || number} part="stem" imageLayouts={imageLayouts} blankLayouts={blankLayouts} onImageLayoutChange={onImageLayoutChange} onBlankLayoutChange={onBlankLayoutChange}>
         {question.stem}
       </DraggableQuestionContent>
     </div>
@@ -756,19 +870,27 @@ function QuestionWithAnswer({
   boxStyle,
   editable,
   height,
+  position,
+  onPositionChange,
   onHeightChange,
   imageLayouts,
   onImageLayoutChange,
   stemImageLayouts,
+  stemBlankLayouts,
   onStemImageLayoutChange,
+  onStemBlankLayoutChange,
 }: NumberedQuestion & {
   boxStyle: AnswerSheetBoxStyle;
   editable: boolean;
   height?: number;
+  position?: { x: number; y: number };
+  onPositionChange?: (position: { x: number; y: number }) => void;
   onHeightChange?: (height: number) => void;
   imageLayouts?: AnswerSheetImageLayout[];
   onImageLayoutChange: (index: number, layout: AnswerSheetImageLayout) => void;
   stemImageLayouts?: Record<string, AnswerSheetInlineImageLayout[]>;
+  stemBlankLayouts?: Record<string, AnswerSheetInlineBlankLayout[]>;
+  onStemBlankLayoutChange: (part: string, index: number, layout: AnswerSheetInlineBlankLayout) => void;
   onStemImageLayoutChange: (part: string, index: number, layout: AnswerSheetInlineImageLayout) => void;
 }) {
   const essayContent = question.type === "essay"
@@ -785,7 +907,7 @@ function QuestionWithAnswer({
         >
           <span className="shrink-0 font-mono font-semibold text-ink-800">{question.label || number}.</span>
           <DraggableQuestionContent className="answer-sheet-question-stem min-w-0 flex-1 whitespace-pre-wrap" editable={editable}
-        number={question.label || number} part="stem" imageLayouts={stemImageLayouts} onImageLayoutChange={onStemImageLayoutChange}>
+        number={question.label || number} part="stem" imageLayouts={stemImageLayouts} blankLayouts={stemBlankLayouts} onImageLayoutChange={onStemImageLayoutChange} onBlankLayoutChange={onStemBlankLayoutChange}>
             {displayStem}
           </DraggableQuestionContent>
         </div>
@@ -802,6 +924,9 @@ function QuestionWithAnswer({
             boxStyle={boxStyle}
             compact={isFillQuestion(question)}
             lined={isFillQuestion(question)}
+            draggable={isFillQuestion(question)}
+            position={position}
+            onPositionChange={onPositionChange}
             editable={editable}
             height={height}
             onHeightChange={onHeightChange}
@@ -827,6 +952,7 @@ interface AnswerSheetComposerProps {
   description?: string;
   resourceType: AnswerSheetResourceType;
   resourceId: string;
+  answerSheetRevisionId?: string;
   resourceLabel: "试卷" | "讲义";
   questions: AnswerSheetQuestion[];
   sourceLayoutMode?: "grouped" | "flat";
@@ -871,6 +997,7 @@ export function AnswerSheetComposer({
   title,
   resourceType,
   resourceId,
+  answerSheetRevisionId,
   resourceLabel,
   questions,
   sourceLayoutMode,
@@ -910,8 +1037,8 @@ export function AnswerSheetComposer({
     [numberedQuestions],
   );
   const qrPayload = useMemo(
-    () => buildAnswerSheetQrPayload(resourceType, resourceId),
-    [resourceId, resourceType],
+    () => buildAnswerSheetQrPayload(resourceType, resourceId, answerSheetRevisionId),
+    [resourceId, resourceType, answerSheetRevisionId],
   );
 
   const paperSize = paperSizeConfig[settings.paperSize];
@@ -944,11 +1071,13 @@ export function AnswerSheetComposer({
     }
   };
 
+  const previewPages = () => Array.from(previewPagesRef.current?.querySelectorAll<HTMLElement>(
+    '.answer-sheet-paper[data-paper-view="preview"]',
+  ) || []);
+
   const downloadPdf = async () => {
     if (exporting) return;
-    const pages = Array.from(previewPagesRef.current?.querySelectorAll<HTMLElement>(
-      '.answer-sheet-paper[data-paper-view="preview"]',
-    ) || []);
+    const pages = previewPages();
     setExporting(true);
     try {
       await downloadAnswerSheetPdf(pages, `${title}_答题卡`, settings.paperSize);
@@ -1033,6 +1162,28 @@ export function AnswerSheetComposer({
         ...current,
         questionImageLayouts: { ...current.questionImageLayouts, [questionId]: questionLayouts },
       };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateInlineBlankLayout = (questionId: string, part: string, index: number, layout: AnswerSheetInlineBlankLayout) => {
+    if (published) return;
+    setSettings((current) => {
+      const questionLayouts = { ...current.inlineBlankLayouts?.[questionId] };
+      const partLayouts = [...(questionLayouts[part] || [])];
+      partLayouts[index] = layout;
+      questionLayouts[part] = partLayouts;
+      const next = { ...current, inlineBlankLayouts: { ...current.inlineBlankLayouts, [questionId]: questionLayouts } };
+      onSettingsChange?.(next);
+      return next;
+    });
+  };
+
+  const updateAnswerBoxPosition = (questionId: string, position: { x: number; y: number }) => {
+    if (published) return;
+    setSettings((current) => {
+      const next = { ...current, answerBoxPositions: { ...current.answerBoxPositions, [questionId]: position } };
       onSettingsChange?.(next);
       return next;
     });
@@ -1163,7 +1314,7 @@ export function AnswerSheetComposer({
     settings.answerBoxHeights, settings.answerBoxWidths, settings.studentNumberDigits,
     settings.choiceOptionBreaks, settings.concentratedChoiceDirection, settings.stemFontSize,
     settings.questionGapPx, settings.questionGapOverrides,
-    settings.questionImageLayouts, settings.essayImageLayouts, viewMode,
+    settings.questionImageLayouts, settings.inlineBlankLayouts, settings.answerBoxPositions, settings.essayImageLayouts, viewMode,
   ]);
 
   useEffect(() => {
@@ -1207,9 +1358,7 @@ export function AnswerSheetComposer({
         data-testid="answer-sheet-identity-area"
       >
         <div
-          className={isWidePaper
-            ? "min-w-0 flex-1 border border-ink-900 px-[1mm] pb-[1mm] pt-[2.5mm]"
-            : "min-w-0 flex-1 border border-ink-900 px-2.5 pb-2.5 pt-[4mm]"}
+          className="box-border h-[54mm] w-[38mm] shrink-0 border border-ink-900 px-[1mm] pb-[1mm] pt-[2.5mm]"
           data-testid="answer-sheet-identity-fields"
         >
           <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
@@ -1219,7 +1368,7 @@ export function AnswerSheetComposer({
           <div className={isWidePaper ? "flex flex-col items-start gap-1 text-xs" : "flex flex-col items-start gap-1 text-sm"}>
             <div>姓名：</div>
             <span
-              className={`block h-[13mm] shrink-0 border border-dashed border-ink-700 ${isWidePaper ? "w-[32mm]" : "w-[50mm]"}`}
+              className="block h-[13mm] w-[32mm] shrink-0 border border-dashed border-ink-700"
               aria-label="姓名签名填写区"
               data-answer-sheet-field="signature"
               data-signature-history-limit="10"
@@ -1273,11 +1422,15 @@ export function AnswerSheetComposer({
       if (settings.choiceLayout === "inline") {
         return <InlineChoiceQuestion {...item} editable={!isPreview}
           imageLayouts={settings.questionImageLayouts?.[question.id]}
+        blankLayouts={settings.inlineBlankLayouts?.[question.id]}
+        onBlankLayoutChange={(part, index, layout) => updateInlineBlankLayout(question.id, part, index, layout)}
           onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)}
           breaks={settings.choiceOptionBreaks?.[question.id]} />;
       }
       return <ChoiceQuestionText {...item} editable={!isPreview}
         imageLayouts={settings.questionImageLayouts?.[question.id]}
+        blankLayouts={settings.inlineBlankLayouts?.[question.id]}
+        onBlankLayoutChange={(part, index, layout) => updateInlineBlankLayout(question.id, part, index, layout)}
         onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)}
         breaks={settings.choiceOptionBreaks?.[question.id]} />;
     }
@@ -1286,10 +1439,14 @@ export function AnswerSheetComposer({
       if (settings.choiceLayout === "inline") {
         return <FillQuestionInline {...item} editable={!isPreview}
           imageLayouts={settings.questionImageLayouts?.[question.id]}
+        blankLayouts={settings.inlineBlankLayouts?.[question.id]}
+        onBlankLayoutChange={(part, index, layout) => updateInlineBlankLayout(question.id, part, index, layout)}
           onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)} />;
       }
       return <QuestionStemOnly {...item} editable={!isPreview}
         imageLayouts={settings.questionImageLayouts?.[question.id]}
+        blankLayouts={settings.inlineBlankLayouts?.[question.id]}
+        onBlankLayoutChange={(part, index, layout) => updateInlineBlankLayout(question.id, part, index, layout)}
         onImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)} />;
     }
 
@@ -1299,10 +1456,14 @@ export function AnswerSheetComposer({
         boxStyle={settings.answerBoxStyle}
         editable={!isPreview}
         height={settings.answerBoxHeights?.[question.id]}
+        position={settings.answerBoxPositions?.[question.id]}
+        onPositionChange={(position) => updateAnswerBoxPosition(question.id, position)}
         onHeightChange={(height) => updateAnswerBoxHeight(question.id, height)}
         imageLayouts={settings.essayImageLayouts?.[question.id]}
         onImageLayoutChange={(index, layout) => updateEssayImageLayout(question.id, index, layout)}
         stemImageLayouts={settings.questionImageLayouts?.[question.id]}
+        stemBlankLayouts={settings.inlineBlankLayouts?.[question.id]}
+        onStemBlankLayoutChange={(part, index, layout) => updateInlineBlankLayout(question.id, part, index, layout)}
         onStemImageLayoutChange={(part, index, layout) => updateQuestionImageLayout(question.id, part, index, layout)}
       />
     );
@@ -1320,7 +1481,7 @@ export function AnswerSheetComposer({
     if (flowItem.kind === "zone-choice" && flowItem.choiceGroups) {
       return (
         <div
-          className={`flex flex-wrap ${settings.concentratedChoiceDirection === "vertical" ? "gap-x-[2mm] gap-y-[5mm]" : "gap-[5mm]"} border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
+          className={`flex flex-wrap ${settings.concentratedChoiceDirection === "vertical" ? "gap-x-[1mm] gap-y-[2mm]" : "gap-[5mm]"} border-x border-ink-800 px-3 py-1.5 ${flowItem.first ? "border-t pt-3" : ""} ${flowItem.last ? "border-b pb-3 mb-4" : ""}`}
           data-answer-sheet-question
           data-testid="choice-answer-row"
         >
@@ -1357,6 +1518,9 @@ export function AnswerSheetComposer({
                 maxWidthMm={fillAvailableMm}
                 editable={!isPreview}
                 resizableBoth
+                draggable
+                position={settings.answerBoxPositions?.[item.question.id]}
+                onPositionChange={(position) => updateAnswerBoxPosition(item.question.id, position)}
                 height={settings.answerBoxHeights?.[item.question.id]}
                 width={settings.answerBoxWidths?.[item.question.id]}
                 onHeightChange={(height) => updateAnswerBoxHeight(item.question.id, height)}
@@ -1400,7 +1564,7 @@ export function AnswerSheetComposer({
   };
 
   const renderPageContent = (indices: number[]) => (
-    <div className="answer-sheet-page-content min-h-0 flex-1 overflow-hidden">
+    <div className="answer-sheet-page-content min-h-0 flex-1 overflow-visible">
       {indices.map((flowIndex) => (
         <div
           key={flowItems[flowIndex].key}
@@ -1422,7 +1586,7 @@ export function AnswerSheetComposer({
   const renderColumn = (indices: number[] | undefined, columnIndex: number) => (
     <section
       key={columnIndex}
-      className="answer-sheet-preview-column box-border flex h-full min-w-0 flex-col overflow-hidden"
+      className="answer-sheet-preview-column box-border flex h-full min-w-0 flex-col overflow-visible"
       style={{ width: `${columnWidthMm}mm` }}
       data-editor-page={columnIndex + 1}
     >
@@ -1468,7 +1632,7 @@ export function AnswerSheetComposer({
                       <Download className="h-4 w-4" />
                       下载答题卡
                     </Button>
-                    <Button variant="outline" onClick={() => window.print()}>
+                    <Button variant="outline" onClick={() => printAnswerSheet(previewPages(), settings.paperSize)}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>

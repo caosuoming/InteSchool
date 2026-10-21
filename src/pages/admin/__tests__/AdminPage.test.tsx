@@ -99,6 +99,8 @@ describe("AdminPage", () => {
     expect(within(platform).getByText("用户与密码管理")).toBeInTheDocument();
     expect(within(platform).getByText("学校管理员审核")).toBeInTheDocument();
     expect(within(platform).getByText("新用户和新建校审核")).toBeInTheDocument();
+    const school = screen.getByRole("region", { name: "校管理员管理" });
+    expect(within(school).getByText("本校教师权限审核")).toBeInTheDocument();
 
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
       "个人用户管理",

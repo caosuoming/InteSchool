@@ -63,7 +63,7 @@ describe("ScannerPage", () => {
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     const { unmount } = mount();
     await screen.findByRole("option", { name: /虹光640/ });
-    await user.click(await screen.findByRole("button", { name: /函数试卷/ }));
+    await user.click(await screen.findByRole("button", { name: "使用扫描仪采集函数试卷" }));
     expect(await screen.findByAltText("扫描结果第 1 张")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "下载第 1 张" })).toHaveAttribute("href", "blob:scan-1");
     await user.click(screen.getByRole("button", { name: "继续扫描" }));
@@ -86,13 +86,29 @@ describe("ScannerPage", () => {
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     mount();
     await screen.findByRole("option", { name: /虹光640/ });
-    await user.click(await screen.findByRole("button", { name: /函数试卷/ }));
+    await user.click(await screen.findByRole("button", { name: "使用扫描仪采集函数试卷" }));
     await user.click(await screen.findByRole("button", { name: /确认试卷并上传 1 页/ }));
     await waitFor(() => expect(scannerService.uploadPage).toHaveBeenCalledWith(expect.any(Blob), "school-1", sheets[0], "intes://answer-sheet/v1/exam-paper/p1"));
     expect(await screen.findByText("第 1 页 · 已上传")).toBeInTheDocument();
     vi.mocked(readAnswerSheetQr).mockResolvedValue("intes://answer-sheet/v1/exam-paper/wrong");
     await user.click(screen.getByRole("button", { name: "继续扫描" }));
     expect(await screen.findByText("第 2 页 · 二维码与选定试卷不符")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /确认试卷并上传 0 页/ })).toBeDisabled();
+    vi.restoreAllMocks();
+  });
+
+  it("accepts only the current sheet revision QR in the scanner UI", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    useAuthStore.setState({ teacher: { id: "t1", schoolId: "school-1" } as Teacher });
+    vi.mocked(scannerService.listPublishedAnswerSheets).mockResolvedValue([{ ...sheets[0], answerSheetRevisionId: "revision-new" }]);
+    vi.mocked(scannerService.scan).mockResolvedValue([new Blob(["image"], { type: "image/png" })]);
+    vi.mocked(readAnswerSheetQr).mockResolvedValue("intes://answer-sheet/v1/exam-paper/p1");
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-card");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    mount();
+    await user.click(await screen.findByRole("button", { name: /函数试卷/ }));
+    expect(await screen.findByText("第 1 页 · 二维码与选定试卷不符")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /确认试卷并上传 0 页/ })).toBeDisabled();
     vi.restoreAllMocks();
   });
@@ -157,13 +173,74 @@ describe("ScannerPage", () => {
     await waitFor(() => expect(screen.queryByRole("link", { name: /下载 Windows 安装包/ })).not.toBeInTheDocument());
   });
 
+  it("imports scanned pages without a local bridge and preserves QR confirmation and teacher authorization", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    useAuthStore.setState({ teacher: { id: "t1", schoolId: "school-1" } as Teacher });
+    vi.mocked(scannerService.listDevices).mockRejectedValue(new Error("无法连接本机扫描服务"));
+    vi.mocked(scannerService.uploadPage).mockResolvedValue({ id: "page-1" } as never);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:imported");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    mount();
+    expect(await screen.findByRole("link", { name: /下载 Windows 安装包/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "使用扫描仪采集函数试卷" })).toBeDisabled();
+    await user.click(await screen.findByRole("button", { name: "导入函数试卷的扫描图片" }));
+    const png = new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "scan.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择扫描图片"), png);
+    expect(await screen.findByAltText("扫描结果第 1 张")).toBeInTheDocument();
+    expect(screen.getByText("第 1 页 · 二维码已匹配")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /确认试卷并上传 1 页/ }));
+    await waitFor(() => expect(scannerService.uploadPage).toHaveBeenCalledWith(expect.any(Blob), "school-1", sheets[0], "intes://answer-sheet/v1/exam-paper/p1"));
+    vi.restoreAllMocks();
+  });
+
+  it("keeps mismatched imported QR codes blocked and rejects malformed images", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    useAuthStore.setState({ teacher: { id: "t1", schoolId: "school-1" } as Teacher });
+    vi.mocked(scannerService.listDevices).mockRejectedValue(new Error("无法连接本机扫描服务"));
+    vi.mocked(readAnswerSheetQr).mockResolvedValue("intes://answer-sheet/v1/exam-paper/other");
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mismatch");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    mount();
+    await screen.findByRole("link", { name: /下载 Windows 安装包/ });
+    await user.click(await screen.findByRole("button", { name: "导入函数试卷的扫描图片" }));
+    await user.upload(screen.getByLabelText("选择扫描图片"), new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "scan.png", { type: "image/png" }));
+    expect(await screen.findByText("第 1 页 · 二维码与选定试卷不符")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /确认试卷并上传 0 页/ })).toBeDisabled();
+    await user.upload(screen.getByLabelText("选择扫描图片"), new File(["bad"], "bad.png", { type: "image/png" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("不是有效的 PNG/JPEG");
+    expect(screen.getByText("第 1 页 · 二维码与选定试卷不符")).toBeInTheDocument();
+    expect(scannerService.uploadPage).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it("imports a third-party card without a bridge for a logged-in teacher", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    useAuthStore.setState({ teacher: { id: "t1", schoolId: "school-1" } as Teacher });
+    vi.mocked(scannerService.listDevices).mockRejectedValue(new Error("无法连接本机扫描服务"));
+    vi.mocked(scannerService.saveThirdPartyCard).mockResolvedValue({ id: "card-1", fileName: "third-party.png" } as never);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:third-party");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    mount();
+    expect(await screen.findByRole("button", { name: "导入第三方卡图片" })).toBeEnabled();
+    const png = new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "third-party.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("选择第三方卡图片"), png);
+    expect(await screen.findByAltText("第三方答题卡预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("第三方卡文件名")).toHaveValue("third-party");
+    await user.click(screen.getByRole("button", { name: "保存到作业管理" }));
+    await waitFor(() => expect(scannerService.saveThirdPartyCard).toHaveBeenCalledWith(expect.any(Blob), "third-party"));
+    vi.restoreAllMocks();
+  });
+
   it("reports a missing scanner service instead of showing a false success", async () => {
     const user = userEvent.setup();
     localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
     vi.mocked(scannerService.scan).mockRejectedValue(new Error("请启动本机扫描服务"));
     mount();
     await screen.findByRole("option", { name: /虹光640/ });
-    await user.click(await screen.findByRole("button", { name: /函数试卷/ }));
+    await user.click(await screen.findByRole("button", { name: "使用扫描仪采集函数试卷" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("请启动本机扫描服务");
     expect(screen.queryByAltText(/扫描结果/)).not.toBeInTheDocument();
   });

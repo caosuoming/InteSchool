@@ -143,6 +143,18 @@ export const studentInteractionService = {
       .map((interaction: StudentInteraction) => toVisibleInteraction(interaction, teacher));
   },
 
+  async getHomeworkFollowHighlightEnabled(teacher: Teacher): Promise<boolean> {
+    const stored = (db.read("teachers") as Teacher[]).find((item) => item.id === teacher.id);
+    return stored?.highlightFollowedHomeworkStudents !== false;
+  },
+
+  async setHomeworkFollowHighlightEnabled(enabled: boolean, teacher: Teacher): Promise<void> {
+    if (typeof enabled !== "boolean") throw new Error("关注学生凸显设置格式不正确");
+    db.update("teachers", (teachers: Teacher[]) => teachers.map((item) => (
+      item.id === teacher.id ? { ...item, highlightFollowedHomeworkStudents: enabled } : item
+    )));
+  },
+
   async listFollowedStudentIds(teacher: Teacher): Promise<string[]> {
     const accessibleStudents = await classService.listMyStudents(teacher.schoolId, teacher.id);
     const accessibleIds = new Set(accessibleStudents.map((student) => student.id));

@@ -10,6 +10,7 @@ import type { ServerConfig } from "../config.js";
 import type { StoredFile } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { withReadOnlyState, withSerializedState } from "../rpc.js";
+import { buildAnswerSheetQrPayload } from "../../src/lib/answer-sheet-qr.js";
 
 interface ScannerPageRecord {
   id: string;
@@ -44,11 +45,11 @@ const RECORD_MIME = new Map([["image/png", ".png"], ["image/jpeg", ".jpg"]]);
 
 function sheetFor(state: Record<string, unknown>, type: "paper" | "lecture", id: string) {
   const key = type === "paper" ? "examPapers" : "lectures";
-  return (state[key] as Array<{ id: string; schoolId: string; hasAnswerSheet?: boolean; answerSheetPublishedAt?: string }> || [])
+  return (state[key] as Array<{ id: string; schoolId: string; hasAnswerSheet?: boolean; answerSheetPublishedAt?: string; answerSheetRevisionId?: string }> || [])
     .find((item) => item.id === id && item.hasAnswerSheet && item.answerSheetPublishedAt);
 }
-function qrFor(type: "paper" | "lecture", id: string) {
-  return `intes://answer-sheet/v1/${type === "paper" ? "exam-paper" : "lecture"}/${encodeURIComponent(id)}`;
+function qrFor(type: "paper" | "lecture", id: string, revisionId?: string) {
+  return buildAnswerSheetQrPayload(type === "paper" ? "exam-paper" : "lecture", id, revisionId);
 }
 function signatureMime(data: Buffer) {
   if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
@@ -75,10 +76,13 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
     // Context travels in query, independently of multipart field ordering.
     const input = scanSchema.parse(request.query);
     if (input.schoolId !== teacher.schoolId) throw new Error("无权上传其他学校的扫描件");
-    if (input.qrPayload && input.qrPayload !== qrFor(input.sheetType, input.sheetId)) throw new Error("二维码与所选答题卡不一致，请重新确认");
     const canUpload = await withReadOnlyState(store, (state) => {
       const sheet = sheetFor(state, input.sheetType, input.sheetId);
-      return sheet?.schoolId === teacher.schoolId;
+      if (!sheet || sheet.schoolId !== teacher.schoolId) return false;
+      if (input.qrPayload && input.qrPayload !== qrFor(input.sheetType, input.sheetId, sheet.answerSheetRevisionId)) {
+        throw new Error("二维码与所选答题卡版本不一致，请重新确认");
+      }
+      return true;
     });
     if (!canUpload) throw new Error("该校答题卡不存在或已撤回发布");
     const part = await request.file();
@@ -106,14 +110,18 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
     const record: ScannerPageRecord = {
       id: randomUUID(), schoolId: teacher.schoolId, teacherId: teacher.id,
       sheetId: input.sheetId, sheetType: input.sheetType, fileId: id,
-      qrPayload: input.qrPayload ?? null, verified: input.qrPayload === qrFor(input.sheetType, input.sheetId),
+      qrPayload: input.qrPayload ?? null, verified: false,
       studentId: null, status: "pending", reviewedAt: null, reviewedBy: null, createdAt: file.createdAt,
     };
     try {
       await store.saveFile(file);
       await withSerializedState(store, (state) => {
         // Recheck publication to avoid a race with withdrawal during upload.
-        if (sheetFor(state, input.sheetType, input.sheetId)?.schoolId !== teacher.schoolId) throw new Error("答题卡已撤回发布");
+        const sheet = sheetFor(state, input.sheetType, input.sheetId);
+        if (sheet?.schoolId !== teacher.schoolId) throw new Error("答题卡已撤回发布");
+        const expectedQr = qrFor(input.sheetType, input.sheetId, sheet.answerSheetRevisionId);
+        if (input.qrPayload && input.qrPayload !== expectedQr) throw new Error("答题卡版本已变更，请重新扫描");
+        record.verified = input.qrPayload === expectedQr;
         (state.scannerPages as ScannerPageRecord[]).push(record);
       });
     } catch (error) {

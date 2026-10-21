@@ -45,6 +45,8 @@ export interface TeacherAffiliation {
   prepGroupIds: string[];
   /** 是否为当前激活的身份 */
   isCurrent: boolean;
+  /** 平台管理员临时选择的学校上下文，不表示真实入校任职。 */
+  platformContext?: boolean;
   joinedAt: string;
 }
 
@@ -174,6 +176,8 @@ export interface Teacher {
   affiliations: TeacherAffiliation[];
   /** 当前激活的所属单位ID */
   currentAffiliationId: string | null;
+  /** 是否在作业点名与上课历史作业中凸显关注学生，未设置时默认开启。 */
+  highlightFollowedHomeworkStudents?: boolean;
   /** 教师在“我的上课”中维护的周课表。 */
   lessonSchedule?: TeacherLessonSchedule;
   /** 教师按学期维护的教学计划与一体机自动采集的实际教学记录。 */
@@ -549,6 +553,7 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   studentAttentionByTeacherId?: Record<string, {
     followedStudentIds: string[];
     ignoredStudentIds: string[];
+    highlightFollowedHomeworkStudents?: boolean;
   }>;
 }
 
@@ -1707,6 +1712,8 @@ export interface ExamPaper {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 本次制作的答题卡唯一版本；旧数据无版本时使用 v1 二维码。 */
+  answerSheetRevisionId?: string;
   /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
@@ -1724,9 +1731,11 @@ export interface ExamPaper {
     questionGapOverrides?: Record<string, number>;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    answerBoxPositions?: Record<string, { x: number; y: number }>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
     questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
+    inlineBlankLayouts?: Record<string, Record<string, { x: number; y: number; width?: number; height?: number }[]>>;
   };
   createdAt: string;
   updatedAt: string;
@@ -2336,6 +2345,8 @@ export interface Lecture {
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
   answerSheetCreatedAt?: string;
+  /** 本次制作的答题卡唯一版本；旧数据无版本时使用 v1 二维码。 */
+  answerSheetRevisionId?: string;
   /** 答题卡发布时间；撤回后清除，独立于资源本身的发布状态。 */
   answerSheetPublishedAt?: string;
   /** 答题卡的版式设置，用于题卡库和后续预览保持一致。 */
@@ -2353,9 +2364,11 @@ export interface Lecture {
     questionGapOverrides?: Record<string, number>;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    answerBoxPositions?: Record<string, { x: number; y: number }>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
     questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
+    inlineBlankLayouts?: Record<string, Record<string, { x: number; y: number; width?: number; height?: number }[]>>;
   };
   /** 排版设置 */
   layoutSettings?: {

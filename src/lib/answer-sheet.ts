@@ -24,6 +24,13 @@ export interface AnswerSheetImageLayout {
   caption?: string;
 }
 
+export interface AnswerSheetInlineBlankLayout {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+}
+
 export interface AnswerSheetInlineImageLayout {
   x: number;
   y: number;
@@ -55,6 +62,8 @@ export interface AnswerSheetSettings {
   choiceOptionBreaks?: Record<string, Record<number, AnswerSheetOptionBreak>>;
   essayImageLayouts?: Record<string, AnswerSheetImageLayout[]>;
   questionImageLayouts?: Record<string, Record<string, AnswerSheetInlineImageLayout[]>>;
+  inlineBlankLayouts?: Record<string, Record<string, AnswerSheetInlineBlankLayout[]>>;
+  answerBoxPositions?: Record<string, { x: number; y: number }>;
 }
 
 export interface AnswerSheetProject {
@@ -107,14 +116,4 @@ export function normalizeStudentNumberDigits(value: number): number {
   );
 }
 
-/**
- * Stable machine-readable payload reserved for future answer-sheet scanning.
- * Resource IDs already uniquely identify each exam paper / lecture, so no
- * additional server-side QR record is required.
- */
-export function buildAnswerSheetQrPayload(
-  resourceType: AnswerSheetResourceType,
-  resourceId: string,
-): string {
-  return `intes://answer-sheet/v1/${resourceType}/${encodeURIComponent(resourceId)}`;
-}
+export { buildAnswerSheetQrPayload } from "./answer-sheet-qr";

@@ -37,25 +37,26 @@ export function documentStudentProgress(
   records: AnswerRecord[],
   pendingAssignments: PendingQuestionAssignment[],
 ): { done: number; pending: number; undone: number } {
-  const questions = documentQuestionRefs(document);
-  const answered = new Set(
+  const selectedStudents = new Set(studentIds);
+  if (selectedStudents.size === 0) return { done: 0, pending: 0, undone: 0 };
+
+  const answeredQuestionIds = new Set(
     records
-      .filter((record) => studentIds.includes(record.studentId))
-      .map((record) => `${record.studentId}:${record.questionId}`),
+      .filter((record) => selectedStudents.has(record.studentId))
+      .map((record) => record.questionId),
   );
-  const pendingKeys = new Set(pendingAssignments.map((assignment) =>
-    `${assignment.studentId}:${assignment.questionId}`,
-  ));
+  const pendingQuestionIds = new Set(
+    pendingAssignments
+      .filter((assignment) => selectedStudents.has(assignment.studentId))
+      .map((assignment) => assignment.questionId),
+  );
   let done = 0;
   let pending = 0;
   let undone = 0;
-  for (const studentId of new Set(studentIds)) {
-    for (const question of questions) {
-      const key = `${studentId}:${question.questionId}`;
-      if (question.questionId && answered.has(key)) done += 1;
-      else if (question.questionId && pendingKeys.has(key)) pending += 1;
-      else undone += 1;
-    }
+  for (const question of documentQuestionRefs(document)) {
+    if (question.questionId && answeredQuestionIds.has(question.questionId)) done += 1;
+    else if (question.questionId && pendingQuestionIds.has(question.questionId)) pending += 1;
+    else undone += 1;
   }
   return { done, pending, undone };
 }
@@ -67,6 +68,5 @@ export function documentStudentProgressLabel(
   pendingAssignments: PendingQuestionAssignment[],
 ): string {
   const { done, pending, undone } = documentStudentProgress(document, studentIds, records, pendingAssignments);
-  const unit = new Set(studentIds).size > 1 ? "题次" : "题";
-  return `做过 ${done} ${unit} · 待做 ${pending} ${unit} · 未做 ${undone} ${unit}`;
+  return `做过 ${done} 题 · 待做 ${pending} 题 · 未做 ${undone} 题`;
 }

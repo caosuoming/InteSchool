@@ -46,6 +46,29 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves checkmarks in judgment questions without breaking actual square roots", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>判断正误：正确的打“</w:t></w:r>
+        <m:oMath><m:r><m:t>√</m:t></m:r></m:oMath>
+        <w:r><w:t>”，错误的打“×”。</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:r><w:t>答案：（1）</w:t></w:r>
+        <m:oMath><m:r><m:t>√</m:t></m:r></m:oMath>
+        <w:r><w:t>；（2）×；（3）√</w:t></w:r>
+      </w:p>
+      <w:p>
+        <w:r><w:t>根式：</w:t></w:r>
+        <m:oMath><m:rad><m:e><m:r><m:t>3</m:t></m:r></m:e></m:rad></m:oMath>
+      </w:p>
+    `);
+
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      "判断正误：正确的打“$\\surd$”，错误的打“×”。\n答案：（1）$\\surd$；（2）×；（3）√\n根式：$\\sqrt{3}$",
+    );
+  });
+
   it("normalizes malformed piecewise LaTeX carried by imported Word text runs", async () => {
     const data = await makeDocx(String.raw`<w:p><w:r><w:t>联立 $\left\begin{cases}x=1\\y=2\end{cases}\right.$。</w:t></w:r></w:p>`);
 

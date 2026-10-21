@@ -1,3 +1,4 @@
+import { isPlatformAdminAccount } from "@/lib/platform-admin";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock3, Eye, LockKeyhole, Monitor, Power, RefreshCw, ShieldCheck, Trash2, Unlock } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -51,7 +52,7 @@ export default function MyClassroomsPage() {
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const affiliation = teacher ? getCurrentAffiliation() : null;
   const role = affiliation?.role || teacher?.role;
-  const platform = role === "platform_admin";
+  const platform = isPlatformAdminAccount(teacher);
   const schoolAdmin = role === "school_admin";
   const [schools, setSchools] = useState<School[]>([]);
   const [schoolId, setSchoolId] = useState(affiliation?.schoolId || "");

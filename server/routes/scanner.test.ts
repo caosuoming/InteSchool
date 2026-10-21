@@ -98,4 +98,29 @@ describe("scanned page persistence and permissions", () => {
     expect(image.statusCode).toBe(200);
     expect(image.rawPayload.subarray(0, 8)).toEqual(png.subarray(0, 8));
   });
+
+  it("rejects obsolete QR codes after a sheet revision is replaced", async () => {
+    const data = payload(png);
+    const upload = async (qrPayload: string) => built.app.inject({
+      method: "POST", url: `/api/scanner/pages?${new URLSearchParams({ schoolId, sheetId, sheetType: "paper", qrPayload })}`,
+      headers: { cookie, "x-inteschool-csrf": csrf, "content-type": data.contentType }, payload: data.body,
+    });
+    await withSerializedState(built.store, (state) => {
+      const sheet = (state.examPapers as Array<Record<string, unknown>>).find((item) => item.id === sheetId)!;
+      sheet.answerSheetRevisionId = "revision-2";
+    });
+    const old = await upload(qr);
+    expect(old.statusCode).toBe(400);
+    const currentQr = `intes://answer-sheet/v2/exam-paper/${sheetId}/revision-2`;
+    const current = await upload(currentQr);
+    expect(current.statusCode).toBe(200);
+    expect(current.json().verified).toBe(true);
+    await withSerializedState(built.store, (state) => {
+      const sheet = (state.examPapers as Array<Record<string, unknown>>).find((item) => item.id === sheetId)!;
+      sheet.answerSheetRevisionId = "revision-3";
+    });
+    expect((await upload(currentQr)).statusCode).toBe(400);
+    expect((await upload(`intes://answer-sheet/v2/exam-paper/${sheetId}/revision-3`)).statusCode).toBe(200);
+  });
+
 });

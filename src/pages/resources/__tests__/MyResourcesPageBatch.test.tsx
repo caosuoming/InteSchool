@@ -17,6 +17,7 @@ import { questionService } from "@/services/question";
 import { prepService } from "@/services/prep";
 import { resourceFolderService } from "@/services/resourceFolder";
 import { shareService } from "@/services/share";
+import { toast } from "@/stores/ui";
 import type { Courseware, ExamPaper, Lecture, LessonCourseware, Material, Question, Teacher, TreeNode } from "@/types";
 
 const batchQuestion = vi.hoisted(() => ({
@@ -40,9 +41,9 @@ const batchQuestion = vi.hoisted(() => ({
 
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   useSchoolResourceOptions: () => ({
-    gradeOptions: [],
-    schoolYearOptions: [],
-    semesterOptions: [],
+    gradeOptions: [{ value: "高一", label: "高一" }, { value: "高二", label: "高二" }],
+    schoolYearOptions: [{ value: "2026-2027", label: "2026-2027" }],
+    semesterOptions: [{ value: "上学期", label: "上学期" }, { value: "下学期", label: "下学期" }],
     defaultGrade: "高一",
     defaultSchoolYear: "2026-2027",
     defaultSemester: "上学期",
@@ -50,7 +51,10 @@ vi.mock("@/hooks/useSchoolResourceOptions", () => ({
   }),
 }));
 vi.mock("@/hooks/useQuestionTypeOptions", () => ({
-  useQuestionTypeOptions: () => ({ getLabel: (value: string) => value }),
+  useQuestionTypeOptions: () => ({
+    getLabel: (value: string) => value,
+    options: [{ value: "single", label: "单选" }, { value: "short", label: "简答" }],
+  }),
 }));
 const questionFixtures = vi.hoisted(() => ({
   first: {
@@ -390,6 +394,8 @@ describe("MyResourcesPage batch actions", () => {
       return undefined;
     });
     vi.mocked(prepService.mergeQuestions).mockResolvedValue(undefined);
+    vi.mocked(questionService.updateQuestion).mockImplementation(async (id) =>
+      (id === "question-1" ? questionFixtures.first : questionFixtures.second));
     vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     vi.mocked(lectureService.listLectures).mockResolvedValue([]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([]);
@@ -680,6 +686,44 @@ describe("MyResourcesPage batch actions", () => {
       await waitFor(() => expect(screen.queryByTestId("resource-card-student-progress")).not.toBeInTheDocument());
     },
   );
+
+  it("shows question counts, not student-question attempts, when selecting an entire class", async () => {
+    const paper: ExamPaper = {
+      ...examPaper,
+      questions: ["q-1", "q-2", "q-3", "q-4"].map((questionId) => ({
+        id: `entry-${questionId}`, questionId, stem: "测试题", answer: "A", analysis: "", score: 5, type: "single",
+      })),
+    };
+    const students = Array.from({ length: 49 }, (_, index) => ({
+      id: `student-${index}`, name: `学生${index}`, studentNo: String(index),
+      classId: "class-1", schoolId: "school-1", grade: "高一", status: "active" as const,
+    }));
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
+    vi.mocked(classService.listMyStudents).mockResolvedValue(students);
+    vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([{
+      id: "record-1", studentId: "student-0", questionId: "q-1", lectureId: "other-document",
+      isCorrect: true, answeredAt: "2026-10-01T00:00:00.000Z",
+    }]);
+    vi.mocked(analyticsService.listPendingQuestionAssignments).mockResolvedValue([
+      { studentId: "student-0", questionId: "q-1" },
+      { studentId: "student-1", questionId: "q-2" },
+      { studentId: "student-2", questionId: "q-2" },
+      { studentId: "student-3", questionId: "q-3" },
+      { studentId: "student-4", questionId: "q-3" },
+    ]);
+
+    renderPage("examPaper");
+    expect(await screen.findByText(paper.title)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
+    fireEvent.click(await screen.findByRole("button", { name: "全选" }));
+    fireEvent.click(screen.getByRole("button", { name: "确定（49 人）" }));
+
+    await waitFor(() => {
+      expect(analyticsService.listAnswerRecordsByStudents).toHaveBeenCalledWith(students.map((student) => student.id));
+      expect(screen.getByTestId("resource-card-student-progress"))
+        .toHaveTextContent("做过 1 题 · 待做 2 题 · 未做 1 题");
+    });
+  });
 
   it("filters the exam-paper library to issued documents with no recorded answers", async () => {
     const pendingPaper: ExamPaper = {
@@ -1070,6 +1114,73 @@ describe("MyResourcesPage batch actions", () => {
       .toMatch(/\/shared-resources\/batch-share-/);
     expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
   });
+  it("updates only checked attributes and auto-selects changed values", async () => {
+    renderPage("question");
+    fireEvent.click(screen.getByRole("button", { name: "选择题目一" }));
+    expect(screen.queryByRole("option", { name: "批量修改属性" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择题目二" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "attributes" },
+    });
+    expect(screen.getByText("将勾选的属性统一应用到 2 道题目；未勾选的属性保持原值。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认修改" })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "年级新值" }), { target: { value: "高二" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "难度新值" }), { target: { value: "5" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "题型新值" }), { target: { value: "single" } });
+    expect(screen.getByRole("checkbox", { name: "修改年级" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "修改难度" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "修改题型" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "修改难度" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
+
+    await waitFor(() => {
+      expect(questionService.updateQuestion).toHaveBeenCalledTimes(2);
+      expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", { grade: "高二", type: "single" });
+      expect(questionService.updateQuestion).toHaveBeenCalledWith("question-2", { grade: "高二", type: "single" });
+      expect(screen.queryByRole("region", { name: "批量操作" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("supports clearing optional attributes while leaving unchecked attributes unchanged", async () => {
+    renderPage("question");
+    fireEvent.click(screen.getByRole("button", { name: "选择题目一" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择题目二" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "attributes" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "修改学期" }));
+    expect(screen.getByRole("button", { name: "确认修改" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "年级新值" }), { target: { value: "__clear__" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "修改学期" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
+    await waitFor(() => {
+      expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", { grade: "" });
+      expect(questionService.updateQuestion).toHaveBeenCalledWith("question-2", { grade: "" });
+    });
+  });
+
+  it("retains failed questions selected for retry", async () => {
+    vi.mocked(questionService.updateQuestion).mockImplementation(async (id) => {
+      if (id === "question-2") throw new Error("write failed");
+      return questionFixtures.first;
+    });
+    renderPage("question");
+    fireEvent.click(screen.getByRole("button", { name: "选择题目一" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择题目二" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
+      target: { value: "attributes" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "难度新值" }), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("部分题目修改失败", "1 道题目未能更新，仍保持选中");
+      expect(screen.getByRole("combobox", { name: "选择批量操作" })).toHaveTextContent("批量操作（1）");
+    });
+  });
+
   it("offers merge for exactly two selected questions and submits merge fields", async () => {
     renderPage("question");
 

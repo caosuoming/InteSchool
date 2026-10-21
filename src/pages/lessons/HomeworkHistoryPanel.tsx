@@ -1,13 +1,18 @@
 import { useMemo } from "react";
+import { Star } from "lucide-react";
 import type { HomeworkClassOverviewRecord } from "@/types";
 import { HomeworkImageGallery } from "@/components/homework/HomeworkImageGallery";
 
 export function HomeworkHistoryPanel({
   records,
   students,
+  followedStudentIds = new Set<string>(),
+  highlightFollowed = true,
 }: {
   records: HomeworkClassOverviewRecord[];
   students: { id: string; name: string }[];
+  followedStudentIds?: ReadonlySet<string>;
+  highlightFollowed?: boolean;
 }) {
   const previous = useMemo(() => records.filter((item) => item.homeworkDate < new Date(
     Date.now() - new Date().getTimezoneOffset() * 60_000,
@@ -36,7 +41,16 @@ export function HomeworkHistoryPanel({
                 <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-ink-600">作业概况：{record.summary || "未填写"}</p>
                 <p className="mt-2 text-xs leading-relaxed text-ink-600">
                   作业点名：{!record.attendanceTaken ? "未点名"
-                    : missing.length ? missing.map((id) => `${record.studentNames?.[id] || studentNames.get(id) || id}（${missingCounts.get(id) || 1}次）`).join("、") : "全部已交或请假"}
+                    : missing.length ? missing.map((id, index) => {
+                      const name = record.studentNames?.[id] || studentNames.get(id) || id;
+                      return <span key={id} className="inline-flex items-center gap-0.5">
+                        {index > 0 && "、"}
+                        <span>{name}（{missingCounts.get(id) || 1}次）</span>
+                        {highlightFollowed && followedStudentIds.has(id) && (
+                          <Star className="h-3 w-3 fill-red-600 text-red-600" role="img" aria-label={`${name}已关注`} />
+                        )}
+                      </span>;
+                    }) : "全部已交或请假"}
                 </p>
                 <HomeworkImageGallery images={record.images || []} />
               </article>
