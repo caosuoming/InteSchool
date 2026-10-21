@@ -31,6 +31,8 @@ export interface ScannerPageRecord {
   verified: boolean;
   studentId: string | null;
   status: "pending" | "assigned";
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
   createdAt: string;
 }
 
@@ -95,8 +97,12 @@ export const scannerService = {
   },
 
   async assignPage(pageId: string, studentId: string | null): Promise<ScannerPageRecord> {
+    return scannerService.updatePage(pageId, { studentId });
+  },
+
+  async updatePage(pageId: string, patch: { studentId?: string | null; reviewed?: boolean }): Promise<ScannerPageRecord> {
     return apiRequest<ScannerPageRecord>(`/api/scanner/pages/${encodeURIComponent(pageId)}`, {
-      method: "PATCH", body: JSON.stringify({ studentId }),
+      method: "PATCH", body: JSON.stringify(patch),
     }, true);
   },
 

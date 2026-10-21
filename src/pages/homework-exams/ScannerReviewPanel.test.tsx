@@ -6,7 +6,7 @@ import { scannerService } from "@/services/scanner";
 import type { ScannerPageRecord } from "@/services/scanner";
 import type { Student } from "@/types";
 
-vi.mock("@/services/scanner", () => ({ scannerService: { listPages: vi.fn(), assignPage: vi.fn() } }));
+vi.mock("@/services/scanner", () => ({ scannerService: { listPages: vi.fn(), assignPage: vi.fn(), updatePage: vi.fn() } }));
 const scanned: ScannerPageRecord = {
   id: "scan-1", schoolId: "sch-1", teacherId: "tch-1", sheetType: "paper", sheetId: "p-1",
   fileId: "file-1", qrPayload: null, verified: false, studentId: null, status: "pending", createdAt: "2026-10-20T03:00:00Z",
@@ -18,6 +18,7 @@ describe("ScannerReviewPanel", () => {
     vi.clearAllMocks();
     vi.mocked(scannerService.listPages).mockResolvedValue([scanned]);
     vi.mocked(scannerService.assignPage).mockResolvedValue({ ...scanned, studentId: "student-1", status: "assigned" });
+    vi.mocked(scannerService.updatePage).mockResolvedValue({ ...scanned, studentId: "student-1", status: "assigned", reviewedAt: "2026-10-21T00:00:00Z" });
   });
 
   it("retains unreadable QR pages for later manual student matching", async () => {
@@ -32,5 +33,8 @@ describe("ScannerReviewPanel", () => {
     await user.click(within(panel).getByRole("button", { name: "保存匹配" }));
     await waitFor(() => expect(scannerService.assignPage).toHaveBeenCalledWith("scan-1", "student-1"));
     expect(await within(panel).findByText("已关联：王同学")).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "确认复查" }));
+    await waitFor(() => expect(scannerService.updatePage).toHaveBeenCalledWith("scan-1", { studentId: "student-1", reviewed: true }));
+    expect(within(panel).getByRole("button", { name: "撤销复查" })).toBeInTheDocument();
   });
 });

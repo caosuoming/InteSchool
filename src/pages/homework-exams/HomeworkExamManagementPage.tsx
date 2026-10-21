@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { BookCheck, ClipboardList, FileText, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ScannerReviewPanel } from "./ScannerReviewPanel";
 import { ThirdPartyCardEditor } from "@/components/scanner/ThirdPartyCardEditor";
-import { scannerService, type ThirdPartyCard } from "@/services/scanner";
+import { scannerService, type ScannerPageRecord, type ThirdPartyCard } from "@/services/scanner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -38,6 +38,38 @@ type EditForm = {
   endDate: string;
   publishAt: string;
 };
+
+type ResizableColumn = "title" | "filename" | "audience";
+type ColumnWidths = Record<ResizableColumn, number>;
+const COLUMN_WIDTHS_KEY = "inteschool:homework-management:column-widths:v1";
+const DEFAULT_COLUMN_WIDTHS: ColumnWidths = { title: 224, filename: 256, audience: 224 };
+const MIN_COLUMN_WIDTH = 120;
+const MAX_COLUMN_WIDTH = 720;
+const OTHER_COLUMN_WIDTHS = [96, 80, 80, 192, 192, 96, 260];
+
+function clampColumnWidth(value: number): number {
+  return Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(value)));
+}
+
+function readColumnWidths(): ColumnWidths {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(COLUMN_WIDTHS_KEY) || "null");
+    if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+      const values = stored as Record<string, unknown>;
+      return Object.fromEntries((Object.keys(DEFAULT_COLUMN_WIDTHS) as ResizableColumn[]).map((key) => [
+        key, typeof values[key] === "number" && Number.isFinite(values[key])
+          ? clampColumnWidth(values[key]) : DEFAULT_COLUMN_WIDTHS[key],
+      ])) as ColumnWidths;
+    }
+  } catch { /* Storage may be disabled. */ }
+  return { ...DEFAULT_COLUMN_WIDTHS };
+}
+
+function scanStatus(records: ScannerPageRecord[], paperId: string): "未扫描" | "已扫描未复查" | "扫描已复查" {
+  const matching = records.filter((record) => record.sheetType === "paper" && record.sheetId === paperId);
+  if (matching.length === 0) return "未扫描";
+  return matching.every((record) => !!record.reviewedAt) ? "扫描已复查" : "已扫描未复查";
+}
 
 const statusVariant = (status: string) => {
   if (status === "进行中" || status === "已发布") return "green" as const;
@@ -130,6 +162,51 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [thirdPartyCards, setThirdPartyCards] = useState<ThirdPartyCard[]>([]);
+  const [scannerPages, setScannerPages] = useState<ScannerPageRecord[]>([]);
+  const [scannerError, setScannerError] = useState(false);
+  const [scanPaper, setScanPaper] = useState<ExamPaper | null>(null);
+  const [columnWidths, setColumnWidths] = useState<ColumnWidths>(readColumnWidths);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const tableWidth = Math.max(1600, Object.values(columnWidths).reduce((total, width) => total + width, 0)
+    + OTHER_COLUMN_WIDTHS.reduce((total, width) => total + width, 0));
+
+  useEffect(() => {
+    try { localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(columnWidths)); }
+    catch { /* Storage may be disabled. */ }
+  }, [columnWidths]);
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
+
+  const resizeColumn = (key: ResizableColumn, event: React.PointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    resizeCleanupRef.current?.();
+    const start = event.clientX;
+    const width = columnWidths[key];
+    const move = (pointer: PointerEvent) => setColumnWidths((current) => ({
+      ...current, [key]: clampColumnWidth(width + pointer.clientX - start),
+    }));
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      resizeCleanupRef.current = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    resizeCleanupRef.current = stop;
+  };
+  const syncScroll = (source: "top" | "table") => {
+    const from = source === "top" ? topScrollRef.current : tableScrollRef.current;
+    const to = source === "top" ? tableScrollRef.current : topScrollRef.current;
+    if (from && to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
+  const onScannerRecordsChange = useCallback((records: ScannerPageRecord[]) => {
+    setScannerPages(records);
+    setScannerError(false);
+  }, []);
   const [editingCard, setEditingCard] = useState<ThirdPartyCard | null>(null);
   const [cardSaving, setCardSaving] = useState(false);
   const [publications, setPublications] = useState<ExamPublication[]>([]);
@@ -158,6 +235,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     setMissingList(null);
     setPreviewAttachment(null);
     setAnswerPaper(null);
+    setScanPaper(null);
   }, [section]);
 
   useEffect(() => {
@@ -167,6 +245,8 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     setHomeworks([]);
     setPapers([]);
     setThirdPartyCards([]);
+    setScannerPages([]);
+    setScannerError(false);
     setStudents([]);
     setPublications([]);
     setAttendance(new Map());
@@ -176,13 +256,15 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     }
     const load = async () => {
       try {
-        const [classItems, homeworkItems, paperItems, publicationItems, studentResult, scannedItems] = await Promise.all([
+        const [classItems, homeworkItems, paperItems, publicationItems, studentResult, scannedItems, scannerResult] = await Promise.all([
           classService.listAllClasses(schoolId, teacherId),
           classroomHomeworkService.listHomeworks({ schoolId, teacherId }),
           examPaperService.listPapers({ schoolId, teacherId }),
           section === "exams" ? examPublishService.listPublications(schoolId) : Promise.resolve([]),
           (section === "exams" ? classService.listStudentsBySchool(schoolId) : classService.listMyStudents(schoolId, teacherId)).catch(() => [] as Student[]),
           section === "homework" ? scannerService.listThirdPartyCards(schoolId) : Promise.resolve([]),
+          section === "homework" ? scannerService.listPages(schoolId).then((records) => ({ records, failed: false }))
+            .catch(() => ({ records: [] as ScannerPageRecord[], failed: true })) : Promise.resolve({ records: [] as ScannerPageRecord[], failed: false }),
         ]);
         const classIds = section === "homework"
           ? [...new Set(homeworkItems.filter((item) => item.managementCategory !== "exam"
@@ -196,6 +278,8 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
         setHomeworks(homeworkItems);
         setPapers(paperItems);
         setThirdPartyCards(scannedItems);
+        setScannerPages(scannerResult.records);
+        setScannerError(scannerResult.failed);
         setPublications(publicationItems.filter((item) =>
           item.publisherId === teacherId && item.publisherSchoolId === schoolId));
         setAttendance(new Map(classIds.map((id, index) => [
@@ -422,14 +506,34 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
             </select>
             <Link to={isHomework ? "/my-lessons?tab=homework" : "/my-resources/exam-papers"} className="btn-gold flex items-center gap-1.5 px-3 py-2 text-sm"><Plus className="h-4 w-4" />{isHomework ? "布置作业" : "查看试卷库"}</Link>
           </div>
-          <div className="overflow-x-auto" aria-label={isHomework ? "作业管理表格，可横向滚动查看后续列" : "考试管理表格"} role="region" tabIndex={0}>
-            <table className={`w-full text-left text-sm ${isHomework ? "min-w-[1600px] table-fixed" : "min-w-[1000px]"}`}>
+          {isHomework && <div ref={topScrollRef} onScroll={() => syncScroll("top")}
+            className="overflow-x-auto border-b border-ink-100" role="region" tabIndex={0} aria-label="作业管理表格上方横向滚动条">
+            <div style={{ width: tableWidth, height: 1 }} aria-hidden="true" />
+          </div>}
+          {scannerError && isHomework && <p role="alert" className="px-4 py-2 text-sm text-red-600">扫描记录加载失败，暂时无法显示扫描状态。请刷新重试。</p>}
+          <div ref={tableScrollRef} onScroll={() => syncScroll("table")} className="overflow-x-auto" aria-label={isHomework ? "作业管理表格，可横向滚动查看后续列" : "考试管理表格"} role="region" tabIndex={0}>
+            <table className={`text-left text-sm ${isHomework ? "min-w-[1600px] table-fixed" : "w-full min-w-[1000px]"}`} style={isHomework ? { width: tableWidth } : undefined}>
               {isHomework && <colgroup>
-                <col className="w-56" /><col className="w-64" /><col className="w-56" /><col className="w-24" /><col className="w-20" /><col className="w-20" /><col className="w-48" /><col className="w-48" /><col className="w-24" /><col />
+                <col style={{ width: columnWidths.title }} /><col style={{ width: columnWidths.filename }} /><col style={{ width: columnWidths.audience }} />
+                {OTHER_COLUMN_WIDTHS.map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>}
               <thead className="bg-ink-50 text-ink-700">
                 {isHomework ? (
-                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title, index) => <th key={title} scope="col" className={`whitespace-nowrap px-4 py-3 font-medium ${index === 0 ? "sticky left-0 z-10 bg-ink-50" : index === 1 ? "sticky left-56 z-10 bg-ink-50" : ""}`}>{title}</th>)}</tr>
+                  <tr>{["作业名称", "作业文件名", "使用对象", "答案", "已交", "未交", "作业时间", "发布时间", "状态", "操作"].map((title, index) => {
+                    const key: ResizableColumn | null = index === 0 ? "title" : index === 1 ? "filename" : index === 2 ? "audience" : null;
+                    return <th key={title} scope="col" style={index === 1 ? { left: columnWidths.title } : undefined}
+                      className={`whitespace-nowrap px-4 py-3 font-medium ${index === 0 ? "sticky left-0 z-10 bg-ink-50" : index === 1 ? "sticky z-10 bg-ink-50" : "relative"}`}>
+                      {title}
+                      {key && <span role="separator" tabIndex={0} aria-orientation="vertical" aria-label={`调整${title}列宽`}
+                        aria-valuemin={MIN_COLUMN_WIDTH} aria-valuemax={MAX_COLUMN_WIDTH} aria-valuenow={columnWidths[key]}
+                        onPointerDown={(event) => resizeColumn(key, event)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                          event.preventDefault();
+                          setColumnWidths((current) => ({ ...current, [key]: clampColumnWidth(current[key] + (event.key === "ArrowRight" ? 16 : -16)) }));
+                        }} className="absolute inset-y-1 right-0 z-20 w-2 cursor-col-resize touch-none rounded hover:bg-teal-200 focus:bg-teal-200 focus:outline-none" />}
+                    </th>;
+                  })}</tr>
                 ) : (
                   <tr>{["考试名称", "使用对象", "类型", "发布时间", "解锁时间", "状态", "操作"].map((title) => <th key={title} scope="col" className="whitespace-nowrap px-4 py-3 font-medium">{title}</th>)}</tr>
                 )}
@@ -439,7 +543,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                   {visibleScannedCards.map((card) => (
                     <tr key={`third-party-${card.id}`} className="group align-top hover:bg-mist/40">
                       <td className="sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist">{card.fileName}<span className="ml-2 text-xs font-normal text-ink-500">第三方卡</span></td>
-                      <td className="sticky left-56 z-10 break-all bg-paper px-4 py-3 group-hover:bg-mist"><button className="text-teal-700 hover:underline" onClick={() => setEditingCard(card)}>{card.fileName}</button></td>
+                      <td style={{ left: columnWidths.title }} className="sticky z-10 break-all bg-paper px-4 py-3 group-hover:bg-mist"><button className="text-teal-700 hover:underline" onClick={() => setEditingCard(card)}>{card.fileName}</button></td>
                       <td className="px-4 py-3 text-ink-600">{papers.find((paper) => paper.id === card.paperId)?.title || "未关联试卷"}</td>
                       <td className="px-4 py-3 text-ink-600">—</td>
                       <td className="px-4 py-3 text-ink-600">—</td>
@@ -447,7 +551,15 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className="px-4 py-3 text-ink-600">—</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(card.createdAt)}</td>
                       <td className="px-4 py-3"><Badge variant="amber">草稿</Badge></td>
-                      <td className="px-4 py-3"><button className="text-teal-700 hover:underline" onClick={() => setEditingCard(card)}>编辑标注</button></td>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3 whitespace-nowrap">
+                        <button className="text-teal-700 hover:underline" onClick={() => setEditingCard(card)}>编辑标注</button>
+                        {card.paperId && papers.find((paper) => paper.id === card.paperId) && (
+                          <button type="button" disabled={scannerError} className="text-teal-700 hover:underline disabled:opacity-50"
+                            onClick={() => setScanPaper(papers.find((paper) => paper.id === card.paperId)!)}>
+                            {scannerError ? "扫描状态未知" : scanStatus(scannerPages, card.paperId)}
+                          </button>
+                        )}
+                      </div></td>
                     </tr>
                   ))}
                   {visibleRecords.map((record) => {
@@ -456,7 +568,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                     return (
                     <tr key={`${record.kind}-${record.item.id}`} className="group align-top hover:bg-mist/40">
                       <td className="sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist">{recordTitle(record)}</td>
-                      <td className="sticky left-56 z-10 break-all bg-paper px-4 py-3 text-ink-600 group-hover:bg-mist">
+                      <td style={{ left: columnWidths.title }} className="sticky z-10 break-all bg-paper px-4 py-3 text-ink-600 group-hover:bg-mist">
                         {record.kind === "paper" ? (
                           <Link className="text-teal-700 hover:underline" to={paperPreviewUrl(record.item)}>{fileName(record)}</Link>
                         ) : record.item.attachments?.length ? (
@@ -465,7 +577,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                           ))}</div>
                         ) : "—"}
                       </td>
-                      <td className="max-w-56 px-4 py-3 text-ink-600">{audienceLabel(record)}</td>
+                      <td className="break-words px-4 py-3 text-ink-600">{audienceLabel(record)}</td>
                       <td className="px-4 py-3">
                         {record.kind === "paper" ? (
                           <button type="button" className="text-teal-700 hover:underline disabled:cursor-wait disabled:opacity-50"
@@ -482,7 +594,11 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "classroom" ? record.item.publishAt : record.item.createdAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                      <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link></div></td>
+                      <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link>{record.kind === "paper" && <button type="button" disabled={scannerError}
+                        className="text-teal-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setScanPaper(record.item)}
+                        aria-label={`查看「${record.item.title}」答题卡扫描情况：${scannerError ? "加载失败" : scanStatus(scannerPages, record.item.id)}`}>
+                        {scannerError ? "扫描状态未知" : scanStatus(scannerPages, record.item.id)}
+                      </button>}</div></td>
                     </tr>
                   );
                 })}</> : <>
@@ -527,6 +643,11 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           {isHomework && <p className="border-t border-ink-100 px-4 py-3 text-xs text-ink-400">未交人数来自班级当日作业点名（未交不含请假学生），不区分同日不同作业；点击未交人数可查看名单。未点名、跨日期或尚未布置的文档显示“—”。</p>}
         </Card>
       )}
+      <Modal open={!!scanPaper} onClose={() => setScanPaper(null)} title={`答题卡扫描情况 · ${scanPaper?.title || ""}`}
+        description="仅显示这份试卷的答题卡扫描记录；修改学生匹配或复查状态后会同步更新列表。" size="xl">
+        {scanPaper && schoolId && <ScannerReviewPanel key={scanPaper.id} schoolId={schoolId} students={students}
+          sheetId={scanPaper.id} onRecordsChange={onScannerRecordsChange} />}
+      </Modal>
       {editingCard && <ThirdPartyCardEditor key={editingCard.id} card={editingCard} papers={papers.filter((paper) => paper.teacherId === teacherId && paper.schoolId === schoolId)} saving={cardSaving} onClose={() => setEditingCard(null)} onSave={(patch) => void saveCard(patch)} />}
       <Modal open={!!missingList} onClose={() => setMissingList(null)} title={`未交作业名单 · ${missingList?.title || ""}`} description={`共 ${missingList?.students.length || 0} 人，已排除请假学生`}>
         <div className="divide-y divide-ink-100">

@@ -12,7 +12,7 @@ import { examPaperService } from "@/services/examPaper";
 import { homeworkRecordService } from "@/services/homeworkRecord";
 import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord, PersonalClass, SchoolClass, Teacher, Student } from "@/types";
 
-vi.mock("@/services/scanner", () => ({ scannerService: { listThirdPartyCards: vi.fn(), updateThirdPartyCard: vi.fn(), listPages: vi.fn(), assignPage: vi.fn() } }));
+vi.mock("@/services/scanner", () => ({ scannerService: { listThirdPartyCards: vi.fn(), updateThirdPartyCard: vi.fn(), listPages: vi.fn(), assignPage: vi.fn(), updatePage: vi.fn() } }));
 vi.mock("@/services/class", () => ({ classService: { listAllClasses: vi.fn(), listMyStudents: vi.fn(), listStudentsBySchool: vi.fn() } }));
 vi.mock("@/services/api", () => ({ extractStoredFile: vi.fn() }));
 vi.mock("@/services/classroomHomework", () => ({ classroomHomeworkService: { listHomeworks: vi.fn(), updateHomework: vi.fn() } }));
@@ -59,6 +59,7 @@ function mount(section: "homework" | "exams") {
 describe("作业考试管理页面", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.removeItem("inteschool:homework-management:column-widths:v1");
     useAuthStore.setState({
       teacher: { id: "teacher-1", schoolId: "school-1", name: "李老师" } as Teacher,
       getCurrentAffiliation: () => null,
@@ -129,8 +130,8 @@ describe("作业考试管理页面", () => {
     expect(screen.getByText("王五（003）")).toBeInTheDocument();
     expect(screen.queryByText("张三（001）")).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.getByRole("columnheader", { name: "作业名称" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "作业文件名" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /^作业名称/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /^作业文件名/ })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "已交" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "出作业" })).toHaveAttribute("href", "/my-resources/exam-papers?create=homework");
     fireEvent.click(within(row).getByRole("button", { name: "编辑" }));
@@ -145,15 +146,72 @@ describe("作业考试管理页面", () => {
     mount("homework");
     const tableRegion = await screen.findByRole("region", { name: "作业管理表格，可横向滚动查看后续列" });
     expect(within(tableRegion).getByRole("table")).toHaveClass("min-w-[1600px]", "table-fixed");
-    expect(within(tableRegion).getByRole("columnheader", { name: "作业名称" })).toHaveClass("sticky", "left-0");
-    expect(within(tableRegion).getByRole("columnheader", { name: "作业文件名" })).toHaveClass("sticky", "left-56");
-    expect(within(tableRegion).getByRole("columnheader", { name: "使用对象" })).not.toHaveClass("sticky");
+    expect(within(tableRegion).getByRole("columnheader", { name: /^作业名称/ })).toHaveClass("sticky", "left-0");
+    expect(within(tableRegion).getByRole("columnheader", { name: /^作业文件名/ })).toHaveClass("sticky");
+    expect(within(tableRegion).getByRole("columnheader", { name: /^作业文件名/ })).toHaveStyle({ left: "224px" });
+    expect(within(tableRegion).getByRole("columnheader", { name: /^使用对象/ })).not.toHaveClass("sticky");
     const homeworkRow = within(tableRegion).getByRole("row", { name: /函数专题作业/ });
     expect(within(homeworkRow).getAllByRole("cell")[0]).toHaveClass("sticky", "left-0");
-    expect(within(homeworkRow).getAllByRole("cell")[1]).toHaveClass("sticky", "left-56");
+    expect(within(homeworkRow).getAllByRole("cell")[1]).toHaveClass("sticky");
+    expect(within(homeworkRow).getAllByRole("cell")[1]).toHaveStyle({ left: "224px" });
     expect(within(homeworkRow).getByRole("link", { name: "作业记录" })).toHaveAttribute("href", "/my-students?tab=homework");
     const paperRow = within(tableRegion).getByRole("row", { name: /资源篮函数练习/ });
     expect(within(paperRow).getByRole("link", { name: "作业记录" })).toHaveAttribute("href", "/my-students?tab=homework");
+  });
+
+  it("resizes three columns, persists widths, and synchronizes both horizontal scrollbars", async () => {
+    const view = mount("homework");
+    const titleGrip = await screen.findByRole("separator", { name: "调整作业名称列宽" });
+    expect(screen.getByRole("separator", { name: "调整作业文件名列宽" })).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: "调整使用对象列宽" })).toBeInTheDocument();
+    fireEvent.keyDown(titleGrip, { key: "ArrowRight" });
+    expect(titleGrip).toHaveAttribute("aria-valuenow", "240");
+    fireEvent(titleGrip, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 100 }));
+    fireEvent(window, new MouseEvent("pointermove", { bubbles: true, clientX: 148 }));
+    fireEvent(window, new MouseEvent("pointerup", { bubbles: true, clientX: 148 }));
+    expect(titleGrip).toHaveAttribute("aria-valuenow", "288");
+    expect(screen.getByRole("columnheader", { name: /^作业文件名/ })).toHaveStyle({ left: "288px" });
+    expect(JSON.parse(localStorage.getItem("inteschool:homework-management:column-widths:v1") || "{}")).toMatchObject({ title: 288 });
+
+    const top = screen.getByRole("region", { name: "作业管理表格上方横向滚动条" });
+    const table = screen.getByRole("region", { name: "作业管理表格，可横向滚动查看后续列" });
+    top.scrollLeft = 160;
+    fireEvent.scroll(top);
+    expect(table.scrollLeft).toBe(160);
+    table.scrollLeft = 75;
+    fireEvent.scroll(table);
+    expect(top.scrollLeft).toBe(75);
+
+    view.unmount();
+    mount("homework");
+    expect(await screen.findByRole("separator", { name: "调整作业名称列宽" })).toHaveAttribute("aria-valuenow", "288");
+  });
+
+  it("shows per-paper scanned statuses and lets teachers review only that paper's scans", async () => {
+    const baseScan = {
+      id: "scan-1", schoolId: "school-1", teacherId: "teacher-1", sheetType: "paper" as const,
+      sheetId: "paper-1", fileId: "file-1", qrPayload: null, verified: false,
+      studentId: "s1", status: "assigned" as const, createdAt: "2026-10-20T00:00:00Z",
+    };
+    const other = { ...baseScan, id: "scan-other", sheetId: "other-paper", fileId: "file-other" };
+    vi.mocked(scannerService.listPages).mockResolvedValue([baseScan, other]);
+    vi.mocked(scannerService.updatePage).mockResolvedValue({ ...baseScan, reviewedAt: "2026-10-21T00:00:00Z" });
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    fireEvent.click(within(row).getByRole("button", { name: /答题卡扫描情况：已扫描未复查/ }));
+    const detail = await screen.findByRole("region", { name: "试卷扫描件详情" });
+    expect(within(detail).getByAltText("扫描卷原图")).toHaveAttribute("src", "/api/files/file-1");
+    expect(within(detail).queryByText(/other-paper/)).not.toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole("button", { name: "确认复查" }));
+    await waitFor(() => expect(scannerService.updatePage).toHaveBeenCalledWith("scan-1", { studentId: "s1", reviewed: true }));
+    expect(await within(row).findByRole("button", { name: /答题卡扫描情况：扫描已复查/ })).toBeInTheDocument();
+  });
+
+  it("offers an empty scan view for an unscanned paper", async () => {
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
+    fireEvent.click(within(row).getByRole("button", { name: /答题卡扫描情况：未扫描/ }));
+    expect(await screen.findByText("这份试卷暂无答题卡扫描记录")).toBeInTheDocument();
   });
 
   it("does not add homework record actions or frozen columns to exam management", async () => {
