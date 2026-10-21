@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { AnswerSheetComposer } from "./AnswerSheetComposer";
 
 const downloadPdfMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock("@/lib/answer-sheet-export", () => ({ downloadAnswerSheetPdf: downloadPdfMock }));
+vi.mock("@/lib/answer-sheet-export", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/answer-sheet-export")>()),
+  downloadAnswerSheetPdf: downloadPdfMock,
+}));
 
 const questions = [
   { id: "q1", type: "single" as const, stem: "1+1 等于？", options: ["1", "2", "3", "4"], score: 5 },
@@ -147,6 +150,7 @@ describe("AnswerSheetComposer", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "打印答题卡" }));
       expect(print).toHaveBeenCalledTimes(1);
+      window.dispatchEvent(new Event("afterprint"));
       expect(onPublicationChange).not.toHaveBeenCalled();
       rerender(<AnswerSheetComposer title="期中" resourceType="exam-paper" resourceId="paper-1" resourceLabel="试卷"
         questions={questions} published initialViewMode="preview" onPublicationChange={onPublicationChange} onBack={vi.fn()} />);

@@ -38,7 +38,7 @@ import {
   type AnswerSheetWideColumns,
 } from "@/lib/answer-sheet";
 import { decorateFillBlankAnswerAreas } from "@/lib/fill-blank";
-import { downloadAnswerSheetPdf } from "@/lib/answer-sheet-export";
+import { downloadAnswerSheetPdf, printAnswerSheet } from "@/lib/answer-sheet-export";
 import { layoutChoiceOptions } from "@/lib/answer-sheet-choice-options";
 import type { AnswerSheetImageLayout } from "@/lib/answer-sheet";
 import { EssayImages } from "./EssayImages";
@@ -944,11 +944,13 @@ export function AnswerSheetComposer({
     }
   };
 
+  const previewPages = () => Array.from(previewPagesRef.current?.querySelectorAll<HTMLElement>(
+    '.answer-sheet-paper[data-paper-view="preview"]',
+  ) || []);
+
   const downloadPdf = async () => {
     if (exporting) return;
-    const pages = Array.from(previewPagesRef.current?.querySelectorAll<HTMLElement>(
-      '.answer-sheet-paper[data-paper-view="preview"]',
-    ) || []);
+    const pages = previewPages();
     setExporting(true);
     try {
       await downloadAnswerSheetPdf(pages, `${title}_答题卡`, settings.paperSize);
@@ -1468,7 +1470,7 @@ export function AnswerSheetComposer({
                       <Download className="h-4 w-4" />
                       下载答题卡
                     </Button>
-                    <Button variant="outline" onClick={() => window.print()}>
+                    <Button variant="outline" onClick={() => printAnswerSheet(previewPages(), settings.paperSize)}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>
