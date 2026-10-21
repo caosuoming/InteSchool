@@ -107,7 +107,7 @@ describe("ScannerPage", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-card");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     mount();
-    await user.click(await screen.findByRole("button", { name: /函数试卷/ }));
+    await user.click(await screen.findByRole("button", { name: "使用扫描仪采集函数试卷" }));
     expect(await screen.findByText("第 1 页 · 二维码与选定试卷不符")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /确认试卷并上传 0 页/ })).toBeDisabled();
     vi.restoreAllMocks();
