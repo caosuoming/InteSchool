@@ -30,12 +30,30 @@ describe("documentStudentProgress", () => {
       .toBe("做过 1 题 · 待做 1 题 · 未做 1 题");
   });
 
-  it("counts per student and does not count nonselected students' records or assignments", () => {
+  it("counts each document question once across selected students, excluding other students", () => {
     const records = [record("s1", "q1"), record("s2", "q1"), record("s3", "q2")];
     expect(documentStudentProgress(paper, ["s1", "s2"], records, assignments))
-      .toEqual({ done: 2, pending: 2, undone: 2 });
+      .toEqual({ done: 1, pending: 2, undone: 0 });
     expect(documentStudentProgressLabel(paper, ["s1", "s2"], records, assignments))
-      .toBe("做过 2 题次 · 待做 2 题次 · 未做 2 题次");
+      .toBe("做过 1 题 · 待做 2 题 · 未做 0 题");
+  });
+
+  it("never multiplies the document total by the number of selected students", () => {
+    const fourQuestions = {
+      questions: ["q1", "q2", "q3", "q4"].map((questionId) => ({ id: questionId, questionId })),
+    } as ExamPaper;
+    const studentIds = Array.from({ length: 49 }, (_, index) => `student-${index}`);
+    const allPending = studentIds.flatMap((studentId) => ["q1", "q2", "q3", "q4"].map((questionId) =>
+      ({ studentId, questionId }),
+    ));
+    const progress = documentStudentProgress(fourQuestions, studentIds, [
+      record("student-0", "q1"), record("student-1", "unrelated"),
+    ], allPending);
+    expect(progress).toEqual({ done: 1, pending: 3, undone: 0 });
+    expect(progress.done + progress.pending + progress.undone).toBe(fourQuestions.questions.length);
+    expect(documentStudentProgressLabel(fourQuestions, studentIds, [], [])).toBe(
+      "做过 0 题 · 待做 0 题 · 未做 4 题",
+    );
   });
 
   it("gives real attempts priority over pending assignments and deduplicates repeated selections", () => {
