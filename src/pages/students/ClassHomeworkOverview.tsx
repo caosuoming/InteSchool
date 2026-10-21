@@ -10,6 +10,7 @@ import type {
 } from "@/types";
 import { classroomHomeworkService } from "@/services/classroomHomework";
 import { homeworkRecordService } from "@/services/homeworkRecord";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
@@ -75,6 +76,33 @@ export function ClassHomeworkOverview({
   const loadVersion = useRef(0);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "studentNo">("name");
+  const [highlightFollowed, setHighlightFollowed] = useState(true);
+  const highlightEditedRef = useRef(false);
+  const [highlightSaving, setHighlightSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void studentInteractionService.getHomeworkFollowHighlightEnabled()
+      .then((enabled) => { if (active && !highlightEditedRef.current) setHighlightFollowed(enabled !== false); })
+      .catch(() => { /* 默认开启；保存失败会提示用户 */ });
+    return () => { active = false; };
+  }, [teacherId]);
+
+  const changeHighlightFollowed = async (enabled: boolean) => {
+    if (highlightSaving) return;
+    const previous = highlightFollowed;
+    highlightEditedRef.current = true;
+    setHighlightFollowed(enabled);
+    setHighlightSaving(true);
+    try {
+      await studentInteractionService.setHomeworkFollowHighlightEnabled(enabled);
+    } catch (error) {
+      setHighlightFollowed(previous);
+      toast.error("保存关注学生凸显设置失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setHighlightSaving(false);
+    }
+  };
   const sortedStudents = useMemo(() => {
     const collator = new Intl.Collator("zh-CN", { numeric: true });
     return [...students].sort((a, b) => {
@@ -426,6 +454,12 @@ export function ClassHomeworkOverview({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs">
+            <label className="flex cursor-pointer items-center gap-1.5 text-ink-700">
+              <input type="checkbox" checked={highlightFollowed} disabled={highlightSaving}
+                onChange={(event) => void changeHighlightFollowed(event.target.checked)}
+                className="rounded border-ink-300 text-red-600 focus:ring-red-400" />
+              关注学生凸显
+            </label>
             <div className="flex items-center gap-1" role="group" aria-label="作业点名排序">
               {(["name", "studentNo"] as const).map((mode) => (
                 <button key={mode} type="button" aria-pressed={sortBy === mode}
@@ -449,6 +483,7 @@ export function ClassHomeworkOverview({
             {orderedStudents.map((student) => {
               const submitted = submittedStudentIds.has(student.id);
               const absent = absentStudentIds.has(student.id);
+              const highlighted = highlightFollowed && followedStudentIds.has(student.id);
               return (
                 <div
                   key={student.id}
@@ -457,6 +492,7 @@ export function ClassHomeworkOverview({
                     absent ? "border-amber-200 bg-amber-50/60"
                       : submitted ? "border-emerald-200 bg-emerald-50/50"
                         : "border-red-100 bg-red-50/30",
+                    highlighted && "ring-1 ring-red-400",
                   )}
                 >
                   <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
@@ -474,7 +510,7 @@ export function ClassHomeworkOverview({
                       aria-label={`${student.name}已交作业`}
                     />
                     <span className="truncate text-sm font-medium text-ink-800">{student.name}</span>
-                    {followedStudentIds.has(student.id) && (
+                    {highlighted && (
                       <Star className="h-3.5 w-3.5 shrink-0 fill-red-600 text-red-600" role="img" aria-label={`${student.name}已关注`} />
                     )}
                     <span className="shrink-0 text-[11px] text-ink-500" title={`截至今天未交作业 ${missingCounts.get(student.id) || 0} 次`}>

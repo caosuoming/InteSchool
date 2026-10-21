@@ -26,6 +26,17 @@ describe("HomeworkHistoryPanel", () => {
     expect(screen.getAllByText("优秀作业（1）")).toHaveLength(3);
   });
 
+  it("marks only followed missing students when highlighting is enabled", () => {
+    const records = [overview("1", "2026-08-01")];
+    const { rerender } = render(<HomeworkHistoryPanel records={records} students={[]}
+      followedStudentIds={new Set(["student-1", "student-2"])} />);
+    expect(screen.getByRole("img", { name: "原姓名已关注" })).toHaveClass("fill-red-600");
+    expect(screen.queryByRole("img", { name: /student-2已关注/ })).not.toBeInTheDocument();
+    rerender(<HomeworkHistoryPanel records={records} students={[]}
+      followedStudentIds={new Set(["student-1"])} highlightFollowed={false} />);
+    expect(screen.queryByRole("img", { name: "原姓名已关注" })).not.toBeInTheDocument();
+  });
+
   it("renders categories and notes for historical homework photos", () => {
     const record = overview("1", "2026-08-01");
     record.images = [{ ...record.images![0], category: "poor", note: "步骤错误，需要订正" }];

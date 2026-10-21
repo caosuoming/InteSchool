@@ -1858,6 +1858,13 @@ export const serviceParameters = {
       "teacherId",
       "teacher"
     ],
+    "getHomeworkFollowHighlightEnabled": [
+      "teacher"
+    ],
+    "setHomeworkFollowHighlightEnabled": [
+      "enabled",
+      "teacher"
+    ],
     "listFollowedStudentIds": [
       "teacher"
     ],

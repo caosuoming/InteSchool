@@ -174,6 +174,8 @@ export interface Teacher {
   affiliations: TeacherAffiliation[];
   /** 当前激活的所属单位ID */
   currentAffiliationId: string | null;
+  /** 是否在作业点名与上课历史作业中凸显关注学生，未设置时默认开启。 */
+  highlightFollowedHomeworkStudents?: boolean;
   /** 教师在“我的上课”中维护的周课表。 */
   lessonSchedule?: TeacherLessonSchedule;
   /** 教师按学期维护的教学计划与一体机自动采集的实际教学记录。 */
@@ -549,6 +551,7 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   studentAttentionByTeacherId?: Record<string, {
     followedStudentIds: string[];
     ignoredStudentIds: string[];
+    highlightFollowedHomeworkStudents?: boolean;
   }>;
 }
 

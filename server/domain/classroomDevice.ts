@@ -368,6 +368,8 @@ function currentClassroomContent(
   const studentAttentionByTeacherId = Object.fromEntries([...teacherIds].map((teacherId) => [teacherId, {
     followedStudentIds: followedByTeacherId.get(teacherId) || [],
     ignoredStudentIds: ignoredByTeacherId.get(teacherId) || [],
+    highlightFollowedHomeworkStudents: (db.read("teachers") as Teacher[]).find((item) => item.id === teacherId)
+      ?.highlightFollowedHomeworkStudents !== false,
   }]));
   return { lessons, homeworks, homeworkHistory, homeworkRecords, notices, students, studentAttentionByTeacherId };
 }

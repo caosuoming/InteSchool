@@ -39,6 +39,7 @@ vi.mock("@/services/lessonCourseware", () => ({
 
 vi.mock("@/services/studentInteraction", () => ({
   studentInteractionService: {
+    getHomeworkFollowHighlightEnabled: vi.fn(),
     listFollowedStudentIds: vi.fn(),
     listIgnoredStudentIds: vi.fn(),
   },
@@ -236,6 +237,7 @@ describe("ClassroomPage", () => {
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([mathHomework]);
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson]);
+    vi.mocked(studentInteractionService.getHomeworkFollowHighlightEnabled).mockResolvedValue(true);
     vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
     vi.mocked(studentInteractionService.listIgnoredStudentIds).mockResolvedValue([]);
     vi.mocked(extractStoredFile).mockResolvedValue({
