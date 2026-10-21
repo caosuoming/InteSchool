@@ -35,14 +35,20 @@ vi.mock("@/hooks/useQuestionTypeOptions", () => ({
   }),
 }));
 
-vi.mock("@/hooks/useQuestionMetadataOptions", () => ({
-  useQuestionMetadataOptions: () => ({
-    sourceOptions: [],
-    categoryOptions: [],
-    getSourceLabel: (value: string) => value,
-    getCategoryLabel: (value: string) => value,
-  }),
-}));
+vi.mock("@/hooks/useQuestionMetadataOptions", () => {
+  const normalizeCategory = (value: string) => value;
+  const expandCategoryFilter = (values: string[]) => values;
+  return {
+    useQuestionMetadataOptions: () => ({
+      sourceOptions: [],
+      categoryOptions: [],
+      getSourceLabel: (value: string) => value,
+      getCategoryLabel: (value: string) => value,
+      normalizeCategory,
+      expandCategoryFilter,
+    }),
+  };
+});
 
 vi.mock("@/components/tree/SearchableTree", () => ({
   SearchableTree: ({

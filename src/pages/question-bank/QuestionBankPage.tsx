@@ -178,6 +178,8 @@ export default function QuestionBankPage({
     categoryOptions,
     getSourceLabel,
     getCategoryLabel,
+    normalizeCategory,
+    expandCategoryFilter,
   } = useQuestionMetadataOptions(teacher?.schoolId);
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
@@ -354,7 +356,7 @@ export default function QuestionBankPage({
       schoolYear: selectedYear || undefined,
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
       sourceType: selectedSources,
-      category: selectedCategories,
+      category: expandCategoryFilter(selectedCategories),
       excludeQuestionIds: excludeIds,
     };
 
@@ -449,7 +451,7 @@ export default function QuestionBankPage({
     teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, chapterLogic, knowledgeLogic, methodLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
-    selectedSources, selectedCategories, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
+    selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
     currentPage, pageSize,
   ]);
 
@@ -1352,6 +1354,7 @@ export default function QuestionBankPage({
                   getQuestionTypeLabel={getQuestionTypeLabel}
                   getSourceLabel={getSourceLabel}
                   getCategoryLabel={getCategoryLabel}
+                  normalizeCategory={normalizeCategory}
                 />
               ))}
             </div>
@@ -1930,6 +1933,7 @@ function QuestionRow({
   getQuestionTypeLabel,
   getSourceLabel,
   getCategoryLabel,
+  normalizeCategory,
 }: {
   question: Question;
   schoolStat?: SchoolQuestionStat;
@@ -1981,6 +1985,7 @@ function QuestionRow({
   getQuestionTypeLabel: (type: Question["type"]) => string;
   getSourceLabel: (value?: string) => string;
   getCategoryLabel: (value?: string) => string;
+  normalizeCategory: (value: string) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
@@ -2213,7 +2218,7 @@ function QuestionRow({
                 case "category":
                   return questionCategories(question).length ? (
                     <span key="category" className="text-xs text-ink-400">
-                      · {questionCategories(question).map(getCategoryLabel).join("、")}
+                      · {[...new Set(questionCategories(question).map(normalizeCategory))].map(getCategoryLabel).join("、")}
                     </span>
                   ) : null;
                 case "grade":
