@@ -1731,9 +1731,11 @@ export interface ExamPaper {
     questionGapOverrides?: Record<string, number>;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    answerBoxPositions?: Record<string, { x: number; y: number }>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
     questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
+    inlineBlankLayouts?: Record<string, Record<string, { x: number; y: number; width?: number; height?: number }[]>>;
   };
   createdAt: string;
   updatedAt: string;
@@ -2362,9 +2364,11 @@ export interface Lecture {
     questionGapOverrides?: Record<string, number>;
     answerBoxHeights?: Record<string, number>;
     answerBoxWidths?: Record<string, number>;
+    answerBoxPositions?: Record<string, { x: number; y: number }>;
     choiceOptionBreaks?: Record<string, Record<number, "new-line" | "same-line">>;
     essayImageLayouts?: Record<string, { x: number; y: number; width: number; wrap?: "left" | "right" | "none"; caption?: string }[]>;
     questionImageLayouts?: Record<string, Record<string, { x: number; y: number; wrap: "left" | "right" | "none"; caption?: string }[]>>;
+    inlineBlankLayouts?: Record<string, Record<string, { x: number; y: number; width?: number; height?: number }[]>>;
   };
   /** 排版设置 */
   layoutSettings?: {

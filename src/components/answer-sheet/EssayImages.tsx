@@ -60,7 +60,7 @@ function MovableEssayImage({
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (!editable || event.button !== 0) return;
-    if ((event.target as Element).closest("[data-essay-image-controls], [data-essay-image-caption]")) return;
+    if ((event.target as Element).closest("[data-essay-image-caption]")) return;
     const resizing = (event.target as Element).closest("[data-essay-image-resize]") !== null;
     gesture.current = {
       pointerId: event.pointerId,
@@ -93,12 +93,18 @@ function MovableEssayImage({
         width: clamp(start.layout.width + dx, 40, Math.min(maxWidth, maxHeightWidth)),
       });
     } else {
-      updateLayout({
-        ...start.layout,
-        x: clamp(start.layout.x + dx * (answerSheetImageWrap(start.layout.wrap) === "left" ? 1 : -1),
-          0, Math.max(0, box.clientWidth - start.layout.width - 2)),
-        y: clamp(start.layout.y + dy, 0, Math.max(0, box.clientHeight - event.currentTarget.offsetHeight - 2)),
-      });
+      const paper = event.currentTarget.closest<HTMLElement>(".answer-sheet-paper");
+      const bounds = paper?.getBoundingClientRect();
+      const rect = event.currentTarget.getBoundingClientRect();
+      let x = start.layout.x + dx;
+      let y = start.layout.y + dy;
+      if (bounds?.width && bounds.height && rect.width && rect.height) {
+        const baseLeft = rect.left - currentLayout.current.x;
+        const baseTop = rect.top - currentLayout.current.y;
+        x = clamp(x, bounds.left - baseLeft, bounds.right - rect.width - baseLeft);
+        y = clamp(y, bounds.top - baseTop, bounds.bottom - rect.height - baseTop);
+      }
+      updateLayout({ ...start.layout, x, y });
     }
   };
 
@@ -119,10 +125,10 @@ function MovableEssayImage({
       data-wrap={wrap}
       style={{
         width: layout.width,
-        marginLeft: wrap === "left" ? Math.max(0, layout.x) : 0,
-        marginRight: wrap === "right" ? Math.max(0, layout.x) : 6,
-        marginTop: Math.max(0, layout.y),
-        position: "static",
+        margin: "4px 6px 6px 0",
+        transform: `translate(${layout.x}px, ${layout.y}px)`,
+        position: "relative",
+        zIndex: 3,
         float: wrap,
         cursor: editable ? "grab" : "default",
         touchAction: editable ? "none" : "auto",
@@ -135,22 +141,6 @@ function MovableEssayImage({
       onPointerCancel={finishGesture}
     >
       <img src={image.src} alt={image.alt} draggable={false} />
-      {editable && (
-        <div className="answer-sheet-image-controls no-print" data-essay-image-controls>
-          <select
-            aria-label={`第${number}题第${index + 1}张图片环绕模式`}
-            value={wrap}
-            onChange={(event) => {
-              const next = { ...currentLayout.current, wrap: event.target.value as AnswerSheetImageLayout["wrap"] };
-              updateLayout(next);
-              onCommit(next);
-            }}
-          >
-            <option value="left">四周环绕（靠左）</option>
-            <option value="right">四周环绕（靠右）</option>
-          </select>
-        </div>
-      )}
       {editable && (
         <input
           className="answer-sheet-image-caption-input no-print"
