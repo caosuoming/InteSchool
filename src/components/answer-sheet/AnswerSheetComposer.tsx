@@ -434,6 +434,9 @@ function AnswerBox({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const resizePendingRef = useRef(false);
+  const manualResizeRef = useRef<{
+    pointerId: number; startY: number; initialHeight: number; previousHeight: string;
+  } | null>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; x: number; y: number } | null>(null);
   const moveBox = (pointerX: number, pointerY: number) => {
     const drag = dragRef.current;
@@ -495,12 +498,22 @@ function AnswerBox({
         minWidth: resizableBoth ? "32mm" : undefined,
         maxWidth: maxWidthMm ? `${maxWidthMm}mm` : "100%",
         resize: editable ? (resizableBoth ? "both" : "vertical") : "none",
-        overflow: "hidden",
+        overflow: children ? "visible" : "hidden",
       }}
       onPointerMove={(event) => {
+        const resizing = manualResizeRef.current;
+        if (resizing && resizing.pointerId === event.pointerId) {
+          event.currentTarget.style.height = `${Math.max(30 * MM_TO_CSS_PX, Math.round(resizing.initialHeight + event.clientY - resizing.startY))}px`;
+          return;
+        }
         if (dragRef.current && dragRef.current.pointerId === event.pointerId) moveBox(event.clientX, event.clientY);
       }}
       onPointerCancel={(event) => {
+        if (manualResizeRef.current && manualResizeRef.current.pointerId === event.pointerId) {
+          event.currentTarget.style.height = manualResizeRef.current.previousHeight;
+          manualResizeRef.current = null;
+          return;
+        }
         if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
         dragRef.current = null;
         event.currentTarget.style.transform = `translate(${position?.x || 0}px, ${position?.y || 0}px)`;
@@ -515,6 +528,12 @@ function AnswerBox({
           && event.clientY <= rect.bottom;
       }}
       onPointerUp={(event) => {
+        if (manualResizeRef.current && manualResizeRef.current.pointerId === event.pointerId) {
+          manualResizeRef.current = null;
+          saveSize();
+          if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          return;
+        }
         if (dragRef.current && dragRef.current.pointerId === event.pointerId) {
           const next = moveBox(event.clientX, event.clientY);
           dragRef.current = null;
@@ -530,6 +549,25 @@ function AnswerBox({
       data-testid="answer-box"
       data-answer-box-style={boxStyle}
     >
+      {editable && children && (
+        <button
+          type="button"
+          aria-label={`调整第${number}题答题框高度`}
+          className="no-print absolute bottom-0 right-0 z-10 h-[5mm] w-[5mm] cursor-ns-resize touch-none border-l border-t border-ink-300 bg-white/90"
+          title="拖动调整答题框高度"
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !boxRef.current) return;
+            event.stopPropagation();
+            manualResizeRef.current = {
+              pointerId: event.pointerId, startY: event.clientY,
+              initialHeight: boxRef.current.getBoundingClientRect().height,
+              previousHeight: boxRef.current.style.height,
+            };
+            boxRef.current.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+          }}
+        />
+      )}
       {editable && draggable && (
         <button
           type="button"

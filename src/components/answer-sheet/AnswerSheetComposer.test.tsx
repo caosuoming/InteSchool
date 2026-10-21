@@ -1241,6 +1241,33 @@ describe("AnswerSheetComposer", () => {
     });
   });
 
+  it("allows essay images to move outside their answer box and retains manual height resizing", () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    const onSettingsChange = vi.fn();
+    renderComposer({
+      questions: [{ id: "essay", type: "essay", stem: '<img src="/diagram.png" alt="插图">' }],
+      initialSettings: { mode: "with-questions" },
+      onSettingsChange,
+    });
+    const box = screen.getByTestId("answer-box");
+    expect(box).toHaveStyle({ overflow: "visible" });
+    expect(box).toContainElement(screen.getByAltText("插图"));
+    const resizeHandle = screen.getByRole("button", { name: "调整第1题答题框高度" });
+    vi.spyOn(box, "getBoundingClientRect").mockImplementation(() => ({
+      height: Number.parseInt(box.style.height, 10) || 150, width: 300,
+    } as DOMRect));
+    fireEvent.pointerDown(resizeHandle, { button: 0, pointerId: 30, clientX: 290, clientY: 145 });
+    fireEvent.pointerMove(box, { pointerId: 30, clientX: 290, clientY: 205 });
+    expect(box).toHaveStyle({ height: "210px" });
+    fireEvent.pointerUp(box, { pointerId: 30, clientX: 290, clientY: 205 });
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      answerBoxHeights: { essay: 210 },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByTestId("answer-box")).toHaveStyle({ overflow: "visible", height: "210px" });
+    expect(screen.queryByRole("button", { name: "调整第1题答题框高度" })).not.toBeInTheDocument();
+  });
+
   it("lets concentrated fill writing boxes move without losing their positions in preview", () => {
     vi.stubGlobal("PointerEvent", MouseEvent);
     const onSettingsChange = vi.fn();
