@@ -22,10 +22,13 @@ export async function downloadAnswerSheetPdf(
 
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
+  // SVG foreignObject rasterization requires the clone inside the viewport;
+  // keep it behind the application instead of moving it far off-screen.
   Object.assign(host.style, {
     position: "fixed",
-    left: "-100000px",
+    left: "0",
     top: "0",
+    zIndex: "-1",
     width: `${paper.width}mm`,
     backgroundColor: "#fff",
     pointerEvents: "none",
@@ -53,6 +56,8 @@ export async function downloadAnswerSheetPdf(
         logging: false,
         scale: 2,
         useCORS: true,
+        // Render glyphs and KaTeX fractions with the browser layout engine.
+        foreignObjectRendering: true,
         windowWidth,
         windowHeight,
       });
@@ -63,5 +68,40 @@ export async function downloadAnswerSheetPdf(
     pdf.save(`${safeName}.pdf`);
   } finally {
     host.remove();
+  }
+}
+
+export function printAnswerSheet(pages: HTMLElement[], paperSize: AnswerSheetPaperSize): void {
+  if (pages.length === 0) throw new Error("暂无可打印的答题卡预览");
+
+  // The surrounding app layout can add blank pages around named paper pages.
+  const host = document.createElement("div");
+  host.className = "answer-sheet-standalone-print-root";
+  host.style.setProperty(
+    "--answer-sheet-stem-font-size",
+    getComputedStyle(pages[0]).getPropertyValue("--answer-sheet-stem-font-size"),
+  );
+  for (const source of pages) {
+    const page = source.cloneNode(true) as HTMLElement;
+    page.style.boxShadow = "none";
+    page.style.margin = "0";
+    host.append(page);
+  }
+
+  const cleanup = () => {
+    host.remove();
+    document.body.classList.remove("answer-sheet-printing");
+    delete document.body.dataset.answerSheetPrintSize;
+    window.removeEventListener("afterprint", cleanup);
+  };
+  document.body.append(host);
+  document.body.classList.add("answer-sheet-printing");
+  document.body.dataset.answerSheetPrintSize = paperSize;
+  window.addEventListener("afterprint", cleanup);
+  try {
+    window.print();
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }

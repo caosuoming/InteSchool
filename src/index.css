@@ -534,6 +534,27 @@
   margin: 0;
 }
 
+/* Isolate answer-sheet printing from the application shell and its page flow. */
+@media screen {
+  .answer-sheet-standalone-print-root { display: none; }
+}
+
+@media print {
+  body.answer-sheet-printing > #root { display: none !important; }
+  body.answer-sheet-printing { min-height: 0 !important; margin: 0 !important; }
+  body.answer-sheet-printing[data-answer-sheet-print-size="A4"] { page: answer-sheet-a4; }
+  body.answer-sheet-printing[data-answer-sheet-print-size="16K"] { page: answer-sheet-16k; }
+  body.answer-sheet-printing[data-answer-sheet-print-size="A3"] { page: answer-sheet-a3; }
+  body.answer-sheet-printing[data-answer-sheet-print-size="8K"] { page: answer-sheet-8k; }
+  .answer-sheet-standalone-print-root { display: block !important; }
+  .answer-sheet-standalone-print-root > .answer-sheet-paper {
+    break-after: page;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+  .answer-sheet-standalone-print-root > .answer-sheet-paper:last-child { break-after: auto; }
+}
+
 /* ===== 打印样式 ===== */
 @media print {
   .answer-sheet-page-root {
