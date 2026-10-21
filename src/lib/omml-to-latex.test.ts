@@ -354,6 +354,14 @@ y=2
     );
   });
 
+  it("renders standalone checkmarks from Word math as symbols, not incomplete radicals", () => {
+    expect(ommlToLatex(mathRun("√"))).toBe(String.raw`\surd`);
+    for (const tag of ["sym", "mo"]) {
+      expect(ommlToLatex(`<m:oMath xmlns:m="${MATH_NS}"><m:${tag} m:val="surd"/></m:oMath>`))
+        .toBe(String.raw`\surd`);
+    }
+  });
+
   it("keeps nested radicals scoped to their direct degree elements", () => {
     expect(ommlToLatex(nestedRadicalWithoutEmptyDegree())).toBe(
       String.raw`\sqrt{\sqrt[3]{x}}`,
