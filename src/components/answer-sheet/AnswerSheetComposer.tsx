@@ -827,6 +827,7 @@ interface AnswerSheetComposerProps {
   description?: string;
   resourceType: AnswerSheetResourceType;
   resourceId: string;
+  answerSheetRevisionId?: string;
   resourceLabel: "试卷" | "讲义";
   questions: AnswerSheetQuestion[];
   sourceLayoutMode?: "grouped" | "flat";
@@ -871,6 +872,7 @@ export function AnswerSheetComposer({
   title,
   resourceType,
   resourceId,
+  answerSheetRevisionId,
   resourceLabel,
   questions,
   sourceLayoutMode,
@@ -910,8 +912,8 @@ export function AnswerSheetComposer({
     [numberedQuestions],
   );
   const qrPayload = useMemo(
-    () => buildAnswerSheetQrPayload(resourceType, resourceId),
-    [resourceId, resourceType],
+    () => buildAnswerSheetQrPayload(resourceType, resourceId, answerSheetRevisionId),
+    [resourceId, resourceType, answerSheetRevisionId],
   );
 
   const paperSize = paperSizeConfig[settings.paperSize];

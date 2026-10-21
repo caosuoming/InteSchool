@@ -68,6 +68,76 @@ describe("document resource metadata", () => {
     });
   });
 
+  it("invalidates answer sheet revisions after paper and lecture content changes", async () => {
+    const state: AppState = { teachers: [], currentTeacherId: null, examPapers: [], lectures: [], reflections: [] };
+    await runWithState(state, async () => {
+      const q1 = { id: "q1", type: "short" as const, stem: "题一", answer: "1", analysis: "", score: 5 };
+      const q2 = { id: "q2", type: "short" as const, stem: "题二", answer: "2", analysis: "", score: 5 };
+      const paper = await examPaperService.createPaper("teacher-1", "school-1", {
+        title: "原试卷", chapterIds: [], knowledgePointIds: [], grade: "高一", schoolYear: "2026-2027",
+        duration: 60, totalScore: 10, questions: [q1, q2],
+      });
+      const sections = [
+        { id: "section-1", title: "题一", type: "question" as const, content: "题一", children: [] },
+        { id: "section-2", title: "题二", type: "question" as const, content: "题二", children: [] },
+      ];
+      const lecture = await lectureService.createLecture("teacher-1", "school-1", {
+        title: "原讲义", chapterIds: [], knowledgePointIds: [], grade: "高一", schoolYear: "2026-2027",
+        classIds: [], studentIds: [], sections,
+      });
+      const firstPaper = (await examPaperService.markAnswerSheetCreated(paper.id))!;
+      const firstLecture = (await lectureService.markAnswerSheetCreated(lecture.id))!;
+      expect(firstPaper.answerSheetRevisionId).toMatch(/^sheet-/);
+      expect(firstLecture.answerSheetRevisionId).toMatch(/^sheet-/);
+      expect((await examPaperService.markAnswerSheetCreated(paper.id))?.answerSheetRevisionId).toBe(firstPaper.answerSheetRevisionId);
+      expect((await lectureService.markAnswerSheetCreated(lecture.id))?.answerSheetRevisionId).toBe(firstLecture.answerSheetRevisionId);
+
+      const adminEdit = await examPaperService.updatePaper(paper.id, { classIds: ["class-1"] });
+      expect(adminEdit.answerSheetRevisionId).toBe(firstPaper.answerSheetRevisionId);
+      expect((await examPaperService.updatePaper(paper.id, { title: "原试卷" })).hasAnswerSheet).toBe(true);
+      for (const patch of [
+        { layoutMode: "flat" as const },
+        { projects: [{ id: "project-1", name: "项目一" }] },
+        { questions: [q2, q1] },
+        { questions: [q1] },
+        { questions: [q1, { ...q2, stem: "替换题" }] },
+        { title: "修改后的试卷" },
+      ]) {
+        const before = (await examPaperService.getPaper(paper.id))!.answerSheetRevisionId;
+        const updated = await examPaperService.updatePaper(paper.id, patch);
+        expect(updated).toMatchObject({ hasAnswerSheet: undefined, answerSheetCreatedAt: undefined, answerSheetRevisionId: undefined });
+        expect(updated.answerSheetSettings).toBeUndefined();
+        expect((await examPaperService.markAnswerSheetCreated(paper.id))!.answerSheetRevisionId).not.toBe(before);
+      }
+      const lastPaper = (await examPaperService.getPaper(paper.id))!;
+      await examPaperService.publishAnswerSheet(paper.id);
+      await expect(examPaperService.updatePaper(paper.id, { title: "不可修改" })).rejects.toThrow("撤回发布");
+      await examPaperService.unpublishAnswerSheet(paper.id);
+      expect((await examPaperService.markAnswerSheetCreated(paper.id))?.answerSheetRevisionId).toBe(lastPaper.answerSheetRevisionId);
+      const changed = await examPaperService.updatePaper(paper.id, { title: "重新编辑" });
+      expect(changed.hasAnswerSheet).toBeUndefined();
+      await expect(examPaperService.publishAnswerSheet(paper.id)).rejects.toThrow("请先制作答题卡");
+
+      for (const patch of [
+        { sections: [...sections].reverse() },
+        { sections: [sections[0]] },
+        { sections: [{ ...sections[0], content: "题目替换" }] },
+        { title: "修改后的讲义" },
+      ]) {
+        const before = (await lectureService.getLecture(lecture.id))!.answerSheetRevisionId;
+        const updated = await lectureService.updateLecture(lecture.id, patch);
+        expect(updated.hasAnswerSheet).toBeUndefined();
+        expect(updated.answerSheetCreatedAt).toBeUndefined();
+        expect(updated.answerSheetRevisionId).toBeUndefined();
+        expect((await lectureService.markAnswerSheetCreated(lecture.id))!.answerSheetRevisionId).not.toBe(before);
+      }
+      await lectureService.publishAnswerSheet(lecture.id);
+      await lectureService.unpublishAnswerSheet(lecture.id);
+      await lectureService.updateLecture(lecture.id, { title: "最终讲义" });
+      await expect(lectureService.publishAnswerSheet(lecture.id)).rejects.toThrow("请先制作答题卡");
+    });
+  });
+
   it("moves exam documents without losing metadata and gives copies independent homework status", async () => {
     const state: AppState = { teachers: [], currentTeacherId: null, examPapers: [], reflections: [] };
     await runWithState(state, async () => {

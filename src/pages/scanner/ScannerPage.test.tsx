@@ -97,6 +97,22 @@ describe("ScannerPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("accepts only the current sheet revision QR in the scanner UI", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    useAuthStore.setState({ teacher: { id: "t1", schoolId: "school-1" } as Teacher });
+    vi.mocked(scannerService.listPublishedAnswerSheets).mockResolvedValue([{ ...sheets[0], answerSheetRevisionId: "revision-new" }]);
+    vi.mocked(scannerService.scan).mockResolvedValue([new Blob(["image"], { type: "image/png" })]);
+    vi.mocked(readAnswerSheetQr).mockResolvedValue("intes://answer-sheet/v1/exam-paper/p1");
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-card");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    mount();
+    await user.click(await screen.findByRole("button", { name: /函数试卷/ }));
+    expect(await screen.findByText("第 1 页 · 二维码与选定试卷不符")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /确认试卷并上传 0 页/ })).toBeDisabled();
+    vi.restoreAllMocks();
+  });
+
   it("filters published sheets by grade, subject and class", async () => {
     const user = userEvent.setup();
     localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");

@@ -107,14 +107,4 @@ export function normalizeStudentNumberDigits(value: number): number {
   );
 }
 
-/**
- * Stable machine-readable payload reserved for future answer-sheet scanning.
- * Resource IDs already uniquely identify each exam paper / lecture, so no
- * additional server-side QR record is required.
- */
-export function buildAnswerSheetQrPayload(
-  resourceType: AnswerSheetResourceType,
-  resourceId: string,
-): string {
-  return `intes://answer-sheet/v1/${resourceType}/${encodeURIComponent(resourceId)}`;
-}
+export { buildAnswerSheetQrPayload } from "./answer-sheet-qr";

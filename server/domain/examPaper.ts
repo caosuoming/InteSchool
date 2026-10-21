@@ -9,7 +9,7 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
-import { assertDocumentNotUsed, sanitizeExamPaperPatch } from "./document-resource-lock.js";
+import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
 import { examPaperKnowledgePointIds } from "./document-knowledge.js";
@@ -179,6 +179,7 @@ export const examPaperService = {
         ...paper,
         hasAnswerSheet: true,
         answerSheetCreatedAt: paper.answerSheetCreatedAt || now,
+        answerSheetRevisionId: paper.hasAnswerSheet ? paper.answerSheetRevisionId : genId("sheet"),
         ...(settings ? { answerSheetSettings: settings } : {}),
       };
       return updated;
@@ -253,6 +254,7 @@ export const examPaperService = {
           updated = {
             ...p,
             ...safePatch,
+            ...answerSheetInvalidationPatch(p, safePatch, "paper"),
             updatedAt: new Date().toISOString(),
           };
           return updated;
@@ -311,6 +313,7 @@ export const examPaperService = {
       extractStatus: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetRevisionId: undefined,
       answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       createdAt: now,
@@ -447,6 +450,7 @@ export const examPaperService = {
       originalFileSize: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetRevisionId: undefined,
       answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       status: "draft",

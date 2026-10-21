@@ -96,6 +96,7 @@ export default function LectureAnswerSheetPage() {
       description={`${lecture.grade} · ${lecture.schoolYear}`}
       resourceType="lecture"
       resourceId={lecture.id}
+      answerSheetRevisionId={lecture.answerSheetRevisionId}
       resourceLabel="讲义"
       questions={questions}
       sourceLayoutMode={lecture.sections.some((section) => section.type === "chapter") ? "flat" : "grouped"}

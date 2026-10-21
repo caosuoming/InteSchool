@@ -44,6 +44,33 @@ function sameJsonStructure(
   return JSON.stringify(current || []) === JSON.stringify(incoming || []);
 }
 
+const PAPER_CARD_FIELDS: (keyof ExamPaper)[] = [
+  "title", "description", "grade", "schoolYear", "duration", "totalScore", "questions",
+  "contentBlocks", "layoutMode", "projects",
+];
+const LECTURE_CARD_FIELDS: (keyof Lecture)[] = [
+  "title", "description", "grade", "schoolYear", "sections", "contentBlocks",
+];
+
+export function answerSheetInvalidationPatch<T extends ExamPaper | Lecture>(
+  current: T,
+  patch: Partial<T>,
+  type: "paper" | "lecture",
+): Partial<T> {
+  if (!current.hasAnswerSheet) return {};
+  const keys: readonly string[] = type === "paper" ? PAPER_CARD_FIELDS : LECTURE_CARD_FIELDS;
+  const before = current as unknown as Record<string, unknown>;
+  const after = patch as Record<string, unknown>;
+  if (!keys.some((key) => Object.prototype.hasOwnProperty.call(after, key) && JSON.stringify(before[key]) !== JSON.stringify(after[key]))) return {};
+  return {
+    hasAnswerSheet: undefined,
+    answerSheetCreatedAt: undefined,
+    answerSheetPublishedAt: undefined,
+    answerSheetSettings: undefined,
+    answerSheetRevisionId: undefined,
+  } as Partial<T>;
+}
+
 export function sanitizeExamPaperPatch(
   current: ExamPaper,
   patch: Partial<ExamPaper>,
@@ -53,6 +80,7 @@ export function sanitizeExamPaperPatch(
   delete metadataSafePatch.answerSheetCreatedAt;
   delete metadataSafePatch.answerSheetPublishedAt;
   delete metadataSafePatch.answerSheetSettings;
+  delete metadataSafePatch.answerSheetRevisionId;
   if (!isDocumentStructureLocked(current)) return metadataSafePatch;
 
   const safePatch = metadataSafePatch;
@@ -105,6 +133,7 @@ export function sanitizeLecturePatch(
   delete metadataSafePatch.answerSheetCreatedAt;
   delete metadataSafePatch.answerSheetPublishedAt;
   delete metadataSafePatch.answerSheetSettings;
+  delete metadataSafePatch.answerSheetRevisionId;
   if (!isDocumentStructureLocked(current)) return metadataSafePatch;
 
   if (patch.sections && !sameJsonStructure(current.sections, patch.sections)) {

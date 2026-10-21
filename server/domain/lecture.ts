@@ -13,7 +13,7 @@ import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
-import { assertDocumentNotUsed, sanitizeLecturePatch } from "./document-resource-lock.js";
+import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeLecturePatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveLectureToExamPaper } from "./document-library-move.js";
 import { lectureKnowledgePointIds } from "./document-knowledge.js";
@@ -198,6 +198,7 @@ export const lectureService = {
         ...lecture,
         hasAnswerSheet: true,
         answerSheetCreatedAt: lecture.answerSheetCreatedAt || now,
+        answerSheetRevisionId: lecture.hasAnswerSheet ? lecture.answerSheetRevisionId : genId("sheet"),
         ...(settings ? { answerSheetSettings: settings } : {}),
       };
       return updated;
@@ -323,6 +324,7 @@ export const lectureService = {
           updated = {
             ...l,
             ...safePatch,
+            ...answerSheetInvalidationPatch(l, safePatch, "lecture"),
             version: safePatch.sections ? l.version + 1 : l.version,
             updatedAt: new Date().toISOString(),
           };
@@ -381,6 +383,7 @@ export const lectureService = {
       hasPreview: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetRevisionId: undefined,
       answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       createdAt: now,
@@ -596,6 +599,7 @@ export const lectureService = {
       hasOrigin: true,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
+      answerSheetRevisionId: undefined,
       answerSheetPublishedAt: undefined,
       answerSheetSettings: undefined,
       status: "draft",

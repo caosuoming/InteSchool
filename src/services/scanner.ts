@@ -9,6 +9,7 @@ export interface PublishedScannerSheet {
   grade: string;
   schoolYear: string;
   publishedAt: string;
+  answerSheetRevisionId?: string;
   subject: string;
   classes: { id: string; name: string }[];
 }
