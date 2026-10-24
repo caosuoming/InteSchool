@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { strict as assert } from "node:assert";
 import { createBridge } from "./scanner-bridge.mjs";
-import { createScannerDevices } from "./scanner-devices.mjs";
+import { createScannerDevices, decodeScannerOutput } from "./scanner-devices.mjs";
 
 const origin = "https://inteschool.example.org";
 const image = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -47,6 +47,12 @@ describe("local scanner bridge", () => {
 });
 
 describe("scanner driver enumeration", () => {
+  it("decodes Chinese scanner names from Windows GBK console output without damaging UTF-8", () => {
+    const gbk = Buffer.from("d4c4beedd2c7363430", "hex");
+    assert.equal(decodeScannerOutput(gbk, { platform: "win32" }), "阅卷仪640");
+    assert.equal(decodeScannerOutput(Buffer.from("阅卷仪640"), { platform: "win32" }), "阅卷仪640");
+    assert.equal(decodeScannerOutput(gbk, { platform: "win32", legacyEncoding: "gb18030" }), "阅卷仪640");
+  });
   it("handles WIA and TWAIN independently, and rejects unavailable duplex for WIA", async () => {
     const executed = [];
     const backend = createScannerDevices({ platform: "win32", naps2: "naps2.exe", execute: async (command, args) => {
@@ -59,6 +65,16 @@ describe("scanner driver enumeration", () => {
     await assert.rejects(() => backend.scan({ deviceId: "wia:wia-id", duplex: true }), /WIA/);
     assert.equal(executed.some(([command]) => command === "naps2.exe"), true);
   });
+  it("explains that TWAIN-only scanners need NAPS2 when its executable is missing", async () => {
+    const backend = createScannerDevices({ platform: "win32", naps2: "missing-naps2.exe", execute: async (command) => {
+      if (command === "powershell.exe") return "[]";
+      throw new Error("spawn missing-naps2.exe ENOENT");
+    } });
+    const result = await backend.listDevices();
+    assert.deepEqual(result.devices, []);
+    assert.match(result.diagnostics.join(" "), /NAPS2.*TWAIN/);
+  });
+
   it("discovers Linux SANE devices and reports absent drivers clearly", async () => {
     const sane = createScannerDevices({ platform: "linux", execute: async () => 'avision:libusb:001\tAvision AV640\n' });
     assert.deepEqual((await sane.listDevices()).devices[0].id, "sane:avision:libusb:001");
