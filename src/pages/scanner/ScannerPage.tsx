@@ -32,6 +32,8 @@ export default function ScannerPage() {
   const [sheets, setSheets] = useState<PublishedScannerSheet[]>([]);
   const [devices, setDevices] = useState<ScannerDevice[]>([]);
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem(SCANNER_DEVICE_KEY) || "");
+  const deviceIdRef = useRef(deviceId);
+  const configuredDeviceRef = useRef("");
   const [duplex, setDuplex] = useState(true);
   const [deviceStatus, setDeviceStatus] = useState("");
   const [bridgeUnavailable, setBridgeUnavailable] = useState(false);
@@ -90,13 +92,15 @@ export default function ScannerPage() {
       const { devices: items, diagnostics } = await scannerService.listDevices();
       setDevices(items);
       setBridgeUnavailable(false);
-      setDeviceId((current) => {
-        const next = items.find((item) => item.id === current)?.id
-          || items.find((item) => item.id === localStorage.getItem(SCANNER_DEVICE_KEY))?.id
-          || items.find((item) => item.duplex)?.id || items[0]?.id || "";
-        if (next) localStorage.setItem(SCANNER_DEVICE_KEY, next);
-        return next;
-      });
+      const next = items.find((item) => item.id === deviceIdRef.current)?.id
+        || items.find((item) => item.id === localStorage.getItem(SCANNER_DEVICE_KEY))?.id
+        || items.find((item) => item.duplex)?.id || items[0]?.id || "";
+      if (next) localStorage.setItem(SCANNER_DEVICE_KEY, next);
+      else localStorage.removeItem(SCANNER_DEVICE_KEY);
+      deviceIdRef.current = next;
+      setDeviceId(next);
+      if (configuredDeviceRef.current !== next) setDuplex(items.find((item) => item.id === next)?.duplex ?? false);
+      configuredDeviceRef.current = next;
       if (!items.length) setDeviceStatus(`未发现可用扫描仪。${diagnostics.join("；") || "请检查驱动、设备连接及本机扫描服务。"}`);
     } catch (cause) {
       setDevices([]);
@@ -345,9 +349,16 @@ export default function ScannerPage() {
                   <p className="text-xs text-ink-600">无法安装桥接时，也可以用系统扫描软件先保存为 PNG/JPEG 图片，然后使用下方答题卡的“导入图片”功能，无须安装 InteSchool 客户端。</p>
                 </div>
               )}
-              <Select label="扫描仪" value={deviceId} onChange={(event) => { setDeviceId(event.target.value); localStorage.setItem(SCANNER_DEVICE_KEY, event.target.value); }} options={deviceOptions} placeholder="请连接扫描仪并刷新" />
-              <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={duplex} onChange={(event) => setDuplex(event.target.checked)} />双面自动进纸（默认）</label>
-              {selectedDevice && duplex && !selectedDevice.duplex && <p className="text-sm text-amber-700">所选 WIA 通道不能保证双面扫描；请选择 TWAIN 设备或取消双面模式。</p>}
+              <Select label="扫描仪" value={deviceId} onChange={(event) => {
+                const next = event.target.value;
+                deviceIdRef.current = next;
+                configuredDeviceRef.current = next;
+                setDeviceId(next);
+                setDuplex(devices.find((item) => item.id === next)?.duplex ?? false);
+                localStorage.setItem(SCANNER_DEVICE_KEY, next);
+              }} options={deviceOptions} placeholder="请连接扫描仪并刷新" />
+              <label className="flex items-center gap-2 text-sm text-ink-700"><input type="checkbox" checked={duplex} disabled={!selectedDevice?.duplex} onChange={(event) => setDuplex(event.target.checked)} />双面自动进纸（需要设备支持）</label>
+              {selectedDevice && !selectedDevice.duplex && <p className="text-sm text-amber-700">所选 WIA 通道仅支持单面扫描；双面采集请安装 TWAIN 驱动和 NAPS2 并选择相应设备。</p>}
             </section>
             {!canUpload && <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-800">当前未以本校教师身份登录。可在本机扫描并下载，但上传与后续异常卷处理需要先<Link to="/login" className="underline">登录本校教师账号</Link>。</p>}
             {thirdPartyImage && (

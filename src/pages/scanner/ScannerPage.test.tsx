@@ -75,6 +75,34 @@ describe("ScannerPage", () => {
     revoke.mockRestore();
   });
 
+  it("uses single-sided capture for WIA and updates the scan mode when switching devices", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");
+    vi.mocked(scannerService.listDevices).mockResolvedValue({ devices: [
+      { id: "wia:640", name: "阅卷仪640 WIA", driver: "WIA", duplex: false },
+      { id: "twain:640", name: "阅卷仪640 TWAIN", driver: "TWAIN", duplex: true },
+    ], diagnostics: [] });
+    vi.mocked(scannerService.scan).mockResolvedValue([new Blob(["image"], { type: "image/png" })]);
+    let imageIndex = 0;
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:mode-test-${++imageIndex}`);
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    mount();
+    await screen.findByRole("option", { name: /阅卷仪640 TWAIN/ });
+    await user.selectOptions(screen.getByLabelText("扫描仪"), "wia:640");
+    expect(screen.getByRole("checkbox", { name: /双面自动进纸/ })).toBeDisabled();
+    await user.click(await screen.findByRole("button", { name: "使用扫描仪采集函数试卷" }));
+    expect(scannerService.scan).toHaveBeenLastCalledWith("wia:640", false);
+    await user.selectOptions(screen.getByLabelText("扫描仪"), "twain:640");
+    expect(screen.getByRole("checkbox", { name: /双面自动进纸/ })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: /双面自动进纸/ }));
+    await user.click(screen.getByRole("button", { name: "刷新设备" }));
+    expect(screen.getByRole("checkbox", { name: /双面自动进纸/ })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: /双面自动进纸/ }));
+    await user.click(screen.getByRole("button", { name: "继续扫描" }));
+    expect(scannerService.scan).toHaveBeenLastCalledWith("twain:640", true);
+    vi.restoreAllMocks();
+  });
+
   it("requires QR confirmation, blocks mismatches and uploads verified scans for logged-in teachers", async () => {
     const user = userEvent.setup();
     localStorage.setItem(SCANNER_SCHOOL_KEY, "school-1");

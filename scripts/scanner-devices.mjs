@@ -9,10 +9,18 @@ const MAX_PAGES = 40;
 const MAX_BATCH = 120 * 1024 * 1024;
 const SCRIPT = resolve(process.env.SCANNER_SCRIPTS_DIR || dirname(fileURLToPath(import.meta.url)), "scanner-wia.ps1");
 
-export function execScanner(command, args, timeout = 120_000) {
+export function decodeScannerOutput(bytes, { platform = process.platform, legacyEncoding = process.env.SCANNER_WINDOWS_ENCODING || "gb18030" } = {}) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch {
+    if (platform !== "win32") return bytes.toString("utf8");
+    // Older Windows scanner drivers and NAPS2 Console emit the system ANSI code page.
+    return new TextDecoder(legacyEncoding).decode(bytes);
+  }
+}
+
+export function execScanner(command, args, timeout = 240_000) {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { encoding: "buffer", maxBuffer: 1024 * 1024, timeout, windowsHide: false },
-      (error, stdout, stderr) => error ? reject(new Error((stderr.toString("utf8") || error.message).slice(0, 400))) : resolve(stdout.toString("utf8")));
+    execFile(command, args, { encoding: "buffer", maxBuffer: 1024 * 1024, timeout, windowsHide: true },
+      (error, stdout, stderr) => error ? reject(new Error((decodeScannerOutput(stderr) || error.message).slice(0, 400))) : resolve(decodeScannerOutput(stdout)));
   });
 }
 
@@ -48,7 +56,12 @@ export function createScannerDevices({ platform = process.platform, execute = ex
           for (const name of names.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
             devices.push({ id: `${driver}:${name}`, name, driver: "TWAIN (NAPS2)", duplex: true });
           }
-        } catch (error) { errors.push(`TWAIN: ${error.message}`); }
+        } catch (error) {
+          const message = /ENOENT/i.test(error.message)
+            ? "未找到 NAPS2.Console.exe；如扫描仪仅提供 TWAIN 驱动，请安装 NAPS2 和设备厂商驱动"
+            : error.message;
+          errors.push(`TWAIN: ${message}`);
+        }
       }
     } else {
       try {
