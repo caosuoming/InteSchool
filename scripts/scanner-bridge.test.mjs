@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { strict as assert } from "node:assert";
 import { createBridge } from "./scanner-bridge.mjs";
-import { createScannerDevices, decodeScannerOutput } from "./scanner-devices.mjs";
+import { createScannerDevices, decodeScannerOutput, execScanner } from "./scanner-devices.mjs";
 
 const origin = "https://inteschool.example.org";
 const image = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -47,6 +47,11 @@ describe("local scanner bridge", () => {
 });
 
 describe("scanner driver enumeration", () => {
+  it("reports the real no-paper error that NAPS2 writes to stdout", async () => {
+    await assert.rejects(() => execScanner(process.execPath, [
+      "-e", "process.stdout.write('TWAIN error: NoMedia\\nNo scanned pages to export.\\n'); process.exit(1)",
+    ], 10_000), /扫描仪未检测到纸张/);
+  });
   it("decodes Chinese scanner names from Windows GBK console output without damaging UTF-8", () => {
     const gbk = Buffer.from("d4c4beedd2c7363430", "hex");
     assert.equal(decodeScannerOutput(gbk, { platform: "win32" }), "阅卷仪640");

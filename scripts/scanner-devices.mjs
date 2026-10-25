@@ -20,7 +20,14 @@ export function decodeScannerOutput(bytes, { platform = process.platform, legacy
 export function execScanner(command, args, timeout = 240_000) {
   return new Promise((resolve, reject) => {
     execFile(command, args, { encoding: "buffer", maxBuffer: 1024 * 1024, timeout, windowsHide: true },
-      (error, stdout, stderr) => error ? reject(new Error((decodeScannerOutput(stderr) || error.message).slice(0, 400))) : resolve(decodeScannerOutput(stdout)));
+      (error, stdout, stderr) => {
+        if (!error) { resolve(decodeScannerOutput(stdout)); return; }
+        const details = [decodeScannerOutput(stderr), decodeScannerOutput(stdout)].filter(Boolean).join("\n").trim();
+        const message = /\bNoMedia\b|No scanned pages to export/i.test(details)
+          ? "扫描仪未检测到纸张，请向自动进纸器放入纸张后重试"
+          : details || error.message;
+        reject(new Error(message.slice(0, 400)));
+      });
   });
 }
 
