@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { strict as assert } from "node:assert";
+import { writeFile } from "node:fs/promises";
 import { createBridge } from "./scanner-bridge.mjs";
 import { createScannerDevices, decodeScannerOutput, execScanner } from "./scanner-devices.mjs";
 
@@ -47,6 +48,22 @@ describe("local scanner bridge", () => {
 });
 
 describe("scanner driver enumeration", () => {
+  it("uses high-quality JPEG for TWAIN ADF scans and returns browser-compatible images", async () => {
+    const executed = [];
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
+    const backend = createScannerDevices({ platform: "win32", naps2: "naps2.exe", execute: async (command, args) => {
+      if (command === "powershell.exe") return "[]";
+      if (args[0] === "--listdevices") return "阅卷仪640\r\n";
+      executed.push(args);
+      await writeFile(args[1].replace("$(nnnn)", "0001"), jpeg);
+      return "";
+    } });
+    const result = await backend.scan({ deviceId: "twain:阅卷仪640", duplex: false });
+    assert.deepEqual(result.pages, [{ mime: "image/jpeg", data: jpeg.toString("base64") }]);
+    assert.equal(executed.length, 1);
+    assert.match(executed[0][1], /page-\$\(nnnn\)\.jpg$/);
+    assert.deepEqual(executed[0].slice(-4), ["--dpi", "300", "--jpegquality", "90"]);
+  });
   it("reports the real no-paper error that NAPS2 writes to stdout", async () => {
     await assert.rejects(() => execScanner(process.execPath, [
       "-e", "process.stdout.write('TWAIN error: NoMedia\\nNo scanned pages to export.\\n'); process.exit(1)",

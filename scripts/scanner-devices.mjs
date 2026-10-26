@@ -90,8 +90,10 @@ export function createScannerDevices({ platform = process.platform, execute = ex
     const dir = await mkdtemp(join(tmpdir(), "inteschool-scan-"));
     try {
       if (device.id.startsWith("twain:")) {
-        await execute(naps2, ["-o", join(dir, "page-$(nnnn).png"), "--noprofile", "--driver", "twain", "--device", device.name,
-          "--source", duplex ? "duplex" : "feeder", "--dpi", "300"]);
+        // High-resolution color PNGs can exceed the 120 MB batch limit after only a few pages.
+        // JPEG at high quality preserves answer-sheet markings while keeping ADF batches manageable.
+        await execute(naps2, ["-o", join(dir, "page-$(nnnn).jpg"), "--noprofile", "--driver", "twain", "--device", device.name,
+          "--source", duplex ? "duplex" : "feeder", "--dpi", "300", "--jpegquality", "90"]);
       } else if (device.id.startsWith("wia:")) {
         await execute("powershell.exe", ["-NoProfile", "-Sta", "-File", SCRIPT, "-Action", "Scan", "-DeviceId", device.id.slice(4), "-OutputFile", join(dir, "page-0001.png")]);
       } else {
