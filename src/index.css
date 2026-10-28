@@ -229,7 +229,7 @@
   right: 0;
   bottom: 0;
   left: var(--preview-paper-width);
-  min-width: 17rem;
+  min-width: 34rem;
   pointer-events: none;
 }
 .preview-sidebar-intro {
@@ -247,16 +247,26 @@
   background: #f5f7fa;
   pointer-events: auto;
 }
+/* Keep visibility toggles and document-wide actions in separate columns. */
+.preview-sticky-controls-split {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(16rem, 1fr);
+  align-items: start;
+  gap: 1rem;
+}
+.preview-sticky-controls-split > [role="toolbar"] {
+  align-content: start;
+}
 .preview-sticky-spacer {
-  min-height: 10.5rem;
+  min-height: 15rem;
 }
 
 .exam-paper-preview-grid {
   position: relative;
   display: grid;
-  grid-template-columns: 210mm minmax(17rem, 1fr);
+  grid-template-columns: 210mm minmax(34rem, 1fr);
   align-items: stretch;
-  min-width: calc(210mm + 17rem);
+  min-width: calc(210mm + 34rem);
   min-height: 297mm;
   margin: 0 auto;
   background: linear-gradient(to right, #fff 0, #fff 210mm, transparent 210mm);
@@ -291,9 +301,9 @@
   --lecture-paper-width: 210mm;
   position: relative;
   display: grid;
-  grid-template-columns: var(--lecture-paper-width) minmax(17rem, 1fr);
+  grid-template-columns: var(--lecture-paper-width) minmax(34rem, 1fr);
   align-items: stretch;
-  min-width: calc(var(--lecture-paper-width) + 17rem);
+  min-width: calc(var(--lecture-paper-width) + 34rem);
   min-height: 297mm;
   margin: 0 auto;
   background: linear-gradient(

@@ -56,6 +56,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
+import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { DocumentQuestionPicker } from "@/components/editor/DocumentQuestionPicker";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
@@ -2707,6 +2708,14 @@ export default function LectureEditorPage() {
             </Card>
 
             <div className="space-y-4 xl:sticky xl:top-4">
+              <Card className="p-4">
+                <DocumentQuestionBatchActions
+                  schoolId={teacher?.schoolId}
+                  questionIds={lectureQuestionIds}
+                  disabled={isUsedDocument}
+                  onUpdated={(updated) => setLectureQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+                />
+              </Card>
               <Card className="p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-gold-500" />

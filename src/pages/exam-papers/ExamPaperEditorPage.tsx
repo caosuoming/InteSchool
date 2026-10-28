@@ -45,6 +45,7 @@ import { DocumentQuestionPicker } from "@/components/editor/DocumentQuestionPick
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
+import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -1808,24 +1809,25 @@ export default function ExamPaperEditorPage() {
                   <div className="font-serif text-sm font-semibold text-ink-900">题目信息与使用情况</div>
                   <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
                 </div>
-                {previewSidebarVisibility.answerStatus && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleMarkAllDone}
-                    loading={markingAllDone}
-                    disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
-                  >
-                    <CheckSquare className="w-3.5 h-3.5" />
-                    全部设为使用
-                  </Button>
-                )}
+
               </div>
             </div>
-            <div className="preview-sticky-controls" data-testid="exam-paper-preview-details">
+            <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="exam-paper-preview-details">
               <PreviewSidebarControls
                 value={previewSidebarVisibility}
                 onChange={setPreviewSidebarVisibility}
+              />
+              <DocumentQuestionBatchActions
+                schoolId={schoolId}
+                questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
+                disabled={isUsedDocument}
+                onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+                markAllButton={(
+                  <Button variant="outline" size="sm" onClick={handleMarkAllDone}
+                    loading={markingAllDone} disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}>
+                    <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
+                  </Button>
+                )}
               />
             </div>
           </aside>
@@ -2326,6 +2328,14 @@ export default function ExamPaperEditorPage() {
         )}
 
         <div className="space-y-4">
+          <div className="rounded-lg border border-ink-200 bg-paper p-3">
+            <DocumentQuestionBatchActions
+                  schoolId={schoolId}
+                  questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
+                  disabled={isUsedDocument}
+                  onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+                />
+          </div>
           {/* 左侧：完整试卷 */}
           <Card className="min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-ink-100">
