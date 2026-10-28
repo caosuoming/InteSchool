@@ -198,7 +198,9 @@ describe("AnswerSheetComposer", () => {
     const qrPosition = screen.getByTestId("answer-sheet-qr-position");
 
     expect(identityArea).toHaveClass("flex");
-    expect(identityFields).toHaveClass("border", "border-ink-900", "w-[38mm]", "h-[54mm]");
+    expect(identityFields).toHaveClass("border", "border-ink-900", "w-[38mm]");
+    expect(identityFields).not.toHaveClass("h-[54mm]");
+    expect(identityFields).toHaveTextContent("学校：______________");
     expect(identityFields.nextElementSibling).toBe(studentNumberColumn);
     expect(studentNumberColumn.nextElementSibling).toBe(qrPosition);
     expect(studentNumberColumn).toHaveClass("border", "border-ink-900");
@@ -207,7 +209,10 @@ describe("AnswerSheetComposer", () => {
     expect(identityFields).toContainElement(screen.getByLabelText("姓名签名填写区"));
     expect(studentNumberColumn).toContainElement(screen.getByTestId("student-number-grid"));
     expect(identityArea).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
-    expect(identityFields).toHaveClass("w-[38mm]", "h-[54mm]");
+    expect(identityFields).toHaveClass("w-[38mm]");
+    expect(studentNumberColumn).toHaveClass("ml-auto", "flex-col");
+    expect(studentNumberColumn).toHaveTextContent("学号");
+    expect(qrPosition).toHaveClass("justify-start");
     expect(studentNumberColumn).toHaveClass("w-[52mm]");
     expect(qrPosition).toHaveClass("w-[24mm]");
     expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("block", "w-[32mm]", "h-[13mm]", "shrink-0");
@@ -229,7 +234,7 @@ describe("AnswerSheetComposer", () => {
     expect(area).toHaveClass("flex", "items-stretch");
     expect(area).not.toHaveClass("flex-col");
     expect(fields).toHaveClass("w-[38mm]", "border");
-    expect(student).toHaveClass("w-[49mm]", "border");
+    expect(student).toHaveClass("w-[49mm]", "border", "ml-auto");
     expect(qr).toHaveClass("w-[24mm]", "border");
     expect(fields.nextElementSibling).toBe(student);
     expect(student.nextElementSibling).toBe(qr);
@@ -260,7 +265,8 @@ describe("AnswerSheetComposer", () => {
     const stems = container.querySelectorAll(".answer-sheet-question-stem");
     expect(stems.length).toBeGreaterThan(0);
     stems.forEach((stem) => {
-      expect(stem.parentElement).toHaveClass("gap-0");
+      expect(stem.parentElement).toHaveClass("gap-0", "items-start");
+      expect(stem.previousElementSibling).toHaveClass("answer-sheet-question-number");
       expect(stem.previousElementSibling).not.toHaveClass("w-7");
     });
 
@@ -353,7 +359,7 @@ describe("AnswerSheetComposer", () => {
     expect(paper()).toHaveAttribute("data-paper-columns", "1");
     expect(screen.getByLabelText("题目栏数")).toHaveValue("1");
     expect(screen.getByTestId("answer-sheet-page-header")).toContainElement(screen.getByLabelText("试卷答题卡二维码"));
-    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("pt-[2.5mm]");
+    expect(screen.getByTestId("answer-sheet-identity-fields")).toHaveClass("pt-[1mm]");
     expect(screen.getByLabelText("姓名签名填写区")).toHaveClass("w-[32mm]");
 
     fireEvent.change(screen.getByLabelText("题目栏数"), { target: { value: "2" } });
@@ -849,7 +855,7 @@ describe("AnswerSheetComposer", () => {
 
     const initialBoxes = screen.getAllByTestId("answer-box");
     expect(initialBoxes.length).toBeGreaterThan(0);
-    expect(initialBoxes[0].style.resize).toBe("vertical");
+    expect(initialBoxes[0].style.resize).toBe("both");
     expect(screen.getByLabelText("第3题评分框")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("答题框边线"), { target: { value: "dashed" } });
@@ -1205,34 +1211,36 @@ describe("AnswerSheetComposer", () => {
     }));
   });
 
-  it("keeps a dragged inline fill blank's position and size in preview and saved settings", () => {
+  it("keeps inline fill blanks fixed while saving only bottom-right resize dimensions", () => {
     vi.stubGlobal("PointerEvent", MouseEvent);
     const onSettingsChange = vi.fn();
     const { container, unmount } = renderComposer({
       questions: [{ id: "blank1", type: "short", stem: "计算 ____ 并写出结果" }],
-      initialSettings: { mode: "with-questions", choiceLayout: "inline" },
+      initialSettings: {
+        mode: "with-questions", choiceLayout: "inline",
+        inlineBlankLayouts: { blank1: { stem: [{ x: 35, y: 22, width: 130, height: 72 }] } },
+      },
       onSettingsChange,
     });
     let blank = container.querySelector<HTMLElement>(".answer-sheet-inline-blank")!;
-    expect(blank).toBeInTheDocument();
+    expect(blank).toHaveStyle({ transform: "none", resize: "both" });
+    expect(blank.title).toContain("右下角");
     vi.spyOn(blank, "getBoundingClientRect").mockReturnValue({ right: 140, bottom: 80, width: 140, height: 80 } as DOMRect);
     fireEvent.pointerDown(blank, { button: 0, pointerId: 5, clientX: 40, clientY: 20 });
     fireEvent.pointerMove(blank, { pointerId: 5, clientX: 75, clientY: 42 });
     fireEvent.pointerUp(blank, { pointerId: 5, clientX: 75, clientY: 42 });
-    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
-      inlineBlankLayouts: { blank1: { stem: [{ x: 35, y: 22, width: undefined, height: undefined }] } },
-    }));
+    expect(onSettingsChange).not.toHaveBeenCalled();
 
     blank = container.querySelector<HTMLElement>(".answer-sheet-inline-blank")!;
     vi.spyOn(blank, "getBoundingClientRect").mockReturnValue({ right: 140, bottom: 80, width: 170, height: 95 } as DOMRect);
     fireEvent.pointerDown(blank, { button: 0, pointerId: 6, clientX: 137, clientY: 77 });
     fireEvent.pointerUp(window, { pointerId: 6 });
     expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      inlineBlankLayouts: { blank1: { stem: [{ x: 35, y: 22, width: 170, height: 95 }] } },
+      inlineBlankLayouts: { blank1: { stem: [{ x: 0, y: 0, width: 170, height: 95 }] } },
     }));
     fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
     expect(container.querySelector(".answer-sheet-inline-blank")).toHaveStyle({
-      transform: "translate(35px, 22px)", width: "170px", height: "95px", resize: "none",
+      transform: "none", width: "170px", height: "95px", resize: "none",
     });
     const saved = onSettingsChange.mock.lastCall![0];
     unmount();
@@ -1241,7 +1249,7 @@ describe("AnswerSheetComposer", () => {
       initialSettings: saved, initialViewMode: "preview",
     });
     expect(document.querySelector(".answer-sheet-inline-blank")).toHaveStyle({
-      transform: "translate(35px, 22px)", width: "170px", height: "95px",
+      transform: "none", width: "170px", height: "95px",
     });
   });
 
@@ -1272,26 +1280,30 @@ describe("AnswerSheetComposer", () => {
     expect(screen.queryByRole("button", { name: "调整第1题答题框高度" })).not.toBeInTheDocument();
   });
 
-  it("lets concentrated fill writing boxes move without losing their positions in preview", () => {
-    vi.stubGlobal("PointerEvent", MouseEvent);
+  it("allows resizing but never moving fill writing boxes in blank and concentrated layouts", () => {
     const onSettingsChange = vi.fn();
     const { container } = renderComposer({
       questions: [{ id: "fill1", type: "short", stem: "完成填空" }],
-      initialSettings: { mode: "with-questions", choiceLayout: "concentrated" },
+      initialSettings: { mode: "blank" },
       onSettingsChange,
     });
-    const handle = screen.getByRole("button", { name: "拖动第1题书写框" });
-    const box = handle.closest<HTMLElement>('[data-testid="answer-box"]')!;
-    fireEvent.pointerDown(handle, { button: 0, pointerId: 12, clientX: 20, clientY: 40 });
-    fireEvent.pointerMove(box, { pointerId: 12, clientX: 78, clientY: 55 });
-    fireEvent.pointerUp(box, { pointerId: 12, clientX: 78, clientY: 55 });
-    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      answerBoxPositions: { fill1: { x: 58, y: 15 } },
-    }));
-    expect(box).toHaveStyle({ transform: "translate(58px, 15px)" });
-    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    let box = screen.getByTestId("answer-box");
+    expect(box).toHaveStyle({ resize: "both" });
     expect(screen.queryByRole("button", { name: "拖动第1题书写框" })).not.toBeInTheDocument();
-    expect(container.querySelector('[data-testid="concentrated-fill-row"] [data-testid="answer-box"]'))
-      .toHaveStyle({ transform: "translate(58px, 15px)" });
+    fireEvent.click(screen.getByLabelText("显题干"));
+    fireEvent.change(screen.getByLabelText("显题干答题区布局"), { target: { value: "concentrated" } });
+    box = screen.getByTestId("answer-box");
+    expect(box).toHaveStyle({ resize: "both" });
+    expect(box.style.transform).toBe("");
+    expect(container.querySelector('[data-testid="concentrated-fill-row"]')).toContainElement(box);
+    expect(screen.queryByRole("button", { name: "拖动第1题书写框" })).not.toBeInTheDocument();
+    vi.spyOn(box, "getBoundingClientRect").mockReturnValue({ width: 190, height: 110 } as DOMRect);
+    fireEvent.pointerUp(box);
+    expect(onSettingsChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      answerBoxWidths: { fill1: 190 },
+      answerBoxHeights: { fill1: 110 },
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.getByTestId("answer-box")).toHaveStyle({ width: "190px", height: "110px", resize: "none" });
   });
 });

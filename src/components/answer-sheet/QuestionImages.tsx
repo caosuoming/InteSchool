@@ -25,9 +25,9 @@ function buildImageMarkup(
     const layout = blankLayouts[index];
     blank.dataset.answerSheetInlineBlank = String(index);
     blank.dataset.answerSheetEditable = editable ? "true" : "false";
-    blank.title = editable ? "拖动书写框调整位置，拖动右下角调整大小" : "";
+    blank.title = editable ? "拖动右下角调整书写框大小" : "";
     blank.style.resize = editable ? "both" : "none";
-    blank.style.transform = `translate(${layout?.x || 0}px, ${layout?.y || 0}px)`;
+    blank.style.transform = "none";
     if (layout?.width) blank.style.width = `${layout.width}px`;
     if (layout?.height) blank.style.height = `${layout.height}px`;
   });
@@ -69,7 +69,6 @@ type Drag = {
   pointerId: number;
   element: HTMLElement;
   index: number;
-  kind: "image" | "blank";
   x: number;
   y: number;
   startX: number;
@@ -105,8 +104,8 @@ export function QuestionImages({ markup, className, editable, number, part, layo
     caption: layouts?.[index]?.caption || "",
   });
   const readBlank = (index: number): AnswerSheetInlineBlankLayout => ({
-    x: blankLayouts?.[index]?.x || 0,
-    y: blankLayouts?.[index]?.y || 0,
+    x: 0,
+    y: 0,
     width: blankLayouts?.[index]?.width,
     height: blankLayouts?.[index]?.height,
   });
@@ -137,17 +136,17 @@ export function QuestionImages({ markup, className, editable, number, part, layo
     if (!editable || event.button !== 0 || !(event.target instanceof Element)) return;
     const image = event.target instanceof HTMLImageElement ? event.target.closest<HTMLElement>("[data-image-index]") : null;
     const blank = event.target.closest<HTMLElement>("[data-answer-sheet-inline-blank]");
-    const element = image || blank;
-    if (!element || !rootRef.current?.contains(element)) return;
-    const kind = image ? "image" : "blank";
-    const index = Number(kind === "image" ? element.dataset.imageIndex : element.dataset.answerSheetInlineBlank);
-    const rect = element.getBoundingClientRect();
-    if (kind === "blank" && event.clientX >= rect.right - 18 && event.clientY >= rect.bottom - 18) {
-      resizeRef.current = { element, index };
+    if (blank && rootRef.current?.contains(blank)) {
+      const rect = blank.getBoundingClientRect();
+      if (event.clientX >= rect.right - 18 && event.clientY >= rect.bottom - 18) {
+        resizeRef.current = { element: blank, index: Number(blank.dataset.answerSheetInlineBlank) };
+      }
       return;
     }
-    const layout = kind === "image" ? readImage(index) : readBlank(index);
-    dragRef.current = { pointerId: event.pointerId, element, index, kind, x: layout.x, y: layout.y, startX: event.clientX, startY: event.clientY };
+    if (!image || !rootRef.current?.contains(image)) return;
+    const index = Number(image.dataset.imageIndex);
+    const layout = readImage(index);
+    dragRef.current = { pointerId: event.pointerId, element: image, index, x: layout.x, y: layout.y, startX: event.clientX, startY: event.clientY };
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   };
@@ -169,8 +168,7 @@ export function QuestionImages({ markup, className, editable, number, part, layo
       ? clampToPaper(drag, drag.x + event.clientX - drag.startX, drag.y + event.clientY - drag.startY)
       : { x: drag.x, y: drag.y };
     if (event.type === "pointerup") {
-      if (drag.kind === "image") onLayoutChange(drag.index, { ...readImage(drag.index), ...position });
-      else onBlankLayoutChange?.(drag.index, { ...readBlank(drag.index), ...position });
+      onLayoutChange(drag.index, { ...readImage(drag.index), ...position });
     }
     drag.element.style.transform = `translate(${position.x}px, ${position.y}px)`;
     delete drag.element.dataset.dragX;
