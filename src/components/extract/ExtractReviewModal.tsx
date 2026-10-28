@@ -141,6 +141,14 @@ function withDetectedQuestionCategories(blocks: DocBlock[]): DocBlock[] {
   });
 }
 
+const GEOGRAPHY_SUBTYPES: Partial<Record<QuestionType, string[]>> = {
+  single: ["单选题·1个小题", "单选题·2个小题", "单选题·3个小题", "单选题·4个及以上小题"],
+  multiple: ["多选单题", "多选题组"],
+  comprehensive: ["综合题·1问", "综合题·2问", "综合题·3问", "综合题·4问", "综合题·5问", "综合题·6问及以上"],
+};
+
+const ALL_GEOGRAPHY_SUBTYPES = Object.values(GEOGRAPHY_SUBTYPES).flat();
+
 const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
 
 function genBlockId() {
@@ -744,7 +752,13 @@ export function ExtractReviewModal({
         return {
           id: b.id,
           type,
-          categories: b.categories || [],
+          categories: subject?.trim() === "地理" && GEOGRAPHY_SUBTYPES[type]
+            ? [
+              ...(b.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
+              (b.categories || []).find((category) => GEOGRAPHY_SUBTYPES[type]?.includes(category))
+                || GEOGRAPHY_SUBTYPES[type]![0],
+            ]
+            : b.categories || [],
           stem,
           options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
           answer,
@@ -1112,11 +1126,32 @@ export function ExtractReviewModal({
                   value={normalizeQuestionTypeForSubject(block.questionType || subjectDefaultQuestionType, subject)}
                   className="h-9 py-0 text-sm"
                   options={includeCurrentQuestionType(availableQuestionTypes, normalizeQuestionTypeForSubject(block.questionType || subjectDefaultQuestionType, subject))}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const questionType = e.target.value as QuestionType;
                     updateBlockField(block.id, {
-                      questionType: e.target.value as QuestionType,
-                    })
-                  }
+                      questionType,
+                      categories: subject?.trim() === "地理"
+                        ? [
+                          ...(block.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
+                          ...(GEOGRAPHY_SUBTYPES[questionType]?.slice(0, 1) || []),
+                        ]
+                        : block.categories,
+                    });
+                  }}
+                />
+              )}
+              {block.type === "question" && subject?.trim() === "地理" && GEOGRAPHY_SUBTYPES[block.questionType || "single"] && (
+                <Select
+                  label="地理细分题型"
+                  value={(block.categories || []).find((category) => GEOGRAPHY_SUBTYPES[block.questionType || "single"]?.includes(category))
+                    || GEOGRAPHY_SUBTYPES[block.questionType || "single"]![0]}
+                  options={GEOGRAPHY_SUBTYPES[block.questionType || "single"]!.map((category) => ({ value: category, label: category }))}
+                  onChange={(e) => updateBlockField(block.id, {
+                    categories: [
+                      ...(block.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
+                      e.target.value,
+                    ],
+                  })}
                 />
               )}
             </div>
