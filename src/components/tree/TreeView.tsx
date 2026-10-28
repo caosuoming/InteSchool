@@ -29,6 +29,8 @@ interface TreeViewProps {
   highlightAccent?: "gold" | "teal";
   /** Optional per-node actions rendered at the right edge of each row. */
   renderNodeActions?: (node: TreeNode) => ReactNode;
+  /** Optional relationships shown below each node, separately from its children. */
+  renderNodeConnections?: (node: TreeNode) => ReactNode;
   /** Optional tree reparenting handler. When provided, non-root rows become draggable. */
   onNodeDrop?: (source: TreeNode, target: TreeNode) => void | Promise<void>;
   /** Additional caller-specific validation for a drag target. */
@@ -52,6 +54,7 @@ export function TreeView({
   highlightedIds = [],
   highlightAccent = "gold",
   renderNodeActions,
+  renderNodeConnections,
   onNodeDrop,
   canDropNode,
 }: TreeViewProps) {
@@ -330,6 +333,12 @@ export function TreeView({
         {renderNodeActions && (
           <div className="absolute right-1 top-1.5 z-10">
             {renderNodeActions(node)}
+          </div>
+        )}
+
+        {renderNodeConnections && !isRoot && renderNodeConnections(node) && (
+          <div className="pb-1" style={{ paddingLeft: `${indentDepth * 16 + 29}px` }}>
+            {renderNodeConnections(node)}
           </div>
         )}
 

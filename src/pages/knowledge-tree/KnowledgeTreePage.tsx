@@ -20,9 +20,14 @@ import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TreeView } from "@/components/tree/TreeView";
+import { PrerequisiteLinks } from "@/components/tree/PrerequisiteLinks";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import type {
   TreeNode,
+  Chapter,
+  KnowledgePoint,
+  NodePrerequisite,
+  PrerequisiteNodeType,
   Question,
   Basket,
   DirectoryCatalog,
@@ -98,6 +103,12 @@ export default function KnowledgeTreePage() {
   const [associationTargetCatalog, setAssociationTargetCatalog] = useState<DirectoryCatalog | null>(null);
   const [associationTargetNodeId, setAssociationTargetNodeId] = useState("");
   const [associationSaving, setAssociationSaving] = useState(false);
+  const [chapterOptions, setChapterOptions] = useState<Chapter[]>([]);
+  const [knowledgeOptions, setKnowledgeOptions] = useState<KnowledgePoint[]>([]);
+  const [prerequisiteOpen, setPrerequisiteOpen] = useState(false);
+  const [prerequisiteType, setPrerequisiteType] = useState<PrerequisiteNodeType>("chapter");
+  const [prerequisiteSearch, setPrerequisiteSearch] = useState("");
+  const [prerequisiteSaving, setPrerequisiteSaving] = useState(false);
 
   const handleKindChange = (nextKind: TreeKind) => {
     if (nextKind === kind) return;
@@ -120,6 +131,7 @@ export default function KnowledgeTreePage() {
     setAssociationTargetCatalog(null);
     setAssociationTargetCatalogId("");
     setAssociationTargetNodeId("");
+    setPrerequisiteOpen(false);
   };
 
   const loadTree = useCallback(async () => {
@@ -137,6 +149,76 @@ export default function KnowledgeTreePage() {
     );
     setLoading(false);
   }, [kind, teacher]);
+
+  const loadPrerequisiteOptions = useCallback(async () => {
+    if (!teacher) return;
+    const [chapters, points] = await Promise.all([
+      knowledgeService.listChapters(teacher.id),
+      knowledgeService.listKnowledgePoints(teacher.id),
+    ]);
+    setChapterOptions(chapters ?? []);
+    setKnowledgeOptions(points ?? []);
+  }, [teacher]);
+
+  useEffect(() => {
+    const containsPrerequisites = (node: TreeNode): boolean =>
+      Boolean(node.prerequisites?.length) || node.children.some(containsPrerequisites);
+    if (kind !== "method" && tree && containsPrerequisites(tree)) {
+      void loadPrerequisiteOptions().catch(() => toast.error("加载前置节点失败"));
+    }
+  }, [tree, kind, loadPrerequisiteOptions]);
+
+  const navigatePrerequisite = async (reference: NodePrerequisite) => {
+    let options = reference.type === "chapter" ? chapterOptions : knowledgeOptions;
+    if (!options.some((item) => item.id === reference.id)) {
+      const data = await (reference.type === "chapter"
+        ? knowledgeService.listChapters(teacher!.id)
+        : knowledgeService.listKnowledgePoints(teacher!.id));
+      options = data ?? [];
+      if (reference.type === "chapter") setChapterOptions(options as Chapter[]);
+      else setKnowledgeOptions(options as KnowledgePoint[]);
+    }
+    const target = options.find((item) => item.id === reference.id);
+    if (!target) {
+      toast.error("前置节点已不在当前目录中");
+      return;
+    }
+    if (kind !== reference.type) handleKindChange(reference.type);
+    setSearch("");
+    const resolvedNode = reference.type === kind && tree
+      ? findTreeNode(tree, reference.id)
+      : null;
+    setSelectedNode(resolvedNode || {
+      id: target.id, name: target.name, type: reference.type,
+      children: [], count: 0, prerequisites: target.prerequisites,
+    });
+  };
+
+  const openPrerequisitePicker = async () => {
+    setPrerequisiteType("chapter");
+    setPrerequisiteSearch("");
+    try {
+      await loadPrerequisiteOptions();
+      setPrerequisiteOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加载前置节点失败");
+    }
+  };
+
+  const updatePrerequisites = async (prerequisites: NodePrerequisite[]) => {
+    if (!teacher || !selectedNode || kind === "method") return;
+    setPrerequisiteSaving(true);
+    try {
+      await knowledgeService.setNodePrerequisites(teacher.id, kind, selectedNode.id, prerequisites);
+      await Promise.all([loadTree(), loadPrerequisiteOptions()]);
+      toast.success("前置节点已更新");
+      setPrerequisiteOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "更新前置节点失败");
+    } finally {
+      setPrerequisiteSaving(false);
+    }
+  };
 
   const loadQuestions = useCallback(async () => {
     if (!teacher || !selectedNode) return;
@@ -757,6 +839,35 @@ export default function KnowledgeTreePage() {
                 canDropNode={canDropTreeNode}
                 defaultExpandAll={Boolean(search)}
                 expandLevel={1}
+                renderNodeConnections={kind === "method" ? undefined : (node) =>
+                  node.prerequisites?.length ? (
+                    <PrerequisiteLinks
+                      references={node.prerequisites}
+                      chapters={chapterOptions}
+                      points={knowledgeOptions}
+                      onNavigate={(reference) => void navigatePrerequisite(reference)}
+                    />
+                  ) : null
+                }
+                renderNodeActions={kind === "method" ? undefined : (node) => {
+                  const refs = node.prerequisites || [];
+                  if (!refs.length) return null;
+                  return (
+                    <button
+                      type="button"
+                      className="border-l-2 border-dashed border-ink-300 pl-1.5 text-[11px] text-ink-400 hover:text-gold-700"
+                      aria-label={"查看" + node.name + "的前置节点"}
+                      title="点击虚线连接到前置节点"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (refs.length === 1) void navigatePrerequisite(refs[0]);
+                        else setSelectedNode(node);
+                      }}
+                    >
+                      前置 {refs.length}
+                    </button>
+                  );
+                }}
                 className="max-h-[600px] overflow-auto"
               />
             ) : (
@@ -909,6 +1020,12 @@ export default function KnowledgeTreePage() {
                             ? "（" + selectedNodeAssociations.length + "）"
                             : ""}
                         </Button>
+                        {kind !== "method" && (
+                          <Button variant="ghost" size="sm" onClick={openPrerequisitePicker}>
+                            <Link2 className="w-3 h-3 mr-1" />
+                            添加前置节点
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -934,6 +1051,31 @@ export default function KnowledgeTreePage() {
                     </Button>
                   </Link>
                 </div>
+
+                {kind !== "method" && selectedNode.id !== "root" && (
+                  <div className="mt-4 border-t border-dashed border-ink-200 pt-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-medium text-ink-600">前置章节课 / 前置知识点</span>
+                      <button type="button" onClick={openPrerequisitePicker}
+                        className="text-xs text-gold-700 hover:underline">
+                        + 添加
+                      </button>
+                    </div>
+                    <PrerequisiteLinks
+                      references={selectedNode.prerequisites || []}
+                      chapters={chapterOptions}
+                      points={knowledgeOptions}
+                      onNavigate={(ref) => void navigatePrerequisite(ref)}
+                      onRemove={(ref) => void updatePrerequisites(
+                        (selectedNode.prerequisites || [])
+                          .filter((item) => item.id !== ref.id || item.type !== ref.type)
+                      )}
+                    />
+                    {!selectedNode.prerequisites?.length && (
+                      <p className="text-xs text-ink-400">暂无前置节点</p>
+                    )}
+                  </div>
+                )}
 
                 {/* 子节点列表 */}
                 {selectedNode.children.length > 0 && (
@@ -991,6 +1133,52 @@ export default function KnowledgeTreePage() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={prerequisiteOpen}
+        onClose={() => !prerequisiteSaving && setPrerequisiteOpen(false)}
+        title="添加前置节点"
+        description={selectedNode ? "选择「" + selectedNode.name + "」的前置章节课或前置知识点" : undefined}
+        size="sm"
+      >
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setPrerequisiteType("chapter")}
+              className={cn("rounded border px-3 py-1.5 text-sm",
+                prerequisiteType === "chapter" ? "border-gold-400 bg-gold-50" : "border-ink-200")}>
+              前置章节课
+            </button>
+            <button type="button" onClick={() => setPrerequisiteType("knowledge")}
+              className={cn("rounded border px-3 py-1.5 text-sm",
+                prerequisiteType === "knowledge" ? "border-gold-400 bg-gold-50" : "border-ink-200")}>
+              前置知识点
+            </button>
+          </div>
+          <input className="input-base" aria-label="搜索前置节点"
+            placeholder="搜索前置节点名称"
+            value={prerequisiteSearch}
+            onChange={(event) => setPrerequisiteSearch(event.target.value)} />
+          <div className="max-h-72 space-y-1 overflow-auto">
+            {(prerequisiteType === "chapter" ? chapterOptions : knowledgeOptions)
+              .filter((item) => (kind !== prerequisiteType || item.id !== selectedNode?.id)
+                && item.name.toLowerCase().includes(prerequisiteSearch.toLowerCase())
+                && !(selectedNode?.prerequisites || []).some(
+                  (ref) => ref.type === prerequisiteType && ref.id === item.id,
+                ))
+              .map((item) => (
+                <button type="button" key={item.id} disabled={prerequisiteSaving}
+                  className="w-full rounded border border-dashed border-ink-200 p-2 text-left text-sm hover:border-gold-400"
+                  onClick={() => void updatePrerequisites([
+                    ...(selectedNode?.prerequisites || []),
+                    { type: prerequisiteType, id: item.id },
+                  ])}
+                >
+                  {item.name}
+                </button>
+              ))}
+          </div>
+        </div>
+      </Modal>
 
       {/* 加入试题篮 */}
       <Modal

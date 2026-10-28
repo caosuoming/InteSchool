@@ -9,6 +9,8 @@ import type {
   DirectoryDonationUpsertResult,
   DirectoryNodeAssociation,
   KnowledgePoint,
+  NodePrerequisite,
+  PrerequisiteNodeType,
   ThoughtMethod,
   TreeNode,
   TreeNodeType,
@@ -135,6 +137,15 @@ export const knowledgeService = {
 
   async getKnowledgePath(knowledgeId: string): Promise<string> {
     return rpcCall("knowledge", "getKnowledgePath", [knowledgeId]);
+  },
+
+  async setNodePrerequisites(
+    teacherId: string,
+    type: PrerequisiteNodeType,
+    nodeId: string,
+    prerequisites: NodePrerequisite[],
+  ): Promise<void> {
+    return rpcCall("knowledge", "setNodePrerequisites", [teacherId, type, nodeId, prerequisites]) as any;
   },
 
   async renameNode(id: string, type: TreeNodeType, newName: string): Promise<void> {

@@ -8,6 +8,8 @@ import type {
   DirectoryDonationUpsertResult,
   DirectoryNodeAssociation,
   KnowledgePoint,
+  NodePrerequisite,
+  PrerequisiteNodeType,
   ThoughtMethod,
   Question,
   TreeNode,
@@ -396,6 +398,7 @@ function snapshotDirectoryNodes(
       name: item.name,
       order: item.order,
       level: item.level,
+      ...(type !== "method" && item.prerequisites?.length ? { prerequisites: structuredClone(item.prerequisites) } : {}),
       ...(type !== "chapter" && (item as KnowledgePoint).description
         ? { description: (item as KnowledgePoint).description }
         : {}),
@@ -423,6 +426,7 @@ function materializeDirectoryNodes(
           order: node.order,
           level: node.level,
           questionCount: 0,
+          prerequisites: node.prerequisites,
         } satisfies Chapter)
       : ({
           id: node.id,
@@ -434,6 +438,7 @@ function materializeDirectoryNodes(
           order: node.order,
           level: node.level,
           questionCount: 0,
+          prerequisites: node.prerequisites,
         } satisfies KnowledgePoint),
   );
   db.write(collection, [...current, ...materialized]);
@@ -537,6 +542,9 @@ function cloneDirectoryNodes(
     ...structuredClone(node),
     id: idMap.get(node.id)!,
     parentId: node.parentId ? idMap.get(node.parentId) || null : null,
+    prerequisites: type === "method" ? undefined : node.prerequisites
+      ?.filter((ref) => ref.type === type && idMap.has(ref.id))
+      .map((ref) => ({ type: ref.type, id: idMap.get(ref.id)! })),
   }));
 }
 
@@ -586,6 +594,18 @@ function mergeDirectorySnapshots(
     incomingToMerged.set(node.id, created.id);
   }
 
+  for (const node of incoming) {
+    const targetId = incomingToMerged.get(node.id);
+    const target = merged.find((item) => item.id === targetId);
+    if (!target || type === "method") continue;
+    const references = (node.prerequisites || [])
+      .filter((ref) => ref.type === type && incomingToMerged.has(ref.id))
+      .map((ref) => ({ type: ref.type, id: incomingToMerged.get(ref.id)! }))
+      .filter((ref) => ref.id !== targetId);
+    target.prerequisites = [...new Map(
+      [...(target.prerequisites || []), ...references].map((ref) => [ref.type + ":" + ref.id, ref]),
+    ).values()];
+  }
   return merged;
 }
 
@@ -808,6 +828,17 @@ function mergeDirectoryRecords<T extends DirectoryRecord>(
     if (!targetDescription && sourceDescription) {
       (currentTarget as KnowledgePoint).description = sourceDescription;
     }
+    if (currentSource.prerequisites?.length) {
+      const existing = new Set((currentTarget.prerequisites || []).map((ref) => ref.type + ":" + ref.id));
+      currentTarget.prerequisites = [...(currentTarget.prerequisites || [])];
+      for (const ref of currentSource.prerequisites) {
+        const key = ref.type + ":" + ref.id;
+        if (!existing.has(key)) {
+          currentTarget.prerequisites.push(ref);
+          existing.add(key);
+        }
+      }
+    }
     replacements.set(currentSourceId, currentTargetId);
   };
 
@@ -888,6 +919,7 @@ function buildChapterTree(
       order: c.order,
       parentId: c.parentId,
       level: c.level,
+      prerequisites: c.prerequisites,
       children: buildChapterTree(chapters, c.id),
     }));
 }
@@ -908,8 +940,30 @@ function buildKnowledgeTree(
       order: p.order,
       parentId: p.parentId,
       level: p.level,
+      prerequisites: p.prerequisites,
       children: buildKnowledgeTree(points, p.id, type),
     }));
+}
+
+function remapPrerequisites(type: PrerequisiteNodeType, replacements: Map<string, string>): void {
+  if (!replacements.size) return;
+  const remap = <T extends { id: string; prerequisites?: NodePrerequisite[] }>(node: T): T => {
+    if (!node.prerequisites?.length) return node;
+    const seen = new Set<string>();
+    const refs = node.prerequisites.flatMap((ref) => {
+      const id = ref.type === type ? (replacements.get(ref.id) ?? ref.id) : ref.id;
+      const key = ref.type + ":" + id;
+      if (!id || (ref.type === type && node.id === id) || seen.has(key)) return [];
+      seen.add(key);
+      return [{ type: ref.type, id }];
+    });
+    return { ...node, prerequisites: refs };
+  };
+  db.update("chapters", (items: Chapter[]) => items.map(remap));
+  db.update("knowledgePoints", (items: KnowledgePoint[]) => items.map(remap));
+  db.update("directoryCatalogs", (items: DirectoryCatalog[]) =>
+    (items || []).map((item) => ({ ...item, nodes: (item.nodes || []).map(remap) })),
+  );
 }
 
 // 获取与指定知识点同名的所有知识点ID（分身）
@@ -941,6 +995,53 @@ export const knowledgeService = {
   async listThoughtMethods(scopeId: string): Promise<ThoughtMethod[]> {
     await delay(200);
     return directoryRecords(scopeId, "method") as ThoughtMethod[];
+  },
+
+  async setNodePrerequisites(
+    teacherId: string,
+    type: PrerequisiteNodeType,
+    nodeId: string,
+    prerequisites: NodePrerequisite[],
+  ): Promise<void> {
+    if (type !== "chapter" && type !== "knowledge") throw new Error("不支持的节点类型");
+    if (!Array.isArray(prerequisites) || prerequisites.length > 100) throw new Error("前置节点数据不合法");
+    ensureDefaultDirectoryCatalog(teacherId, "chapter");
+    ensureDefaultDirectoryCatalog(teacherId, "knowledge");
+    const chapters = directoryRecords(teacherId, "chapter") as Chapter[];
+    const points = directoryRecords(teacherId, "knowledge") as KnowledgePoint[];
+    const all = new Map<string, Chapter | KnowledgePoint>();
+    for (const chapter of chapters) all.set("chapter:" + chapter.id, chapter);
+    for (const point of points) all.set("knowledge:" + point.id, point);
+    const key = type + ":" + nodeId;
+    if (!all.has(key)) throw new Error("节点不在当前目录中");
+    const next = new Set<string>();
+    for (const ref of prerequisites) {
+      if (!ref || (ref.type !== "chapter" && ref.type !== "knowledge") ||
+          typeof ref.id !== "string" || !all.has(ref.type + ":" + ref.id)) {
+        throw new Error("前置节点不在当前目录中");
+      }
+      const refKey = ref.type + ":" + ref.id;
+      if (refKey === key) throw new Error("不能将自身设为前置节点");
+      if (next.has(refKey)) throw new Error("前置节点不能重复");
+      next.add(refKey);
+    }
+    const reachesSelf = (refKey: string, visited: Set<string>): boolean => {
+      if (refKey === key) return true;
+      if (visited.has(refKey)) return false;
+      visited.add(refKey);
+      const record = all.get(refKey);
+      return (record?.prerequisites || []).some((ref) =>
+        reachesSelf(ref.type + ":" + ref.id, visited),
+      );
+    };
+    if ([...next].some((refKey) => reachesSelf(refKey, new Set()))) {
+      throw new Error("前置节点关系不能形成循环");
+    }
+    db.update(directoryCollection(type), (items: Array<Chapter | KnowledgePoint>) =>
+      items.map((item) => item.id === nodeId && item.teacherId === teacherId
+        ? { ...item, prerequisites: structuredClone(prerequisites) }
+        : item),
+    );
   },
 
   // 获取与指定知识点同名的所有知识点ID（分身），供外部查询题目时使用
@@ -1517,6 +1618,7 @@ export const knowledgeService = {
       if (target?.teacherId) {
         removeDirectoryNodeAssociations(target.teacherId, "chapter", toDelete);
       }
+      remapPrerequisites("chapter", new Map([...toDelete].map((nodeId) => [nodeId, ""])));
       db.update("chapters", (l) => l.filter((c) => !toDelete.has(c.id)));
       // 清理题目中的章节关联
       db.update("questions", (l) =>
@@ -1563,6 +1665,7 @@ export const knowledgeService = {
         }
       }
 
+      remapPrerequisites("knowledge", new Map([...toDelete].map((nodeId) => [nodeId, ""])));
       db.update("knowledgePoints", (l) => l.filter((p) => !toDelete.has(p.id)));
 
       // 清理题目中的知识点关联，并保留其他同名分身的关联
@@ -1607,6 +1710,7 @@ export const knowledgeService = {
       );
       db.write("chapters", records);
       updateDirectoryReferences(type, replacements);
+      remapPrerequisites(type, replacements);
       if (source?.teacherId) {
         remapDirectoryNodeAssociations(source.teacherId, type, replacements);
       }
@@ -1631,6 +1735,7 @@ export const knowledgeService = {
       );
       db.write("knowledgePoints", records);
       updateDirectoryReferences(type, replacements);
+      remapPrerequisites("knowledge", replacements);
       if (source?.teacherId) {
         remapDirectoryNodeAssociations(source.teacherId, type, replacements);
       }
