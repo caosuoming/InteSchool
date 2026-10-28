@@ -9,6 +9,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { PrerequisiteLinks } from "@/components/tree/PrerequisiteLinks";
+import type { Chapter, KnowledgePoint, NodePrerequisite } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   orderVisibleChapterMastery,
@@ -30,10 +32,18 @@ export function ChapterMasteryCard({
   mastery,
   placements,
   onDirectoryOpen,
+  chapters = [],
+  knowledgePoints = [],
+  masteryLevels = {},
+  onPrerequisiteOpen = () => {},
 }: {
   mastery: ChapterMastery[];
   placements: Record<string, ChapterPlacement>;
   onDirectoryOpen: (item: ChapterMastery) => void;
+  chapters?: Chapter[];
+  knowledgePoints?: KnowledgePoint[];
+  masteryLevels?: Readonly<Record<string, string>>;
+  onPrerequisiteOpen?: (reference: NodePrerequisite) => void;
 }) {
   const [collapsedChapterIds, setCollapsedChapterIds] = useState<Set<string>>(new Set());
 
@@ -137,6 +147,15 @@ export function ChapterMasteryCard({
                         >
                           {item.chapterName}
                         </button>
+                      </div>
+                      <div className="mt-1">
+                        <PrerequisiteLinks
+                          references={chapters.find((chapter) => chapter.id === item.chapterId)?.prerequisites || []}
+                          chapters={chapters}
+                          points={knowledgePoints}
+                          masteryLevels={masteryLevels}
+                          onNavigate={onPrerequisiteOpen}
+                        />
                       </div>
                     </td>
                     <td className="py-2.5 px-3 text-center font-mono text-ink-700">

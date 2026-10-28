@@ -11,11 +11,13 @@ import { knowledgeService } from "@/services/knowledge";
 import { questionService } from "@/services/question";
 import { analyticsService, type KnowledgeMastery, type StudentAnswerDetail, type DateRange } from "@/services/analytics";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { PrerequisiteLinks } from "@/components/tree/PrerequisiteLinks";
+import { prerequisiteName } from "@/components/tree/prerequisite-name";
 import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory, Chapter, KnowledgePoint, Question } from "@/types";
+import type { SchoolClass, PersonalClass, Student, AnyClass, ClassTypeCategory, Chapter, KnowledgePoint, NodePrerequisite, Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { findClassTypeByReference } from "@/lib/class-type";
 import {
@@ -157,6 +159,31 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
     () => buildChapterMastery(chapters, answerDetails),
     [answerDetails, chapters],
   );
+  const prerequisiteMasteryLevels = useMemo(() => {
+    const labels = {
+      mastered: "已掌握",
+      basic: "基本掌握",
+      weak: "薄弱",
+      untrained: "未训练",
+    };
+    const result: Record<string, string> = {};
+    for (const item of chapterMastery) {
+      result["chapter:" + item.chapterId] = labels[item.masteryLevel];
+    }
+    for (const item of mastery) {
+      result["knowledge:" + item.knowledgePointId] = item.totalAttempts === 0 && item.doneCount > 0
+        ? "已做待评" : labels[item.masteryLevel];
+    }
+    return result;
+  }, [chapterMastery, mastery]);
+
+  const navigatePrerequisite = (reference: NodePrerequisite) => {
+    const name = prerequisiteName(reference, chapters, knowledgePoints);
+    if (!name) return;
+    setMasteryView(reference.type);
+    setActiveDirectory({ view: reference.type, id: reference.id, name });
+  };
+
   const expandedSelectedChapterIds = useMemo(
     () => expandedChapterSelection(
       chapters,
@@ -720,6 +747,10 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                 <ChapterMasteryCard
                   key={`${selection.type}:${selection.classId}:${selection.studentId ?? ""}`}
                   mastery={chapterMastery}
+                  chapters={chapters}
+                  knowledgePoints={knowledgePoints}
+                  masteryLevels={prerequisiteMasteryLevels}
+                  onPrerequisiteOpen={navigatePrerequisite}
                   placements={chapterPlacements}
                   onDirectoryOpen={(item) => setActiveDirectory({
                     view: "chapter",
@@ -855,6 +886,17 @@ export default function StudentLearningPage({ embedded = false }: { embedded?: b
                                     >
                                       {displayName}
                                     </button>
+                                  </div>
+                                  <div className="mt-1">
+                                    <PrerequisiteLinks
+                                      references={knowledgePoints.find(
+                                        (point) => point.id === m.knowledgePointId
+                                      )?.prerequisites || []}
+                                      chapters={chapters}
+                                      points={knowledgePoints}
+                                      masteryLevels={prerequisiteMasteryLevels}
+                                      onNavigate={navigatePrerequisite}
+                                    />
                                   </div>
                                 </td>
                                 <td className="py-2.5 px-3 text-center font-mono text-ink-700">

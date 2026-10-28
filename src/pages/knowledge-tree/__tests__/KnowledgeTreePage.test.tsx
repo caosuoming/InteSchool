@@ -35,6 +35,7 @@ vi.mock("@/services/knowledge", () => ({
     deleteNode: vi.fn(),
     mergeNodes: vi.fn(),
     moveNode: vi.fn(),
+    setNodePrerequisites: vi.fn(),
     reorderSiblings: vi.fn(),
   },
 }));
@@ -663,4 +664,43 @@ describe("KnowledgeTreePage", () => {
       );
     });
   });
+  it("lets teachers add a chapter or knowledge prerequisite to a tree node", async () => {
+    vi.mocked(knowledgeService.listChapters).mockResolvedValue([
+      { id: "chapter-course", teacherId: "teacher-1", schoolId: "school-1", parentId: null, name: "章节课", order: 1, level: 0 },
+      { id: "chapter-target", teacherId: "teacher-1", schoolId: "school-1", parentId: null, name: "目标章节", order: 2, level: 0 },
+    ]);
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([
+      { id: "knowledge-first", teacherId: "teacher-1", schoolId: "school-1", parentId: null, name: "集合知识点", order: 1, level: 0 },
+    ]);
+    vi.mocked(knowledgeService.setNodePrerequisites).mockResolvedValue();
+
+    render(<MemoryRouter><KnowledgeTreePage /></MemoryRouter>);
+    fireEvent.click(await screen.findByText("章节课"));
+    fireEvent.click(screen.getByRole("button", { name: "添加前置节点" }));
+    fireEvent.click(await screen.findByRole("button", { name: "前置知识点" }));
+    fireEvent.click(screen.getByRole("button", { name: "集合知识点" }));
+    await waitFor(() => expect(knowledgeService.setNodePrerequisites).toHaveBeenCalledWith(
+      "teacher-1", "chapter", "chapter-course", [{ type: "knowledge", id: "knowledge-first" }],
+    ));
+  });
+
+  it("renders dashed prerequisites and navigates to their referenced nodes", async () => {
+    const relatedTree: TreeNode = {
+      ...chapterTree,
+      children: chapterTree.children.map((node) => node.id === "chapter-target"
+        ? { ...node, prerequisites: [{ type: "chapter", id: "chapter-course" }] }
+        : node),
+    };
+    vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(relatedTree);
+    vi.mocked(knowledgeService.listChapters).mockResolvedValue([
+      { id: "chapter-course", teacherId: "teacher-1", schoolId: "school-1", parentId: null, name: "章节课", order: 1, level: 0 },
+      { id: "chapter-target", teacherId: "teacher-1", schoolId: "school-1", parentId: null, name: "目标章节", order: 2, level: 0 },
+    ]);
+    render(<MemoryRouter><KnowledgeTreePage /></MemoryRouter>);
+    const links = await screen.findAllByRole("button", { name: "前置章节课 章节课" });
+    expect(links[0]).toHaveClass("border-dashed");
+    fireEvent.click(links[0]);
+    expect(await screen.findByRole("heading", { name: "章节课" })).toBeInTheDocument();
+  });
+
 });

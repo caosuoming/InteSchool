@@ -909,6 +909,7 @@ export const serviceParameters = {
     ]
   },
   "knowledge": {
+    "setNodePrerequisites": ["teacherId", "type", "nodeId", "prerequisites"],
     "listChapters": [
       "schoolId"
     ],

@@ -1358,6 +1358,11 @@ export interface GradeExamImportInput {
 }
 
 export type TreeNodeType = "chapter" | "knowledge" | "method";
+export type PrerequisiteNodeType = "chapter" | "knowledge";
+export interface NodePrerequisite {
+  type: PrerequisiteNodeType;
+  id: string;
+}
 
 export interface Chapter {
   id: string;
@@ -1369,6 +1374,7 @@ export interface Chapter {
   order: number;
   level: number;
   questionCount?: number;
+  prerequisites?: NodePrerequisite[];
 }
 
 export interface KnowledgePoint {
@@ -1384,6 +1390,7 @@ export interface KnowledgePoint {
   order: number;
   level: number;
   questionCount?: number;
+  prerequisites?: NodePrerequisite[];
 }
 
 export type ThoughtMethod = Omit<KnowledgePoint, "chapterId">;
@@ -1401,6 +1408,7 @@ export interface TreeNode {
   masteryRate?: number;
   directMasteryRate?: number;
   children: TreeNode[];
+  prerequisites?: NodePrerequisite[];
   expanded?: boolean;
   description?: string;
   /** 同级排序号 */
@@ -1421,6 +1429,7 @@ export interface DirectoryCatalogNode {
   order: number;
   level: number;
   description?: string;
+  prerequisites?: NodePrerequisite[];
 }
 
 /** 教师个人保存的一套章节课/知识点目录；schoolId 仅保留旧数据兼容。 */
