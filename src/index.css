@@ -337,8 +337,10 @@
   column-rule: 1px solid #cbd5e1;
 }
 
-.answer-sheet-question-stem {
+.answer-sheet-question-stem,
+.answer-sheet-question-number {
   font-size: var(--answer-sheet-stem-font-size, 12px);
+  line-height: 1.5;
 }
 
 .answer-sheet-floating-image {
@@ -484,7 +486,7 @@
   white-space: nowrap;
   line-height: 1.35;
   color: transparent;
-  cursor: move;
+  cursor: default;
 }
 
 .answer-sheet-inline-blank::after {
