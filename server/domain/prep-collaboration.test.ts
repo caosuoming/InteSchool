@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import { runWithState } from "../runtime-db.js";
+import { db, runWithState } from "../runtime-db.js";
 import { prepService } from "./prep.js";
-import type { AppNotification, ExamPaper, Teacher } from "../../src/types/index.js";
+import { examPaperService } from "./examPaper.js";
+import { lectureService } from "./lecture.js";
+import { buildAnswerSheetQrPayload } from "../../src/lib/answer-sheet-qr.js";
+import type { AnswerRecord, AppNotification, ExamPaper, Teacher } from "../../src/types/index.js";
 
 const now = "2026-08-03T03:00:00.000Z";
 
@@ -159,6 +162,72 @@ describe("prep linked-resource collaboration", () => {
 
       await prepService.deleteResourceComment(task.id, comment.id, undefined, owner);
       expect(appState.prepTasks[0].resourceComments).toEqual([]);
+    });
+  });
+
+  it("invalidates collaborative paper edits and issues a different answer sheet QR", async () => {
+    await runWithState(state(), async () => {
+      const task = await prepService.createResourceTask({
+        resourceType: "examPaper", resourceId: "paper-1", collaboratorIds: [collaborator.id],
+      }, owner);
+      const original = (await examPaperService.markAnswerSheetCreated("paper-1"))!;
+      const qrBefore = buildAnswerSheetQrPayload("exam-paper", original.id, original.answerSheetRevisionId);
+
+      const administrativeEdit = await prepService.updateLinkedResource(task.id, { classIds: ["class-1"] }, undefined, collaborator);
+      expect(administrativeEdit.answerSheetRevisionId).toBe(original.answerSheetRevisionId);
+
+      const changed = await prepService.updateLinkedResource(task.id, { layoutMode: "flat" }, undefined, collaborator);
+      expect(changed).toMatchObject({ layoutMode: "flat", hasAnswerSheet: undefined });
+      expect(changed.answerSheetRevisionId).toBeUndefined();
+      expect(changed.answerSheetCreatedAt).toBeUndefined();
+      expect(changed.answerSheetSettings).toBeUndefined();
+      await expect(examPaperService.publishAnswerSheet("paper-1")).rejects.toThrow("请先制作答题卡");
+
+      const remade = (await examPaperService.markAnswerSheetCreated("paper-1"))!;
+      expect(buildAnswerSheetQrPayload("exam-paper", remade.id, remade.answerSheetRevisionId)).not.toBe(qrBefore);
+      const replaced = await prepService.updateLinkedResource(task.id, {
+        questions: [{ ...paper().questions[0], stem: "修改后的题目" }],
+      }, undefined, collaborator);
+      expect(replaced.hasAnswerSheet).toBeUndefined();
+      await examPaperService.markAnswerSheetCreated("paper-1");
+      await examPaperService.publishAnswerSheet("paper-1");
+      await expect(prepService.updateLinkedResource(task.id, { title: "不可编辑" }, undefined, collaborator))
+        .rejects.toThrow("撤回发布");
+    });
+  });
+
+  it("invalidates collaborative lecture edits and respects the used-document lock", async () => {
+    await runWithState(state(), async () => {
+      const lecture = await lectureService.createLecture(owner.id, owner.schoolId!, {
+        title: "函数讲义", chapterIds: [], knowledgePointIds: [], grade: "高一", schoolYear: "2026-2027",
+        classIds: [], studentIds: [], sections: [{ id: "sec-1", title: "题一", type: "question", content: "原题", children: [] }],
+      });
+      const task = await prepService.createResourceTask({
+        resourceType: "lecture", resourceId: lecture.id, collaboratorIds: [collaborator.id],
+      }, owner);
+      const original = (await lectureService.markAnswerSheetCreated(lecture.id))!;
+      const updated = await prepService.updateLinkedResource(task.id, {
+        sections: [{ ...lecture.sections[0], content: "替换后的题目" }],
+      }, undefined, collaborator);
+      expect(updated.hasAnswerSheet).toBeUndefined();
+      expect(updated.answerSheetRevisionId).toBeUndefined();
+      expect((await lectureService.getLecture(lecture.id))?.version).toBe(lecture.version + 1);
+      const remade = (await lectureService.markAnswerSheetCreated(lecture.id))!;
+      expect(remade.answerSheetRevisionId).not.toBe(original.answerSheetRevisionId);
+      expect(buildAnswerSheetQrPayload("lecture", lecture.id, remade.answerSheetRevisionId))
+        .not.toBe(buildAnswerSheetQrPayload("lecture", lecture.id, original.answerSheetRevisionId));
+
+      await lectureService.publishAnswerSheet(lecture.id);
+      await expect(prepService.updateLinkedResource(task.id, { title: "已发布仍修改" }, undefined, collaborator))
+        .rejects.toThrow("撤回发布");
+      await lectureService.unpublishAnswerSheet(lecture.id);
+      const record: AnswerRecord = {
+        id: "answer-1", studentId: "student-1", questionId: "question-1", lectureId: lecture.id,
+        isCorrect: true, score: "correct", answeredAt: now,
+      };
+      db.update("answerRecords", (records: AnswerRecord[] = []) => [...records, record]);
+      await expect(prepService.updateLinkedResource(task.id, { title: "已使用仍修改" }, undefined, collaborator))
+        .rejects.toThrow("文档已用");
     });
   });
 

@@ -19,7 +19,8 @@ import type {
   ExamPaper,
   Lecture,
 } from "../../src/types/index.js";
-import { sanitizeExamPaperPatch, sanitizeLecturePatch } from "./document-resource-lock.js";
+import { examPaperService } from "./examPaper.js";
+import { lectureService } from "./lecture.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
@@ -453,28 +454,9 @@ export const prepService = {
     const now = new Date().toISOString();
     const { id: _id, teacherId: _teacherId, schoolId: _schoolId, createdAt: _createdAt, ...safePatch } = patch;
 
-    let updated: ExamPaper | Lecture | null = null;
-    if (task.linkedResource!.type === "examPaper") {
-      db.update("examPapers", (list) => list.map((paper) => {
-        if (paper.id !== task.linkedResource!.id) return paper;
-        const sanitized = sanitizeExamPaperPatch(paper, safePatch as Partial<ExamPaper>);
-        updated = { ...paper, ...sanitized, updatedAt: now };
-        return updated as ExamPaper;
-      }));
-    } else {
-      db.update("lectures", (list) => list.map((lecture) => {
-        if (lecture.id !== task.linkedResource!.id) return lecture;
-        const lecturePatch = sanitizeLecturePatch(lecture, safePatch as Partial<Lecture>);
-        updated = {
-          ...lecture,
-          ...lecturePatch,
-          version: lecturePatch.sections ? lecture.version + 1 : lecture.version,
-          updatedAt: now,
-        };
-        return updated as Lecture;
-      }));
-    }
-    if (!updated) throw new Error("协作文档不存在");
+    const updated = task.linkedResource!.type === "examPaper"
+      ? await examPaperService.updatePaper(task.linkedResource!.id, safePatch as Partial<ExamPaper>)
+      : await lectureService.updateLecture(task.linkedResource!.id, safePatch as Partial<Lecture>);
 
     const updatedTitle = updated.title;
     db.update("prepTasks", (list) => list.map((item) =>
