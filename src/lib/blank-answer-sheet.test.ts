@@ -58,8 +58,44 @@ describe("空白答题卡排版", () => {
       expect.stringContaining("共55分"), "",
     ]);
     expect(blocks.filter((block) => block.type === "essay").map((block) => block.answerSpaceMm)).toEqual([35, 140, 65]);
-    expect(blocks.find((block) => block.type === "single")?.heightMm).toBe(56);
+    expect(blocks.find((block) => block.type === "single")?.heightMm).toBe(29);
     expect(blocks.flatMap((block) => block.numbers)).toEqual(Array.from({ length: 17 }, (_, i) => i + 1));
+  });
+
+  it("keeps fill-in questions in one box whenever they fit in a column", () => {
+    const config = {
+      ...DEFAULT_BLANK_ANSWER_SHEET,
+      sections: DEFAULT_BLANK_ANSWER_SHEET.sections.map((section) => ({
+        ...section, count: section.type === "fill" ? 18 : 0,
+      })),
+    };
+    const blocks = blankAnswerSheetBlocks(config);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].numbers).toHaveLength(18);
+    const columns = paginateBlankAnswerSheet(config).flatMap((page) => page.columns);
+    expect(columns.flat()).toHaveLength(1);
+    expect(columns.flat()[0].numbers).toHaveLength(18);
+  });
+
+  it("splits only physically oversized fill boxes across columns without losing numbers", () => {
+    const config = {
+      ...DEFAULT_BLANK_ANSWER_SHEET,
+      sections: DEFAULT_BLANK_ANSWER_SHEET.sections.map((section) => ({
+        ...section, count: section.type === "fill" ? 100 : 0,
+      })),
+    };
+    const pages = paginateBlankAnswerSheet(config);
+    const columns = pages.flatMap((page) => page.columns);
+    const blocks = columns.flat();
+    expect(blocks.flatMap((block) => block.numbers)).toEqual(Array.from({ length: 100 }, (_, index) => index + 1));
+    expect(blocks.filter((block) => block.heading)).toHaveLength(1);
+    expect(blocks.every((block) => block.type === "fill")).toBe(true);
+    for (const page of pages) {
+      for (const [columnIndex, column] of page.columns.entries()) {
+        const reserved = page.side === "front" && columnIndex === 0 ? 52 : 0;
+        expect(reserved + column.reduce((sum, block) => sum + block.heightMm + 1, 0)).toBeLessThanOrEqual(270 - 29);
+      }
+    }
   });
 
   it("does not overflow either face at maximum essay height", () => {
