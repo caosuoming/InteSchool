@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   createLessonFromExamPaper: vi.fn(),
   getLessonCoursewareBySource: vi.fn(),
   listAnswerRecordsByStudents: vi.fn(),
+  getKnowledgeMastery: vi.fn(),
   listUsedDocumentIds: vi.fn(),
   saveAnswerRecord: vi.fn(),
   batchSaveAnswerRecords: vi.fn(),
@@ -106,6 +107,7 @@ vi.mock("@/services/analytics", () => ({
   analyticsService: {
     getAnsweredQuestionIds: vi.fn().mockResolvedValue(new Set()),
     listAnswerRecordsByStudents: mocks.listAnswerRecordsByStudents,
+    getKnowledgeMastery: mocks.getKnowledgeMastery,
     listUsedDocumentIds: mocks.listUsedDocumentIds,
     saveAnswerRecord: mocks.saveAnswerRecord,
     batchSaveAnswerRecords: mocks.batchSaveAnswerRecords,
@@ -321,6 +323,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
     mocks.getLessonCoursewareBySource.mockResolvedValue(null);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
+    mocks.getKnowledgeMastery.mockResolvedValue([]);
     mocks.listUsedDocumentIds.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
@@ -1278,6 +1281,50 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.getByText("同知识点替换题")).toBeInTheDocument();
   });
 
+  it("shows audience-specific baskets in manual selection and adds selected questions", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, isExtractCopy: false, contentBlocks: [], classIds: ["class-1"] });
+    mocks.listBaskets.mockResolvedValue([
+      { id: "basket-matching", name: "一班题篮", classIds: ["class-1"], studentIds: [], questionIds: [sameTypeQuestion.id] },
+      { id: "basket-other", name: "二班题篮", classIds: ["class-2"], studentIds: [], questionIds: [secondQuestion.id] },
+    ]);
+    mocks.listQuestions.mockResolvedValue([question, sameTypeQuestion, secondQuestion]);
+    mocks.listStudentsByClass.mockResolvedValue([{ id: "student-1", classId: "class-1", status: "active", name: "甲" }]);
+
+    renderEditorPage();
+    const mode = await screen.findByRole("group", { name: "选题模式" });
+    fireEvent.click(within(mode).getByRole("button", { name: "手动选题" }));
+    expect(await screen.findByRole("button", { name: /一班题篮/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /二班题篮/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /一班题篮/ }));
+    expect(await screen.findByText(sameTypeQuestion.stem)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择第 1 道题" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加选中题目（1）" }));
+    await waitFor(() => expect(screen.getAllByText("2 题").length).toBeGreaterThan(0));
+  });
+
+  it("lists weak knowledge points for the chosen class and exposes auto quotas", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, isExtractCopy: false, contentBlocks: [], classIds: ["class-1"] });
+    mocks.listQuestions.mockResolvedValue([question, sameTypeQuestion]);
+    mocks.listStudentsByClass.mockResolvedValue([{ id: "student-1", classId: "class-1", status: "active", name: "甲" }]);
+    mocks.getKnowledgeMastery.mockResolvedValue([{
+      knowledgePointId: "knowledge-1", knowledgePointName: "函数定义域", totalAttempts: 4,
+      correctRate: 0.25, masteryLevel: "weak", correctCount: 1, wrongCount: 3, partialCount: 0,
+    }]);
+
+    renderEditorPage();
+    const mode = await screen.findByRole("group", { name: "选题模式" });
+    fireEvent.click(within(mode).getByRole("button", { name: "手动选题" }));
+    fireEvent.click(screen.getByRole("button", { name: "薄弱知识点" }));
+    const weakPoint = await screen.findByRole("button", { name: /函数定义域 · 正确率 25%/ });
+    fireEvent.click(weakPoint);
+    expect(await screen.findByText(sameTypeQuestion.stem)).toBeInTheDocument();
+    fireEvent.click(within(mode).getByRole("button", { name: "自动选题" }));
+    expect(await screen.findByRole("heading", { name: /AI 自动组卷/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(screen.getByLabelText("薄弱项题数")).toHaveValue(3);
+    expect(screen.getByLabelText("未练类型题数（未练知识点）")).toHaveValue(3);
+  });
+
   it("locks an already-used paper against further editing", async () => {
     mocks.getPaper.mockResolvedValue({
       ...paper,
@@ -1311,6 +1358,7 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
     mocks.listAnswerRecordsByStudents.mockResolvedValue([]);
+    mocks.getKnowledgeMastery.mockResolvedValue([]);
     mocks.listUsedDocumentIds.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
