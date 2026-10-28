@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
+import { clearResourceCache } from "@/lib/resource-cache";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
@@ -168,6 +169,7 @@ const knowledgeTree: TreeNode = {
 describe("QuestionBankPage personal resource scope", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearResourceCache();
     useAuthStore.setState({
       teacher: {
         id: "teacher-1",
@@ -207,6 +209,32 @@ describe("QuestionBankPage personal resource scope", () => {
         hidden: ["source", "category", "grade", "schoolYear"],
       },
     });
+  });
+
+  it("renders a cached question page before the server responds and then replaces it", async () => {
+    const cachedQuestion = {
+      id: "cached-q", teacherId: "teacher-1", schoolId: "school-2",
+      type: "short", stem: "缓存题干", answer: "1", analysis: "",
+      chapterIds: [], knowledgePointIds: [], difficulty: 3, recommendation: 3,
+      usageCount: 0, remark: "", isShared: false,
+      createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
+    } as Question;
+    const freshQuestion = { ...cachedQuestion, id: "fresh-q", stem: "服务器新题干" };
+    vi.mocked(questionService.listQuestionPage).mockResolvedValueOnce({ items: [cachedQuestion], total: 1 });
+    const first = render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    expect(await screen.findByText("缓存题干")).toBeInTheDocument();
+    first.unmount();
+
+    let finishRequest!: (page: { items: Question[]; total: number }) => void;
+    vi.mocked(questionService.listQuestionPage).mockImplementationOnce(() => new Promise((resolve) => {
+      finishRequest = resolve;
+    }));
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+
+    expect(screen.getByText("缓存题干")).toBeInTheDocument();
+    finishRequest({ items: [freshQuestion], total: 1 });
+    expect(await screen.findByText("服务器新题干")).toBeInTheDocument();
+    expect(screen.queryByText("缓存题干")).not.toBeInTheDocument();
   });
 
   it("adds a question to another basket without checking for similar questions", async () => {

@@ -1,5 +1,5 @@
 import { openPage } from "@/lib/navigation";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Search, X, FileQuestion, BookOpen, Lightbulb,
@@ -12,7 +12,8 @@ import {
   CheckSquare, Square, WandSparkles, Link2, Video, NotebookPen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { questionService } from "@/services/question";
+import { questionService, type QuestionPage } from "@/services/question";
+import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
 import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
@@ -190,6 +191,7 @@ export default function QuestionBankPage({
   const [totalQuestionCount, setTotalQuestionCount] = useState(0);
   const [quota, setQuota] = useState<UserQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const questionsLoadIdRef = useRef(0);
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [searchFields, setSearchFields] = useState<QuestionSearchField[]>([]);
@@ -323,6 +325,7 @@ export default function QuestionBankPage({
     selectedStudentIds.length > 0;
 
   const loadQuestions = useCallback(async () => {
+    const loadId = ++questionsLoadIdRef.current;
     if (!teacher) return;
     setLoading(true);
 
@@ -363,10 +366,26 @@ export default function QuestionBankPage({
     void quotaService.getQuota(teacher.id).then(setQuota).catch(() => undefined);
 
     if (mode === "manage") {
-      const page = await questionService.listQuestionPage(filter, currentPage, pageSize, sortKey);
-      setQuestions(page.items);
-      setTotalQuestionCount(page.total);
-      setLoading(false);
+      const cacheKey = resourceCacheKey("question", {
+        teacherId: teacher.id, schoolId: teacher.schoolId || undefined, subject: teacher.subject,
+      }, { filter, currentPage, pageSize, sortKey });
+      const cached = readResourceCache<QuestionPage>(cacheKey);
+      if (cached && Array.isArray(cached.items) && Number.isFinite(cached.total)) {
+        setQuestions(cached.items);
+        setTotalQuestionCount(cached.total);
+        setLoading(false);
+      }
+      try {
+        const page = await questionService.listQuestionPage(filter, currentPage, pageSize, sortKey);
+        if (questionsLoadIdRef.current !== loadId) return;
+        setQuestions(page.items);
+        setTotalQuestionCount(page.total);
+        writeResourceCache(cacheKey, page);
+      } catch (error) {
+        if (questionsLoadIdRef.current === loadId) console.error("加载题库失败", error);
+      } finally {
+        if (questionsLoadIdRef.current === loadId) setLoading(false);
+      }
       return;
     }
 
@@ -444,6 +463,7 @@ export default function QuestionBankPage({
       }
     }
 
+    if (questionsLoadIdRef.current !== loadId) return;
     setQuestions(sorted);
     setTotalQuestionCount(sorted.length);
     setLoading(false);
@@ -494,6 +514,8 @@ export default function QuestionBankPage({
   useEffect(() => {
     void loadQuestions();
   }, [loadQuestions]);
+
+  useEffect(() => () => { questionsLoadIdRef.current++; }, []);
 
   useEffect(() => {
     const schoolId = teacher?.schoolId;

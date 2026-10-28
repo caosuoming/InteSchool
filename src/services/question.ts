@@ -1,5 +1,6 @@
 import { normalizeLegacyQuestionMeanNotation } from "@/lib/legacy-question-math";
 import { rpcCall } from "./api";
+import { clearResourceCache } from "@/lib/resource-cache";
 
 import type {
   Question,
@@ -109,38 +110,53 @@ export const questionService = {
   },
 
   async createQuestion(teacherId: string, schoolId: string, input: QuestionInput): Promise<Question> {
-    return rpcCall("question", "createQuestion", [teacherId, schoolId, input]) as any;
+    const result = await rpcCall<Question>("question", "createQuestion", [teacherId, schoolId, input]);
+    clearResourceCache("question");
+    return result;
   },
 
   async adaptQuestion(id: string, input: QuestionAdaptationInput): Promise<Question> {
-    return rpcCall("question", "adaptQuestion", [id, input]) as any;
+    const result = await rpcCall<Question>("question", "adaptQuestion", [id, input]);
+    clearResourceCache("question");
+    return result;
   },
 
   async updateQuestion(id: string, patch: Partial<Question>, duplicateDecision?: "add"): Promise<Question> {
-    return rpcCall("question", "updateQuestion", [id, patch, duplicateDecision]) as any;
+    const result = await rpcCall<Question>("question", "updateQuestion", [id, patch, duplicateDecision]);
+    clearResourceCache("question");
+    return result;
   },
 
   async deleteQuestion(id: string): Promise<void> {
-    return rpcCall("question", "deleteQuestion", [id]) as any;
+    await rpcCall("question", "deleteQuestion", [id]);
+    clearResourceCache("question");
   },
 
   async addRemark(questionId: string, content: string): Promise<QuestionRemark> {
-    return rpcCall("question", "addRemark", [questionId, content]) as any;
+    const result = await rpcCall<QuestionRemark>("question", "addRemark", [questionId, content]);
+    clearResourceCache("question");
+    return result;
   },
 
   async updateRemark(questionId: string, remarkId: string, content: string): Promise<QuestionRemark> {
-    return rpcCall("question", "updateRemark", [questionId, remarkId, content]) as any;
+    const result = await rpcCall<QuestionRemark>("question", "updateRemark", [questionId, remarkId, content]);
+    clearResourceCache("question");
+    return result;
   },
 
   async deleteRemark(questionId: string, remarkId: string): Promise<void> {
-    return rpcCall("question", "deleteRemark", [questionId, remarkId]) as any;
+    await rpcCall("question", "deleteRemark", [questionId, remarkId]);
+    clearResourceCache("question");
   },
 
   async batchImport(teacherId: string, schoolId: string, questions: QuestionInput[]): Promise<Question[]> {
-    return rpcCall("question", "batchImport", [teacherId, schoolId, questions]) as any;
+    const result = await rpcCall<Question[]>("question", "batchImport", [teacherId, schoolId, questions]);
+    clearResourceCache("question");
+    return result;
   },
 
   async incrementUsage(questionId: string): Promise<void> {
-    return rpcCall("question", "incrementUsage", [questionId]) as any;
+    await rpcCall("question", "incrementUsage", [questionId]);
+    clearResourceCache("question");
   }
 };
