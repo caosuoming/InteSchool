@@ -220,7 +220,7 @@ describe("KnowledgeTreePage", () => {
     );
 
     expect(await screen.findByText("章节课")).toBeInTheDocument();
-    expect(knowledgeService.getChapterTree).toHaveBeenCalledWith(null);
+    expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("teacher-1");
     expect(knowledgeService.listDirectoryCatalogs).toHaveBeenCalledWith("teacher-1", "chapter");
     expect(basketService.listBaskets).not.toHaveBeenCalled();
 
@@ -260,7 +260,7 @@ describe("KnowledgeTreePage", () => {
     fireEvent.change(screen.getByLabelText("节点名称"), { target: { value: "数形结合" } });
     fireEvent.click(screen.getByRole("button", { name: "添加" }));
     await waitFor(() => expect(knowledgeService.addThoughtMethod)
-      .toHaveBeenCalledWith("school-1", null, "数形结合"));
+      .toHaveBeenCalledWith("teacher-1", null, "数形结合"));
   });
 
   it("adds a knowledge point without loading or selecting a chapter", async () => {
@@ -315,7 +315,7 @@ describe("KnowledgeTreePage", () => {
 
     await waitFor(() => {
       expect(knowledgeService.addChapter).toHaveBeenCalledWith(
-        "school-1", "chapter-course", "新的子章节",
+        "teacher-1", "chapter-course", "新的子章节",
       );
     });
   });
