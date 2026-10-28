@@ -338,14 +338,14 @@ export default function ScannerPage() {
               {deviceStatus && <p role="status" className="text-sm text-amber-700">{deviceStatus}</p>}
               {bridgeUnavailable && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm text-ink-800">
-                  <p className="font-semibold">首次使用请安装 Windows 扫描桥接程序</p>
-                  <p>安装包已包含运行环境，无需配置 Node.js。安装完成后点击“授权连接本站”，在系统弹窗中确认网址，最后刷新设备列表。</p>
+                  <p className="font-semibold">连接 Windows 扫描客户端</p>
+                  <p>首次使用：下载安装包 → 检查右下角通知区域的 InteSchool 图标（可能隐藏在「^」中）→ 点击“授权连接本站”并确认网址 → 刷新设备。安装包已包含运行环境，无需配置 Node.js。</p>
                   <div className="flex flex-wrap gap-3 items-center">
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href="https://github.com/caosuoming/InteSchool/releases/download/scanner-bridge-latest/InteSchool-Scanner-Setup.exe"><Download className="h-4 w-4" />下载 Windows 安装包</a>
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href={`inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`}>授权连接本站</a>
                     <a className="text-ink-600 underline" href="https://github.com/caosuoming/InteSchool/blob/main/docs/scanner-bridge.md" target="_blank" rel="noopener noreferrer">安装说明及故障排查</a>
                   </div>
-                  <p className="text-xs text-ink-600">连接时浏览器可能询问是否打开 InteSchool 扫描桥接；仅对可信学校网址授权。扫描仪还需安装厂商驱动。若已安装仍无法连接，请在浏览器网站权限中允许“本机设备/本地网络访问”。</p>
+                  <p className="text-xs text-ink-600">双击托盘图标打开扫描页面，右键可查看运行状态和诊断日志。连接时仅对可信学校网址授权。扫描仪还需安装厂商驱动；TWAIN 设备可能需要 NAPS2。若已安装仍无法连接，请在浏览器网站权限中允许“本机设备/本地网络访问”。</p>
                   <p className="text-xs text-ink-600">无法安装桥接时，也可以用系统扫描软件先保存为 PNG/JPEG 图片，然后使用下方答题卡的“导入图片”功能，无须安装 InteSchool 客户端。</p>
                 </div>
               )}
