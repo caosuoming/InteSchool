@@ -962,7 +962,7 @@ function remapPrerequisites(type: PrerequisiteNodeType, replacements: Map<string
   db.update("chapters", (items: Chapter[]) => items.map(remap));
   db.update("knowledgePoints", (items: KnowledgePoint[]) => items.map(remap));
   db.update("directoryCatalogs", (items: DirectoryCatalog[]) =>
-    items.map((item) => ({ ...item, nodes: item.nodes.map(remap) })),
+    (items || []).map((item) => ({ ...item, nodes: (item.nodes || []).map(remap) })),
   );
 }
 
