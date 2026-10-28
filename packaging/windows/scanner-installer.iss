@@ -40,7 +40,7 @@ Name: "{group}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Paramete
 Name: "{userstartup}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""
 
 [Run]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""; Description: "启动本机扫描服务"; Flags: nowait
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""; Description: "启动本机扫描服务"; Flags: nowait skipifsilent
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scanner-tray.ps1"" -Stop"; Flags: runhidden
