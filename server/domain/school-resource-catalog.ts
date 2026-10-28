@@ -65,7 +65,7 @@ function transferDirectories(
     }
 
     const source = sourceChapters.find(
-      (item) => item.id === sourceId && item.schoolId === schoolId,
+      (item) => item.id === sourceId && (item.schoolId === schoolId || (config.sourceChapters === "chapters" && Boolean(item.teacherId))),
     );
     if (!source) return null;
 
@@ -110,7 +110,7 @@ function transferDirectories(
     }
 
     const source = sourcePoints.find(
-      (item) => item.id === sourceId && item.schoolId === schoolId,
+      (item) => item.id === sourceId && (item.schoolId === schoolId || (config.sourceKnowledgePoints === "knowledgePoints" && Boolean(item.teacherId))),
     );
     if (!source) return null;
 
@@ -197,7 +197,7 @@ function compareEntries(
   return left.order - right.order || left.name.localeCompare(right.name, "zh-CN");
 }
 
-function buildCatalogTree(type: DirectoryKind, schoolId: string): TreeNode {
+function buildCatalogTree(type: DirectoryKind, schoolId: string, subject?: string): TreeNode {
   const chapters = list<Chapter>("schoolChapters").filter(
     (item) => item.schoolId === schoolId,
   );
@@ -205,9 +205,20 @@ function buildCatalogTree(type: DirectoryKind, schoolId: string): TreeNode {
     (item) => item.schoolId === schoolId,
   );
   const backups = list<SchoolResourceBackup>("schoolBackups").filter(
-    (item) => item.schoolId === schoolId,
+    (item) => item.schoolId === schoolId && (!subject || item.subject === subject),
   );
-  const entries = type === "chapter" ? chapters : points;
+  const sourceEntries = type === "chapter" ? chapters : points;
+  const field = type === "chapter" ? "chapterIds" : "knowledgePointIds";
+  const relevantIds = new Set(backups.flatMap((backup) => backup[field]));
+  const byId = new Map(sourceEntries.map((entry) => [entry.id, entry]));
+  for (const id of [...relevantIds]) {
+    let current = byId.get(id);
+    while (current?.parentId) {
+      relevantIds.add(current.parentId);
+      current = byId.get(current.parentId);
+    }
+  }
+  const entries = subject ? sourceEntries.filter((entry) => relevantIds.has(entry.id)) : sourceEntries;
   const selectedField = type === "chapter" ? "chapterIds" : "knowledgePointIds";
 
   const buildNode = (
@@ -252,10 +263,10 @@ function buildCatalogTree(type: DirectoryKind, schoolId: string): TreeNode {
   };
 }
 
-export function getSchoolResourceChapterTree(schoolId: string): TreeNode {
-  return buildCatalogTree("chapter", schoolId);
+export function getSchoolResourceChapterTree(schoolId: string, subject?: string): TreeNode {
+  return buildCatalogTree("chapter", schoolId, subject);
 }
 
-export function getSchoolResourceKnowledgeTree(schoolId: string): TreeNode {
-  return buildCatalogTree("knowledge", schoolId);
+export function getSchoolResourceKnowledgeTree(schoolId: string, subject?: string): TreeNode {
+  return buildCatalogTree("knowledge", schoolId, subject);
 }

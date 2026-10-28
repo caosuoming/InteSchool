@@ -61,9 +61,9 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
 
   useEffect(() => {
     if (!teacher || !open) return;
-    knowledgeService.getChapterTree(teacher.schoolId!).then(setChapterTree);
-    knowledgeService.getKnowledgeTree(teacher.schoolId!).then(setKnowledgeTree);
-    knowledgeService.getMethodTree(teacher.schoolId!).then(setMethodTree);
+    knowledgeService.getChapterTree(teacher.id).then(setChapterTree);
+    knowledgeService.getKnowledgeTree(teacher.id).then(setKnowledgeTree);
+    knowledgeService.getMethodTree(teacher.id).then(setMethodTree);
   }, [teacher, open]);
 
   const handleSave = async () => {

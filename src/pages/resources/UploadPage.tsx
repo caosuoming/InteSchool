@@ -252,10 +252,10 @@ export function UploadPage() {
 
   useEffect(() => {
     if (resourceScopeId) {
-      knowledgeService.getChapterTree(resourceScopeId).then(setChapterTree);
-      knowledgeService.getKnowledgeTree(resourceScopeId).then(setKnowledgeTree);
+      knowledgeService.getChapterTree(teacher?.id || resourceScopeId).then(setChapterTree);
+      knowledgeService.getKnowledgeTree(teacher?.id || resourceScopeId).then(setKnowledgeTree);
     }
-  }, [resourceScopeId]);
+  }, [resourceScopeId, teacher?.id, teacher?.subject]);
 
   useEffect(() => {
     if (!teacher) return;

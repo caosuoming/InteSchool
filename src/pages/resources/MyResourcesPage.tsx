@@ -1098,12 +1098,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   useEffect(() => {
     if (activeTab === "question") return;
-    knowledgeService.getChapterTree(schoolId).then(setChapterTree);
+    knowledgeService.getChapterTree(teacher?.id || schoolId).then(setChapterTree);
     if (activeTab !== "answerSheet") {
-      knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
-      knowledgeService.getMethodTree(schoolId).then(setMethodTree);
+      knowledgeService.getKnowledgeTree(teacher?.id || schoolId).then(setKnowledgeTree);
+      knowledgeService.getMethodTree(teacher?.id || schoolId).then(setMethodTree);
     }
-  }, [activeTab, schoolId]);
+  }, [activeTab, schoolId, teacher?.id, teacher?.subject]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
@@ -2523,7 +2523,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
     if (mode === "chapter") {
       if (chapterTree) return;
-      void knowledgeService.getChapterTree(schoolId)
+      void knowledgeService.getChapterTree(teacher?.id || schoolId)
         .then(setChapterTree)
         .catch((error) => {
           toast.error("加载章节课目录失败", error instanceof Error ? error.message : undefined);
@@ -2533,13 +2533,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
     if (mode === "method") {
       if (methodTree) return;
-      void knowledgeService.getMethodTree(schoolId)
+      void knowledgeService.getMethodTree(teacher?.id || schoolId)
         .then(setMethodTree)
         .catch((error) => toast.error("加载思想方法目录失败", error instanceof Error ? error.message : undefined));
       return;
     }
     if (knowledgeTree) return;
-    void knowledgeService.getKnowledgeTree(schoolId)
+    void knowledgeService.getKnowledgeTree(teacher?.id || schoolId)
       .then(setKnowledgeTree)
       .catch((error) => {
         toast.error("加载知识点目录失败", error instanceof Error ? error.message : undefined);

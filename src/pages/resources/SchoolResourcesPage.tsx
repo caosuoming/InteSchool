@@ -96,13 +96,14 @@ export default function SchoolResourcesPage() {
   const [schoolTeachers, setSchoolTeachers] = useState<Teacher[]>([]);
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const subject = teacher?.affiliations?.find((item) => item.id === teacher.currentAffiliationId)?.subject || teacher?.subject || "";
   const { gradeOptions: configuredGradeOptions, schoolYearOptions: configuredSchoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
   const canEdit = canEditSchoolBackup(teacher);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await schoolBackupService.listBackups(schoolId);
+      const list = await schoolBackupService.listBackups(schoolId, subject);
       setBackups(list);
     } catch (e) {
       console.error("加载校本资源失败", e);
@@ -110,12 +111,16 @@ export default function SchoolResourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [schoolId]);
+  }, [schoolId, subject]);
 
   useEffect(() => {
-    schoolBackupService.getChapterTree(schoolId).then(setChapterTree);
-    schoolBackupService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
-  }, [schoolId]);
+    setChapterTree(null);
+    setKnowledgeTree(null);
+    setCheckedChapters([]);
+    setCheckedKnowledge([]);
+    schoolBackupService.getChapterTree(schoolId, subject).then(setChapterTree);
+    schoolBackupService.getKnowledgeTree(schoolId, subject).then(setKnowledgeTree);
+  }, [schoolId, subject]);
 
   useEffect(() => {
     const timer = setTimeout(() => loadAll(), 200);

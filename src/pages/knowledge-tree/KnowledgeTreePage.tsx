@@ -127,10 +127,10 @@ export default function KnowledgeTreePage() {
     setLoading(true);
     const t =
       kind === "chapter"
-        ? await knowledgeService.getChapterTree(teacher.schoolId!)
+        ? await knowledgeService.getChapterTree(teacher.id)
         : kind === "knowledge"
-          ? await knowledgeService.getKnowledgeTree(teacher.schoolId!)
-          : await knowledgeService.getMethodTree(teacher.schoolId!);
+          ? await knowledgeService.getKnowledgeTree(teacher.id)
+          : await knowledgeService.getMethodTree(teacher.id);
     setTree(t);
     setSelectedNode((current) =>
       current ? findTreeNode(t, current.id) : null,
@@ -213,24 +213,24 @@ export default function KnowledgeTreePage() {
     const name = newNodeName.trim();
     
     if (kind === "chapter") {
-      const allChapters = await knowledgeService.listChapters(teacher.schoolId!);
+      const allChapters = await knowledgeService.listChapters(teacher.id);
       const siblings = allChapters.filter((c) => c.parentId === (parentNode.id === "root" ? null : parentNode.id));
       if (siblings.some((s) => s.name === name)) {
         toast.error("同一父节点下已存在同名节点");
         return;
       }
-      await knowledgeService.addChapter(teacher.schoolId!, parentNode.id === "root" ? null : parentNode.id, name);
+      await knowledgeService.addChapter(teacher.id, parentNode.id === "root" ? null : parentNode.id, name);
     } else if (kind === "method") {
-      const allMethods = await knowledgeService.listThoughtMethods(teacher.schoolId!);
+      const allMethods = await knowledgeService.listThoughtMethods(teacher.id);
       const targetParentId = parentNode.id === "root" ? null : parentNode.id;
       if (allMethods.some((item) => item.parentId === targetParentId && item.name === name)) {
         toast.error("同一父节点下已存在同名节点");
         return;
       }
-      await knowledgeService.addThoughtMethod(teacher.schoolId!, targetParentId, name);
+      await knowledgeService.addThoughtMethod(teacher.id, targetParentId, name);
       toast.success("节点已添加");
     } else {
-      const allPoints = await knowledgeService.listKnowledgePoints(teacher.schoolId!);
+      const allPoints = await knowledgeService.listKnowledgePoints(teacher.id);
       const targetParentId = parentNode.id === "root" ? null : parentNode.id;
       const siblings = allPoints.filter((p) => p.parentId === targetParentId);
       

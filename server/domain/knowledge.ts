@@ -40,6 +40,7 @@ type MovableDirectoryRecord = {
   id: string;
   schoolId: string;
   teacherId?: string;
+  subject?: string;
   parentId: string | null;
   name: string;
   order: number;
@@ -109,6 +110,7 @@ type DirectoryTeacher = {
   id: string;
   schoolId?: string | null;
   subject?: string;
+  subjects?: string[];
   nickname?: string;
   name?: string;
   affiliations?: Array<Record<string, unknown>>;
@@ -168,6 +170,23 @@ function directoryTeacherContext(teacherId: string): {
   const nickname =
     teacher.nickname?.trim() || teacher.name?.trim() || "匿名用户";
   return { teacher, schoolId, subject, nickname };
+}
+
+// 旧目录尚无学科标签时，以登记的第一任教学科承接，避免切换后误归入新学科。
+function legacyDirectorySubject(teacherId: string): string {
+  const teacher = directoryTeacher(teacherId);
+  const affiliation = currentAffiliation(teacher);
+  const subjects = affiliation?.subjects;
+  if (Array.isArray(subjects) && typeof subjects[0] === "string") return subjects[0].trim();
+  return teacher.subjects?.[0]?.trim() || teacher.subject?.trim() || "";
+}
+
+function currentDirectorySubject(teacherId: string): string {
+  return directoryTeacherContext(teacherId).subject;
+}
+
+function belongsToCurrentSubject(record: { subject?: string }, teacherId: string): boolean {
+  return (record.subject ?? legacyDirectorySubject(teacherId)) === currentDirectorySubject(teacherId);
 }
 
 function directoryCatalogs(): DirectoryCatalog[] {
@@ -247,12 +266,13 @@ function remapTeacherDirectoryReferences(
 }
 
 function ensurePersonalDirectoryCatalogs(teacherId: string, type: TreeNodeType): void {
-  if (directoryCatalogs().some((item) => item.teacherId === teacherId && item.type === type)) return;
+  if (directoryCatalogs().some((item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId))) return;
 
   const teacher = directoryTeacher(teacherId);
   const schoolIds = directoryTeacherSchoolIds(teacher);
   const affiliation = currentAffiliation(teacher);
   const currentSchoolId = typeof affiliation?.schoolId === "string" ? affiliation.schoolId : teacher.schoolId;
+  if (currentDirectorySubject(teacherId) !== legacyDirectorySubject(teacherId)) return;
   const legacy = directoryCatalogs().filter(
     (item) => !item.teacherId && item.type === type && schoolIds.has(item.schoolId),
   );
@@ -279,6 +299,7 @@ function ensurePersonalDirectoryCatalogs(teacherId: string, type: TreeNodeType):
       id: genId("dircat"),
       schoolId,
       teacherId,
+      subject: currentDirectorySubject(teacherId),
       name,
       nodes: cloneDirectoryNodes(type, item.nodes),
       isActive: false,
@@ -292,13 +313,14 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
   const collection = directoryCollection(type);
   const records = (db.read(collection) || []) as DirectoryRecord[];
   const hasPersonalCatalog = directoryCatalogs().some(
-    (item) => item.teacherId === teacherId && item.type === type,
+    (item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId),
   );
-  if (records.some((item) => item.teacherId === teacherId) || hasPersonalCatalog) {
+  if (records.some((item) => item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId)) || hasPersonalCatalog) {
     ensurePersonalDirectoryCatalogs(teacherId, type);
     return;
   }
 
+  if (currentDirectorySubject(teacherId) !== legacyDirectorySubject(teacherId)) return;
   const schoolIds = directoryTeacherSchoolIds(teacher);
   const legacy = records
     .filter((item) => !item.teacherId && schoolIds.has(item.schoolId))
@@ -331,6 +353,7 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
               id: genId("ch"),
               schoolId: storageSchoolId,
               teacherId,
+              subject: currentDirectorySubject(teacherId),
               parentId,
               order:
                 personal.filter((candidate) => candidate.parentId === parentId)
@@ -341,6 +364,7 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
               id: genId(type === "knowledge" ? "kp" : "tm"),
               schoolId: storageSchoolId,
               teacherId,
+              subject: currentDirectorySubject(teacherId),
               parentId,
               order:
                 personal.filter((candidate) => candidate.parentId === parentId)
@@ -376,7 +400,7 @@ function directoryRecords(
   if (teacher) {
     ensurePersonalDirectory(scopeId, type);
     return ((db.read(collection) || []) as DirectoryRecord[]).filter(
-      (item) => item.teacherId === scopeId,
+      (item) => item.teacherId === scopeId && belongsToCurrentSubject(item, scopeId),
     );
   }
   return ((db.read(collection) || []) as DirectoryRecord[]).filter(
@@ -409,7 +433,7 @@ function materializeDirectoryNodes(
 ): void {
   const collection = directoryCollection(type);
   const current = ((db.read(collection) || []) as DirectoryRecord[]).filter(
-    (item) => item.teacherId !== teacherId,
+    (item) => item.teacherId !== teacherId || !belongsToCurrentSubject(item, teacherId),
   );
   const schoolId = personalDirectorySchoolId(teacherId);
   const materialized: DirectoryRecord[] = nodes.map((node) =>
@@ -418,6 +442,7 @@ function materializeDirectoryNodes(
           id: node.id,
           schoolId,
           teacherId,
+          subject: currentDirectorySubject(teacherId),
           parentId: node.parentId,
           name: node.name,
           order: node.order,
@@ -428,6 +453,7 @@ function materializeDirectoryNodes(
           id: node.id,
           schoolId,
           teacherId,
+          subject: currentDirectorySubject(teacherId),
           parentId: node.parentId,
           name: node.name,
           description: node.description,
@@ -444,6 +470,7 @@ function toCatalogSummary(catalog: DirectoryCatalog): DirectoryCatalogSummary {
     id: catalog.id,
     schoolId: catalog.schoolId,
     teacherId: catalog.teacherId,
+    subject: catalog.subject,
     type: catalog.type,
     name: catalog.name,
     rootName: catalog.rootName?.trim() || defaultDirectoryRootName(catalog.type),
@@ -460,7 +487,7 @@ function ensureDefaultDirectoryCatalog(
 ): DirectoryCatalog {
   ensurePersonalDirectory(teacherId, type);
   const scoped = directoryCatalogs().filter(
-    (item) => item.teacherId === teacherId && item.type === type,
+    (item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId),
   );
   const active = scoped.find((item) => item.isActive);
   if (active) return active;
@@ -469,7 +496,7 @@ function ensureDefaultDirectoryCatalog(
     const first = scoped[0];
     db.update("directoryCatalogs", (items: DirectoryCatalog[]) =>
       items.map((item) =>
-        item.teacherId === teacherId && item.type === type
+        item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId)
           ? { ...item, isActive: item.id === first.id }
           : item,
       ),
@@ -482,6 +509,7 @@ function ensureDefaultDirectoryCatalog(
     id: genId("dircat"),
     schoolId: personalDirectorySchoolId(teacherId),
     teacherId,
+    subject: currentDirectorySubject(teacherId),
     type,
     name: `默认${directoryLabel(type)}`,
     nodes: snapshotDirectoryNodes(teacherId, type),
@@ -517,7 +545,7 @@ function uniqueCatalogName(
 ): string {
   const names = new Set(
     directoryCatalogs()
-      .filter((item) => item.teacherId === teacherId && item.type === type)
+      .filter((item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId))
       .map((item) => item.name),
   );
   if (!names.has(baseName)) return baseName;
@@ -1010,7 +1038,7 @@ export const knowledgeService = {
     await delay(100);
     syncActiveDirectoryCatalog(teacherId, type);
     return directoryCatalogs()
-      .filter((item) => item.teacherId === teacherId && item.type === type)
+      .filter((item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId))
       .map(toCatalogSummary);
   },
 
@@ -1020,7 +1048,7 @@ export const knowledgeService = {
   ): Promise<DirectoryCatalog> {
     await delay(80);
     const catalog = directoryCatalogs().find(
-      (item) => item.id === catalogId && item.teacherId === teacherId,
+      (item) => item.id === catalogId && item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId),
     );
     if (!catalog) throw new Error("目录体系不存在");
     return structuredClone(catalog);
@@ -1040,6 +1068,7 @@ export const knowledgeService = {
         (item) =>
           item.teacherId === teacherId &&
           item.type === type &&
+          belongsToCurrentSubject(item, teacherId) &&
           item.name === normalizedName,
       )
     ) {
@@ -1050,6 +1079,7 @@ export const knowledgeService = {
       id: genId("dircat"),
       schoolId: personalDirectorySchoolId(teacherId),
       teacherId,
+      subject: currentDirectorySubject(teacherId),
       type,
       name: normalizedName,
       rootName: normalizedName,
@@ -1060,7 +1090,7 @@ export const knowledgeService = {
     };
     db.update("directoryCatalogs", (items: DirectoryCatalog[]) => [
       ...(items || []).map((item) =>
-        item.teacherId === teacherId && item.type === type
+        item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId)
           ? { ...item, isActive: false }
           : item,
       ),
@@ -1079,7 +1109,7 @@ export const knowledgeService = {
     const normalizedName = name.trim();
     if (!normalizedName) throw new Error("目录名称不能为空");
     const target = directoryCatalogs().find(
-      (item) => item.id === catalogId && item.teacherId === teacherId,
+      (item) => item.id === catalogId && item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId),
     );
     if (!target) throw new Error("目录体系不存在");
     if (
@@ -1088,6 +1118,7 @@ export const knowledgeService = {
           item.id !== catalogId &&
           item.teacherId === teacherId &&
           item.type === target.type &&
+          belongsToCurrentSubject(item, teacherId) &&
           item.name === normalizedName,
       )
     ) {
@@ -1113,6 +1144,10 @@ export const knowledgeService = {
     await delay(80);
     return directoryNodeAssociations()
       .filter((item) => item.teacherId === teacherId && item.type === type)
+      .filter((item) => {
+        const source = directoryCatalogs().find((catalog) => catalog.id === item.sourceCatalogId);
+        return source && belongsToCurrentSubject(source, teacherId);
+      })
       .map((item) => structuredClone(item));
   },
 
@@ -1128,7 +1163,7 @@ export const knowledgeService = {
       throw new Error("只能关联不同目录体系中的节点");
     }
     const initialCatalogs = directoryCatalogs().filter(
-      (item) => item.teacherId === teacherId,
+      (item) => item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId),
     );
     const initialSource = initialCatalogs.find((item) => item.id === sourceCatalogId);
     const initialTarget = initialCatalogs.find((item) => item.id === targetCatalogId);
@@ -1138,7 +1173,7 @@ export const knowledgeService = {
     }
     syncActiveDirectoryCatalog(teacherId, initialSource.type);
     const catalogs = directoryCatalogs().filter(
-      (item) => item.teacherId === teacherId,
+      (item) => item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId),
     );
     const sourceCatalog = catalogs.find((item) => item.id === sourceCatalogId)!;
     const targetCatalog = catalogs.find((item) => item.id === targetCatalogId)!;
@@ -1321,6 +1356,7 @@ export const knowledgeService = {
       id: genId("dircat"),
       schoolId: personalDirectorySchoolId(teacherId),
       teacherId,
+      subject: currentDirectorySubject(teacherId),
       type: donation.type,
       name: uniqueCatalogName(
         teacherId,
@@ -1334,7 +1370,7 @@ export const knowledgeService = {
     };
     db.update("directoryCatalogs", (items: DirectoryCatalog[]) => [
       ...(items || []).map((item) =>
-        item.teacherId === teacherId && item.type === donation.type
+        item.teacherId === teacherId && item.type === donation.type && belongsToCurrentSubject(item, teacherId)
           ? { ...item, isActive: false }
           : item,
       ),
@@ -1350,7 +1386,7 @@ export const knowledgeService = {
   ): Promise<DirectoryCatalogSummary> {
     await delay(150);
     const target = directoryCatalogs().find((item) => item.id === catalogId);
-    if (!target || target.teacherId !== teacherId) throw new Error("目录体系不存在");
+    if (!target || target.teacherId !== teacherId || !belongsToCurrentSubject(target, teacherId)) throw new Error("目录体系不存在");
 
     const current = syncActiveDirectoryCatalog(teacherId, target.type);
     if (current.id === target.id) return toCatalogSummary(current);
@@ -1366,7 +1402,7 @@ export const knowledgeService = {
     const now = new Date().toISOString();
     db.update("directoryCatalogs", (items: DirectoryCatalog[]) =>
       (items || []).map((item) =>
-        item.teacherId === teacherId && item.type === target.type
+        item.teacherId === teacherId && item.type === target.type && belongsToCurrentSubject(item, teacherId)
           ? {
               ...item,
               isActive: item.id === target.id,
@@ -1394,7 +1430,7 @@ export const knowledgeService = {
     const newChapter: Chapter = {
       id: genId("ch"),
       schoolId: teacher ? personalDirectorySchoolId(scopeId) : scopeId,
-      ...(teacher ? { teacherId: scopeId } : {}),
+      ...(teacher ? { teacherId: scopeId, subject: currentDirectorySubject(scopeId) } : {}),
       parentId,
       name,
       order: siblings.length + 1,
@@ -1421,7 +1457,7 @@ export const knowledgeService = {
     const newPoint: KnowledgePoint = {
       id: genId("kp"),
       schoolId: teacher ? personalDirectorySchoolId(scopeId) : scopeId,
-      ...(teacher ? { teacherId: scopeId } : {}),
+      ...(teacher ? { teacherId: scopeId, subject: currentDirectorySubject(scopeId) } : {}),
       parentId,
       name,
       order: siblings.length + 1,
@@ -1448,7 +1484,7 @@ export const knowledgeService = {
     const method: ThoughtMethod = {
       id: genId("tm"),
       schoolId: teacher ? personalDirectorySchoolId(scopeId) : scopeId,
-      ...(teacher ? { teacherId: scopeId } : {}),
+      ...(teacher ? { teacherId: scopeId, subject: currentDirectorySubject(scopeId) } : {}),
       parentId,
       name: name.trim(),
       order: methods.reduce((max, item) => item.parentId === parentId ? Math.max(max, item.order) : max, 0) + 1,

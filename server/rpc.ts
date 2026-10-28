@@ -94,11 +94,14 @@ const MUTATING_READ_PREFIX_CALLS = new Set([
 const PERSONAL_DIRECTORY_SCOPE_ARG_INDEX: Partial<Record<string, number>> = {
   listChapters: 0,
   listKnowledgePoints: 0,
+  listThoughtMethods: 0,
   getAliasIds: 1,
   getChapterTree: 0,
   getKnowledgeTree: 0,
+  getMethodTree: 0,
   addChapter: 0,
   addKnowledgePoint: 0,
+  addThoughtMethod: 0,
 };
 const PERSONAL_SETTINGS_SCOPE_ARG_INDEX: Partial<Record<string, number>> = {
   listSettings: 0,
