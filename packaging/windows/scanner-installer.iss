@@ -1,5 +1,5 @@
 #define AppName "InteSchool 扫描桥接"
-#define AppVersion "1.0.1"
+#define AppVersion "1.1.0"
 
 [Setup]
 AppId={{B2A20F71-10F0-40CA-9057-4CF45CDE8634}
@@ -27,6 +27,8 @@ Source: "..\..\scripts\scanner-pairing.mjs"; DestDir: "{app}\scripts"; Flags: ig
 Source: "..\..\scripts\scanner-launcher.mjs"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\..\scripts\scanner-wia.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "scanner-launch.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "scanner-tray.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\public\favicon.ico"; DestDir: "{app}"; DestName: "scanner.ico"; Flags: ignoreversion
 
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\inteschool-scanner"; ValueType: string; ValueName: ""; ValueData: "URL:InteSchool Scanner Protocol"; Flags: uninsdeletekey
@@ -38,4 +40,7 @@ Name: "{group}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Paramete
 Name: "{userstartup}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""
 
 [Run]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""; Description: "启动本机扫描服务"; Flags: nowait postinstall skipifsilent
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""; Description: "启动本机扫描服务"; Flags: nowait
+
+[UninstallRun]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scanner-tray.ps1"" -Stop"; Flags: runhidden

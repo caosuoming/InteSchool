@@ -4,9 +4,9 @@ InteSchool 在浏览器中无法直接调用 TWAIN、WIA 或 SANE 扫描仪驱�
 
 ## Windows：一键安装（推荐）
 
-1. 在学校的 InteSchool 网页中打开“我要扫描”。当本机服务不可用时，点击 **下载 Windows 安装包**，安装 `InteSchool-Scanner-Setup.exe`。支持 Windows x64，无需另外安装 Node.js 或手动配置服务来源；安装后在当前用户登录时自动启动，服务仅监听 `127.0.0.1:17380`。
+1. 在学校的 InteSchool 网页中打开“我要扫描”。当本机服务不可用时，点击 **下载 Windows 安装包**，安装 `InteSchool-Scanner-Setup.exe`。支持 Windows x64，无需另外安装 Node.js 或手动配置服务来源；安装完成后自动启动，并在 Windows 通知区域（右下角，可能位于「^」隐藏图标中）显示 InteSchool 图标；以后登录 Windows 时自动运行。服务仅监听 `127.0.0.1:17380`。
 2. 返回扫描页面点击 **授权连接本站**，浏览器弹窗选择打开 InteSchool 扫描桥接，在 Windows 确认框检查网站来源并点击“是”。该授权仅赋予确认过的网站本地扫描权限，其他站点会被桥接拒绝。
-3. 点击 **刷新设备**。安装扫描仪厂商驱动后即可使用。需要 TWAIN 双面自动进纸时还需安装 [NAPS2](https://www.naps2.com/)（或使用设备厂商支持的 WIA 通道）；NAPS2 安装在默认路径时可自动检测。
+3. 鼠标双击右下角 InteSchool 图标，可打开已授权网站的扫描页。右键菜单可检查服务状态、重新启动扫描服务、打开诊断日志，以及打开 NAPS2 官方安装页。配置和授权仍从网站进行。点击网页 **刷新设备**。安装扫描仪厂商驱动后即可使用。需要 TWAIN 双面自动进纸时还需安装 [NAPS2](https://www.naps2.com/)（或使用设备厂商支持的 WIA 通道）；NAPS2 安装在默认路径时可自动检测。
 
 若出现 Windows SmartScreen 未知发布者提示，安装包尚无代码签名，请先从官方发布页核对来源及 SHA256 校验和，切勿运行来源不明的程序。
 
@@ -41,7 +41,7 @@ SCANNER_ALLOWED_ORIGIN=https://你的InteSchool域名 node scripts/scanner-bridg
 
 ## 构建 Windows 安装包
 
-发布工作流 `.github/workflows/scanner-installer.yml` 在 Windows runner 上使用 Node.js 22 官方运行时及 Inno Setup，生成自包含 x64 安装程序，上传到固定的 `scanner-bridge-latest` GitHub Release。使用工作流手动触发更新包；上传前需通过 Windows 安装与 HTTP 接口烟测。此安装包不包括设备专用驱动或 NAPS2。
+发布工作流 `.github/workflows/scanner-installer.yml` 在 Windows runner 上使用 Node.js 22 官方运行时及 Inno Setup，生成自包含 x64 安装程序，上传到固定的 `scanner-bridge-latest` GitHub Release。使用工作流手动触发更新包；上传前需通过 Windows 安装与 HTTP 接口烟测。此安装包不包括设备专用驱动或 NAPS2；托盘菜单提供 NAPS2 官方下载入口。Windows PowerShell 5.1 用于托盘程序，随 Windows 10/11 提供，无需另行安装。
 
 ## 使用流程
 
@@ -54,6 +54,7 @@ SCANNER_ALLOWED_ORIGIN=https://你的InteSchool域名 node scripts/scanner-bridg
 
 ## 排障
 
+- 安装后看不到右下角图标：先检查 Windows 通知区域的「^」隐藏图标；从开始菜单运行「InteSchool 扫描桥接」，再检查任务管理器中是否有 PowerShell 运行 scanner-tray.ps1。应用日志位于 %LOCALAPPDATA%\InteSchool\Scanner\tray.log，服务日志位于同目录的 bridge.log。可通过安装包重新安装修复。
 - 网页提示“无法连接本机扫描服务”：Windows 先安装桥接并点击“授权连接本站”，源码模式检查 Node 22 进程和网址来源配置、浏览器本地网络权限以及 `127.0.0.1:17380` 端口占用。Chrome/Edge 需要在站点权限里允许本机设备（loopback）访问，遇到权限弹窗不要误点“阻止”；无法安装或授权时改用上面的图片导入流程。
 - 网页提示“未发现扫描仪”：Windows 在 NAPS2 GUI 中尝试切换 TWAIN/WIA 并检查系统设备管理器；Linux 使用 `scanimage -L` 检查 SANE 枚举。如果扫描仪仅提供 TWAIN，安装 Windows 设备驱动**并不等于** WIA 能访问它。
 - 需要双面扫描却只找到 WIA：安装 NAPS2 并选择其 TWAIN 设备条目，或更新设备对应的 WIA 驱动；不能通过切换网页勾选框强行让单面设备变成双面。

@@ -16,3 +16,8 @@ End If
 command = quote & dir & "\node.exe" & quote & " " & quote & dir & "\scripts\scanner-launcher.mjs" & quote
 If originUri <> "" Then command = command & " " & quote & originUri & quote
 shell.Run command, 0, False
+' The background Node service intentionally has no Windows notification icon.
+' Start a single Windows Forms tray controller for visible status and repair actions.
+Dim trayCommand
+trayCommand = quote & shell.ExpandEnvironmentStrings("%SystemRoot%") & "\System32\WindowsPowerShell\v1.0\powershell.exe" & quote & " -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -STA -File " & quote & dir & "\scanner-tray.ps1" & quote
+shell.Run trayCommand, 0, False
