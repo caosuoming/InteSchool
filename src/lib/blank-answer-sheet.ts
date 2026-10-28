@@ -92,17 +92,17 @@ export function blankAnswerSheetBlocks(config: BlankAnswerSheetConfig): BlankShe
     if (section.count <= 0) continue;
     const label = BLANK_QUESTION_TYPES.find((item) => item.type === section.type)?.label || section.type;
     const heading = label + "（共" + section.count + "题，每题" + section.score + "分，共" + section.count * section.score + "分）";
-    const chunk = section.type === "essay" ? 1 : section.type === "fill" ? 3 : 10;
+    const chunk = section.type === "essay" ? 1 : section.type === "fill" ? section.count : 10;
     for (let start = 0; start < section.count; start += chunk) {
       const count = Math.min(chunk, section.count - start);
       const numbers = Array.from({ length: count }, (_, i) => nextNumber + start + i);
       const answerSpaceMm = section.type === "essay"
         ? blankEssaySpace(config.essaySpaceByQuestion?.[start + 1] ?? config.essaySpaceMm) : 0;
-      const rows = config.choiceDirection === "vertical" ? count : Math.min(5, count);
+      const rows = config.choiceDirection === "vertical" ? 1 : Math.min(5, count);
       const heightMm = section.type === "essay"
         ? 8 + answerSpaceMm
         : section.type === "fill" ? 9 + count * 10
-          : 9 + rows * 4.7;
+          : config.choiceDirection === "vertical" ? 9 + rows * 20 : 9 + rows * 4.7;
       blocks.push({
         type: section.type,
         numbers,
@@ -132,16 +132,45 @@ export function paginateBlankAnswerSheet(config: BlankAnswerSheetConfig): BlankS
   let page = newPage(0);
   let column = 0;
   let used = blankIdentityHeight(config);
-  for (const block of blocks) {
-    while (used + block.heightMm + 1 > height) {
-      column += 1;
-      if (column === columnCount) {
-        pages.push(page);
-        page = newPage(pages.length);
-        column = 0;
-      }
-      used = page.side === "front" && column === 0 ? blankIdentityHeight(config) : 0;
+  const nextColumn = () => {
+    column += 1;
+    if (column === columnCount) {
+      pages.push(page);
+      page = newPage(pages.length);
+      column = 0;
     }
+    used = page.side === "front" && column === 0 ? blankIdentityHeight(config) : 0;
+  };
+  for (const block of blocks) {
+    if (block.type === "fill") {
+      let start = 0;
+      while (start < block.numbers.length) {
+        const remaining = block.numbers.length - start;
+        const requiredHeight = 9 + remaining * 10 + 1;
+        if (requiredHeight > height - used && requiredHeight <= height) {
+          nextColumn();
+          continue;
+        }
+        const capacity = Math.floor((height - used - 10) / 10);
+        if (capacity < 1) {
+          nextColumn();
+          continue;
+        }
+        const count = Math.min(remaining, capacity);
+        const segment = {
+          ...block,
+          numbers: block.numbers.slice(start, start + count),
+          heightMm: 9 + count * 10,
+          heading: start === 0 ? block.heading : "",
+        };
+        page.columns[column].push(segment);
+        used += segment.heightMm + 1;
+        start += count;
+        if (start < block.numbers.length) nextColumn();
+      }
+      continue;
+    }
+    while (used + block.heightMm + 1 > height) nextColumn();
     page.columns[column].push(block);
     used += block.heightMm + 1;
   }

@@ -52,6 +52,24 @@ describe("独立空白答题卡制作", () => {
     expect(container.querySelector('[data-question-number="16"].blank-sheet-essay-box')).toHaveStyle({ height: "65mm" });
   });
 
+  it("renders vertical choices in compact five-question groups with numbers above the options", () => {
+    const { container } = mount();
+    fireEvent.change(screen.getByLabelText("选择题排列方向"), { target: { value: "vertical" } });
+    const groups = Array.from(container.querySelectorAll(".blank-sheet-choice-groups.vertical .blank-sheet-choice-group"));
+    expect(groups.map((group) => group.querySelectorAll(".blank-sheet-choice-row").length)).toEqual([5, 5, 1]);
+    const firstQuestion = groups[0].querySelector(".blank-sheet-choice-row")!;
+    expect(firstQuestion.firstElementChild).toHaveClass("blank-sheet-number");
+    expect(Array.from(firstQuestion.children).slice(1).map((option) => option.textContent)).toEqual(["A", "B", "C", "D"]);
+  });
+
+  it("keeps multiple fill questions together instead of creating a box every three questions", () => {
+    const { container } = mount();
+    fireEvent.change(screen.getByRole("spinbutton", { name: "填空题题量" }), { target: { value: "8" } });
+    const fillBlocks = container.querySelectorAll('.blank-sheet-question-block[data-question-type="fill"]');
+    expect(fillBlocks).toHaveLength(1);
+    expect(fillBlocks[0].querySelectorAll(".blank-sheet-fill-row")).toHaveLength(8);
+  });
+
   it("omits front-matter and instructional notices on the reverse side", () => {
     const { container } = mount();
     fireEvent.change(screen.getByLabelText("解答题默认答题区高度（毫米）"), { target: { value: "150" } });

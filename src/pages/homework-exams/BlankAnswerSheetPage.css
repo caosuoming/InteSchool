@@ -212,10 +212,13 @@
   color: #222;
 }
 .blank-sheet-choice-groups { display: flex; gap: 2mm; padding: .5mm 1mm; }
-.blank-sheet-choice-groups.vertical { flex-direction: column; gap: .75mm; }
+.blank-sheet-choice-groups.vertical { gap: 3mm; }
 .blank-sheet-choice-group { display: flex; flex-direction: column; flex: 1; gap: .75mm; min-width: 0; }
 .blank-sheet-choice-row { display: flex; gap: .7mm; align-items: center; font-size: 6pt; height: 3.95mm; white-space: nowrap; }
 .blank-sheet-number { width: 8mm; flex: none; }
+.blank-sheet-choice-groups.vertical .blank-sheet-choice-group { flex-direction: row; flex: none; gap: 1mm; }
+.blank-sheet-choice-groups.vertical .blank-sheet-choice-row { flex: 0 0 6mm; flex-direction: column; height: auto; gap: .6mm; }
+.blank-sheet-choice-groups.vertical .blank-sheet-number { width: auto; height: 3mm; }
 .blank-sheet-fill-rows { display: flex; flex-direction: column; gap: 1mm; padding: 1mm 1.5mm; }
 .blank-sheet-fill-row { display: flex; gap: 2mm; align-items: flex-end; font-size: 7pt; height: 8.5mm; }
 .blank-sheet-fill-row i { width: 70%; height: 3mm; border-bottom: .2mm solid var(--blank-accent); }
