@@ -24,6 +24,7 @@ import { MathHtml } from "@/components/ui/MathHtml";
 import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
+import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -704,24 +705,25 @@ export default function LecturePreviewPage() {
                 <div className="font-serif text-sm font-semibold text-ink-900">题目属性与使用情况</div>
                 <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
               </div>
-              {previewSidebarVisibility.answerStatus && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={markAllQuestionsUsed}
-                  loading={markingAllDone}
-                  disabled={students.length === 0 || questionIds.length === 0}
-                >
-                  <CheckSquare className="w-3.5 h-3.5" />
-                  全部设为使用
-                </Button>
-              )}
+
             </div>
           </div>
-          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
+          <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="lecture-preview-details">
             <PreviewSidebarControls
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
+            />
+            <DocumentQuestionBatchActions
+              schoolId={schoolId}
+              questionIds={questionIds}
+              disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
+              onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+              markAllButton={(
+                <Button variant="outline" size="sm" onClick={markAllQuestionsUsed}
+                  loading={markingAllDone} disabled={students.length === 0 || questionIds.length === 0}>
+                  <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
+                </Button>
+              )}
             />
           </div>
         </aside>

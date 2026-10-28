@@ -446,14 +446,18 @@ describe("ExamPaperEditorPage preview", () => {
 
     const previewControls = screen.getByTestId("exam-paper-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
+    expect(previewControls).toHaveTextContent("批量操作");
+    expect(within(previewControls).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
+    expect(within(previewControls).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
+    expect(within(previewControls).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
     expect(previewControls).not.toHaveTextContent("题目信息与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
     const previewIntro = previewControls.previousElementSibling as HTMLElement;
     expect(previewIntro).toHaveClass("preview-sidebar-intro");
     expect(previewIntro).toHaveTextContent("题目信息与使用情况");
-    expect(within(previewIntro).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
-    expect(within(previewControls).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+    expect(within(previewControls).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(within(previewIntro).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();
     expect(preview.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("exam-question-details-1");
@@ -536,7 +540,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     fireEvent.click(answerToggle);
     expect(screen.queryByTestId("exam-question-answer-status-1")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
 
     fireEvent.click(propertiesToggle);
     expect(screen.queryByTestId("exam-question-properties-1")).not.toBeInTheDocument();
