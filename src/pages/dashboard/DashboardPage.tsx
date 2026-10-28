@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import {
   Library, FileText, GraduationCap, ShoppingBasket, FileUp, Plus,
   Clock, ArrowRight, TrendingUp, BookOpen, CheckCircle2, FileQuestion,
-  Users, Calendar, X, AlertTriangle,
+  Users, Calendar, X, AlertTriangle, ScanLine, Presentation,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { questionService } from "@/services/question";
@@ -27,9 +27,14 @@ import type {
   DocumentRecord,
   PlatformResourceCorrection,
   PrepTask,
-  PrepTaskType,
+  PrepTaskType, LessonCourseware, ExamPaper,
 } from "@/types";
 import { cn } from "@/lib/utils";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { examPaperService } from "@/services/examPaper";
+import { scannerService } from "@/services/scanner";
+import { DashboardQuickActions } from "./DashboardQuickActions";
+import { pendingCoursewares, pendingScanPapers } from "./dashboard-todos";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
 
@@ -49,6 +54,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [correctionTodos, setCorrectionTodos] = useState<PlatformResourceCorrection[]>([]);
   const [prepTasks, setPrepTasks] = useState<PrepTask[]>([]);
+  const [draftCoursewares, setDraftCoursewares] = useState<LessonCourseware[]>([]);
+  const [unscannedPapers, setUnscannedPapers] = useState<ExamPaper[]>([]);
+  const [extraTodosLoading, setExtraTodosLoading] = useState(false);
+  const [scanTodosUnavailable, setScanTodosUnavailable] = useState(false);
   const [prepLoading, setPrepLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -100,6 +109,37 @@ export default function DashboardPage() {
       }
     };
     loadPrepTasks();
+  }, [teacher]);
+
+  useEffect(() => {
+    if (!teacher?.schoolId) {
+      return;
+    }
+    let active = true;
+    const { id, schoolId } = teacher;
+    setExtraTodosLoading(true);
+    const load = async () => {
+      const [coursewareResult, paperResult, scanResult] = await Promise.allSettled([
+        lessonCoursewareService.listCoursewares({ teacherId: id, schoolId, lifecycleStatus: "active" }),
+        examPaperService.listPapers({ teacherId: id, schoolId }),
+        scannerService.listPages(schoolId),
+      ]);
+      if (!active) return;
+      if (coursewareResult.status === "fulfilled") {
+        setDraftCoursewares(pendingCoursewares(coursewareResult.value, id, schoolId));
+      } else {
+        toast.error("待编辑课件加载失败");
+      }
+      if (paperResult.status === "fulfilled" && scanResult.status === "fulfilled") {
+        setUnscannedPapers(pendingScanPapers(paperResult.value, scanResult.value, id, schoolId));
+        setScanTodosUnavailable(false);
+      } else {
+        setScanTodosUnavailable(true);
+      }
+      setExtraTodosLoading(false);
+    };
+    void load();
+    return () => { active = false; };
   }, [teacher]);
 
   const isGroupLeader = teacher?.roles.includes("prepLeader") || teacher?.roles.includes("subjectLeader");
@@ -180,7 +220,7 @@ export default function DashboardPage() {
   };
   const pendingDocumentCount = stats?.documents.filter((document) => document.status === "recognized").length ?? 0;
   const draftLectureCount = stats?.lectures.filter((lecture) => lecture.status === "draft").length ?? 0;
-  const todoCount = pendingDocumentCount + draftLectureCount + correctionTodos.length;
+  const todoCount = pendingDocumentCount + draftLectureCount + correctionTodos.length + draftCoursewares.length + unscannedPapers.length;
 
   const cards = [
     {
@@ -217,12 +257,6 @@ export default function DashboardPage() {
     },
   ];
 
-  const quickActions = [
-    { label: "导入文档", desc: "AI 识别题目入库", icon: FileUp, link: "/import" },
-    { label: "新建讲义", desc: "组题生成讲义", icon: FileText, link: "/lectures/new" },
-    { label: "题库管理", desc: "查看与编辑题目", icon: Library, link: "/my-resources/questions" },
-    { label: "新建试题篮", desc: "整理候选题目", icon: ShoppingBasket, link: "/baskets" },
-  ];
 
   return (
     <div>
@@ -280,7 +314,7 @@ export default function DashboardPage() {
                   title="待办事项"
                   action={
                     <span className="tag-red">
-                      {todoCount} 项待处理
+                      {extraTodosLoading ? "加载中…" : `${todoCount} 项待处理`}
                     </span>
                   }
                 />
@@ -324,12 +358,42 @@ export default function DashboardPage() {
                           <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
                         </Link>
                       ))
-                  ) : todoCount === 0 ? (
+                  ) : todoCount === 0 && !extraTodosLoading && !scanTodosUnavailable ? (
                     <div className="flex items-center gap-3 p-3 text-sm text-ink-500">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                       暂无待办事项，一切就绪
                     </div>
                   ) : null}
+
+                  {draftCoursewares.map((courseware) => (
+                    <Link key={`courseware-${courseware.id}`} to={`/my-lessons/${encodeURIComponent(courseware.id)}/edit`}
+                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group">
+                      <div className="w-8 h-8 rounded-md bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0">
+                        <Presentation className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-ink-900 truncate">{courseware.title}</div>
+                        <div className="text-xs text-ink-500">待编辑课件 · {timeAgo(courseware.updatedAt)}更新</div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
+                    </Link>
+                  ))}
+                  {unscannedPapers.map((paper) => (
+                    <Link key={`scan-${paper.id}`} to="/homework-exams/homework"
+                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group">
+                      <div className="w-8 h-8 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+                        <ScanLine className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-ink-900 truncate">{paper.title}</div>
+                        <div className="text-xs text-ink-500">待扫描作业 · 答题卡尚无扫描记录</div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
+                    </Link>
+                  ))}
+                  {scanTodosUnavailable && (
+                    <p role="status" className="text-xs text-amber-700 px-3">扫描待办暂时无法加载，请刷新重试。</p>
+                  )}
 
                   {/* 草稿讲义提醒 */}
                   {stats.lectures.filter((l) => l.status === "draft").map((lec) => (
@@ -489,25 +553,9 @@ export default function DashboardPage() {
 
             {/* 右侧快捷入口 */}
             <div className="space-y-6">
-              <Card>
-                <CardHeader title="快捷入口" />
-                <div className="grid grid-cols-2 gap-2">
-                  {quickActions.map((a) => {
-                    const Icon = a.icon;
-                    return (
-                      <Link
-                        key={a.label}
-                        to={a.link}
-                        className="p-3 rounded-md border border-ink-100 hover:border-gold-300 hover:bg-gold-50/30 transition-all group"
-                      >
-                        <Icon className="w-5 h-5 text-gold-600 mb-2" />
-                        <div className="text-sm font-medium text-ink-900">{a.label}</div>
-                        <div className="text-xs text-ink-500 mt-0.5">{a.desc}</div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </Card>
+              <DashboardQuickActions key={`${teacher.id}:${teacher.currentAffiliationId || teacher.schoolId || "personal"}`}
+                storageKey={`inteschool:dashboard:quick-actions:v1:${teacher.id}:${teacher.currentAffiliationId || teacher.schoolId || "personal"}`}
+                schoolAccess={!!teacher.schoolId} />
 
               <Card>
                 <CardHeader title="本周动态" action={<TrendingUp className="w-4 h-4 text-emerald-500" />} />
