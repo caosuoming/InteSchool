@@ -1365,11 +1365,12 @@ export const shareService = {
     return privilegesFor(teacherId);
   },
 
-  async getPlatformDirectoryTree(type: "chapter" | "knowledge", teacherId?: string): Promise<TreeNode> {
+  async getPlatformDirectoryTree(type: "chapter" | "knowledge", teacherId?: string, subject?: string): Promise<TreeNode> {
     await delay(50);
     const visibleSubjects = teacherId ? visibleSubjectsFor(teacherId) : null;
     const donations = primaryDonations().filter((item) =>
-      visibleSubjects === null || visibleSubjects.includes(donationSubject(item)),
+      (visibleSubjects === null || visibleSubjects.includes(donationSubject(item)))
+      && (!subject || donationSubject(item) === subject),
     );
     return buildPlatformTree(type, donations);
   },

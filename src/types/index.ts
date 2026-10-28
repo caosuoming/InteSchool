@@ -1369,6 +1369,8 @@ export interface Chapter {
   schoolId: string;
   /** 个人目录节点的所有者；旧数据未设置时仍按 schoolId 解释。 */
   teacherId?: string;
+  /** 教师目录所属学科；历史节点缺省时归于首次登记学科。 */
+  subject?: string;
   parentId: string | null;
   name: string;
   order: number;
@@ -1382,6 +1384,7 @@ export interface KnowledgePoint {
   schoolId: string;
   /** 个人目录节点的所有者；旧数据未设置时仍按 schoolId 解释。 */
   teacherId?: string;
+  subject?: string;
   parentId: string | null;
   /** 旧数据可能保留该字段；知识点目录本身不依赖章节目录。 */
   chapterId?: string;
@@ -1437,6 +1440,7 @@ export interface DirectoryCatalog {
   id: string;
   schoolId: string;
   teacherId?: string;
+  subject?: string;
   type: TreeNodeType;
   name: string;
   /** 树根节点显示名；旧数据缺省时仍显示“全部章节/全部知识点”。 */
@@ -1451,6 +1455,7 @@ export interface DirectoryCatalogSummary {
   id: string;
   schoolId: string;
   teacherId?: string;
+  subject?: string;
   type: TreeNodeType;
   name: string;
   rootName?: string;
@@ -3445,6 +3450,8 @@ export interface SchoolResourceBackup {
   id: string;
   /** 学校ID */
   schoolId: string;
+  /** 来源学科；历史备份缺省时按发布人第一任教学科兼容。 */
+  subject?: string;
   /** 资源类型 */
   resourceType: SchoolBackupResourceType;
   /** 源资源ID（原始资源的 ID） */

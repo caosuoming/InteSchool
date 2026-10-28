@@ -485,9 +485,9 @@ export default function QuestionBankPage({
     if (!teacher) return;
     const load = async () => {
       const [ch, kp, methods, bs, allClasses, stus] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.schoolId!),
-        knowledgeService.getKnowledgeTree(teacher.schoolId!),
-        knowledgeService.getMethodTree(teacher.schoolId!),
+        knowledgeService.getChapterTree(teacher.id),
+        knowledgeService.getKnowledgeTree(teacher.id),
+        knowledgeService.getMethodTree(teacher.id),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
@@ -550,8 +550,8 @@ export default function QuestionBankPage({
     let cancelled = false;
     (async () => {
       const [baseChapterTree, baseKnowledgeTree] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.schoolId!),
-        knowledgeService.getKnowledgeTree(teacher.schoolId!),
+        knowledgeService.getChapterTree(teacher.id),
+        knowledgeService.getKnowledgeTree(teacher.id),
       ]);
       if (cancelled) return;
       if (selectedStudentIds.length === 0) {

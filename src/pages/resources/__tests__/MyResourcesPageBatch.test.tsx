@@ -549,7 +549,7 @@ describe("MyResourcesPage batch actions", () => {
     });
 
     await waitFor(() => {
-      expect(knowledgeService.getKnowledgeTree).toHaveBeenCalledWith("school-1");
+      expect(knowledgeService.getKnowledgeTree).toHaveBeenCalledWith("teacher-1");
     });
     fireEvent.click(await screen.findByRole("button", { name: "选择知识点" }));
     fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
@@ -576,7 +576,7 @@ describe("MyResourcesPage batch actions", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "选择批量操作" }), {
       target: { value: "method" },
     });
-    await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalledWith("school-1"));
+    await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalledWith("teacher-1"));
     fireEvent.click(await screen.findByRole("button", { name: "选择思想方法" }));
     fireEvent.click(screen.getByRole("button", { name: "确认新增" }));
     await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalledWith(
@@ -598,7 +598,7 @@ describe("MyResourcesPage batch actions", () => {
     });
 
     await waitFor(() => {
-      expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("school-1");
+      expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("teacher-1");
     });
     expect(screen.getByRole("heading", { name: "统一修改章节课" })).toBeInTheDocument();
     expect(screen.getByText("所选章节课会替换 1 个资源原有的章节课关联。")).toBeInTheDocument();

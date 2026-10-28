@@ -529,6 +529,7 @@ export default function PlatformResourcesPage() {
   const schoolId = teacher ? teacherResourceScopeId(teacher) : "";
   const platformAdmin = getActiveRole(teacher) === "platform_admin";
   const teacherSubject = getActiveSubject(teacher);
+  const directorySubject = selectedSubject || (platformAdmin ? "" : teacherSubject);
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
 
   const loadAll = useCallback(async () => {
@@ -543,8 +544,8 @@ export default function PlatformResourcesPage() {
         shareService.listDonationStatus(teacher.id),
         shareService.listDonationContributors(teacher.id),
         shareService.getDonationPrivileges(teacher.id),
-        shareService.getPlatformDirectoryTree("chapter", teacher.id),
-        shareService.getPlatformDirectoryTree("knowledge", teacher.id),
+        shareService.getPlatformDirectoryTree("chapter", teacher.id, directorySubject),
+        shareService.getPlatformDirectoryTree("knowledge", teacher.id, directorySubject),
         shareService.listDonationCorrections(teacher.id),
         donationService.getSaveStatus(teacher.id, schoolId),
       ]);
@@ -565,7 +566,7 @@ export default function PlatformResourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [platformAdmin, schoolId, teacher, teacherSubject]);
+  }, [platformAdmin, schoolId, teacher, teacherSubject, directorySubject]);
 
   useEffect(() => {
     void loadAll();

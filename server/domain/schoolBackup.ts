@@ -62,6 +62,19 @@ export function canEditSchoolBackup(
   return teacher.roles.some((r) => privilegedRoles.includes(r));
 }
 
+function backupTeacherSubject(teacherId: string, legacy = false): string {
+  const teacher = (db.read("teachers") as Teacher[]).find((item) => item.id === teacherId);
+  if (!teacher) return "";
+  const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations?.find((item) => item.isCurrent);
+  if (legacy) return affiliation?.subjects?.[0] || teacher.subjects?.[0] || affiliation?.subject || teacher.subject || "";
+  return affiliation?.subject || teacher.subject || "";
+}
+
+function backupSubject(backup: SchoolResourceBackup): string {
+  return backup.subject || backupTeacherSubject(backup.fromTeacherId, true);
+}
+
 function parseSnapshot<T>(backup: SchoolResourceBackup): T | null {
   try {
     return JSON.parse(backup.contentSnapshot) as T;
@@ -220,9 +233,11 @@ function normalizeSchoolBackups(schoolId: string): SchoolResourceBackup[] {
       backup.chapterIds || [],
       backup.knowledgePointIds || [],
     );
+    const subject = backupSubject(backup);
     const targetStudentIds = backup.targetStudentIds || [];
     const duplicateHash = questionBackupHash(backup);
     if (
+      backup.subject !== subject ||
       backup.targetStudentIds === undefined ||
       !sameIds(backup.chapterIds, directory.chapterIds) ||
       !sameIds(backup.knowledgePointIds, directory.knowledgePointIds) ||
@@ -231,6 +246,7 @@ function normalizeSchoolBackups(schoolId: string): SchoolResourceBackup[] {
       changed = true;
       return {
         ...backup,
+        subject,
         targetStudentIds,
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -249,6 +265,7 @@ export const schoolBackupService = {
     await delay(200);
     maybeThrowError();
     const now = new Date().toISOString();
+    const subject = backupTeacherSubject(input.fromTeacherId);
     const directory = syncSchoolResourceDirectories(
       input.schoolId,
       input.chapterIds,
@@ -260,6 +277,7 @@ export const schoolBackupService = {
       ).find(
         (item) =>
           item.schoolId === input.schoolId &&
+          backupSubject(item) === subject &&
           item.resourceType === "question" &&
           (item.sourceResourceId === input.sourceResourceId ||
             (input.duplicateHash &&
@@ -268,6 +286,7 @@ export const schoolBackupService = {
       if (existing) {
         const merged: SchoolResourceBackup = {
           ...existing,
+          subject,
           title: input.title,
           description: input.description,
           contentSnapshot: input.contentSnapshot,
@@ -306,6 +325,7 @@ export const schoolBackupService = {
     const backup: SchoolResourceBackup = {
       id: genId("sbk"),
       schoolId: input.schoolId,
+      subject,
       resourceType: input.resourceType,
       sourceResourceId: input.sourceResourceId,
       title: input.title,
@@ -330,9 +350,10 @@ export const schoolBackupService = {
   },
 
   /** 列出本校所有备份 */
-  async listBackups(schoolId: string): Promise<SchoolResourceBackup[]> {
+  async listBackups(schoolId: string, subject?: string): Promise<SchoolResourceBackup[]> {
     await delay(200);
     return normalizeSchoolBackups(schoolId)
+      .filter((item) => !subject || backupSubject(item) === subject)
       .sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -345,16 +366,16 @@ export const schoolBackupService = {
     return db.read("schoolBackups").find((b) => b.id === id) || null;
   },
 
-  async getChapterTree(schoolId: string) {
+  async getChapterTree(schoolId: string, subject?: string) {
     await delay(100);
     normalizeSchoolBackups(schoolId);
-    return getSchoolResourceChapterTree(schoolId);
+    return getSchoolResourceChapterTree(schoolId, subject);
   },
 
-  async getKnowledgeTree(schoolId: string) {
+  async getKnowledgeTree(schoolId: string, subject?: string) {
     await delay(100);
     normalizeSchoolBackups(schoolId);
-    return getSchoolResourceKnowledgeTree(schoolId);
+    return getSchoolResourceKnowledgeTree(schoolId, subject);
   },
 
   /**

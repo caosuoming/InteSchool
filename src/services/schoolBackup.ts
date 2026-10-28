@@ -51,20 +51,20 @@ export const schoolBackupService = {
     return rpcCall("schoolBackup", "createBackup", [input]) as any;
   },
 
-  async listBackups(schoolId: string): Promise<SchoolResourceBackup[]> {
-    return rpcCall("schoolBackup", "listBackups", [schoolId]) as any;
+  async listBackups(schoolId: string, subject?: string): Promise<SchoolResourceBackup[]> {
+    return rpcCall("schoolBackup", "listBackups", [schoolId, subject]) as any;
   },
 
   async getBackup(id: string): Promise<SchoolResourceBackup | null> {
     return rpcCall("schoolBackup", "getBackup", [id]) as any;
   },
 
-  async getChapterTree(schoolId: string) {
-    return rpcCall("schoolBackup", "getChapterTree", [schoolId]) as any;
+  async getChapterTree(schoolId: string, subject?: string) {
+    return rpcCall("schoolBackup", "getChapterTree", [schoolId, subject]) as any;
   },
 
-  async getKnowledgeTree(schoolId: string) {
-    return rpcCall("schoolBackup", "getKnowledgeTree", [schoolId]) as any;
+  async getKnowledgeTree(schoolId: string, subject?: string) {
+    return rpcCall("schoolBackup", "getKnowledgeTree", [schoolId, subject]) as any;
   },
 
   async updateBackupProperties(id: string, patch: Partial<Pick<SchoolResourceBackup,

@@ -146,9 +146,9 @@ export default function ResourceLibraryPage() {
   }, [keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, schoolId, teacher?.id]);
 
   useEffect(() => {
-    knowledgeService.getChapterTree(schoolId).then(setChapterTree);
-    knowledgeService.getKnowledgeTree(schoolId).then(setKnowledgeTree);
-  }, [schoolId]);
+    knowledgeService.getChapterTree(teacher?.id || schoolId).then(setChapterTree);
+    knowledgeService.getKnowledgeTree(teacher?.id || schoolId).then(setKnowledgeTree);
+  }, [schoolId, teacher?.id, teacher?.subject]);
 
   useEffect(() => {
     const timer = setTimeout(() => loadAll(), 300);

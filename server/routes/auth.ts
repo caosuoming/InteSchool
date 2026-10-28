@@ -1727,6 +1727,22 @@ export async function registerAuthRoutes(
       if (!isPlatformAdminAccount(teacher) && !subjects.includes(subject)) {
         throw new Error("不能切换到未经学校批准的学科");
       }
+      // Preserve the original subject of old, unlabelled directories before switching.
+      const previousSubject = typeof target.subject === "string" ? target.subject : teacher.subject;
+      for (const collection of ["chapters", "knowledgePoints", "thoughtMethods", "directoryCatalogs"]) {
+        const records = (state[collection] || []) as Array<{ teacherId?: string; subject?: string }>;
+        state[collection] = records.map((record) =>
+          record.teacherId === teacher.id && !record.subject
+            ? { ...record, subject: previousSubject }
+            : record,
+        );
+      }
+      const backups = (state.schoolBackups || []) as Array<{ fromTeacherId: string; subject?: string }>;
+      state.schoolBackups = backups.map((backup) =>
+        backup.fromTeacherId === teacher.id && !backup.subject
+          ? { ...backup, subject: previousSubject }
+          : backup,
+      );
       state.teachers[index] = {
         ...teacher, subject, subjects, currentAffiliationId: affiliationId,
         affiliations: teacher.affiliations.map((item) => item.id === affiliationId ? { ...item, subject, subjects } : item),

@@ -68,8 +68,8 @@ export const shareService = {
     return rpcCall("share", "getDonationPrivileges", [teacherId]) as any;
   },
 
-  async getPlatformDirectoryTree(type: "chapter" | "knowledge", teacherId: string): Promise<TreeNode> {
-    return rpcCall("share", "getPlatformDirectoryTree", [type, teacherId]) as any;
+  async getPlatformDirectoryTree(type: "chapter" | "knowledge", teacherId: string, subject?: string): Promise<TreeNode> {
+    return rpcCall("share", "getPlatformDirectoryTree", [type, teacherId, subject]) as any;
   },
 
   async updateDonationResource(

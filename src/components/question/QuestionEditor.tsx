@@ -161,10 +161,10 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   useEffect(() => {
     if (!teacher) return;
     Promise.all([
-      knowledgeService.listChapters(teacher.schoolId!),
-      knowledgeService.listKnowledgePoints(teacher.schoolId!),
-      knowledgeService.getChapterTree(teacher.schoolId!),
-      knowledgeService.getKnowledgeTree(teacher.schoolId!),
+      knowledgeService.listChapters(teacher.id),
+      knowledgeService.listKnowledgePoints(teacher.id),
+      knowledgeService.getChapterTree(teacher.id),
+      knowledgeService.getKnowledgeTree(teacher.id),
     ]).then(([chs, kps, cTree, kTree]) => {
       setChapters(chs);
       setPoints(kps);
