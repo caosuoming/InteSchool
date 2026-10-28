@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Teacher, TeacherAffiliation } from "@/types";
 import { authService } from "@/services/auth";
+import { clearResourceCache } from "@/lib/resource-cache";
 
 interface AuthState {
   teacher: Teacher | null;
@@ -29,6 +30,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const teacher = await authService.init();
+      if (!teacher) clearResourceCache();
       set({ teacher, loading: false });
     } catch (error) {
       set({
@@ -43,6 +45,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const teacher = await authService.login(identifier, password);
+      clearResourceCache();
       set({ teacher, loading: false });
       return true;
     } catch (error) {
@@ -65,11 +68,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await authService.logout();
+    clearResourceCache();
     set({ teacher: null });
   },
 
   refresh: async () => {
     const teacher = await authService.refreshCurrentTeacher();
+    if (!teacher) clearResourceCache();
     set({ teacher });
   },
 

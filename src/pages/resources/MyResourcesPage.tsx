@@ -17,6 +17,7 @@ import { toast } from "@/stores/ui";
 import { lessonCoursewareService, loadEditableCoursewarePptSlides } from "@/services/lessonCourseware";
 import { extractStoredFile } from "@/services/api";
 import { questionService } from "@/services/question";
+import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
 import { prepService } from "@/services/prep";
 import { examPaperService } from "@/services/examPaper";
 import { coursewareService } from "@/services/courseware";
@@ -969,6 +970,31 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
     };
     const ownedFilter = { ...baseFilter, teacherId: teacher?.id };
+    const listCacheKey = teacher
+      ? resourceCacheKey(activeTab, {
+          teacherId: teacher.id, schoolId: teacher.schoolId || undefined, subject: teacher.subject,
+        }, ownedFilter)
+      : null;
+    const cached = listCacheKey ? readResourceCache<{
+      lectures: Lecture[];
+      examPapers: ExamPaper[];
+      coursewares: Courseware[];
+      materials: Material[];
+    }>(listCacheKey) : null;
+    if (cached && Array.isArray(cached.lectures) && Array.isArray(cached.examPapers)
+      && Array.isArray(cached.coursewares) && Array.isArray(cached.materials)) {
+      if (activeTab === "lecture" || activeTab === "answerSheet") {
+        setLectures(cached.lectures);
+        setAllLectures(cached.lectures);
+      }
+      if (activeTab === "examPaper" || activeTab === "answerSheet") {
+        setExamPapers(cached.examPapers);
+        setAllExamPapers(cached.examPapers);
+      }
+      if (activeTab === "courseware") setCoursewares(cached.coursewares);
+      if (activeTab === "material") setMaterials(cached.materials);
+      setLoading(false);
+    }
     try {
       let primaryLectures: Lecture[] = [];
       let primaryExamPapers: ExamPaper[] = [];
@@ -1004,6 +1030,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       }
       if (activeTab === "courseware") setCoursewares(primaryCoursewares || []);
       if (activeTab === "material") setMaterials(primaryMaterials || []);
+      if (listCacheKey) writeResourceCache(listCacheKey, {
+        lectures: primaryLectures || [],
+        examPapers: primaryExamPapers || [],
+        coursewares: primaryCoursewares || [],
+        materials: primaryMaterials || [],
+      });
       setLoading(false);
 
       if (activeTab !== "answerSheet" && teacher?.id) {
@@ -1113,6 +1145,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  useEffect(() => () => { resourceLoadIdRef.current++; }, []);
 
   useEffect(() => {
     const handleExtractConfirmed = () => {
