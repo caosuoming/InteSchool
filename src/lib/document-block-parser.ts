@@ -107,6 +107,7 @@ const questionSectionLabels = [
   "解答题",
   "计算题",
   "证明题",
+  "综合题",
 ];
 
 const builtInQuestionSectionPattern = new RegExp(
@@ -149,6 +150,7 @@ function detectSectionQuestionType(text: string): QuestionType | undefined {
   const normalized = normalizeStructuralText(text).replace(/\s+/g, "");
   if (/不定项选择|多项选择|多选|多个正确|不止一个|至少(?:有|选)/.test(normalized)) return "multiple";
   if (/单项选择|单选/.test(normalized)) return "single";
+  if (/综合题/.test(normalized)) return "comprehensive";
   if (/判断题|判断正误/.test(normalized)) return "judge";
   if (/填空题|填空/.test(normalized)) return "short";
   if (/解答题|计算题|证明题|论述题/.test(normalized)) return "essay";
@@ -299,6 +301,7 @@ function inferAtomicQuestionType(
   config: DocumentParseConfig,
 ): QuestionType {
   const text = [block.content, block.answer].filter(Boolean).join("\n");
+  if (config.subject?.trim() === "地理" && sectionType === "comprehensive") return "comprehensive";
   if (config.multipleChoiceKeywords.some((keyword) => keyword && text.includes(keyword))) return "multiple";
   if (config.singleChoiceKeywords.some((keyword) => keyword && text.includes(keyword))) return "single";
   if (/判断题|判断正误|正确还是错误/.test(text)) return "judge";
@@ -322,6 +325,7 @@ function inferQuestionType(
   sectionType: QuestionType | undefined,
   config: DocumentParseConfig,
 ): QuestionType {
+  if (config.subject?.trim() === "地理" && sectionType === "comprehensive") return "comprehensive";
   return inferSharedStemSubQuestionType(block, sectionType, config)
     || inferAtomicQuestionType(block, sectionType, config);
 }
@@ -386,6 +390,7 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
     [numberedSubQuestionAnalysisMarkerSource],
   );
   if (structuredFieldPattern?.test(text) || numberedSubQuestionAnalysisPattern?.test(text)) return false;
+  if (config.subject?.trim() === "地理" && geographySummaryStartPattern.test(text)) return false;
 
   const normalized = normalizeStructuralText(text).trim();
   if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
@@ -532,7 +537,8 @@ function shouldContinueNumberedSummary(
     currentQuestionNumber
     && candidateNumber === Number(currentQuestionNumber) + 1
     && (
-      looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
+      (config.subject?.trim() === "地理" && candidate.rest.length >= 5)
+      || looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
       || (!candidate.rest && !previous)
     )
   ) {
@@ -964,6 +970,9 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
   return null;
 }
 
+const geographySummaryLabelSource = String.raw`(?:【|［|\[)?\s*(?:难度|知识点|点睛)\s*(?:】|］|\])?\s*[:：]?\s*`;
+const geographySummaryStartPattern = /^(?:(?:【|［|\[)\s*(?:难度|知识点|点睛)\s*(?:】|］|\])|(?:难度|知识点|点睛)\s*[:：])/;
+
 const builtInTrailingAnalysisKeywords = ["详解", "【详解】", "【解答】"];
 const builtInAnalysisAsSummaryKeywords = ["分析", "【分析】", "分析："];
 
@@ -1178,12 +1187,13 @@ function parseTrailingSolutions(
       { preserveMarker: true },
     ],
     ["analysis", fieldSearchPattern(analysisKeywords)],
+    ["summary", config.subject?.trim() === "地理" ? fieldSearchPattern([], [geographySummaryLabelSource]) : null, { preserveMarker: true }],
     ["summary", fieldSearchPattern(categorizedKeywords.summaryKeywords)],
   ];
   const anchoredPatterns = [
     keywordPattern(config.answerKeywords),
     keywordPattern(analysisKeywords, [numberedSubQuestionAnalysisMarkerSource]),
-    keywordPattern(categorizedKeywords.summaryKeywords),
+    keywordPattern(categorizedKeywords.summaryKeywords, config.subject?.trim() === "地理" ? [geographySummaryLabelSource] : []),
   ];
   const solutions: TrailingSolution[] = [];
   let current: TrailingSolution | undefined;
@@ -1408,7 +1418,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     [],
     [numberedSubQuestionAnalysisMarkerSource],
   );
-  const summaryPattern = keywordPattern(categorizedKeywords.summaryKeywords);
+  const summaryPattern = keywordPattern(
+    categorizedKeywords.summaryKeywords,
+    config.subject?.trim() === "地理" ? [geographySummaryLabelSource] : [],
+  );
   let currentBlock: Partial<DocumentBlock> = {};
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
@@ -1617,7 +1630,8 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       continue;
     }
     if (currentBlock.type === "question" && summaryPattern?.test(line)) {
-      appendQuestionField(currentBlock, "summary", stripPrefix(line, summaryPattern));
+      appendQuestionField(currentBlock, "summary", geographySummaryStartPattern.test(line)
+        && config.subject?.trim() === "地理" ? line : stripPrefix(line, summaryPattern));
       currentQuestionField = "summary";
       continue;
     }
@@ -1735,6 +1749,108 @@ function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): Doc
   return blocks;
 }
 
+function geographySubQuestionCount(content: string): number {
+  const markers = scanGroupedSubQuestionMarkers(content);
+  let expected = 1;
+  for (const marker of markers) {
+    if (marker.index === expected) expected += 1;
+  }
+  const topLevelNumbers = [...content.matchAll(/^\s*(\d{1,4})\s*[.．、]\s*\S/gm)];
+  return Math.max(1, expected - 1, topLevelNumbers.length);
+}
+
+function geographyDetailCategory(type: QuestionType, content: string): string | undefined {
+  const count = geographySubQuestionCount(content);
+  if (type === "single") return `单选题·${count >= 4 ? "4个及以上" : count + "个"}小题`;
+  if (type === "multiple") return count > 1 ? "多选题组" : "多选单题";
+  if (type === "comprehensive") return `综合题·${count >= 6 ? "6问及以上" : count + "问"}`;
+  return undefined;
+}
+
+function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
+  // A geographic reading passage can introduce several consecutive, globally numbered
+  // choice questions. Blank lines delimit independent passages, not their sub-questions.
+  const paragraphs = source.replace(/\r\n?/g, "\n").split(/\n\s*\n+/);
+  const groups = paragraphs.flatMap((paragraph) => {
+    const lines = paragraph.split("\n");
+    const firstNumbered = lines.findIndex((line) => /^\s*\d{1,4}\s*[.．、]\s*\S/.test(line));
+    const introduction = lines.slice(0, firstNumbered < 0 ? undefined : firstNumbered)
+      .filter((line) => !isHeading(line.trim(), config))
+      .join("\n").trim();
+    if (!/(?:阅读|读.{0,8}[图表材料]|据.{0,12}(?:回答|完成)|根据.{0,30}(?:回答|完成)|回答下列|完成下列)/.test(introduction)) return [];
+    if (isHeading(introduction, config) || trailingSolutionHeadingKind(introduction)) return [];
+    if (firstNumbered < 0) {
+      const range = /(?:回答|完成|作答)\s*(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
+      if (!range) return [];
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      if (start < 1 || end <= start || end - start > 9) return [];
+      return [{ introduction, numbers: Array.from({ length: end - start + 1 }, (_, index) => String(start + index)) }];
+    }
+    if (firstNumbered === 0) return [];
+    const numbers = lines.slice(firstNumbered)
+      .map((line) => /^\s*(\d{1,4})\s*[.．、]\s*\S/.exec(line)?.[1])
+      .filter((number): number is string => Boolean(number));
+    if (numbers.length < 2 || !numbers.every((number, index) => index === 0 || Number(number) === Number(numbers[index - 1]) + 1)) return [];
+    return [{ introduction, numbers }];
+  });
+  if (groups.length === 0) return blocks;
+
+  const result = [...blocks];
+  for (const group of groups) {
+    const first = result.findIndex((block) => block.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[0]);
+    if (first < 0) continue;
+    const members = result.slice(first, first + group.numbers.length);
+    if (!members.every((block, index) => block?.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[index])) continue;
+    const section = [...result.slice(0, first)].reverse().find((block) => block.type === "groupTitle");
+    const type = section ? detectSectionQuestionType(section.content) : undefined;
+    if (type !== "single" && type !== "multiple") continue;
+
+    const field = (key: "answer" | "analysis" | "summary") => members
+      .map((item, index) => item[key] ? `（${index + 1}）${item[key]}` : "")
+      .filter(Boolean)
+      .join("\n") || undefined;
+    const content = [group.introduction, ...members.map((item) => [
+      item.content,
+      ...(item.options || []).map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`),
+    ].join("\n"))].join("\n");
+    const merged: DocumentBlock = {
+      ...members[0],
+      content,
+      options: [],
+      questionType: type,
+      answer: field("answer"),
+      analysis: field("analysis"),
+      summary: field("summary"),
+    };
+    result.splice(first, members.length, merged);
+    if (first > 0 && result[first - 1].type === "knowledge" && result[first - 1].content.trim() === group.introduction) {
+      result.splice(first - 1, 1);
+    }
+  }
+  return result;
+}
+
+function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
+  if (config.subject?.trim() !== "地理") return blocks;
+  const grouped = groupGeographyChoiceQuestions(blocks, source, config);
+  let sectionType: QuestionType | undefined;
+  grouped.forEach((block, index) => {
+    block.order = index;
+    if (block.type === "groupTitle") {
+      sectionType = detectSectionQuestionType(block.content);
+    } else if (block.type === "question") {
+      if (sectionType === "comprehensive") block.questionType = "comprehensive";
+      else if ((sectionType === "single" || sectionType === "multiple") && block.questionType === "short") {
+        block.questionType = sectionType;
+      }
+      const detail = geographyDetailCategory(block.questionType || "short", block.content);
+      if (detail) block.categories = [...new Set([...(block.categories || []), detail])];
+    }
+  });
+  return grouped;
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const solutionHeadingIndexes = lines
@@ -1755,8 +1871,8 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
       allowPositionalFallback: kind !== "answer",
     });
     const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return normalizeFillBlankAreas(blocks, config.subject);
+    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(blocks, config.subject), content, config);
   }
 
-  return normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject);
+  return refineGeographyBlocks(normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject), content, config);
 }

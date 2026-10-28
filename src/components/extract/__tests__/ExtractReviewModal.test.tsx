@@ -219,6 +219,38 @@ describe("ExtractReviewModal", () => {
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
   });
 
+  it("reviews and saves the geography question subtype", async () => {
+    mocks.authState.teacher.subject = "地理";
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="地理试卷"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{
+          id: "block-question", type: "question", content: "1. 阅读材料回答问题。",
+          questionType: "single", categories: ["单选题·2个小题"], order: 0, status: "new",
+          answer: "A", analysis: "解析", difficulty: 3,
+        }]}
+      />,
+    );
+
+    const subtype = screen.getByLabelText("地理细分题型");
+    expect(subtype).toHaveValue("单选题·2个小题");
+    await user.selectOptions(subtype, "单选题·3个小题");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).toContain("单选题·3个小题");
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).not.toContain("单选题·2个小题");
+  });
+
   it("does not offer or save comprehensive for a math document", async () => {
     mocks.authState.teacher.subject = "数学";
     render(
