@@ -120,6 +120,25 @@ describe("GradeSettingsEditor", () => {
     expect(classSetting.statisticSubjects).toContain("化学");
   });
 
+  it("restores existing ranking settings from student elections without replacing other classes", async () => {
+    const user = userEvent.setup();
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "历史", "地理"];
+    const settings = buildDefaultGradeSettings(subjects, classes.map((item) => item.id));
+    const onChange = vi.fn();
+    render(<GradeSettingsEditor settings={settings} subjects={subjects}
+      context={context} onChange={onChange} section="settings" />);
+    const table = screen.getByRole("columnheader", { name: "纳入统一排名" }).closest("table")!;
+    const row = within(table).getAllByRole("row")[1];
+    await user.click(within(row).getByRole("button", { name: "按选科恢复默认排名" }));
+    const next = onChange.mock.lastCall?.[0];
+    expect(next.classSubjects.find((item: { classId: string }) => item.classId === "class-2")).toMatchObject({
+      statisticSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
+      separateRankSubjects: [],
+    });
+    expect(next.classSubjects.find((item: { classId: string }) => item.classId === "class-10"))
+      .toEqual(settings.classSubjects.find((item) => item.classId === "class-10"));
+  });
+
   it("starts with no class teacher selected and changes only the chosen class", async () => {
     const user = userEvent.setup();
     const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));

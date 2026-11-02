@@ -39,6 +39,7 @@ import {
 import {
   ASSIGNMENT_GRADE_SUBJECTS,
   calculateGradeRecords,
+  defaultClassRankingSubjects,
   DEFAULT_ASSIGNMENT_RULES,
 } from "@/lib/grade-statistics";
 import { toast } from "@/stores/ui";
@@ -520,7 +521,7 @@ function AssignmentSettings({
           </div>
           <div>
             <div className="font-medium text-ink-900">配置2、赋分对照表</div>
-            <div className="mt-0.5 text-xs text-ink-500">仅化学、生物、政治、地理使用赋分；按年级原始分排名划分等级后线性换算。</div>
+            <div className="mt-0.5 text-xs text-ink-500">仅化学、生物、政治、地理使用赋分；同一次考试的同一学科按所有参与排名的学生统一换算，不参与排名的班级不参与换算。</div>
           </div>
         </div>
         {unassignedSubjects.length > 0 && (
@@ -727,7 +728,7 @@ function ClassSubjectSettings({
         <div>
           <div className="font-medium text-ink-900">配置3、各班统一排名与单独排名科目</div>
           <div className="mt-0.5 text-xs text-ink-500">
-            默认所有实际考试科目均纳入统一排名；取消勾选即不参加该科目排名，也可选择单独排名。选择单独排名的班级合并为一组，其余参加统一排名的班级合并为统一组。
+            默认根据学生选科将对应科目纳入全校统一排名；可手动取消科目排名或设为单独排名。单独排名仅影响排名范围，同学科赋分仍采用全校统一标准。
           </div>
         </div>
       </div>
@@ -743,9 +744,11 @@ function ClassSubjectSettings({
           <tbody className="divide-y divide-ink-100">
             {classes.map((classItem) => {
               const profile = context.classProfiles?.[classItem.id];
-              const inferredSubjects = profile?.hasImportedScores
-                ? subjects.filter((subject) => profile.scoreSubjects.includes(subject))
-                : subjects;
+              const inferredSubjects = defaultClassRankingSubjects(
+                subjects,
+                profile?.subjectSelections,
+                profile?.hasImportedScores ? profile.scoreSubjects : undefined,
+              );
               const current = settings.classSubjects.find((item) => item.classId === classItem.id) || {
                 classId: classItem.id,
                 examSubjects: inferredSubjects,
@@ -777,9 +780,21 @@ function ClassSubjectSettings({
                 <tr key={classItem.id} className="align-top">
                   <td className="px-4 py-3">
                     <ClassSummary classItem={classItem} context={context} />
-                    {profile?.hasImportedScores ? (
-                      <div className="mt-1.5 text-[11px] text-blue-600">已参考最近一次整班成绩确定考试科目</div>
-                    ) : null}
+                    <div className="mt-1.5 text-[11px] text-blue-600">
+                      {profile?.subjectSelections.length ? "默认依据学生选科" : profile?.hasImportedScores
+                        ? "无选科信息，参考已导入科目" : "无选科信息，默认所有科目"}
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1.5 text-[11px] text-teal-700 underline-offset-2 hover:underline"
+                      onClick={() => replace({
+                        examSubjects: inferredSubjects,
+                        statisticSubjects: inferredSubjects,
+                        separateRankSubjects: [],
+                      })}
+                    >
+                      按选科恢复默认排名
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex max-w-2xl flex-wrap gap-1.5">

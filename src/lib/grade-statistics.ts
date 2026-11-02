@@ -65,6 +65,21 @@ export function inferStatisticSubjectsFromSelections(
   return unique([...coreSubjects, ...commonElectives]);
 }
 
+/** Rank all selected subjects in one cohort pool by default, even for mixed-selection classes. */
+export function defaultClassRankingSubjects(
+  subjects: string[],
+  subjectSelections: string[] = [],
+  observedSubjects?: string[],
+): string[] {
+  const selected = new Set(subjectSelections.flatMap((selection) =>
+    inferStatisticSubjectsFromSelections(subjects, [selection]) || [],
+  ));
+  if (selected.size > 0) return unique(subjects).filter((subject) => selected.has(subject));
+  return observedSubjects
+    ? unique(subjects).filter((subject) => observedSubjects.includes(subject))
+    : unique(subjects);
+}
+
 export function expectedGradeSubjectCount(subjects: string[], records: GradeScoreRecord[]): number {
   const selectionCounts = records.flatMap((record) => {
     const selected = inferStatisticSubjectsFromSelections(subjects, [record.subjectSelection || ""]);
@@ -139,6 +154,7 @@ export function buildDefaultGradeSettings(
   classIds: string[],
   teachers: GradeTeacherOption[] = [],
   classSubjectAvailability: GradeClassSubjectAvailability = {},
+  classSubjectSelections: Record<string, string[]> = {},
 ): GradeExamSettings {
   const normalizedSubjects = unique(subjects);
   const electiveSubjects = normalizedSubjects.filter((subject) =>
@@ -187,11 +203,12 @@ export function buildDefaultGradeSettings(
     ]),
   );
   const classSubjects: GradeClassSubjectSetting[] = unique(classIds).map((classId) => {
-    const hasObservedSubjects = Object.prototype.hasOwnProperty.call(classSubjectAvailability, classId);
-    const observedSubjects = new Set(classSubjectAvailability[classId] || []);
-    const defaultSubjects = hasObservedSubjects
-      ? normalizedSubjects.filter((subject) => observedSubjects.has(subject))
-      : normalizedSubjects;
+    const observedSubjects = Object.prototype.hasOwnProperty.call(classSubjectAvailability, classId)
+      ? classSubjectAvailability[classId]
+      : undefined;
+    const defaultSubjects = defaultClassRankingSubjects(
+      normalizedSubjects, classSubjectSelections[classId], observedSubjects,
+    );
     return {
       classId,
       examSubjects: [...defaultSubjects],
@@ -685,16 +702,15 @@ export function calculateGradeRecords(
 
   for (const [subject, rules] of Object.entries(settings.assignmentRules)) {
     if (!normalizedSubjects.includes(subject)) continue;
-    const unifiedRecords = participating.filter((record) => {
+    // Assignment conversion is exam-wide. Ranking pools may be separate, but a
+    // raw score must not convert to two different assigned scores by class.
+    const assignmentParticipants = participating.filter((record) => {
       const classSetting = classSettings.get(record.classId);
-      return !classSetting || classSetting.statisticSubjects.includes(subject);
+      return !classSetting
+        || classSetting.statisticSubjects.includes(subject)
+        || (classSetting.separateRankSubjects || []).includes(subject);
     });
-    assignSubjectScores(unifiedRecords, subject, rules);
-
-    const separateRecords = participating.filter((record) =>
-      (classSettings.get(record.classId)?.separateRankSubjects || []).includes(subject),
-    );
-    assignSubjectScores(separateRecords, subject, rules);
+    assignSubjectScores(assignmentParticipants, subject, rules);
   }
 
   normalizedSubjects.forEach((subject) => {

@@ -248,6 +248,9 @@ function GradePreprocessing({
         nextContext.classes.map((item) => item.id),
         nextContext.teachers,
         classSubjectAvailability,
+        Object.fromEntries(Object.entries(nextContext.classProfiles || {}).map(
+          ([classId, profile]) => [classId, profile.subjectSelections],
+        )),
       );
       const nextSettings = normalizeGradeSettings(
         nextContext.templateProfile

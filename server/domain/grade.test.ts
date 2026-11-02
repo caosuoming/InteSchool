@@ -335,13 +335,13 @@ describe("grade service", () => {
       });
       expect(context.sampleRecords).toEqual([exam.records[0]]);
       expect(exam.settings.classSubjects.find((item) => item.classId === "class-1")).toMatchObject({
-        examSubjects: ["数学"],
-        statisticSubjects: ["数学"],
+        examSubjects: ["数学", "化学"],
+        statisticSubjects: ["数学", "化学"],
       });
     });
   });
 
-  it("defaults all imported exam subjects to unified ranking, regardless of elective selection", async () => {
+  it("defaults imported exam subjects to the student's actual subject selection", async () => {
     const appState = state();
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 
@@ -366,7 +366,7 @@ describe("grade service", () => {
       });
 
       expect(exam.settings.classSubjects.find((item) => item.classId === "class-1")?.statisticSubjects)
-        .toEqual(subjects);
+        .toEqual(["语文", "数学", "英语", "政治", "历史", "地理"]);
     });
   });
 
