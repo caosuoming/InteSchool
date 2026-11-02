@@ -3,6 +3,7 @@ import type { GradeExamSettings } from "../types/index.js";
 import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
+  defaultClassRankingSubjects,
   inferClassSubjectAvailability,
   inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
@@ -66,23 +67,40 @@ describe("grade statistics", () => {
     expect(included.assignedScores.化学).toBe(100);
   });
 
-  it("defaults all examined class subjects to unified ranking regardless of elective presets", () => {
+  it("uses student electives for unified ranking instead of the last exam", () => {
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
-    const preset = inferStatisticSubjectsFromSelections(subjects, ["史政地"]);
-
-    expect(preset).toEqual(["语文", "数学", "英语", "政治", "历史", "地理"]);
+    expect(inferStatisticSubjectsFromSelections(subjects, ["史政地"]))
+      .toEqual(["语文", "数学", "英语", "政治", "历史", "地理"]);
+    expect(defaultClassRankingSubjects(subjects, ["物化生", "物史地"]))
+      .toEqual(["语文", "数学", "英语", "物理", "化学", "生物", "历史", "地理"]);
 
     const settings = buildDefaultGradeSettings(
       subjects,
-      ["class-1"],
+      ["class-1", "class-2", "class-3"],
       [],
-      { "class-1": subjects },
+      { "class-1": subjects, "class-2": ["语文", "化学"] },
+      { "class-1": ["史政地"], "class-2": ["未提供"], "class-3": ["物化生"] },
     );
-    expect(settings.classSubjects[0]).toMatchObject({
-      examSubjects: subjects,
-      statisticSubjects: subjects,
-      separateRankSubjects: [],
-    });
+    expect(settings.classSubjects).toEqual([
+      {
+        classId: "class-1",
+        examSubjects: ["语文", "数学", "英语", "政治", "历史", "地理"],
+        statisticSubjects: ["语文", "数学", "英语", "政治", "历史", "地理"],
+        separateRankSubjects: [],
+      },
+      {
+        classId: "class-2",
+        examSubjects: ["语文", "化学"],
+        statisticSubjects: ["语文", "化学"],
+        separateRankSubjects: [],
+      },
+      {
+        classId: "class-3",
+        examSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
+        statisticSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
+        separateRankSubjects: [],
+      },
+    ]);
   });
 
   it("infers all examined subjects even when some students lack a score", () => {
@@ -211,13 +229,35 @@ describe("grade statistics", () => {
     expect(firstClassTop.rawTotal).toBe(190);
     expect(secondClassTop.rawTotal).toBe(150);
     expect(firstClassTop.assignedScores.化学).toBe(100);
-    expect(secondClassTop.assignedScores.化学).toBe(100);
+    expect(secondClassTop.assignedScores.化学).toBe(70);
     expect(firstClassTop.subjectRanks?.化学).toBe(1);
     expect(firstClassSecond.subjectRanks?.化学).toBe(2);
     expect(firstClassTop.subjectRankScopes?.化学).toBe("separate");
     expect(secondClassTop.subjectRanks?.化学).toBe(1);
     expect(secondClassSecond.subjectRanks?.化学).toBe(2);
     expect(secondClassTop.subjectRankScopes?.化学).toBe("cohort");
+  });
+
+  it("uses one exam-wide assignment mapping across separate and unified ranking pools", () => {
+    const settings = buildDefaultGradeSettings(["化学"], ["c1", "c2", "c3"]);
+    settings.classSubjects[0].statisticSubjects = [];
+    settings.classSubjects[0].separateRankSubjects = ["化学"];
+    settings.classSubjects[2].statisticSubjects = [];
+    const records = calculateGradeRecords([
+      { id: "1", studentId: "1", studentName: "甲", studentNo: "1", classId: "c1", className: "一班", scores: { 化学: 90 } },
+      { id: "2", studentId: "2", studentName: "乙", studentNo: "2", classId: "c1", className: "一班", scores: { 化学: 70 } },
+      { id: "3", studentId: "3", studentName: "丙", studentNo: "3", classId: "c2", className: "二班", scores: { 化学: 90 } },
+      { id: "4", studentId: "4", studentName: "丁", studentNo: "4", classId: "c2", className: "二班", scores: { 化学: 80 } },
+      { id: "5", studentId: "5", studentName: "戊", studentNo: "5", classId: "c3", className: "三班", scores: { 化学: 100 } },
+    ], ["化学"], normalizeGradeSettings(settings, ["化学"], ["c1", "c2", "c3"]));
+    const byId = Object.fromEntries(records.map((record) => [record.studentId, record]));
+    expect(byId["1"].assignedScores.化学).toBe(100);
+    expect(byId["3"].assignedScores.化学).toBe(100);
+    expect(byId["2"].assignedScores.化学).toBeLessThan(byId["4"].assignedScores.化学!);
+    expect(byId["5"].assignedScores.化学).toBe(100);
+    expect(byId["5"].subjectRanks?.化学).toBeNull();
+    expect(byId["1"].subjectRankScopes?.化学).toBe("separate");
+    expect(byId["3"].subjectRankScopes?.化学).toBe("cohort");
   });
 
   it("excludes unchecked subjects from cohort ranks while retaining their imported scores", () => {

@@ -342,6 +342,9 @@ export function GradeImportWizard({
         context.classes.map((item) => item.id),
         context.teachers,
         classSubjectAvailability,
+        Object.fromEntries(Object.entries(context.classProfiles || {}).map(
+          ([classId, profile]) => [classId, profile.subjectSelections],
+        )),
       );
       const formulaDefaults = context.templateProfile
         ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }

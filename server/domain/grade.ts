@@ -234,9 +234,13 @@ function requireContext(schoolId: string, cohortKey: string): GradeImportContext
   const classProfiles = Object.fromEntries(classes.map((classItem) => {
     const classStudents = students.filter((student) => student.classId === classItem.id);
     const classRecords = latestRecords.filter((record) => record.classId === classItem.id);
+    const currentSelections = new Map(classStudents.map((student) => [
+      student.id, student.subjectSelection?.trim(),
+    ]));
     const subjectSelections = [...new Set([
-      ...classStudents.map((student) => student.subjectSelection?.trim()),
-      ...classRecords.map((record) => record.subjectSelection?.trim()),
+      ...currentSelections.values(),
+      ...classRecords.filter((record) => !currentSelections.get(record.studentId))
+        .map((record) => record.subjectSelection?.trim()),
     ].filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right, "zh-CN"));
     const importedClassTypes = [...new Set(classRecords
       .map((record) => record.classType?.trim())
@@ -375,12 +379,23 @@ function defaultOrNormalizedSettings(
   subjects: string[],
   context: GradeImportContext,
   classSubjectAvailability: Record<string, string[]> = {},
+  importedSelections: Record<string, string[]> = {},
 ): GradeExamSettings {
   const defaults = buildDefaultGradeSettings(
     subjects,
     context.classes.map((item) => item.id),
     context.teachers,
     classSubjectAvailability,
+    Object.fromEntries(context.classes.map((classItem) => {
+      const current = context.students
+        .filter((student) => student.classId === classItem.id)
+        .map((student) => student.subjectSelection?.trim())
+        .filter((selection): selection is string => Boolean(selection));
+      const incoming = importedSelections[classItem.id] || [];
+      return [classItem.id, current.length || incoming.length
+        ? [...new Set([...current, ...incoming])]
+        : context.classProfiles?.[classItem.id]?.subjectSelections || []];
+    })),
   );
   const baseSettings = settings || defaults;
   const inheritedDefaults = context.templateProfile
@@ -1099,6 +1114,13 @@ export const gradeService = {
       subjects,
       context,
       inferClassSubjectAvailability(baseRecords, subjects),
+      Object.fromEntries(context.classes.map((classItem) => [
+        classItem.id,
+        [...new Set(baseRecords.filter((record) => record.classId === classItem.id)
+          .filter((record) => !studentMap.get(record.studentId)?.subjectSelection?.trim())
+          .map((record) => record.subjectSelection)
+          .filter((selection): selection is string => Boolean(selection)))],
+      ])),
     );
     const records = calculateGradeRecords(baseRecords, subjects, settings);
     const now = new Date().toISOString();
