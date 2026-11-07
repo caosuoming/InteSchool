@@ -8,6 +8,17 @@ function asElement(html: string): HTMLDivElement {
 }
 
 describe("extract text renderer", () => {
+  it("renders unmarked cases in the extraction review without exposing LaTeX commands", () => {
+    const container = asElement(renderExtractText(
+      String.raw`解得\begin{cases}x=4, y=3\end{cases}。`,
+      [], false,
+    ));
+
+    expect(container.querySelectorAll(".formula-inline")).toHaveLength(1);
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex-html")?.textContent).not.toContain(String.raw`\begin{cases}`);
+  });
+
   it("renders double-escaped formulas in highlighted knowledge text", () => {
     const html = renderExtractText(
       "核心结论：若 &amp;dollar;x\\neq 0&amp;dollar;，则 &dollar;\\Delta > 0&dollar;。",
