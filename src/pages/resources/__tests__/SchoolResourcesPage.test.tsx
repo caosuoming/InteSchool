@@ -51,6 +51,7 @@ vi.mock("@/services/schoolBackup", async (importOriginal) => {
       getChapterTree: vi.fn(),
       getKnowledgeTree: vi.fn(),
       saveAsOwnResource: vi.fn(),
+      checkSaveQuestionDuplicates: vi.fn(),
       updateBackupProperties: vi.fn(),
       deleteBackup: vi.fn(),
     },
@@ -192,6 +193,7 @@ describe("SchoolResourcesPage", () => {
       ...emptyTree,
       type: "knowledge",
     });
+    vi.mocked(schoolBackupService.checkSaveQuestionDuplicates).mockResolvedValue([]);
     vi.mocked(schoolBackupService.saveAsOwnResource).mockResolvedValue({
       newResourceId: "copy-1",
       resourceType: "question",
@@ -225,6 +227,7 @@ describe("SchoolResourcesPage", () => {
     const saveButton = screen.getByRole("button", { name: "另存到我的资源" });
     expect(saveButton).toBeEnabled();
 
+    vi.mocked(schoolBackupService.checkSaveQuestionDuplicates).mockResolvedValue([]);
     vi.mocked(schoolBackupService.saveAsOwnResource).mockResolvedValue({
       newResourceId: "paper-copy",
       resourceType: "examPaper",
@@ -235,6 +238,7 @@ describe("SchoolResourcesPage", () => {
       expect(schoolBackupService.saveAsOwnResource).toHaveBeenCalledWith(
         "backup-paper",
         teacherSelf,
+        undefined,
       );
     });
   });
