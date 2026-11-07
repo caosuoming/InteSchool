@@ -15,6 +15,88 @@ const config: DocumentParseConfig = {
 };
 
 describe("document block parser", () => {
+  it.each([
+    ["B", "single"],
+    ["（C）", "single"],
+    ["Ａ", "single"],
+    ["$\\mathrm{D}$", "single"],
+    ["AC", "multiple"],
+    ["A、C、D", "multiple"],
+    ["（A，B）", "multiple"],
+  ] as const)("recognizes math choice answers %s as %s", (answer, expected) => {
+    const blocks = parseDocumentBlocks(
+      ["一、选择题", "1. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁", `答案：${answer}`].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks[1]).toMatchObject({ questionType: expected, answer });
+  });
+
+  it("uses the math answer to distinguish single from multiple even when the section disagrees", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、多选题",
+        "1. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：B",
+        "二、单选题",
+        "2. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：AC",
+      ].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.questionType))
+      .toEqual(["single", "multiple"]);
+  });
+
+  it("recognizes a math choice answer when option text was not extracted", () => {
+    const blocks = parseDocumentBlocks(
+      ["一、选择题", "1. 判断哪个选项正确。", "答案：B、D"].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks[1]).toMatchObject({ questionType: "multiple", answer: "B、D", options: [] });
+  });
+
+  it("reclassifies math choice questions using answers in the trailing answer section", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、选择题",
+        "1. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "参考答案",
+        "1. AC",
+        "2. B",
+      ].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.questionType))
+      .toEqual(["multiple", "single"]);
+  });
+
+  it("does not treat math variable answers as choice keys or change other subjects", () => {
+    const source = ["一、多选题", "1. 判断下列结论 A. 甲 B. 乙 C. 丙 D. 丁", "答案：A=2"].join("\n");
+    const mathBlocks = parseDocumentBlocks(source, { ...config, subject: "数学" });
+    const mathFormulaBlocks = parseDocumentBlocks(
+      ["一、单选题", "1. 判断下列结论 A. 甲 B. 乙 C. 丙 D. 丁", "答案：A=2，B=3"].join("\n"),
+      { ...config, subject: "数学" },
+    );
+    const geographyBlocks = parseDocumentBlocks(
+      source.replace("答案：A=2", "答案：A"), { ...config, subject: "地理" },
+    );
+    const nonChoiceBlocks = parseDocumentBlocks(
+      ["例1 已知向量 A，求其模。", "答案：A"].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(mathBlocks[1].questionType).toBe("multiple");
+    expect(mathFormulaBlocks[1].questionType).toBe("single");
+    expect(geographyBlocks[1].questionType).toBe("multiple");
+    expect(nonChoiceBlocks[0].questionType).not.toBe("single");
+    expect(nonChoiceBlocks[0].questionType).not.toBe("multiple");
+  });
+
   it("keeps formulas and extracts inline options", () => {
     const blocks = parseDocumentBlocks(
       [
