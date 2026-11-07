@@ -89,7 +89,7 @@ export const extractService = {
       }
       const collection = sourceResourceType === "examPaper" ? "examPapers" : "lectures";
       const source = (db.read(collection) || []).find((entry: { id: string }) => entry.id === sourceResourceId);
-      if (!source || source.teacherId !== teacherId || source.schoolId !== schoolId) {
+      if (!source || source.teacherId !== teacherId) {
         throw new Error("源文档不存在或无权操作");
       }
       if ((db.read(collection) || []).some((entry: { sourceResourceId?: string; isExtractCopy?: boolean }) =>
@@ -222,9 +222,19 @@ export const extractService = {
         ...(block.type === "knowledge" ? { materialId: materialIdByItemId[block.id] } : {}),
       }));
       if (sourceResourceType === "examPaper") {
-        await examPaperService.createExtractCopy(sourceResourceId, linkedBlocks);
+        const copy = await examPaperService.createExtractCopy(sourceResourceId, linkedBlocks);
+        if (copy.schoolId !== schoolId) {
+          db.update("examPapers", (papers) => papers.map((paper) => (
+            paper.id === copy.id ? { ...paper, schoolId, classIds: [], studentIds: [] } : paper
+          )));
+        }
       } else {
-        await lectureService.createExtractCopy(sourceResourceId, linkedBlocks);
+        const copy = await lectureService.createExtractCopy(sourceResourceId, linkedBlocks);
+        if (copy.schoolId !== schoolId) {
+          db.update("lectures", (lectures) => lectures.map((lecture) => (
+            lecture.id === copy.id ? { ...lecture, schoolId, classIds: [], studentIds: [] } : lecture
+          )));
+        }
       }
     }
 
