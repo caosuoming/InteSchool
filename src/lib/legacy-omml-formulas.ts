@@ -143,7 +143,8 @@ export function normalizeLegacyOmmlMathText(text: string): string {
 
   // Keep already-delimited formulas intact. Only recover known legacy OMML
   // structures from the intervening plain text, not arbitrary backslashes.
-  return wrapUnmarkedCases(normalized.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g)
-    .map((segment) => segment.startsWith("$") ? segment : restoreBareMath(segment))
-    .join(""));
+  return wrapUnmarkedCases(normalized.replace(LEGACY_REDUNDANT_CASES_DELIMITER_PATTERN, "$1"))
+    .split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|<(?:code|pre|script|style)\b[^>]*>[\s\S]*?<\/(?:code|pre|script|style)\s*>)/g)
+    .map((segment) => segment.startsWith("$") || segment.startsWith("\\(") || segment.startsWith("\\[") || /^<(code|pre|script|style)\b/i.test(segment) ? segment : restoreBareMath(segment))
+    .join("");
 }

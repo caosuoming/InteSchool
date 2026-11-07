@@ -48,6 +48,8 @@ describe("document block parser", () => {
     });
 
     expect(blocks.some((block) => block.type === "groupTitle")).toBe(false);
+  });
+
   it.each([
     ["B", "single"],
     ["（C）", "single"],
@@ -2584,7 +2586,7 @@ describe("math question number continuity", () => {
     const blocks = parseDocumentBlocks(source, mathConfig);
     expect(blocks.map((block) => block.content)).toEqual(source.split("\n"));
     expect(blocks.every((block) => block.type === "question")).toBe(true);
-    expect(findMathQuestionNumberGaps(blocks)).toEqual([]);
+    expect(findMathQuestionNumberSequenceGaps(blocks)).toEqual([]);
   });
 
   it("reports uncertain gaps instead of silently inventing missing questions", () => {

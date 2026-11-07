@@ -40,7 +40,6 @@ export interface DocumentBlock {
 
 export interface DocumentParseConfig {
   subject?: string;
-  confirmedMathQuestionNumbers?: number[];
   headingKeywords: string[];
   projectTypeKeywords?: string[];
   questionKeywords: string[];
@@ -611,9 +610,12 @@ function isSequentialMathQuestionStart(
   config: DocumentParseConfig,
 ): boolean {
   if (config.subject?.trim() !== "数学" || block.type !== "question") return false;
-  const candidate = mathQuestionNumberCandidate(line);
+  const normalized = normalizeStructuralText(line.trim());
+  const candidate = mathQuestionNumber(normalized, config.confirmedMathQuestionNumbers)
+    || (/^\d{1,4}\s+(?:已知|设|若|求|计算|证明|判断|试|下列|选择|指出|写出|解答|阅读|根据|关于|如图|在|有)/.test(normalized)
+      ? String(mathQuestionNumberCandidate(normalized)?.number || "") : undefined);
   const currentNumber = extractQuestionNumber(block.content || "", config);
-  return Boolean(candidate?.separated && currentNumber && candidate.number === Number(currentNumber) + 1);
+  return Boolean(candidate && currentNumber && Number(candidate) === Number(currentNumber) + 1);
 }
 
 function shouldContinueNumberedSummary(
@@ -1065,8 +1067,10 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
   if (config.subject?.trim() === "数学") {
     const mathNumber = mathQuestionNumber(text, config.confirmedMathQuestionNumbers);
     if (mathNumber) return mathNumber;
-    const candidate = mathQuestionNumberCandidate(text);
-    if (candidate) return String(candidate.number);
+    const confirmedCandidate = mathQuestionNumberCandidate(text);
+    if (confirmedCandidate && config.confirmedMathQuestionNumbers?.includes(confirmedCandidate.number)) {
+      return String(confirmedCandidate.number);
+    }
   }
 
   const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
@@ -1560,7 +1564,7 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
     const match = /^([\d０-９]{1,4})(.*)$/.exec(line);
     if (!match) continue;
     const rest = match[2].replace(/^[\s\u3000。·•:：\-－—?？]+/, "").trim();
-    if (rest.length < 5 || !/^[（(【［\u3400-\u9fff]/.test(rest)) continue;
+    if (rest.length < 3 || !/^[（(【［\u3400-\u9fff]/.test(rest)) continue;
     // A number embedded in a formula or measurement is not a question label.
     if (!/^(?:[（(【［]|已知|设|若|求|计算|证明|判断|试|下列|选择|指出|写出|解答|阅读|根据|关于|如图|在|有)/.test(rest)) continue;
     candidates.set(index, { number: Number(normalizeQuestionNumber(match[1])), rest });
@@ -1585,7 +1589,10 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
           break;
         }
       }
-      if (candidate.number === (previous ?? -1) + 1 || candidate.number + 1 === next) {
+      const hasSeparator = /^[\d０-９]{1,4}\s*[、.．:：)）,，。｡;；·•—–]/.test(lines[index].trim());
+      if ((hasSeparator && (candidate.number === (previous ?? -1) + 1 || candidate.number + 1 === next))
+        || (next !== undefined && candidate.number + 1 === next
+          && (previous === undefined || previous < candidate.number))) {
         known.set(index, candidate.number);
         changed = true;
       }
@@ -1594,9 +1601,23 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
 
   return lines.map((line, index) => {
     const candidate = candidates.get(index);
-    return candidate && known.get(index) === candidate.number
-      ? `${candidate.number}. ${candidate.rest}`
-      : line;
+    if (candidate && known.get(index) === candidate.number) {
+      const original = line.trim();
+      const priorRecovered = [...candidates].some(([otherIndex, other]) => otherIndex < index
+        && known.get(otherIndex) === other.number && other.number === candidate.number - 1
+        && !mathQuestionNumber(lines[otherIndex]));
+      const directMath = mathQuestionNumber(original, config.confirmedMathQuestionNumbers);
+      const whitespaceNumber = /^\d{1,4}\s+[\u3400-\u9fff]/.test(original);
+      const priorIsSequential = [...known].some(([otherIndex, number]) => otherIndex < index
+        && sections[otherIndex] === sections[index] && number === candidate.number - 1);
+      if (!priorRecovered && (directMath || (whitespaceNumber && priorIsSequential))) return line;
+      return `${candidate.number}. ${candidate.rest}`;
+    }
+    const colon = /^\s*([\d０-９]{1,4})\s*[:：]\s*(.*)$/.exec(line);
+    if (colon && known.has(index) && known.get(index) === known.get(index + 1)! - 1) {
+      return `${normalizeQuestionNumber(colon[1])}. ${colon[2]}`;
+    }
+    return line;
   });
 }
 
@@ -2055,7 +2076,7 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
       start -= 1;
     }
     const introduction = lines.slice(start, index + 1).map((line) => line.trim()).filter(Boolean).join("\n");
-    const range = /(?:回答|完成|作答)\s*(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
+    const range = /(?:回答|完成|作答)\s*(?:下[列面]\s*)?(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
     const lastInRange = range && Number(range[2]) > Number(range[1])
       && Number(range[2]) - Number(range[1]) <= 9 ? Number(range[2]) : undefined;
     const numbers: string[] = [];
