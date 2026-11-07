@@ -11,6 +11,7 @@ vi.mock("@/services/knowledge", () => ({
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
     getMethodTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
     listChapters: vi.fn(),
     listKnowledgePoints: vi.fn(),
     addChapter: vi.fn(),
@@ -107,6 +108,7 @@ describe("QuickEditModal", () => {
     });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [{ id: "reason-1", name: "概念混淆", type: "error", count: 1, children: [] }] });
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue(methodTree);
     vi.mocked(questionService.updateQuestion).mockResolvedValue(question);
   });
@@ -124,6 +126,7 @@ describe("QuickEditModal", () => {
     const chapterTab = screen.getByRole("tab", { name: /章节课目录/ });
     const knowledgeTab = screen.getByRole("tab", { name: /知识点目录/ });
     const methodTab = screen.getByRole("tab", { name: /思想方法目录/ });
+    const errorTab = screen.getByRole("tab", { name: /可能错因/ });
 
     expect(chapterTab).toHaveAttribute("aria-selected", "true");
     expect(knowledgeTab).toHaveAttribute("aria-selected", "false");
@@ -144,6 +147,10 @@ describe("QuickEditModal", () => {
     expect(await screen.findByPlaceholderText("搜索思想方法目录...")).toBeVisible();
     expect(screen.getByText("数形结合")).toBeInTheDocument();
     expect(methodTab).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(errorTab);
+    expect(await screen.findByPlaceholderText("搜索错因...")).toBeVisible();
+    expect(screen.getByText("概念混淆")).toBeInTheDocument();
+    expect(errorTab).toHaveAttribute("aria-selected", "true");
   });
 
   it("preserves legacy sectionOrder instead of rewriting it when saving the new tab layout", async () => {
@@ -169,6 +176,18 @@ describe("QuickEditModal", () => {
       remark: "",
     });
     expect(payload).not.toHaveProperty("sectionOrder");
+  });
+
+  it("retains and saves a question's selected possible error reasons", async () => {
+    render(<QuickEditModal open question={{ ...question, errorReasonIds: ["reason-1"] }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("tab", { name: /可能错因/ }));
+    expect(await screen.findByPlaceholderText("搜索错因...")).toBeVisible();
+    expect(screen.getByText("概念混淆")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", expect.objectContaining({
+      thoughtMethodIds: ["method-1"],
+      errorReasonIds: ["reason-1"],
+    })));
   });
 
   it("can clear saved thought methods without changing chapter or knowledge associations", async () => {

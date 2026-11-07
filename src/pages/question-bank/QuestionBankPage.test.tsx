@@ -93,6 +93,7 @@ vi.mock("@/services/knowledge", () => ({
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
     getMethodTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
     listChapters: vi.fn(),
     listKnowledgePoints: vi.fn(),
   },
@@ -189,6 +190,7 @@ describe("QuestionBankPage personal resource scope", () => {
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
       id: "root", name: "全部思想方法", type: "method", count: 0, children: [],
     });

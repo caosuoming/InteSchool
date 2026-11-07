@@ -1358,7 +1358,7 @@ export interface GradeExamImportInput {
   settings?: GradeExamSettings;
 }
 
-export type TreeNodeType = "chapter" | "knowledge" | "method";
+export type TreeNodeType = "chapter" | "knowledge" | "method" | "error";
 export type PrerequisiteNodeType = "chapter" | "knowledge";
 export interface NodePrerequisite {
   type: PrerequisiteNodeType;
@@ -1398,6 +1398,7 @@ export interface KnowledgePoint {
 }
 
 export type ThoughtMethod = Omit<KnowledgePoint, "chapterId">;
+export type ErrorReason = Omit<KnowledgePoint, "chapterId">;
 
 export interface TreeNode {
   id: string;
@@ -1572,6 +1573,7 @@ export interface Question {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   usageCount: number;
@@ -1688,6 +1690,7 @@ export interface ExamPaper {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1787,6 +1790,7 @@ export interface Courseware {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1833,6 +1837,7 @@ export interface Material {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1864,7 +1869,9 @@ export interface ResourceFilter {
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   methodLogic?: FilterLogic;
+  errorReasonLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
@@ -2267,7 +2274,9 @@ export interface QuestionFilter {
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   methodLogic?: FilterLogic;
+  errorReasonLogic?: FilterLogic;
   noChapter?: boolean;
   noKnowledge?: boolean;
   difficulty?: number[];
@@ -2332,6 +2341,7 @@ export interface Lecture {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -2423,7 +2433,9 @@ export interface LectureFilter {
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   methodLogic?: FilterLogic;
+  errorReasonLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;

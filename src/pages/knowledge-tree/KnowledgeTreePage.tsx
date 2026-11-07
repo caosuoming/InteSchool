@@ -38,7 +38,7 @@ import type {
 } from "@/types";
 import { cn } from "@/lib/utils";
 
-type TreeKind = "chapter" | "knowledge" | "method";
+type TreeKind = "chapter" | "knowledge" | "method" | "error";
 
 function directorySnapshotTree(type: TreeKind, nodes: DirectoryCatalogNode[]): TreeNode {
   const childrenOf = (parentId: string | null): TreeNode[] => nodes
@@ -57,7 +57,7 @@ function directorySnapshotTree(type: TreeKind, nodes: DirectoryCatalogNode[]): T
     }));
   return {
     id: "root",
-    name: type === "chapter" ? "全部章节" : type === "knowledge" ? "全部知识点" : "全部思想方法",
+    name: type === "chapter" ? "全部章节" : type === "knowledge" ? "全部知识点" : type === "method" ? "全部思想方法" : "全部错因",
     type,
     count: nodes.length,
     children: childrenOf(null),
@@ -142,7 +142,9 @@ export default function KnowledgeTreePage() {
         ? await knowledgeService.getChapterTree(teacher.id)
         : kind === "knowledge"
           ? await knowledgeService.getKnowledgeTree(teacher.id)
-          : await knowledgeService.getMethodTree(teacher.id);
+          : kind === "method"
+            ? await knowledgeService.getMethodTree(teacher.id)
+            : await knowledgeService.getErrorReasonTree(teacher.id);
     setTree(t);
     setSelectedNode((current) =>
       current ? findTreeNode(t, current.id) : null,
@@ -163,7 +165,7 @@ export default function KnowledgeTreePage() {
   useEffect(() => {
     const containsPrerequisites = (node: TreeNode): boolean =>
       Boolean(node.prerequisites?.length) || node.children.some(containsPrerequisites);
-    if (kind !== "method" && tree && containsPrerequisites(tree)) {
+    if (kind !== "method" && kind !== "error" && tree && containsPrerequisites(tree)) {
       void loadPrerequisiteOptions().catch(() => toast.error("加载前置节点失败"));
     }
   }, [tree, kind, loadPrerequisiteOptions]);
@@ -206,7 +208,7 @@ export default function KnowledgeTreePage() {
   };
 
   const updatePrerequisites = async (prerequisites: NodePrerequisite[]) => {
-    if (!teacher || !selectedNode || kind === "method") return;
+    if (!teacher || !selectedNode || (kind === "method" || kind === "error")) return;
     setPrerequisiteSaving(true);
     try {
       await knowledgeService.setNodePrerequisites(teacher.id, kind, selectedNode.id, prerequisites);
@@ -231,14 +233,16 @@ export default function KnowledgeTreePage() {
     let filter;
     if (kind === "chapter") {
       filter = { schoolId: teacher.schoolId!, chapterIds: [selectedNode.id] };
-    } else if (kind === "method") {
+    } else if (kind === "method" || kind === "error") {
       const ids = new Set<string>();
       const collect = (node: TreeNode) => {
         if (node.id !== "root") ids.add(node.id);
         node.children.forEach(collect);
       };
       collect(selectedNode);
-      filter = { schoolId: teacher.schoolId!, thoughtMethodIds: [...ids] };
+      filter = kind === "method"
+        ? { schoolId: teacher.schoolId!, thoughtMethodIds: [...ids] }
+        : { schoolId: teacher.schoolId!, errorReasonIds: [...ids] };
     } else {
       // 扩展为所有同名知识点的ID（分身）
       const aliasIds = await knowledgeService.getAliasIds(selectedNode.id, teacher.schoolId!);
@@ -302,6 +306,15 @@ export default function KnowledgeTreePage() {
         return;
       }
       await knowledgeService.addChapter(teacher.id, parentNode.id === "root" ? null : parentNode.id, name);
+    } else if (kind === "error") {
+      const reasons = await knowledgeService.listErrorReasons(teacher.id);
+      const targetParentId = parentNode.id === "root" ? null : parentNode.id;
+      if (reasons.some((item) => item.parentId === targetParentId && item.name === name)) {
+        toast.error("同一父节点下已存在同名节点");
+        return;
+      }
+      await knowledgeService.addErrorReason(teacher.id, targetParentId, name);
+      toast.success("节点已添加");
     } else if (kind === "method") {
       const allMethods = await knowledgeService.listThoughtMethods(teacher.id);
       const targetParentId = parentNode.id === "root" ? null : parentNode.id;
@@ -536,7 +549,7 @@ export default function KnowledgeTreePage() {
 
   const handleCreateCatalog = async () => {
     if (!teacher) return;
-    const defaultName = kind === "chapter" ? "新章节课目录" : "新知识点目录";
+    const defaultName = kind === "chapter" ? "新章节课目录" : kind === "knowledge" ? "新知识点目录" : kind === "method" ? "新思想方法目录" : "新错因字典";
     const name = window.prompt("请输入新目录名称", defaultName);
     if (name === null || !name.trim()) return;
     try {
@@ -705,7 +718,7 @@ export default function KnowledgeTreePage() {
     <div>
       <PageHeader
         title="知识树"
-        description="以树形结构浏览章节、知识点与思想方法，每个目录前可复选筛选题目"
+        description="以树形结构浏览章节、知识点、思想方法与错因字典，每个目录前可复选筛选题目"
         icon={<GitBranch className="w-5 h-5" />}
         action={
           <div className="flex items-center gap-1.5 p-1 rounded-md bg-ink-100">
@@ -736,6 +749,15 @@ export default function KnowledgeTreePage() {
             >
               思想方法
             </button>
+            <button
+              onClick={() => handleKindChange("error")}
+              className={cn(
+                "px-3 py-1 rounded text-xs font-medium transition-all",
+                kind === "error" ? "bg-paper text-ink-900 shadow-sm" : "text-ink-600",
+              )}
+            >
+              错因字典
+            </button>
           </div>
         }
       />
@@ -746,14 +768,14 @@ export default function KnowledgeTreePage() {
             <div className="flex items-center gap-2 mb-1.5">
               <Layers3 className="w-4 h-4 text-gold-600" />
               <span className="text-sm font-medium text-ink-800">
-                当前启用的{kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}
+                当前启用的{kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : kind === "method" ? "思想方法目录" : "错因字典"}
               </span>
               {activeCatalog && (
                 <Badge variant="ink">{activeCatalog.nodeCount} 个节点</Badge>
               )}
             </div>
             <select
-              aria-label={`当前启用的${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}`}
+              aria-label={`当前启用的${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : kind === "method" ? "思想方法目录" : "错因字典"}`}
               value={activeCatalog?.id || ""}
               disabled={catalogs.length <= 1 || switchingCatalog}
               onChange={(event) => handleActivateCatalog(event.target.value)}
@@ -878,7 +900,7 @@ export default function KnowledgeTreePage() {
             )}
 
             <p className="mt-2 text-[11px] leading-5 text-ink-400">
-              可直接拖动节点到另一个节点下；拖到“{tree?.name || (kind === "chapter" ? "全部章节" : kind === "knowledge" ? "全部知识点" : "全部思想方法")}”可移到顶级。
+              可直接拖动节点到另一个节点下；拖到“{tree?.name || (kind === "chapter" ? "全部章节" : kind === "knowledge" ? "全部知识点" : kind === "method" ? "全部思想方法" : "全部错因")}”可移到顶级。
             </p>
 
             <div className="mt-3 pt-3 border-t border-ink-100">
@@ -923,7 +945,7 @@ export default function KnowledgeTreePage() {
                       <Badge variant="ink">
                         {selectedNode.id === "root"
                           ? "目录"
-                          : kind === "chapter" ? "章节" : kind === "knowledge" ? "知识点" : "思想方法"}
+                          : kind === "chapter" ? "章节" : kind === "knowledge" ? "知识点" : kind === "method" ? "思想方法" : "错因"}
                       </Badge>
                     </div>
                     {selectedNode.id === "root" && (
@@ -1020,7 +1042,7 @@ export default function KnowledgeTreePage() {
                             ? "（" + selectedNodeAssociations.length + "）"
                             : ""}
                         </Button>
-                        {kind !== "method" && (
+                        {kind !== "method" && kind !== "error" && (
                           <Button variant="ghost" size="sm" onClick={openPrerequisitePicker}>
                             <Link2 className="w-3 h-3 mr-1" />
                             添加前置节点
@@ -1044,7 +1066,7 @@ export default function KnowledgeTreePage() {
                       <div className="text-xs text-ink-500 mt-1">{selectedNode.description}</div>
                     )}
                   </div>
-                  <Link to={`/question-bank?${kind === "chapter" ? "chapter" : kind === "knowledge" ? "point" : "method"}=${selectedNode.id}`} target="_blank" rel="noreferrer">
+                  <Link to={`/question-bank?${kind === "chapter" ? "chapter" : kind === "knowledge" ? "point" : kind === "method" ? "method" : "error"}=${selectedNode.id}`} target="_blank" rel="noreferrer">
                     <Button variant="ghost" size="sm">
                       在题库中查看
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -1052,7 +1074,7 @@ export default function KnowledgeTreePage() {
                   </Link>
                 </div>
 
-                {kind !== "method" && selectedNode.id !== "root" && (
+                {kind !== "method" && kind !== "error" && selectedNode.id !== "root" && (
                   <div className="mt-4 border-t border-dashed border-ink-200 pt-3">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-medium text-ink-600">前置章节课 / 前置知识点</span>
@@ -1213,7 +1235,7 @@ export default function KnowledgeTreePage() {
         open={addNodeOpen}
         onClose={() => setAddNodeOpen(false)}
         size="sm"
-        title={`添加${kind === "chapter" ? "章节" : kind === "knowledge" ? "知识点" : "思想方法"}节点`}
+        title={`添加${kind === "chapter" ? "章节" : kind === "knowledge" ? "知识点" : kind === "method" ? "思想方法" : "错因"}节点`}
         description={parentNode ? `父节点：${parentNode.name}` : undefined}
         footer={
           <>
@@ -1427,8 +1449,8 @@ export default function KnowledgeTreePage() {
         }}
         size="lg"
         title={previewDonation
-          ? `${previewDonation.donorNickname}捐赠的${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}`
-          : `同学科${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : "思想方法目录"}捐赠`}
+          ? `${previewDonation.donorNickname}捐赠的${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : kind === "method" ? "思想方法目录" : "错因字典"}`
+          : `同学科${kind === "chapter" ? "章节课目录" : kind === "knowledge" ? "知识点目录" : kind === "method" ? "思想方法目录" : "错因字典"}捐赠`}
         description={previewDonation
           ? `学科：${previewDonation.subject} · ${previewDonation.nodes.length} 个节点 · 预览不会修改当前目录`
           : "先预览目录内容，再选择合并到当前目录或新建独立目录体系。"}

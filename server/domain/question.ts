@@ -238,6 +238,12 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
       if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
     } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
   }
+  if (filter.errorReasonIds?.length) {
+    const ids = q.errorReasonIds || [];
+    if ((filter.errorReasonLogic || "or") === "and") {
+      if (!filter.errorReasonIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.errorReasonIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.difficulty?.length) {
     if (!filter.difficulty.includes(q.difficulty)) return false;
   }

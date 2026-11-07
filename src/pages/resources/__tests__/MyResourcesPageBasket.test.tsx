@@ -94,6 +94,7 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
     getMethodTree: vi.fn(),
   },
 }));
@@ -268,6 +269,8 @@ describe("MyResourcesPage resource basket", () => {
 
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({ ...emptyTree, type: "method" });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(emptyTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({ id: "root", name: "全部思想方法", type: "method", count: 0, children: [] });
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue({
       ...emptyTree,
       type: "knowledge",
