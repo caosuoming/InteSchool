@@ -1933,6 +1933,121 @@ describe("document block parser", () => {
   });
 
   it.each([
+    "视角1 根据零点个数分类讨论",
+    "视角２：利用图像判断参数范围",
+    "目标3 根据零点情况确定参数",
+    "题型突破",
+    "题型突破：函数的零点问题",
+    "举题说法 典型例题剖析",
+    "随堂内化",
+    "随堂内化：变式训练",
+    "配套精炼 A组基础巩固",
+    "A组 基础巩固",
+    "B组：能力提升",
+  ])("recognizes math lecture project heading %s", (heading) => {
+    const blocks = parseDocumentBlocks([
+      "例1 已知函数 f(x)，求其零点。",
+      "解析：由函数的单调性可得。",
+      heading,
+      "例2 已知另一个函数，求其零点。",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "例1 已知函数 f(x)，求其零点。"],
+      ["groupTitle", heading],
+      ["question", "例2 已知另一个函数，求其零点。"],
+    ]);
+    expect(blocks[0].analysis).toBe("由函数的单调性可得。");
+  });
+
+  it("recognizes an image-based project marker followed by a title", () => {
+    const marker = "![文档图片](/api/files/file-1/assets/rId3?officeWidth=86&officeHeight=32)";
+    const heading = `${marker} 根据零点情况确定参数`;
+    const blocks = parseDocumentBlocks([
+      "例1 已知函数 f(x)，求其零点。",
+      "解析：由单调性可得函数零点。",
+      heading,
+      "视角1 根据零点个数求参数范围",
+      "例2 求函数的最值。",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "例1 已知函数 f(x)，求其零点。"],
+      ["groupTitle", heading],
+      ["groupTitle", "视角1 根据零点个数求参数范围"],
+      ["question", "例2 求函数的最值。"],
+    ]);
+    expect(blocks[0].analysis).toBe("由单调性可得函数零点。");
+  });
+
+  it("recognizes a standalone one-line-sized image heading", () => {
+    const marker = "![文档图片](/api/files/file-1/assets/rId4?officeWidth=92&officeHeight=34)";
+    const blocks = parseDocumentBlocks([
+      "例1 计算 x+1 的值。",
+      "答案：2",
+      marker,
+      "例2 计算 x+2 的值。",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks.map((block) => [block.type, block.content])).toEqual([
+      ["question", "例1 计算 x+1 的值。"],
+      ["groupTitle", marker],
+      ["question", "例2 计算 x+2 的值。"],
+    ]);
+  });
+
+  it.each([
+    "![图](/api/files/file-1/assets/rId1?officeWidth=300&officeHeight=160)",
+    "![图](/api/files/file-1/assets/rId1?officeWidth=28&officeHeight=24)",
+    "![图](/api/files/file-1/assets/rId1)",
+    "![图](/api/files/file-1/assets/rId1?officeWidth=85&officeHeight=30) 已知 x=1，求 x+2。",
+  ])("keeps question illustrations rather than treating %s as a title", (imageLine) => {
+    const blocks = parseDocumentBlocks([
+      "例1 已知函数图像如下，判断零点。",
+      imageLine,
+      "解析：观察图像得出结论。",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: `例1 已知函数图像如下，判断零点。\n${imageLine}`,
+      analysis: "观察图像得出结论。",
+    });
+  });
+
+  it("keeps a compact formula image following an explicit figure prompt in the question", () => {
+    const marker = "![文档图片](/api/files/file-1/assets/rId7?officeWidth=86&officeHeight=28)";
+    const blocks = parseDocumentBlocks([
+      "例1 已知函数图像如下：",
+      marker,
+      "求函数的零点。",
+      "答案：2",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "question",
+      content: `例1 已知函数图像如下：\n${marker}\n求函数的零点。`,
+      answer: "2",
+    });
+  });
+
+  it.each([
+    "视角1个重要技巧是观察单调性。",
+    "题型突破的方法包括分类讨论。",
+    "A组和B组的成绩各有不同。",
+  ])("does not promote a normal sentence %s into a group title", (line) => {
+    const blocks = parseDocumentBlocks([
+      "例1 求函数 f(x) 的最值。",
+      line,
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].content).toBe(`例1 求函数 f(x) 的最值。\n${line}`);
+  });
+
+  it.each([
     "练习1 求数列的最大项。",
     "练习题1 求数列的最小项。",
     "训练1 求数列的通项公式。",
