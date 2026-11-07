@@ -111,6 +111,10 @@ export const serviceParameters = {
       "teacher"
     ]
   },
+  "dashboardTodo": {
+    "listTodoRecords": ["teacherId"],
+    "setTodoStatus": ["teacherId", "input"]
+  },
   "notification": {
     "listNotifications": [
       "teacherId"
