@@ -3,7 +3,7 @@ import type {
   ExamPaperQuestion,
   Lecture,
 } from "../../src/types/index.js";
-import { isDocumentStructureLocked } from "../../src/lib/document-resource.js";
+import { isDocumentStructureLocked, isExamPaperStructureLocked } from "../../src/lib/document-resource.js";
 import { db } from "../runtime-db.js";
 
 export function assertDocumentNotUsed(documentId: string): void {
@@ -29,6 +29,7 @@ function samePaperQuestionStructure(
     return Boolean(next)
       && question.id === next.id
       && question.questionId === next.questionId
+      && question.projectId === next.projectId
       && question.stem === next.stem
       && sameStringArray(question.options, next.options)
       && ((question.type === "single" || question.type === "multiple") || question.answer === next.answer)
@@ -81,9 +82,12 @@ export function sanitizeExamPaperPatch(
   delete metadataSafePatch.answerSheetPublishedAt;
   delete metadataSafePatch.answerSheetSettings;
   delete metadataSafePatch.answerSheetRevisionId;
-  if (!isDocumentStructureLocked(current)) return metadataSafePatch;
+  delete metadataSafePatch.paperDownloadedAt;
+  delete metadataSafePatch.answerSheetExportedAt;
+  if (!isExamPaperStructureLocked(current)) return metadataSafePatch;
 
   const safePatch = metadataSafePatch;
+  const lockReason = isDocumentStructureLocked(current) ? "上传原稿和拆解稿" : "已下载的试卷或已导出的答题卡";
   delete safePatch.originalFileUrl;
   delete safePatch.originalFileName;
   delete safePatch.originalFileType;
@@ -95,7 +99,7 @@ export function sanitizeExamPaperPatch(
   delete safePatch.answerSheetCreatedAt;
   if (patch.questions) {
     if (!samePaperQuestionStructure(current.questions, patch.questions)) {
-      throw new Error("上传原稿和拆解稿不能换题、删除题目或调整题目顺序");
+      throw new Error(`${lockReason}不能换题、删除题目或调整题目顺序`);
     }
     safePatch.questions = current.questions.map((question, index) => ({
       ...question,
@@ -110,16 +114,16 @@ export function sanitizeExamPaperPatch(
   }
 
   if (patch.contentBlocks && !sameJsonStructure(current.contentBlocks, patch.contentBlocks)) {
-    throw new Error("上传原稿和拆解稿不能编辑文档内容结构");
+    throw new Error(`${lockReason}不能编辑文档内容结构`);
   }
   if (patch.layoutMode !== undefined && patch.layoutMode !== current.layoutMode) {
-    throw new Error("上传原稿和拆解稿不能调整题目编排方式");
+    throw new Error(`${lockReason}不能调整题目编排方式`);
   }
   if (patch.questionTypeOrder && !sameJsonStructure(current.questionTypeOrder, patch.questionTypeOrder)) {
     throw new Error("上传原稿和拆解稿不能调整题型顺序");
   }
   if (patch.projects && !sameJsonStructure(current.projects, patch.projects)) {
-    throw new Error("上传原稿和拆解稿不能调整项目编排");
+    throw new Error(`${lockReason}不能调整项目编排`);
   }
   delete safePatch.contentBlocks;
   delete safePatch.layoutMode;

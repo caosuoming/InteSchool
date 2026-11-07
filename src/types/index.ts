@@ -1735,6 +1735,10 @@ export interface ExamPaper {
   schoolSourceBackupIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
+  /** 最近一次试卷文档下载时间；未作废时锁定试卷编排。 */
+  paperDownloadedAt?: string;
+  /** 最近一次答题卡下载或打印时间；未作废时锁定试卷编排。 */
+  answerSheetExportedAt?: string;
   /** 是否已制作答题卡。 */
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */

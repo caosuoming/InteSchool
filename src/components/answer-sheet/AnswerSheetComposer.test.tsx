@@ -31,6 +31,16 @@ function renderComposer(props: Partial<React.ComponentProps<typeof AnswerSheetCo
 }
 
 describe("AnswerSheetComposer", () => {
+  it("records a successful PDF export and exposes explicit invalidation", async () => {
+    const onExport = vi.fn().mockResolvedValue(undefined);
+    const onInvalidate = vi.fn().mockResolvedValue(undefined);
+    renderComposer({ initialViewMode: "preview", exported: true, onExport, onInvalidate });
+    fireEvent.click(screen.getByRole("button", { name: "下载答题卡" }));
+    await waitFor(() => expect(onExport).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "答题卡作废" }));
+    expect(onInvalidate).toHaveBeenCalledOnce();
+  });
+
   it("keeps the source order and question numbers even when concentrated answer areas move to the front", () => {
     const { container } = renderComposer({
       questions: [
