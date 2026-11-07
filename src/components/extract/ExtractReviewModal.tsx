@@ -37,6 +37,7 @@ import { stripLeadingScoreLabels } from "@/lib/question-text-cleanup";
 import { AUTO_QUESTION_CATEGORIES, detectQuestionCategories } from "@/lib/question-category-detection";
 import {
   parseDocumentBlocks,
+  findMathQuestionNumberGaps,
   type DocumentBlock as DocBlock,
   type DocumentBlockType as BlockType,
 } from "@/lib/document-block-parser";
@@ -266,7 +267,7 @@ function removeKeywords(text: string, keywords: string[]): string {
     }
 
     // 移除行首的数字编号（如 "1."、"一、" 等）
-    processedLine = processedLine.replace(/^[\d一二三四五六七八九十]+[、．.．）)]\s*/, "");
+    processedLine = processedLine.replace(/^[\d一二三四五六七八九十]+[、．.）),，。｡:：;；·•—–-]\s*/, "");
 
     return processedLine;
   });
@@ -305,6 +306,7 @@ export function ExtractReviewModal({
   onConfirmed,
 }: ExtractReviewModalProps) {
   const previewRootRef = useRef<HTMLDivElement>(null);
+  const sourceTextRef = useRef<string | null>(null);
   useOfficeMetafileImages(previewRootRef);
   const { teacher } = useAuthStore();
   const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId);
@@ -320,6 +322,17 @@ export function ExtractReviewModal({
   const [progressMsg, setProgressMsg] = useState(initialBlocks ? "拆解完成，等待审阅" : "正在初始化...");
   const [error, setError] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<DocBlock[]>(withDetectedQuestionCategories(initialBlocks || [], subject));
+  const [mathNumberInput, setMathNumberInput] = useState("");
+  const [mathConfirmedNumbers, setMathConfirmedNumbers] = useState<number[]>([]);
+  const [acceptedMathGapSignature, setAcceptedMathGapSignature] = useState("");
+  const [mathRepairError, setMathRepairError] = useState<string | null>(null);
+  const [mathRepairing, setMathRepairing] = useState(false);
+  const mathGaps = subject?.trim() === "数学" && resourceType === "examPaper"
+    ? findMathQuestionNumberGaps(blocks, mathConfirmedNumbers)
+    : [];
+  const mathMissing = [...new Set(mathGaps.flatMap((gap) => gap.missing))];
+  const mathGapSignature = mathGaps.map((gap) => `${gap.previous}-${gap.next}`).join(",");
+  const mathGapsUnconfirmed = mathGaps.length > 0 && acceptedMathGapSignature !== mathGapSignature;
   const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [mergeTargets, setMergeTargets] = useState<Record<string, MergeTarget>>({});
@@ -341,6 +354,11 @@ export function ExtractReviewModal({
     setProgress(0);
     setProgressMsg("正在初始化...");
     setError(null);
+    sourceTextRef.current = null;
+    setMathNumberInput("");
+    setMathConfirmedNumbers([]);
+    setAcceptedMathGapSignature("");
+    setMathRepairError(null);
     setBlocks([]);
     setPreservedScoreLabelBlockIds(new Set());
     setEditingBlockId(null);
@@ -377,6 +395,7 @@ export function ExtractReviewModal({
       }
 
       const extracted = await extractStoredFile(resource.originalFileUrl, { textOnly: true });
+      sourceTextRef.current = extracted.text;
       setProgress(60);
       setProgressMsg("正在分析文档结构...");
       let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, { ...extractConfig, subject });
@@ -408,6 +427,11 @@ export function ExtractReviewModal({
       setProgress(100);
       setProgressMsg("拆解完成，等待审阅");
       setError(null);
+      sourceTextRef.current = null;
+      setMathConfirmedNumbers([]);
+      setMathNumberInput("");
+      setAcceptedMathGapSignature("");
+      setMathRepairError(null);
       setBlocks(withDetectedQuestionCategories(initialBlocks.map((block) => (block.type === "question" && block.questionType
         ? { ...block, questionType: normalizeQuestionTypeForSubject(block.questionType, subject) }
         : block)), subject));
@@ -419,6 +443,61 @@ export function ExtractReviewModal({
     }
     runExtraction();
   }, [initialBlocks, open, runExtraction, subject]);
+
+  const repairMathNumbering = async () => {
+    const values = mathNumberInput.trim() || mathMissing.join(",");
+    const tokens = values.split(/[,，、\s]+/).filter(Boolean);
+    const numbers = [...new Set(tokens.map(Number))];
+    if (tokens.length === 0 || numbers.some((number) => !Number.isInteger(number) || number < 1 || number > 9999)) {
+      setMathRepairError("请输入有效的缺失题号，用逗号分隔。");
+      return;
+    }
+    if (numbers.some((number) => !mathMissing.includes(number))) {
+      setMathRepairError("仅填写上方检测到的缺失题号。");
+      return;
+    }
+
+    setMathRepairing(true);
+    setMathRepairError(null);
+    try {
+      let source = sourceTextRef.current;
+      if (source === null) {
+        const resource = resourceType === "lecture"
+          ? await lectureService.getLecture(resourceId)
+          : await examPaperService.getPaper(resourceId);
+        if (!resource?.originalFileUrl) throw new Error("无法获取原始文档，请检查文件是否仍然存在。");
+        const extracted = await extractStoredFile(resource.originalFileUrl, { textOnly: true });
+        source = extracted.text;
+        sourceTextRef.current = source;
+      }
+      const confirmedNumbers = [...new Set([...mathConfirmedNumbers, ...numbers])];
+      const reparsed = parseDocumentBlocks(source, {
+        ...extractConfig,
+        subject,
+        confirmedMathQuestionNumbers: confirmedNumbers,
+      });
+      const remaining = new Set(findMathQuestionNumberGaps(reparsed, confirmedNumbers).flatMap((gap) => gap.missing));
+      if (numbers.every((number) => remaining.has(number))) {
+        throw new Error("原文中未找到可拆分的对应题号行。请在审阅区手动拆分或修改题号。");
+      }
+
+      // 匹配原样未变化的切块，以免重新拆分时丢失其他题目的审阅修改。
+      const originalByContent = new Map(blocks.map((block) => [`${block.type}\0${block.content}`, block]));
+      const updated = reparsed.map((block) => {
+        const original = originalByContent.get(`${block.type}\0${block.content}`);
+        return original ? { ...original, order: block.order } : block;
+      });
+      setBlocks(withDetectedQuestionCategories(updated, subject));
+      setMathConfirmedNumbers(confirmedNumbers);
+      setMathNumberInput("");
+      setAcceptedMathGapSignature("");
+      toast.success("题号重新识别完成", "请检查重新拆分的题目、答案和解析。");
+    } catch (error) {
+      setMathRepairError(error instanceof Error ? error.message : "重新拆解失败");
+    } finally {
+      setMathRepairing(false);
+    }
+  };
 
   // 拖动处理函数
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -713,6 +792,10 @@ export function ExtractReviewModal({
   const handleConfirm = async (
     reviewResolutions?: Record<string, QuestionDuplicateResolution>,
   ) => {
+    if (mathGapsUnconfirmed) {
+      toast.warning("请先确认数学试卷缺失的题号");
+      return;
+    }
     if (!teacher) {
       toast.error("未获取到教师信息");
       return;
@@ -1832,6 +1915,36 @@ export function ExtractReviewModal({
             </div>
           )}
 
+          {mathGaps.length > 0 && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2 text-sm text-amber-950">
+              <div className="flex items-center gap-2 font-medium">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                数学试卷题号可能不连续，请确认
+              </div>
+              <div>
+                {mathGaps.map((gap) => `${gap.previous} → ${gap.next}（缺 ${gap.missing.join("、")}${gap.next - gap.previous > 101 ? " 等" : ""}）`).join("；")}
+              </div>
+              <div className="text-xs">如果原稿题号连续，请填写实际存在但未识别的题号，然后重新拆解。会从原稿重新识别题目并尽量保留未变化的切块；请复查原有手动修改。</div>
+              <div className="flex flex-wrap items-end gap-2">
+                <Input
+                  label="未识别的题号"
+                  value={mathNumberInput}
+                  onChange={(event) => setMathNumberInput(event.target.value)}
+                  placeholder={`例如：${mathMissing.slice(0, 5).join(",")}`}
+                  className="min-w-36 flex-1"
+                />
+                <Button size="sm" variant="outline" onClick={() => void repairMathNumbering()} loading={mathRepairing}>
+                  按确认题号重新拆解
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setAcceptedMathGapSignature(mathGapSignature)}>
+                  确认原稿确实跳号
+                </Button>
+              </div>
+              {mathRepairError && <div role="alert" className="text-red-700">{mathRepairError}</div>}
+              {!mathGapsUnconfirmed && <div className="text-xs">已确认原稿编号，允许继续入库。</div>}
+            </div>
+          )}
+
           {blocks.length === 0 ? (
             <div className="py-12 text-center text-sm text-ink-400">
               <FileText className="mx-auto mb-2 h-10 w-10 text-ink-200" />
@@ -1906,7 +2019,7 @@ export function ExtractReviewModal({
                   variant="gold"
                   onClick={() => void handleConfirm()}
                   loading={phase === "confirming"}
-                  disabled={stats.toStore === 0}
+                  disabled={stats.toStore === 0 || mathGapsUnconfirmed || mathRepairing}
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   确认入库

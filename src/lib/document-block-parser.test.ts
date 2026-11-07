@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDocumentBlocks, type DocumentParseConfig } from "./document-block-parser";
+import { findMathQuestionNumberGaps, parseDocumentBlocks, type DocumentParseConfig } from "./document-block-parser";
 import { normalizePlainMathText } from "./plain-math";
 
 const config: DocumentParseConfig = {
@@ -2558,5 +2558,68 @@ describe("inline answers in mathematics documents", () => {
     expect(block.content).toContain("$x_1$");
     expect(block.content).toContain("另留 ____");
     expect(block.content).not.toContain("<u>");
+  });
+});
+
+
+describe("math question number continuity", () => {
+  const mathConfig = { ...config, subject: "数学" };
+
+  it("recognizes alternative numbering punctuation without changing the source text", () => {
+    const source = [
+      "1. 第一题：计算。",
+      "2，第二题：求值。",
+      "3。第三题：证明。",
+      "4；第四题：计算。",
+      "5—第五题：求解。",
+      "6：第六题：求解。",
+    ].join("\n");
+    const blocks = parseDocumentBlocks(source, mathConfig);
+    expect(blocks.map((block) => block.content)).toEqual(source.split("\n"));
+    expect(blocks.every((block) => block.type === "question")).toBe(true);
+    expect(findMathQuestionNumberGaps(blocks)).toEqual([]);
+  });
+
+  it("reports uncertain gaps instead of silently inventing missing questions", () => {
+    const source = ["1. 第一题", "2? 第二题", "3. 第三题"].join("\n");
+    const blocks = parseDocumentBlocks(source, mathConfig);
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+    expect(findMathQuestionNumberGaps(blocks)).toEqual([{
+      previous: 1, next: 3, missing: [2],
+    }]);
+    const recovered = parseDocumentBlocks(source, {
+      ...mathConfig,
+      confirmedMathQuestionNumbers: [2],
+    });
+    expect(recovered.map((block) => block.content)).toEqual(source.split("\n"));
+    expect(findMathQuestionNumberGaps(recovered, [2])).toEqual([]);
+  });
+
+  it("does not split expressions starting with multiplication dots or a minus sign", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 计算以下表达式。",
+      "2·x+1=3",
+      "3-x=2",
+      "4. 计算另一道题。",
+    ].join("\n"), mathConfig);
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+    expect(blocks[0].content).toContain("2·x+1=3");
+    expect(blocks[0].content).toContain("3-x=2");
+  });
+
+  it("never uses confirmed question numbers to cut through an arithmetic expression", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 求下列各式的值：",
+      "2+3=5",
+      "3. 计算另一个式子。",
+    ].join("\n"), { ...mathConfig, confirmedMathQuestionNumbers: [2] });
+    expect(blocks).toHaveLength(2);
+    expect(findMathQuestionNumberGaps(blocks, [2])[0]?.missing).toEqual([2]);
+  });
+
+  it("does not change punctuation parsing for other subjects", () => {
+    const blocks = parseDocumentBlocks("1. 第一题\n2，第二题\n3. 第三题", config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].content).toContain("2，第二题");
   });
 });
