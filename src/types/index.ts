@@ -1664,6 +1664,7 @@ export interface ExtractedDocumentBlock {
   questionType?: QuestionType;
   questionId?: string;
   materialId?: string;
+  inlineAnswers?: string[];
   examPaperQuestionId?: string;
 }
 
@@ -1821,6 +1822,7 @@ export interface Material {
   semester?: ResourceSemester;
   type: MaterialType;
   content: string; // 素材内容
+  inlineAnswers?: string[]; // 知识块中的逐空答案，顺序与正文占位符对应
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
@@ -2276,6 +2278,7 @@ export interface LectureSection {
   type: LectureSectionType;
   content: string;
   questionId?: string;
+  inlineAnswers?: string[];
   children: LectureSection[];
   /** 个性化编号标签（如"例1""变式2"），为空时使用默认序号 */
   customLabel?: string;
@@ -2529,6 +2532,7 @@ export interface ExtractedKnowledgeItem {
   id: string;
   title: string;
   content: string;
+  inlineAnswers?: string[];
   status: "new" | "duplicate" | "confirmed" | "edited";
   duplicateOf?: Material;
   createdMaterial?: Material;
@@ -2803,6 +2807,7 @@ export interface LessonDocumentBlock {
   type: "documentTitle" | "documentInfo" | "knowledge" | "groupTitle" | "question";
   title?: string;
   content: string;
+  inlineAnswers?: string[];
   questionType?: QuestionType;
   options?: string[];
   answer?: string;

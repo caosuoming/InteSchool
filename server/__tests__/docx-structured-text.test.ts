@@ -665,3 +665,18 @@ describe("DOCX structure-aware text extraction", () => {
     await expect(extractDocxStructuredText(data)).resolves.toBe("");
   });
 });
+
+
+describe("Word underlined answers", () => {
+  it("retains answers inside underlined runs while preserving empty underline blanks", async () => {
+    const data = await makeDocx(`
+      <w:p>
+        <w:r><w:t>2. 函数的解是 </w:t></w:r>
+        <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>五</w:t></w:r>
+        <w:r><w:t>，并填写 </w:t></w:r>
+        <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">    </w:t></w:r>
+      </w:p>
+    `);
+    await expect(extractDocxStructuredText(data)).resolves.toBe("2. 函数的解是 <u>五</u>，并填写 ____");
+  });
+});

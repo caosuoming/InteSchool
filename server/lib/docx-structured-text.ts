@@ -377,13 +377,12 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
       : wordRunIsItalic(element)
         ? mathVariableMarkup(decodedContent, bold)
         : decodedContent;
-    if (styledContent && verticalValue === "superscript") {
-      return `<sup>${mathVariableMarkup(styledContent)}</sup>`;
-    }
-    if (styledContent && verticalValue === "subscript") {
-      return `<sub>${mathVariableMarkup(styledContent)}</sub>`;
-    }
-    return styledContent;
+    const verticalContent = styledContent && verticalValue === "superscript"
+      ? `<sup>${mathVariableMarkup(styledContent)}</sup>`
+      : styledContent && verticalValue === "subscript"
+        ? `<sub>${mathVariableMarkup(styledContent)}</sub>`
+        : styledContent;
+    return wordRunIsUnderlined(element) && verticalContent ? `<u>${verticalContent}</u>` : verticalContent;
   }
 
   if (

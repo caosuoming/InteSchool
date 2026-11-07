@@ -1,4 +1,5 @@
 import type { Material, Question, QuestionType } from "@/types";
+import { extractUnderlinedAnswers, extractParenthesizedChoiceAnswer } from "@/lib/lesson-inline-answers";
 import { normalizeQuestionTypeForSubject } from "@/lib/question-types";
 import {
   ensureFillBlankAnswerArea,
@@ -30,6 +31,7 @@ export interface DocumentBlock {
   summary?: string;
   difficulty?: number;
   knowledgeTitle?: string;
+  inlineAnswers?: string[];
   status: "new" | "duplicate" | "edited";
   duplicateOf?: Question | Material;
 }
@@ -1448,7 +1450,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         || config.fillBlankKeywords.some((keyword) => (
           keyword && [block.content, block.answer].filter(Boolean).join("\n").includes(keyword)
         ));
-      if (block.questionType === "short" && fillBlankSignal) {
+      if (block.questionType === "short" && fillBlankSignal && !/<u\b[^>]*>[^<]*\S[^<]*<\/u>/i.test(block.content)) {
         block.content = ensureFillBlankAnswerArea(block.content, block.answer);
       }
       block.difficulty ||= 3;
@@ -1734,6 +1736,30 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   return blocks;
 }
 
+function normalizeInlineDocumentAnswers(blocks: DocumentBlock[]): DocumentBlock[] {
+  for (const block of blocks) {
+    if (block.type === "knowledge") {
+      const extracted = extractUnderlinedAnswers(block.content, true);
+      block.content = extracted.content;
+      if (extracted.answers.length) block.inlineAnswers = extracted.answers;
+      continue;
+    }
+    if (block.type !== "question") continue;
+    if (block.questionType === "single" || block.questionType === "multiple") {
+      const extracted = extractParenthesizedChoiceAnswer(block.content, block.questionType === "single" ? "single" : "multiple");
+      block.content = extracted.stem;
+      if (extracted.answer && !block.answer?.trim()) block.answer = extracted.answer;
+    } else if (block.questionType === "short") {
+      const extracted = extractUnderlinedAnswers(block.content);
+      block.content = extracted.content;
+      if (extracted.answers.length && !block.answer?.trim()) {
+        block.answer = extracted.answers.join("；");
+      }
+    }
+  }
+  return blocks;
+}
+
 function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
   for (const block of blocks) {
     if (block.type === "question" && block.questionType) {
@@ -1871,8 +1897,8 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
       allowPositionalFallback: kind !== "answer",
     });
     const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(blocks, config.subject), content, config);
+    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config);
   }
 
-  return refineGeographyBlocks(normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject), content, config);
+  return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
 }

@@ -28,7 +28,7 @@ function sanitizeRichText(content: string): string {
   return sanitizeHtml(content, {
     allowedTags: SAFE_RICH_TEXT_TAGS,
     allowedAttributes: {
-      "*": ["class", "title", "role", "aria-hidden", "data-latex", "style"],
+      "*": ["class", "title", "role", "aria-hidden", "data-latex", "data-answer-index", "data-answer-step", "style"],
       a: ["href", "title", "target", "rel"],
       img: ["src", "alt", "title", "width", "height", "loading"],
       th: ["colspan", "rowspan", "scope"],
