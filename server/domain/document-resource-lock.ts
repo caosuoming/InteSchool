@@ -28,6 +28,7 @@ export function publishAnswerSheetsForUsage(ids: Iterable<string>, now: string):
   const usedIds = new Set(ids);
   if (usedIds.size === 0) return;
   for (const collection of ["examPapers", "lectures"] as const) {
+    if (!db.read(collection)) continue;
     db.update(collection, (documents) => documents.map((document) => {
       if (!usedIds.has(document.id) || document.answerSheetPublishedAt) return document;
       return {
