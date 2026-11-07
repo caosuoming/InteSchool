@@ -10,6 +10,7 @@ export interface ClassroomHomeworkInput {
   title?: string;
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
+  examPaperIds?: string[];
   classIds: string[];
   assignedDate: string;
   assignedEndDate?: string;

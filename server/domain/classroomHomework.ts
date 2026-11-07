@@ -2,6 +2,7 @@ import type {
   ClassroomHomework,
   ClassroomHomeworkAttachment,
   ClassroomHomeworkFilter,
+  ExamPaper,
   TeacherAffiliation,
 } from "../../src/types/index.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
@@ -12,6 +13,7 @@ export interface ClassroomHomeworkInput {
   title?: string;
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
+  examPaperIds?: string[];
   classIds: string[];
   assignedDate: string;
   assignedEndDate?: string;
@@ -80,7 +82,26 @@ function matchesFilter(item: ClassroomHomework, filter: ClassroomHomeworkFilter)
   return true;
 }
 
-function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachment[] {
+function normalizePaperIds(paperIds: string[] | undefined): string[] {
+  if (paperIds === undefined) return [];
+  if (!Array.isArray(paperIds) || paperIds.some((id) => typeof id !== "string" || !id.trim())) {
+    throw new Error("所选试卷格式不正确");
+  }
+  return [...new Set(paperIds)];
+}
+
+function validatePapers(paperIds: string[], schoolId: string, classIds: string[]): void {
+  const papers = db.read("examPapers") as ExamPaper[];
+  for (const id of paperIds) {
+    const paper = papers.find((item) => item.id === id);
+    if (!paper || paper.schoolId !== schoolId
+      || !paper.classIds?.some((classId) => classIds.includes(classId))) {
+      throw new Error("所选试卷不存在或不适用于发布班级");
+    }
+  }
+}
+
+function validateInput(input: ClassroomHomeworkInput, paperIds: string[]): ClassroomHomeworkAttachment[] {
   if (input.title !== undefined && (typeof input.title !== "string" || input.title.trim().length > 120)) {
     throw new Error("作业名称不能超过 120 字");
   }
@@ -88,7 +109,7 @@ function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachme
     throw new Error("作业分类不正确");
   }
   const attachments = normalizeAttachments(input.attachments);
-  if (!input.content.trim() && attachments.length === 0) throw new Error("请输入作业内容或添加附件");
+  if (!input.content.trim() && attachments.length === 0 && paperIds.length === 0) throw new Error("请输入作业内容、添加附件或选择试卷");
   if (input.content.trim().length > 4000) throw new Error("作业内容不能超过 4000 字");
   if (input.classIds.length === 0) throw new Error("请选择至少一个发布班级");
   if (!DATE_PATTERN.test(input.assignedDate)) throw new Error("作业日期格式不正确");
@@ -103,9 +124,24 @@ function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachme
 export const classroomHomeworkService = {
   async listHomeworks(filter: ClassroomHomeworkFilter = {}): Promise<ClassroomHomework[]> {
     await delay(150);
+    const papers = db.read("examPapers") as ExamPaper[];
     return db
       .read("classroomHomeworks")
       .filter((item: ClassroomHomework) => matchesFilter(item, filter))
+      .map((item: ClassroomHomework) => {
+        if (!item.examPaperIds?.length) return item;
+        const linkedPapers = item.examPaperIds.flatMap((id) => {
+          const paper = papers.find((entry) => entry.id === id);
+          if (!paper || paper.schoolId !== item.schoolId
+            || (filter.classId && !paper.classIds?.includes(filter.classId))) return [];
+          return [{ id: paper.id, title: paper.title, originalFileUrl: paper.originalFileUrl }];
+        });
+        return {
+          ...item,
+          ...(filter.classId ? { examPaperIds: linkedPapers.map((paper) => paper.id) } : {}),
+          linkedPapers,
+        };
+      })
       .sort((a: ClassroomHomework, b: ClassroomHomework) => {
         const dateDiff = b.assignedDate.localeCompare(a.assignedDate);
         if (dateDiff !== 0) return dateDiff;
@@ -120,7 +156,8 @@ export const classroomHomeworkService = {
   ): Promise<ClassroomHomework> {
     await delay(200);
     maybeThrowError();
-    const attachments = validateInput(input);
+    const paperIds = normalizePaperIds(input.examPaperIds);
+    const attachments = validateInput(input, paperIds);
 
     const teacher = db.read("teachers").find((item: { id: string }) => item.id === teacherId);
     if (!teacher || teacher.schoolId !== schoolId) throw new Error("教师或学校信息不存在");
@@ -145,6 +182,12 @@ export const classroomHomeworkService = {
       throw new Error("只能向自己的任教班级发布作业");
     }
 
+    validatePapers(paperIds, schoolId, uniqueClassIds);
+    if (!input.content.trim() && attachments.length === 0 && uniqueClassIds.some((id) =>
+      !paperIds.some((paperId) => (db.read("examPapers") as ExamPaper[])
+        .some((paper) => paper.id === paperId && paper.classIds?.includes(id))))) {
+      throw new Error("所选试卷未覆盖全部发布班级");
+    }
     const affiliation = currentAffiliation(teacher);
     const now = new Date().toISOString();
     const homework: ClassroomHomework = {
@@ -157,6 +200,7 @@ export const classroomHomeworkService = {
       title: input.title?.trim() || undefined,
       content: input.content.trim(),
       attachments,
+      examPaperIds: paperIds,
       classIds: uniqueClassIds,
       assignedDate: input.assignedDate,
       assignedEndDate: input.assignedEndDate || input.assignedDate,
@@ -177,11 +221,11 @@ export const classroomHomeworkService = {
   ): Promise<ClassroomHomework> {
     await delay(200);
     maybeThrowError();
-    const attachments = validateInput(input);
-
     const existing = db.read("classroomHomeworks")
       .find((item: ClassroomHomework) => item.id === id) as ClassroomHomework | undefined;
     if (!existing) throw new Error("作业不存在");
+    const paperIds = normalizePaperIds(input.examPaperIds ?? existing.examPaperIds);
+    const attachments = validateInput(input, paperIds);
     if (existing.teacherId !== teacherId || existing.schoolId !== schoolId) {
       throw new Error("无权修改该作业");
     }
@@ -208,6 +252,12 @@ export const classroomHomeworkService = {
       throw new Error("只能向自己的任教班级发布作业");
     }
 
+    validatePapers(paperIds, schoolId, uniqueClassIds);
+    if (!input.content.trim() && attachments.length === 0 && uniqueClassIds.some((id) =>
+      !paperIds.some((paperId) => (db.read("examPapers") as ExamPaper[])
+        .some((paper) => paper.id === paperId && paper.classIds?.includes(id))))) {
+      throw new Error("所选试卷未覆盖全部发布班级");
+    }
     const affiliation = currentAffiliation(teacher);
     const updated: ClassroomHomework = {
       ...existing,
@@ -216,6 +266,7 @@ export const classroomHomeworkService = {
       title: input.title?.trim() || undefined,
       content: input.content.trim(),
       attachments,
+      examPaperIds: paperIds,
       classIds: uniqueClassIds,
       assignedDate: input.assignedDate,
       assignedEndDate: input.assignedEndDate || input.assignedDate,

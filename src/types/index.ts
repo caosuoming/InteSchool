@@ -3148,6 +3148,10 @@ export interface ClassroomHomework {
   managementCategory?: "homework" | "exam";
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
+  /** 与本次作业合并布置的试卷 ID。 */
+  examPaperIds?: string[];
+  /** 服务器按班级过滤后的试卷展示信息。 */
+  linkedPapers?: { id: string; title: string; originalFileUrl?: string }[];
   classIds: string[];
   /** 作业展示开始日期，格式为 YYYY-MM-DD。 */
   assignedDate: string;

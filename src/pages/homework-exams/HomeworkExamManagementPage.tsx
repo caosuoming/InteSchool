@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { OfficeDocumentHtml } from "@/components/resource/OfficeDocumentHtml";
 import { BookCheck, ClipboardList, FileText, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
 import { ScannerReviewPanel } from "./ScannerReviewPanel";
 import { ThirdPartyCardEditor } from "@/components/scanner/ThirdPartyCardEditor";
 import { scannerService, type ScannerPageRecord, type ThirdPartyCard } from "@/services/scanner";
@@ -91,7 +92,8 @@ function dateRange(start?: string, end?: string): string {
 function fileName(record: ManagedRecord): string {
   return record.kind === "paper"
     ? record.item.originalFileName || record.item.title || "—"
-    : record.item.attachments?.map((attachment) => attachment.name).join("、") || "—";
+    : [...(record.item.attachments?.map((attachment) => attachment.name) || []),
+      ...(record.item.linkedPapers?.map((paper) => paper.title) || [])].join("、") || "—";
 }
 
 function paperPreviewUrl(paper: ExamPaper): string {
@@ -323,11 +325,14 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     return (statusFilter === "all" || status === statusFilter) && searchText.includes(normalizedQuery);
   };
 
+  const linkedPaperIds = new Set(homeworks.filter((item) => item.managementCategory !== "exam")
+    .flatMap((item) => item.examPaperIds || []));
   const managedRecords: ManagedRecord[] = [
     ...homeworks.filter((item) => (item.managementCategory === "exam") !== isHomework)
       .map((item): ManagedRecord => ({ kind: "classroom", item })),
     ...papers.filter((item) => (item.managementCategory === "exam") !== isHomework
-      && (!isHomework || (!item.originalFileUrl && !item.isExtractCopy)))
+      && (!isHomework || (!item.originalFileUrl && !item.isExtractCopy
+        && !(linkedPaperIds.has(item.id) && !item.assignedDate))))
       .map((item): ManagedRecord => ({ kind: "paper", item })),
   ].filter(matchesRecord).sort((left, right) =>
     right.item.updatedAt.localeCompare(left.item.updatedAt));
@@ -449,6 +454,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           managementCategory: editForm.category,
           content: editing.item.content,
           attachments: editing.item.attachments,
+          examPaperIds: editing.item.examPaperIds,
           classIds: editForm.classIds,
           assignedDate: editForm.startDate,
           assignedEndDate: editForm.endDate || editForm.startDate,
@@ -571,10 +577,12 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td style={{ left: columnWidths.title }} className="sticky z-10 break-all bg-paper px-4 py-3 text-ink-600 group-hover:bg-mist">
                         {record.kind === "paper" ? (
                           <Link className="text-teal-700 hover:underline" to={paperPreviewUrl(record.item)}>{fileName(record)}</Link>
-                        ) : record.item.attachments?.length ? (
-                          <div className="flex flex-col gap-1">{record.item.attachments.map((attachment) => (
+                        ) : (record.item.attachments?.length || record.item.linkedPapers?.length) ? (
+                          <div className="flex flex-col gap-1">{record.item.attachments?.map((attachment) => (
                             <button type="button" key={attachment.id} className="text-left text-teal-700 hover:underline" onClick={() => setPreviewAttachment(attachment)}>{attachment.name}</button>
-                          ))}</div>
+                          ))}
+                            <HomeworkPaperLinks papers={record.item.linkedPapers} />
+                          </div>
                         ) : "—"}
                       </td>
                       <td className="break-words px-4 py-3 text-ink-600">{audienceLabel(record)}</td>
