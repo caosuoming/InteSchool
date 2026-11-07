@@ -1696,6 +1696,8 @@ export interface ExamPaper {
   questionCategory?: string;
   /** 题目编排方式：按题型分组或按项目（允许不分组）。 */
   layoutMode?: "grouped" | "flat";
+  /** 按题型编排时的题型显示顺序。 */
+  questionTypeOrder?: string[];
   /** 按项目模式中用户创建的有序项目，支持空项目。 */
   projects?: ExamPaperProject[];
   /** 作业/考试管理中的归属；旧试卷按作业处理。 */

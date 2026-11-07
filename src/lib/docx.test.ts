@@ -123,6 +123,53 @@ beforeEach(() => {
 });
 
 describe("generateExamPaperDocx", () => {
+  it("matches grouped editor headings and question order across download modes", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper, contentBlocks: [], isExtractCopy: false, layoutMode: "grouped",
+      questionTypeOrder: ["essay", "single", "multiple"],
+      questions: [
+        { ...structuredPaper.questions[0], id: "single-a", stem: "第一道单选题", type: "single", answer: "A" },
+        { ...structuredPaper.questions[0], id: "essay-a", stem: "解答题内容", type: "essay", answer: "解答答案" },
+        { ...structuredPaper.questions[0], id: "single-b", stem: "第二道单选题", type: "single", answer: "B" },
+      ],
+    };
+
+    for (const mode of ["student", "teacher", "normal"] as const) {
+      const blob = await buildExamPaperDocxBlob(paper, {}, { mode });
+      const xml = await (await JSZip.loadAsync(await blobToArrayBuffer(blob))).file("word/document.xml")!.async("string");
+      const expectedOrder = ["一、解答题", "解答题内容", "二、单选题", "第一道单选题", "第二道单选题"];
+      expect(expectedOrder.map((text) => xml.indexOf(text)).every((position) => position >= 0)).toBe(true);
+      expect(expectedOrder.map((text) => xml.indexOf(text))).toEqual(
+        [...expectedOrder.map((text) => xml.indexOf(text))].sort((a, b) => a - b),
+      );
+      expect(xml).toContain("1. ");
+      expect(xml).toContain("2. ");
+      expect(xml).toContain("3. ");
+      if (mode === "normal") {
+        expect(xml.indexOf("答案解析")).toBeGreaterThan(xml.indexOf("第二道单选题"));
+      }
+    }
+  });
+
+  it("preserves project order, including unnamed projects and ungrouped questions", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper, contentBlocks: [], isExtractCopy: false, layoutMode: "flat",
+      projects: [{ id: "blank", name: "  " }, { id: "named", name: "强化练习" }],
+      questions: [
+        { ...structuredPaper.questions[0], id: "named", projectId: "named", stem: "末尾项目题" },
+        { ...structuredPaper.questions[0], id: "blank", projectId: "blank", stem: "未命名项目题" },
+        { ...structuredPaper.questions[0], id: "ungrouped", stem: "未分组题" },
+      ],
+    };
+    const blob = await buildExamPaperDocxBlob(paper, {}, { mode: "student" });
+    const xml = await (await JSZip.loadAsync(await blobToArrayBuffer(blob))).file("word/document.xml")!.async("string");
+    expect(xml.indexOf("未分组题")).toBeLessThan(xml.indexOf("未命名项目题"));
+    expect(xml.indexOf("未命名项目题")).toBeLessThan(xml.indexOf("二、强化练习"));
+    expect(xml.indexOf("二、强化练习")).toBeLessThan(xml.indexOf("末尾项目题"));
+    expect(xml).not.toContain("项目 1");
+    expect(xml).not.toContain("未分组</w:t>");
+  });
+
   it("exports project headings and preserves displayed numbering in the answer-only variant", async () => {
     const flatPaper: ExamPaper = {
       ...structuredPaper, contentBlocks: [], isExtractCopy: false, layoutMode: "flat",
