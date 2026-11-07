@@ -251,6 +251,74 @@ describe("ExtractReviewModal", () => {
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).not.toContain("单选题·2个小题");
   });
 
+  it("restores original math blanks when a parsed fill-in question becomes an essay", async () => {
+    mocks.authState.teacher.subject = "数学";
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="数学试题"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{
+          id: "block-question", type: "question",
+          content: "计算 $a_1$ 后填____，再填______。",
+          fillBlankOriginalContent: "计算 $a_1$ 后填   ，再填____。",
+          questionType: "short", order: 0, status: "new", answer: "12；123456",
+        }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "编辑内容" }));
+    const stem = screen.getByRole("textbox", { name: "题干" });
+    await user.type(stem, "请给出步骤");
+    await user.selectOptions(screen.getByLabelText("题型选择"), "essay");
+    expect(stem).toHaveValue("计算 $a_1$ 后填   ，再填____。请给出步骤");
+
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject({
+      type: "essay",
+      stem: "计算 $a_1$ 后填   ，再填____。请给出步骤",
+    });
+  });
+
+  it("restores whitespace after manually switching an essay to fill-in and back", async () => {
+    mocks.authState.teacher.subject = "数学";
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="数学试题"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{
+          id: "block-question", type: "question", content: "计算得   。",
+          questionType: "essay", order: 0, status: "new", answer: "2",
+        }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "编辑内容" }));
+    const stem = screen.getByRole("textbox", { name: "题干" });
+    await user.selectOptions(screen.getByLabelText("题型选择"), "short");
+    expect(stem).toHaveValue("计算得____。");
+    await user.selectOptions(screen.getByLabelText("题型选择"), "essay");
+    expect(stem).toHaveValue("计算得   。");
+  });
+
   it("does not offer or save comprehensive for a math document", async () => {
     mocks.authState.teacher.subject = "数学";
     render(

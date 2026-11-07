@@ -2073,6 +2073,7 @@ describe("document block parser", () => {
       type: "question",
       questionType: "short",
       content: "1. 函数的值域为______。",
+      fillBlankOriginalContent: "1. 函数的值域为   。",
       answer: "正无穷",
     });
   });
@@ -2091,6 +2092,7 @@ describe("document block parser", () => {
       type: "question",
       questionType: "short",
       content: "1. 方程的根为____。",
+      fillBlankOriginalContent: "1. 方程的根为。",
       answer: "2",
     });
   });
