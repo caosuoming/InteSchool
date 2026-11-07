@@ -210,6 +210,11 @@ export default function QuestionBankPage({
   const [methodLogic, setMethodLogic] = useState<FilterLogic>("or");
   const [errorLogic, setErrorLogic] = useState<FilterLogic>("or");
   const [includeDescendants, setIncludeDescendants] = useState(true);
+  const [showDirectoryCounts, setShowDirectoryCounts] = useState(false);
+  const [showDirectoryDone, setShowDirectoryDone] = useState(false);
+  const [showDirectoryPending, setShowDirectoryPending] = useState(false);
+  const [showDirectoryBasket, setShowDirectoryBasket] = useState(false);
+  const [annotatedDirectory, setAnnotatedDirectory] = useState<{ type: LeftTab; tree: TreeNode } | null>(null);
   const [noChapter, setNoChapter] = useState(false);
   const [noKnowledge, setNoKnowledge] = useState(false);
 
@@ -495,10 +500,10 @@ export default function QuestionBankPage({
     if (!teacher) return;
     const load = async () => {
       const [ch, kp, methods, errors, bs, allClasses, stus] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.id),
-        knowledgeService.getKnowledgeTree(teacher.id),
-        knowledgeService.getMethodTree(teacher.id),
-        knowledgeService.getErrorReasonTree(teacher.id),
+        knowledgeService.getChapterTree(teacher.id, false),
+        knowledgeService.getKnowledgeTree(teacher.id, false),
+        knowledgeService.getMethodTree(teacher.id, false),
+        knowledgeService.getErrorReasonTree(teacher.id, false),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
@@ -581,46 +586,43 @@ export default function QuestionBankPage({
     loadQuestions();
   }, [loadQuestions, refreshToken]);
 
-  // 题目变更或手工录入学情后，立即刷新目录总数与已做题数。
+  // 目录统计按需计算；默认只加载目录结构，不遍历题库或汇总学情。
+  const directoryDoneEnabled = showDirectoryDone && selectedStudentIds.length > 0;
+  const directoryPendingEnabled = showDirectoryPending && selectedStudentIds.length > 0;
+  const needsDirectoryCounts = showDirectoryCounts || directoryDoneEnabled
+    || directoryPendingEnabled || showDirectoryBasket;
+  const basketQuestionIds = useMemo(
+    () => Array.from(new Set(baskets.flatMap((basket) => basket.questionIds || []))),
+    [baskets],
+  );
   useEffect(() => {
-    if (!teacher) return;
+    const base = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : methodTree;
+    setAnnotatedDirectory(null);
+    if (!base || !needsDirectoryCounts) return;
+
     let cancelled = false;
-    (async () => {
-      const [baseChapterTree, baseKnowledgeTree, baseMethodTree] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.id),
-        knowledgeService.getKnowledgeTree(teacher.id),
-        knowledgeService.getMethodTree(teacher.id),
-      ]);
-      if (cancelled) return;
-      if (selectedStudentIds.length === 0) {
-        setChapterTree(baseChapterTree);
-        setKnowledgeTree(baseKnowledgeTree);
-        setMethodTree(baseMethodTree);
-        return;
-      }
-      const [annotatedChapterTree, annotatedKnowledgeTree] = await Promise.all([
-        analyticsService.annotateTreeWithStudentProgress(
-          baseChapterTree,
-          selectedStudentIds,
-          "chapter",
-          dateRange,
-        ),
-        analyticsService.annotateTreeWithStudentProgress(
-          baseKnowledgeTree,
-          selectedStudentIds,
-          "knowledge",
-          dateRange,
-        ),
-      ]);
-      if (cancelled) return;
-      setChapterTree(annotatedChapterTree);
-      setKnowledgeTree(annotatedKnowledgeTree);
-      setMethodTree(baseMethodTree);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedStudentIds, teacher, dateRange, questions, studentAnswerRecords]);
+    analyticsService.annotateTreeWithStudentProgress(
+      base,
+      directoryDoneEnabled || directoryPendingEnabled ? selectedStudentIds : [],
+      leftTab,
+      directoryDoneEnabled ? dateRange : undefined,
+      {
+        includeDone: directoryDoneEnabled,
+        includePending: directoryPendingEnabled,
+        basketQuestionIds: showDirectoryBasket ? basketQuestionIds : undefined,
+      },
+    ).then((tree) => {
+      if (!cancelled) setAnnotatedDirectory({ type: leftTab, tree });
+    }).catch(() => {
+      if (!cancelled) setAnnotatedDirectory(null);
+    });
+    return () => { cancelled = true; };
+  }, [
+    leftTab, chapterTree, knowledgeTree, methodTree, errorTree, needsDirectoryCounts,
+    directoryDoneEnabled, directoryPendingEnabled, selectedStudentIds, dateRange,
+    showDirectoryBasket, basketQuestionIds, questions, studentAnswerRecords,
+    pendingQuestionAssignments,
+  ]);
 
   // 拉取选中学生的答题记录和文档使用对象派生的“待做”题目。
   useEffect(() => {
@@ -921,7 +923,9 @@ export default function QuestionBankPage({
   };
 
   // 获取当前显示的树
-  const displayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : leftTab === "method" ? methodTree : errorTree;
+  const baseDisplayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : leftTab === "method" ? methodTree : errorTree;
+  const countsReady = needsDirectoryCounts && annotatedDirectory?.type === leftTab;
+  const displayTree = countsReady ? annotatedDirectory.tree : baseDisplayTree;
   const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : leftTab === "method" ? checkedMethods : checkedErrors;
   const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : leftTab === "method" ? setCheckedMethods : setCheckedErrors;
   const handleIncludeDescendantsChange = (next: boolean) => {
@@ -981,6 +985,23 @@ export default function QuestionBankPage({
             </select>
           </div>
         )}
+
+        {selectedStudentIds.length > 0 && (
+          <>
+            <label className="inline-flex items-center gap-1 text-xs text-ink-600 cursor-pointer" title="显示已做题数量及已评分答题得分率">
+              <input type="checkbox" checked={showDirectoryDone} onChange={(e) => setShowDirectoryDone(e.target.checked)} />
+              已做题
+            </label>
+            <label className="inline-flex items-center gap-1 text-xs text-ink-600 cursor-pointer" title="显示当前分配但尚未完成的题目数量">
+              <input type="checkbox" checked={showDirectoryPending} onChange={(e) => setShowDirectoryPending(e.target.checked)} />
+              待做题
+            </label>
+          </>
+        )}
+        <label className="inline-flex items-center gap-1 text-xs text-ink-600 cursor-pointer" title="统计我的所有资源篮中的去重题目数量">
+          <input type="checkbox" checked={showDirectoryBasket} onChange={(e) => setShowDirectoryBasket(e.target.checked)} />
+          篮中题
+        </label>
 
         {/* 排序选择 */}
         <div className="ml-auto flex items-center gap-2">
@@ -1095,7 +1116,10 @@ export default function QuestionBankPage({
                   onCheck={setDisplayCheckedIds}
                   cascadeCheck={includeDescendants}
                   includeDescendantCounts={includeDescendants}
-                  showDoneCount={selectedStudentIds.length > 0}
+                  showCount={Boolean(countsReady)}
+                  showDoneCount={directoryDoneEnabled}
+                  showPendingCount={directoryPendingEnabled}
+                  showBasketCount={showDirectoryBasket}
                   expandLevel={1}
                   searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : leftTab === "knowledge" ? "搜索知识点..." : leftTab === "method" ? "搜索思想方法..." : "搜索错因..."}
                   showLogicSelector
@@ -1112,6 +1136,15 @@ export default function QuestionBankPage({
                     }
                   }}
                   headerActions={(
+                    <>
+                    <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-ink-600" title="显示目录节点题目数量">
+                      <input
+                        type="checkbox"
+                        checked={showDirectoryCounts}
+                        onChange={(event) => setShowDirectoryCounts(event.target.checked)}
+                      />
+                      显示
+                    </label>
                     <label
                       className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-ink-600"
                       title="包含子节点对应的题目"
@@ -1123,6 +1156,7 @@ export default function QuestionBankPage({
                       />
                       包含
                     </label>
+                    </>
                   )}
                 />
               </div>
@@ -1345,7 +1379,7 @@ export default function QuestionBankPage({
           )}
 
           {/* 题目列表 */}
-          {loading ? (
+          {loading && questions.length === 0 ? (
             <div className="flex items-center justify-center py-20">
               <Spinner size={24} />
             </div>
@@ -1366,7 +1400,8 @@ export default function QuestionBankPage({
               />
             </Card>
           ) : (
-            <div className="space-y-3 animate-fade-in">
+            <div className={cn("relative space-y-3 animate-fade-in", loading && "opacity-60")} aria-busy={loading}>
+              {loading && <div className="sticky top-4 z-10 flex justify-center"><Spinner size={20} /></div>}
               {paginatedQuestions.map((q) => (
                 <QuestionRow
                   key={q.id}

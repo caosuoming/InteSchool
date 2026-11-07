@@ -1409,6 +1409,10 @@ export interface TreeNode {
   directCount?: number;
   doneCount?: number;
   directDoneCount?: number;
+  pendingCount?: number;
+  directPendingCount?: number;
+  basketCount?: number;
+  directBasketCount?: number;
   /** 选中学生在该目录已评分答题中的正确率，范围 0~1。 */
   masteryRate?: number;
   directMasteryRate?: number;

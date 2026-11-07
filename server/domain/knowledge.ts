@@ -1092,7 +1092,7 @@ export const knowledgeService = {
     return getAliasIds(knowledgePointId, scopeId);
   },
 
-  async getChapterTree(scopeId: string): Promise<TreeNode> {
+  async getChapterTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(300);
     const chapters = directoryRecords(scopeId, "chapter") as Chapter[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1108,10 +1108,10 @@ export const knowledgeService = {
       count: 0,
       children: buildChapterTree(chapters, null),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "chapter");
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "chapter") : tree;
   },
 
-  async getKnowledgeTree(scopeId: string): Promise<TreeNode> {
+  async getKnowledgeTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(300);
     const points = directoryRecords(scopeId, "knowledge") as KnowledgePoint[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1127,10 +1127,10 @@ export const knowledgeService = {
       count: 0,
       children: buildKnowledgeTree(points, null),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "knowledge", points);
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "knowledge", points) : tree;
   },
 
-  async getMethodTree(scopeId: string): Promise<TreeNode> {
+  async getMethodTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(300);
     const methods = directoryRecords(scopeId, "method") as ThoughtMethod[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1144,10 +1144,10 @@ export const knowledgeService = {
       count: 0,
       children: buildKnowledgeTree(methods, null, "method"),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "method");
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "method") : tree;
   },
 
-  async getErrorReasonTree(scopeId: string): Promise<TreeNode> {
+  async getErrorReasonTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(200);
     const reasons = directoryRecords(scopeId, "error") as ErrorReason[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1161,7 +1161,7 @@ export const knowledgeService = {
       count: 0,
       children: buildKnowledgeTree(reasons, null, "error"),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "error");
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "error") : tree;
   },
 
   async listDirectoryCatalogs(

@@ -386,7 +386,8 @@ export const serviceParameters = {
       "tree",
       "studentIds",
       "type",
-      "range"
+      "range",
+      "options"
     ],
     "getQuestionStats": [
       "schoolId",
@@ -933,12 +934,14 @@ export const serviceParameters = {
       "schoolId"
     ],
     "getChapterTree": [
-      "schoolId"
+      "schoolId",
+      "includeCounts"
     ],
     "getKnowledgeTree": [
-      "schoolId"
+      "schoolId",
+      "includeCounts"
     ],
-    "getMethodTree": ["schoolId"],
+    "getMethodTree": ["schoolId", "includeCounts"],
     "listDirectoryCatalogs": [
       "teacherId",
       "type"

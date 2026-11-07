@@ -126,8 +126,14 @@ export const analyticsService = {
     return rpcCall("analytics", "getQuestionWeaknessScore", [schoolId, studentIds, range]) as any;
   },
 
-  async annotateTreeWithStudentProgress(tree: TreeNode, studentIds: string[], type: "chapter" | "knowledge", range?: DateRange): Promise<TreeNode> {
-    return rpcCall("analytics", "annotateTreeWithStudentProgress", [tree, studentIds, type, range]) as any;
+  async annotateTreeWithStudentProgress(
+    tree: TreeNode,
+    studentIds: string[],
+    type: "chapter" | "knowledge" | "method" | "error",
+    range?: DateRange,
+    options?: { includeDone?: boolean; includePending?: boolean; basketQuestionIds?: string[] },
+  ): Promise<TreeNode> {
+    return rpcCall("analytics", "annotateTreeWithStudentProgress", [tree, studentIds, type, range, options]) as any;
   },
 
   async getQuestionStats(schoolId: string, range?: DateRange): Promise<QuestionStat[]> {
