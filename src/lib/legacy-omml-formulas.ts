@@ -26,6 +26,12 @@ function wrapUnmarkedCases(text: string): string {
     return `$${recoverCaseRows(cases)}$`;
   });
 }
+const LEGACY_REDUNDANT_CASES_DELIMITER_PATTERN =
+  /\\left\\\{\s*(\\begin\{cases\}[\s\S]*?\\end\{cases\})\s*\\right\./g;
+const LEGACY_CROSSED_MATRIX_DELIMITER_PATTERN =
+  /\\left\\\{\s*\\begin\{matrix\}\s*\\begin\{matrix\}([\s\S]*?)\\end\{matrix\}\s*\\right\.\s*\\end\{matrix\}/g;
+const BARE_LEGACY_MATH_PATTERN =
+  /\\left\\\{\s*\\begin\{matrix\}\s*\\begin\{matrix\}[\s\S]*?\\end\{matrix\}\s*\\right\.\s*\\end\{matrix\}|\\left\\\{\s*\\begin\{matrix\}[\s\S]*?\\end\{matrix\}\s*\\right\.|(?:\\left(?:\\\{)?\s*)?\\begin\{cases\}[\s\S]*?\\end\{cases\}(?:\s*\\right\.)?|[A-Za-z]\\overset\{\}\s*\\Rightarrow\s*\}[A-Za-z]|\\left\([^$\n，。；,;]*?\\right\)(?:\^\{[^{}]+\})?(?:\s*=[\w{}+-]+)?/g;
 
 const LEGACY_ARC_VECTOR_PATTERN =
   /((?:圆弧|优弧|劣弧|弧)[^$\n]{0,12})\$(?:\\vec|\\over(?:right|left)arrow)\{([A-Za-z]{2,4})\}\$/g;
@@ -42,10 +48,25 @@ function normalizeLegacyOmmlDelimiters(latex: string): string {
 
 export function normalizeOmmlLatexStructures(latex: string): string {
   return latex
+    .replace(LEGACY_CROSSED_MATRIX_DELIMITER_PATTERN,
+      String.raw`\left\{\begin{matrix}$1\end{matrix}\right.`)
+    .replace(LEGACY_REDUNDANT_CASES_DELIMITER_PATTERN, "$1")
     .replace(LEGACY_REDUNDANT_CASES_WRAPPER_PATTERN, "$1")
     // Some Word formulas omit the delimiter after \left. A cases environment
     // already draws its own brace, so the invalid outer wrapper can be removed.
-    .replace(LEGACY_MALFORMED_CASES_WRAPPER_PATTERN, "$1");
+    .replace(LEGACY_MALFORMED_CASES_WRAPPER_PATTERN, "$1")
+    // Old MathType imports sometimes serialize a negated implication as an
+    // incomplete overset followed by an orphan closing brace.
+    .replace(/\\overset\{\}\s*\\Rightarrow\s*\}/g, String.raw`\nRightarrow `);
+}
+
+function restoreBareMath(text: string): string {
+  const unmatchedDollar = text.indexOf("$");
+  if (unmatchedDollar >= 0) {
+    return restoreBareMath(text.slice(0, unmatchedDollar)) + text.slice(unmatchedDollar);
+  }
+  return text.replace(BARE_LEGACY_MATH_PATTERN,
+    (source) => `$${normalizeOmmlLatexStructures(source)}$`);
 }
 
 const LABEL_CONTEXT_PATTERN =
@@ -112,13 +133,6 @@ export function normalizeLegacyOmmlMathText(text: string): string {
     LEGACY_ARC_VECTOR_PATTERN,
     (_match, prefix: string, points: string) => `${prefix}$\\overgroup{${points}}$`,
   );
-  if (
-    !arcNormalized.includes("\\mathbb")
-    && !/\\(?:left|right)[‖∥∣]/.test(arcNormalized)
-    && !(arcNormalized.includes("\\left\\{") && arcNormalized.includes("\\begin{cases}"))
-    && !/\\left\s*\\begin\{cases\}/.test(arcNormalized)
-  ) return wrapUnmarkedCases(arcNormalized);
-
   const normalized = arcNormalized.replace(/(\${1,2})([\s\S]+?)\1/g, (full, delimiter: string, latex: string, offset: number) => {
     const contextStart = Math.max(0, offset - 24);
     const contextEnd = Math.min(arcNormalized.length, offset + full.length + 24);
@@ -126,5 +140,10 @@ export function normalizeLegacyOmmlMathText(text: string): string {
     const normalized = normalizeLegacyOmmlLatex(latex, surroundingText);
     return `${delimiter}${normalized}${delimiter}`;
   });
-  return wrapUnmarkedCases(normalized);
+
+  // Keep already-delimited formulas intact. Only recover known legacy OMML
+  // structures from the intervening plain text, not arbitrary backslashes.
+  return wrapUnmarkedCases(normalized.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g)
+    .map((segment) => segment.startsWith("$") ? segment : restoreBareMath(segment))
+    .join(""));
 }

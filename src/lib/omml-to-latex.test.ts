@@ -419,4 +419,12 @@ y=2
     expect(ommlToLatex(mathRun("B" + symbol + "A"))).toBe(expected);
   });
 
+  it.each([
+    ["⇏", String.raw`p\nRightarrow q`],
+    ["⇍", String.raw`p\nLeftarrow q`],
+    ["⇎", String.raw`p\nLeftrightarrow q`],
+  ])("preserves negated implication %s", (symbol, expected) => {
+    expect(ommlToLatex(mathRun(`p${symbol}q`))).toBe(expected);
+  });
+
 });
