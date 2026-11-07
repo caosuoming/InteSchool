@@ -787,6 +787,7 @@ function AnswerField({
       boxStyle={boxStyle}
       compact={isFillQuestion(question)}
       lined={isFillQuestion(question)}
+      showScore={!isFillQuestion(question)}
       editable={editable}
       resizableBoth={isFillQuestion(question)}
       height={height}
@@ -1172,12 +1173,14 @@ export function AnswerSheetComposer({
     }
 
     groups.forEach((group, groupIndex) => {
-      items.push({
-        key: `group-heading-${groupIndex}`,
-        kind: "group-heading",
-        group,
-        groupIndex,
-      });
+      if (sourceLayoutMode !== "flat" || projects.length > 0) {
+        items.push({
+          key: `group-heading-${groupIndex}`,
+          kind: "group-heading",
+          group,
+          groupIndex,
+        });
+      }
       group.items.forEach((item, itemIndex) => {
         items.push({
           key: `question-${item.question.id}`,
@@ -1193,7 +1196,7 @@ export function AnswerSheetComposer({
 
     items.push({ key: "footer", kind: "footer" });
     return items;
-  }, [choiceItems, choiceRows, fillItems, fillRows, groups, settings.choiceLayout, settings.mode]);
+  }, [choiceItems, choiceRows, fillItems, fillRows, groups, projects.length, settings.choiceLayout, settings.mode, sourceLayoutMode]);
 
   const recalculatePagination = useCallback(() => {
     if (flowItems.length === 0 || pageContentHeightPx <= 0) return;
@@ -1288,7 +1291,10 @@ export function AnswerSheetComposer({
           className="box-border w-[38mm] shrink-0 border border-ink-900 px-[1mm] pb-[1mm] pt-[1mm]"
           data-testid="answer-sheet-identity-fields"
         >
-          <div className={isWidePaper ? "mb-1 whitespace-nowrap text-[10px]" : "mb-1 whitespace-nowrap text-xs"}>学校：______________</div>
+          <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
+            <span className="shrink-0">学校：</span>
+            <span className="h-5 min-w-0 flex-1 border-b border-ink-700" aria-label="学校填写区" />
+          </div>
           <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
             <span className="shrink-0">班级：</span>
             <span className="h-5 min-w-10 flex-1 border-b border-ink-700" aria-label="班级填写区" />
@@ -1309,7 +1315,7 @@ export function AnswerSheetComposer({
             : "ml-auto flex w-[52mm] shrink-0 flex-col items-center border border-ink-900 p-2"}
           data-testid="answer-sheet-student-number-column"
         >
-          <div className="w-full text-left text-xs font-semibold leading-tight tracking-[0.35em]">学号</div>
+          <div className="w-full text-center text-xs font-semibold leading-tight tracking-[0.35em]">学号</div>
           <StudentNumberGrid digits={settings.studentNumberDigits} />
         </div>
         <div
