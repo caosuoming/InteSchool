@@ -1452,6 +1452,57 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.queryByRole("button", { name: "添加题目" })).not.toBeInTheDocument();
   });
 
+  it("reviews generated questions by type and knowledge point, deletes and replaces individual questions", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, isExtractCopy: false, contentBlocks: [], classIds: [] });
+    mocks.getKnowledgeTree.mockResolvedValue({ ...knowledgeTree, children: [
+      ...knowledgeTree.children,
+      { id: "knowledge-2", name: "函数值域", type: "knowledge", children: [] },
+    ] });
+    const candidates = Array.from({ length: 7 }, (_, index) => ({
+      ...question,
+      id: `auto-${index}`,
+      stem: `自动选题测试 ${index}`,
+      knowledgePointIds: [index % 2 === 0 ? "knowledge-1" : "knowledge-2"],
+      recommendation: (index < 5 ? 5 : 1) as Question["recommendation"],
+    }));
+    mocks.listQuestions.mockResolvedValue([question, ...candidates]);
+
+    renderEditorPage();
+    fireEvent.click(await screen.findByRole("button", { name: "AI 自动组卷" }));
+    const chapter = await screen.findByText("函数与方程");
+    const chapterRow = chapter.closest(".group") as HTMLElement;
+    fireEvent.click(within(chapterRow).getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始智能组卷" }));
+
+    const filters = await screen.findByRole("complementary", { name: "已选题目筛选" });
+    const results = screen.getByLabelText("自动选题结果");
+    expect(within(results).getAllByRole("button", { name: /删除第/ })).toHaveLength(5);
+    expect(within(filters).getByRole("button", { name: /函数定义域/ })).toHaveTextContent("3");
+    expect(within(filters).getByRole("button", { name: /函数值域/ })).toHaveTextContent("2");
+
+    fireEvent.click(within(filters).getByRole("button", { name: /函数定义域/ }));
+    expect(results).toHaveTextContent("当前显示 3 / 5 题");
+    fireEvent.click(within(results).getAllByRole("button", { name: /删除第 \d+ 道题/ })[0]);
+    expect(results).toHaveTextContent("当前显示 2 / 4 题");
+    expect(within(filters).getByRole("button", { name: /函数定义域/ })).toHaveTextContent("2");
+
+    fireEvent.click(within(results).getAllByRole("button", { name: /更换第 \d+ 道题/ })[0]);
+    expect(within(results).getByText("同题型、相近知识点的候选题")).toBeInTheDocument();
+    fireEvent.click(within(results).getByRole("button", { name: "替换为：自动选题测试 6" }));
+    expect(within(results).getByText("自动选题测试 6")).toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: /函数定义域/ })).toHaveTextContent("2");
+
+    fireEvent.click(screen.getByRole("button", { name: "添加到试卷（4题）" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
+      questions: expect.arrayContaining([expect.objectContaining({ questionId: "auto-6" })]),
+    })));
+    const saved = mocks.updatePaper.mock.calls.at(-1)?.[1].questions as Array<{ questionId: string }>;
+    expect(saved).toHaveLength(5);
+    expect(new Set(saved.map((item) => item.questionId)).size).toBe(5);
+  });
+
   it("locks an already-used paper against further editing", async () => {
     mocks.getPaper.mockResolvedValue({
       ...paper,

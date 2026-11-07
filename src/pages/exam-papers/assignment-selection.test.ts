@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Basket, Question } from "@/types";
-import { basketsForAudience, selectAssignmentQuestions } from "./assignment-selection";
+import { basketsForAudience, countSelectedQuestionFacets, findSimilarAssignmentQuestions, selectAssignmentQuestions } from "./assignment-selection";
 
 const q = (id: string, type: string, kp: string): Question => ({
   id, type, knowledgePointIds: [kp], recommendation: 3, usageCount: 0,
@@ -48,5 +48,30 @@ describe("assignment selection", () => {
     expect(result.weakPicked).toBe(0);
     expect(result.untrainedPicked).toBe(0);
     expect(result.remaining.essay).toBe(2);
+  });
+
+  it("counts current selected types and every linked knowledge point once per question", () => {
+    const questions = [
+      { ...q("a", "single", "k1"), knowledgePointIds: ["k1", "k2", "k2"] },
+      q("b", "single", "k2"),
+      q("c", "essay", "k3"),
+    ];
+    const counts = countSelectedQuestionFacets(questions);
+    expect([...counts.types]).toEqual([["single", 2], ["essay", 1]]);
+    expect([...counts.knowledge]).toEqual([["k1", 1], ["k2", 2], ["k3", 1]]);
+  });
+
+  it("only offers unused same-type questions with shared knowledge and ranks exact matches first", () => {
+    const source = { ...q("source", "single", "k1"), knowledgePointIds: ["k1", "k2"], difficulty: 3 } as Question;
+    const pool = [
+      { ...q("partial", "single", "k1"), recommendation: 5 as const },
+      { ...q("exact", "single", "k1"), knowledgePointIds: ["k1", "k2"], recommendation: 1 as const },
+      { ...q("other", "single", "k3") },
+      { ...q("wrong-type", "essay", "k1") },
+      { ...q("used", "single", "k1") },
+      source,
+    ];
+    expect(findSimilarAssignmentQuestions(source, pool, new Set(["used"])).map((item) => item.id))
+      .toEqual(["exact", "partial"]);
   });
 });

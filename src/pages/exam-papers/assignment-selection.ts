@@ -50,3 +50,43 @@ export function selectAssignmentQuestions(input: SelectionInput) {
 
   return { questions: selected, weakPicked, untrainedPicked, remaining };
 }
+
+export function countSelectedQuestionFacets(questions: Question[]) {
+  const types = new Map<string, number>();
+  const knowledge = new Map<string, number>();
+  for (const question of questions) {
+    types.set(question.type, (types.get(question.type) || 0) + 1);
+    for (const id of new Set(question.knowledgePointIds || [])) {
+      knowledge.set(id, (knowledge.get(id) || 0) + 1);
+    }
+  }
+  return { types, knowledge };
+}
+
+export function findSimilarAssignmentQuestions(
+  source: Question,
+  pool: Question[],
+  excludedIds: ReadonlySet<string>,
+): Question[] {
+  const sourceKnowledge = new Set(source.knowledgePointIds || []);
+  const similarity = (candidate: Question) => {
+    const candidateKnowledge = new Set(candidate.knowledgePointIds || []);
+    const overlap = [...candidateKnowledge].filter((id) => sourceKnowledge.has(id)).length;
+    const exact = overlap === sourceKnowledge.size && overlap === candidateKnowledge.size;
+    return { overlap, exact };
+  };
+
+  return pool.filter((candidate) => {
+    if (candidate.id === source.id || excludedIds.has(candidate.id) || candidate.type !== source.type) return false;
+    if (sourceKnowledge.size === 0) return (candidate.knowledgePointIds || []).length === 0;
+    return similarity(candidate).overlap > 0;
+  }).sort((a, b) => {
+    const left = similarity(a);
+    const right = similarity(b);
+    return Number(right.exact) - Number(left.exact)
+      || right.overlap - left.overlap
+      || Math.abs(a.difficulty - source.difficulty) - Math.abs(b.difficulty - source.difficulty)
+      || b.recommendation - a.recommendation
+      || a.id.localeCompare(b.id);
+  });
+}
