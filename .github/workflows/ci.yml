@@ -53,6 +53,7 @@ jobs:
               - '.github/workflows/scanner-release.yml'
               - '.github/workflows/ci.yml'
             container:
+              - 'server/**'
               - 'Dockerfile'
               - '.dockerignore'
               - 'docker-compose.yml'

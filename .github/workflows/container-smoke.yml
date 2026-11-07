@@ -56,8 +56,10 @@ jobs:
           port=$(docker port inteschool-ci 3000/tcp | awk -F: 'END {print $NF}')
           test -n "$port"
           for _ in {1..60}; do
-            if response=$(curl -fsS --connect-timeout 2 "http://127.0.0.1:$port/api/health" 2>/dev/null); then
+            if response=$(curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:$port/api/health" 2>/dev/null) && \
+               readiness=$(curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:$port/api/ready" 2>/dev/null); then
               echo "$response" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{if(JSON.parse(s).status!=="ok")process.exit(1)})'
+              echo "$readiness" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{if(JSON.parse(s).status!=="ready")process.exit(1)})'
               test "$(docker exec inteschool-ci id -u)" = 1000
               exit 0
             fi
