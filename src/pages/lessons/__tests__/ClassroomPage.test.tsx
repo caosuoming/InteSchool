@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +22,7 @@ vi.mock("@/services/class", () => ({
 vi.mock("@/services/classroomHomework", () => ({
   classroomHomeworkService: {
     listHomeworks: vi.fn(),
+    listHomeworkAnswers: vi.fn(),
   },
 }));
 
@@ -235,6 +236,12 @@ describe("ClassroomPage", () => {
     }]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([mathHomework]);
+    vi.mocked(classroomHomeworkService.listHomeworkAnswers).mockResolvedValue([
+      { id: "paper-1", title: "期中复习", subject: "数学", assignedDate: "2026-10-01",
+        questions: [{ id: "q1", number: 1, answer: "A" }] },
+      { id: "paper-2", title: "古诗词", subject: "语文", assignedDate: "2026-09-30",
+        questions: [{ id: "q2", number: 1, answer: "借景抒情" }] },
+    ]);
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
     vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([lesson]);
     vi.mocked(studentInteractionService.getHomeworkFollowHighlightEnabled).mockResolvedValue(true);
@@ -258,7 +265,7 @@ describe("ClassroomPage", () => {
     expect(homeworkContent.closest("article")).toHaveClass("grid-cols-[2.75rem_minmax(0,1fr)_4.25rem]");
     expect(screen.queryByText(/任课教师/)).not.toBeInTheDocument();
     expect(screen.queryByText("王老师")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^作业/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^作业(?:，|$)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^上课/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "放大作业字体" }));
@@ -291,6 +298,25 @@ describe("ClassroomPage", () => {
 
     await user.click(screen.getByRole("button", { name: "往期作业查看" }));
     expect(await screen.findByText("订正上一周数学周练")).toBeInTheDocument();
+  });
+
+  it("opens homework answers next to history and filters by subject", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("完成课本第 42 页第 1—6 题");
+    const historyButton = screen.getByRole("button", { name: "往期作业查看" });
+    const answersButton = screen.getByRole("button", { name: "作业答案" });
+    expect(historyButton.compareDocumentPosition(answersButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(answersButton);
+    expect(classroomHomeworkService.listHomeworkAnswers).toHaveBeenCalledWith("school-1", "class-1");
+    const dialog = await screen.findByRole("dialog", { name: "作业答案" });
+    expect(within(dialog).getByText("期中复习")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "语文" }));
+    expect(within(dialog).getByText("古诗词")).toBeInTheDocument();
+    expect(within(dialog).queryByText("期中复习")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("dialog", { name: "作业答案" })).not.toBeInTheDocument();
   });
 
   it("switches to the lesson tab and starts published courseware in fullscreen presentation mode", async () => {
@@ -423,7 +449,7 @@ describe("ClassroomPage", () => {
     await user.click(screen.getByRole("button", { name: /^上课/ }));
     expect(screen.queryByRole("status", { name: "班级通知" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /^作业/ }));
+    await user.click(screen.getByRole("button", { name: /^作业(?:，|$)/ }));
     expect(screen.getByRole("status", { name: "班级通知" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "全屏" }));

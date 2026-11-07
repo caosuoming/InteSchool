@@ -2,6 +2,7 @@ import type {
   ClassroomHomework,
   ClassroomHomeworkAttachment,
   ClassroomHomeworkFilter,
+  ClassroomHomeworkAnswer,
 } from "@/types";
 import { rpcCall } from "./api";
 
@@ -18,6 +19,10 @@ export interface ClassroomHomeworkInput {
 }
 
 export const classroomHomeworkService = {
+  async listHomeworkAnswers(schoolId: string, classId: string): Promise<ClassroomHomeworkAnswer[]> {
+    return rpcCall("classroomHomework", "listHomeworkAnswers", [schoolId, classId]) as any;
+  },
+
   async listHomeworks(filter: ClassroomHomeworkFilter = {}): Promise<ClassroomHomework[]> {
     return rpcCall("classroomHomework", "listHomeworks", [filter]) as any;
   },

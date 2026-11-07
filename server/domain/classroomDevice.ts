@@ -23,6 +23,7 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { recordClassroomQuestionProgress, type ClassroomQuestionProgressInput } from "./classroomQuestionProgress.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
+import { classroomHomeworkAnswers } from "./classroomHomeworkAnswers.js";
 
 interface ClassroomCoursewareSession {
   coursewareId: string;
@@ -372,7 +373,7 @@ function currentClassroomContent(
     highlightFollowedHomeworkStudents: (db.read("teachers") as Teacher[]).find((item) => item.id === teacherId)
       ?.highlightFollowedHomeworkStudents !== false,
   }]));
-  return { lessons, homeworks, homeworkHistory, homeworkRecords, notices, students, studentAttentionByTeacherId };
+  return { lessons, homeworks, homeworkHistory, homeworkRecords, homeworkAnswers: classroomHomeworkAnswers(device.schoolId, classId), notices, students, studentAttentionByTeacherId };
 }
 
 function availableClassroomsForDevice(device: StoredClassroomDevice): SchoolClass[] {
