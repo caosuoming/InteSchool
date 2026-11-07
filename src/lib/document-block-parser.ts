@@ -298,6 +298,18 @@ function answerLetters(answer: string): string[] {
   return [...new Set(normalized)];
 }
 
+function mathChoiceAnswerType(answer: string): QuestionType | undefined {
+  const normalized = normalizeStructuralText(answer)
+    .replace(/^(?:参考答案|答案|正确选项|选项|答)\s*[:：]?\s*/, "")
+    .replace(/\$\\(?:mathrm|mathit|mathbf)\{([A-D])\}\$/gi, "$1")
+    .replace(/\$([A-D])\$/gi, "$1")
+    .trim();
+  if (!/^[A-Da-d\s,，、;；.．()（）【】]+$/.test(normalized)) return undefined;
+  const letters = normalized.match(/[A-D]/gi);
+  if (!letters) return undefined;
+  return new Set(letters.map((letter) => letter.toUpperCase())).size > 1 ? "multiple" : "single";
+}
+
 function inferAtomicQuestionType(
   block: Partial<DocumentBlock>,
   sectionType: QuestionType | undefined,
@@ -305,14 +317,24 @@ function inferAtomicQuestionType(
 ): QuestionType {
   const text = [block.content, block.answer].filter(Boolean).join("\n");
   if (config.subject?.trim() === "地理" && sectionType === "comprehensive") return "comprehensive";
+  const options = block.options || [];
+  if (
+    config.subject?.trim() === "数学"
+    && (options.length >= 2
+      || sectionType === "single" || sectionType === "multiple"
+      || block.questionType === "single" || block.questionType === "multiple"
+      || /选择|选出|选项/.test(block.content || ""))
+  ) {
+    const answerType = mathChoiceAnswerType(block.answer || "");
+    if (answerType) return answerType;
+  }
   if (config.multipleChoiceKeywords.some((keyword) => keyword && text.includes(keyword))) return "multiple";
   if (config.singleChoiceKeywords.some((keyword) => keyword && text.includes(keyword))) return "single";
   if (/判断题|判断正误|正确还是错误/.test(text)) return "judge";
   if (config.fillBlankKeywords.some((keyword) => keyword && text.includes(keyword))) return "short";
   if (config.essayKeywords.some((keyword) => keyword && text.includes(keyword))) return "essay";
 
-  const options = block.options || [];
-  const letters = answerLetters(block.answer || "");
+  const letters = config.subject?.trim() === "数学" ? [] : answerLetters(block.answer || "");
   if (options.length >= 2) {
     if (letters.length > 1) return "multiple";
     if (sectionType === "multiple" || sectionType === "single") return sectionType;
