@@ -25,6 +25,7 @@ jobs:
     outputs:
       scanner: ${{ steps.filter.outputs.scanner }}
       container: ${{ steps.filter.outputs.container }}
+      dependencies: ${{ steps.filter.outputs.dependencies }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -61,6 +62,9 @@ jobs:
               - '.github/workflows/container-smoke.yml'
               - '.github/workflows/release.yml'
               - '.github/workflows/ci.yml'
+            dependencies:
+              - 'package.json'
+              - 'package-lock.json'
 
   quality:
     name: Lint and typecheck
@@ -113,15 +117,19 @@ jobs:
         run: test -f dist/index.html && test -f build/server/server/index.js
 
   dependencies:
-    name: Review dependency changes
-    if: github.event_name == 'pull_request'
+    name: Audit changed dependencies
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.dependencies == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/setup-node@v7
         with:
-          fail-on-severity: high
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm audit --omit=dev --audit-level=high
 
   scanner:
     name: Windows scanner package
@@ -163,10 +171,6 @@ jobs:
           test "$QUALITY" = success
           test "$TESTS" = success
           test "$BUILD" = success
-          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            test "$DEPENDENCIES" = success
-          else
-            test "$DEPENDENCIES" = skipped
-          fi
+          [[ "$DEPENDENCIES" == success || "$DEPENDENCIES" == skipped ]]
           [[ "$SCANNER" == success || "$SCANNER" == skipped ]]
           [[ "$CONTAINER" == success || "$CONTAINER" == skipped ]]

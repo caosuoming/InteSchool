@@ -7,7 +7,7 @@
 - `Lint and typecheck`：在 `.nvmrc` 指定的 Node 版本执行 ESLint 和 TypeScript 检查。
 - `Tests and coverage`：运行全部 Vitest 测试，强制执行 `vitest.config.ts` 中的覆盖率阈值，保留 7 天覆盖率报告。
 - `Production build`：构建 Web 和 Node 服务，确认关键产物存在。
-- `Review dependency changes`：仅 PR 执行，拦截引入已知高危或严重依赖漏洞的改动。
+- `Audit changed dependencies`：仅修改 npm 清单/锁文件的 PR 执行，通过 npm audit 检查生产依赖高危漏洞。
 - `Windows scanner package`：修改扫描桥接或 Windows 安装文件时执行，实际构建、安装和测试 Windows 程序。
 - `Container smoke test`：修改容器、依赖或构建配置时执行，构建镜像、启动服务并检查 `/api/health` 与非 root 运行。
 - `Required checks`：单一稳定合并门禁，汇总所有必需及按需检查；失败或取消不能被跳过掩盖。
