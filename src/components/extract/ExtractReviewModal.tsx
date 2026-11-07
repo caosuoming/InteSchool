@@ -32,7 +32,7 @@ import { questionService } from "@/services/question";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { renderExtractText } from "@/lib/extract-text-renderer";
-import { ensureFillBlankAnswerArea } from "@/lib/fill-blank";
+import { ensureFillBlankAnswerArea, restoreFillBlankAnswerArea } from "@/lib/fill-blank";
 import { stripLeadingScoreLabels } from "@/lib/question-text-cleanup";
 import { AUTO_QUESTION_CATEGORIES, detectQuestionCategories } from "@/lib/question-category-detection";
 import {
@@ -523,12 +523,22 @@ export function ExtractReviewModal({
       list.map((block) => {
         if (block.id !== id) return block;
         const updated: DocBlock = { ...block, ...field, status: "edited" };
+        if (block.questionType === "short" && field.questionType && field.questionType !== "short") {
+          if (block.fillBlankOriginalContent !== undefined) {
+            updated.content = restoreFillBlankAnswerArea(
+              block.content, block.fillBlankOriginalContent, block.answer,
+            );
+            updated.fillBlankOriginalContent = undefined;
+          }
+        }
         if (
           updated.type === "question"
           && updated.questionType === "short"
           && (field.questionType === "short" || field.answer !== undefined)
         ) {
-          updated.content = ensureFillBlankAnswerArea(updated.content, updated.answer);
+          const normalized = ensureFillBlankAnswerArea(updated.content, updated.answer);
+          if (normalized !== updated.content) updated.fillBlankOriginalContent ??= updated.content;
+          updated.content = normalized;
         }
         return updated;
       }),

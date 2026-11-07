@@ -21,6 +21,7 @@ export interface DocumentBlock {
   id: string;
   type: DocumentBlockType;
   content: string;
+  fillBlankOriginalContent?: string;
   order: number;
   questionType?: QuestionType;
   categories?: string[];
@@ -1541,7 +1542,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
           keyword && [block.content, block.answer].filter(Boolean).join("\n").includes(keyword)
         ));
       if (block.questionType === "short" && fillBlankSignal) {
-        block.content = ensureFillBlankAnswerArea(block.content, block.answer);
+        normalizeBlockFillBlankArea(block);
       }
       block.difficulty ||= 3;
     }
@@ -1831,6 +1832,13 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   return blocks;
 }
 
+function normalizeBlockFillBlankArea(block: DocumentBlock): void {
+  const content = ensureFillBlankAnswerArea(block.content, block.answer);
+  if (content === block.content) return;
+  block.fillBlankOriginalContent ??= block.content;
+  block.content = content;
+}
+
 function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
   for (const block of blocks) {
     if (block.type === "question" && block.questionType) {
@@ -1841,7 +1849,7 @@ function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): Doc
       || block.questionType !== "short"
       || !hasFillBlankAnswerArea(block.content)
     ) continue;
-    block.content = ensureFillBlankAnswerArea(block.content, block.answer);
+    normalizeBlockFillBlankArea(block);
   }
   return blocks;
 }
