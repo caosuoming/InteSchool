@@ -143,6 +143,10 @@ export const serviceParameters = {
     "listHomeworks": [
       "filter"
     ],
+    "listHomeworkAnswers": [
+      "schoolId",
+      "classId"
+    ],
     "createHomework": [
       "teacherId",
       "schoolId",

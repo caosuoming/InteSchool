@@ -548,6 +548,7 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   homeworks: ClassroomHomework[];
   homeworkHistory: ClassroomHomework[];
   homeworkRecords: HomeworkClassOverviewRecord[];
+  homeworkAnswers: ClassroomHomeworkAnswer[];
   notices: ClassroomNotice[];
   students: Array<Pick<Student, "id" | "name">>;
   studentAttentionByTeacherId?: Record<string, {
@@ -3141,6 +3142,15 @@ export interface ClassroomHomework {
   publishAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 班级已有作业记录或扫描件时可公开展示的试卷参考答案。 */
+export interface ClassroomHomeworkAnswer {
+  id: string;
+  title: string;
+  subject: string;
+  assignedDate: string;
+  questions: Array<{ id: string; number: number; answer: string }>;
 }
 
 export interface ClassroomHomeworkFilter {

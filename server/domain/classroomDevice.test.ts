@@ -109,6 +109,32 @@ async function bindClassOne() {
 }
 
 describe("classroomDeviceService", () => {
+  it("only includes the selected class's eligible homework answers in the device snapshot", async () => {
+    const state = makeState();
+    state.examPapers = [
+      {
+        id: "paper-class-1", teacherId: "subject", schoolId: "school-1", subject: "数学",
+        title: "一班数学", classIds: ["class-1"], assignedDate: localDateValue(),
+        questions: [{ id: "q1", answer: "C" }],
+      },
+      {
+        id: "paper-class-2", teacherId: "subject", schoolId: "school-1", subject: "数学",
+        title: "二班数学", classIds: ["class-2"], assignedDate: localDateValue(),
+        questions: [{ id: "q2", answer: "D" }],
+      },
+    ];
+    state.scannerPages = [
+      { schoolId: "school-1", sheetType: "paper", sheetId: "paper-class-1", createdAt: CREATED_AT },
+      { schoolId: "school-1", sheetType: "paper", sheetId: "paper-class-2", createdAt: CREATED_AT },
+    ];
+    await runWithState(state, async () => {
+      await bindClassOne();
+      const snapshot = await classroomDeviceService.getClassroomSnapshot(TOKEN_1);
+      expect(snapshot.homeworkAnswers.map((item) => item.id)).toEqual(["paper-class-1"]);
+      expect(snapshot.homeworkAnswers[0].questions).toEqual([{ id: "q1", number: 1, answer: "C" }]);
+    });
+  });
+
   it("binds a selected school and class without a teacher account and exposes only the public device shape", async () => {
     const state = makeState();
     await runWithState(state, async () => {

@@ -6,6 +6,7 @@ import type {
 } from "../../src/types/index.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { db } from "../runtime-db.js";
+import { classroomHomeworkAnswers } from "./classroomHomeworkAnswers.js";
 
 export interface ClassroomHomeworkInput {
   managementCategory?: "homework" | "exam";
@@ -101,6 +102,10 @@ function validateInput(input: ClassroomHomeworkInput): ClassroomHomeworkAttachme
 }
 
 export const classroomHomeworkService = {
+  async listHomeworkAnswers(schoolId: string, classId: string) {
+    return classroomHomeworkAnswers(schoolId, classId);
+  },
+
   async listHomeworks(filter: ClassroomHomeworkFilter = {}): Promise<ClassroomHomework[]> {
     await delay(150);
     return db
