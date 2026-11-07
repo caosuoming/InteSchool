@@ -2040,7 +2040,216 @@ function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: 
   return grouped;
 }
 
+type EnglishPart = "听力" | "阅读理解" | "语言运用" | "写作";
+
+const englishPartPattern = /^第\s*[一二三四五六七八九十百\d]+\s*部分\s*(听力|阅读理解|语言运用|写作)(?:\b|\s|[（(：:]|$)/;
+const englishSectionPattern = /^第\s*[一二三四五六七八九十百\d]+\s*节(?:\s|[（(：:]|$)/;
+const englishListeningSinglePattern = /每\s*段\s*录音\s*后\s*有\s*一个\s*小题/;
+const englishListeningGroupPattern = /每\s*段\s*录音\s*后\s*有\s*几\s*个\s*小题/;
+const englishListeningPassagePattern = /^听\s*下\s*面\s*(?:一|[\d一二三四五六七八九十]+)\s*段\s*(?:对话|独白|材料|录音)/;
+const englishGapPattern = /阅读\s*下\s*面\s*短文[，,。]?\s*从\s*短文\s*后\s*的\s*选项\s*中\s*选出/;
+const englishFieldPattern = /【\s*(答案|原文|导语|点睛|总结|详解|解析|解答|\d+题详解|第\d+题详解)\s*】/g;
+
+interface EnglishUnit {
+  lines: string[];
+  part: EnglishPart;
+  grouped: boolean;
+  gap: boolean;
+}
+
+function englishFieldParts(lines: string[]): {
+  content: string;
+  answer?: string;
+  analysis?: string;
+  summary?: string;
+} {
+  const text = lines.join("\n").trim();
+  const markers = [...text.matchAll(englishFieldPattern)];
+  if (markers.length === 0) return { content: text };
+  const result: { content: string; answer?: string; analysis?: string; summary?: string } = {
+    content: text.slice(0, markers[0].index).trim(),
+  };
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    const label = marker[1];
+    const field = label === "答案" ? "answer"
+      : label === "导语" || label === "点睛" || label === "总结" ? "summary"
+        : "analysis";
+    const start = marker.index! + marker[0].length;
+    const value = text.slice(start, markers[index + 1]?.index ?? text.length).trim();
+    // Keep numbered explanation labels and transcripts to preserve their subquestion mapping.
+    const prefix = /^\d+题详解$|^第\d+题详解$|^原文$/.test(label) ? `【${label}】` : "";
+    appendQuestionField(result, field, `${prefix}${value}`);
+  }
+  return result;
+}
+
+function englishQuestionNumbers(content: string): string[] {
+  return content.split("\n")
+    .map((line) => extractLeadingQuestionNumber(line.trim())?.number)
+    .filter((value): value is string => Boolean(value));
+}
+
+function englishAnswerMap(value: string): Map<string, string> {
+  const matches = [...value.matchAll(/(?:^|[\s,，;；])(?:第\s*)?(\d{1,3})\s*(?:题)?\s*[.．、:：)）]\s*([A-Ha-h]|(?:正确|错误|对|错))(?=\s|$|[,，;；]|\d{1,3}\s*[.．、:：)）])/g)];
+  return new Map(matches.map((match) => [match[1], match[2]]));
+}
+
+function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] | null {
+  if (config.subject?.trim() !== "英语") return null;
+  const sourceLines = content.replace(/\r\n?/g, "\n").split("\n");
+  const structuralLines = sourceLines.map((line) => normalizeStructuralText(line).trim());
+  const firstPart = structuralLines.find((line) => englishPartPattern.test(line));
+  const inferredPart: EnglishPart | undefined = structuralLines.some((line) => englishGapPattern.test(line))
+    ? "阅读理解"
+    : structuralLines.some((line) => englishListeningSinglePattern.test(line) || englishListeningGroupPattern.test(line))
+      ? "听力" : undefined;
+  if (!firstPart && !inferredPart) return null;
+
+  const blocks: DocumentBlock[] = [];
+  let part: EnglishPart | undefined = firstPart ? undefined : inferredPart;
+  let listeningAtomic = false;
+  let gap = false;
+  let current: EnglishUnit | undefined;
+  const addBlock = (type: DocumentBlockType, text: string, fields: Partial<DocumentBlock> = {}) => {
+    if (!text.trim()) return;
+    blocks.push({
+      id: createBlockId(), type, content: text.trim(), order: blocks.length, status: "new", ...fields,
+    });
+  };
+  const submitCurrent = () => {
+    if (!current) return;
+    const unit = current;
+    current = undefined;
+    const fields = englishFieldParts(unit.lines);
+    if (!fields.content) return;
+    const numbers = englishQuestionNumbers(fields.content);
+    const isQuestion = numbers.length > 0 || unit.gap;
+    if (!isQuestion) {
+      addBlock("knowledge", fields.content, { knowledgeTitle: fields.content.slice(0, 20) });
+      return;
+    }
+    const grouped = unit.grouped || numbers.length > 1 || unit.gap;
+    if (grouped) {
+      addBlock("question", fields.content, {
+        questionType: "comprehensive", difficulty: 3,
+        answer: fields.answer, analysis: fields.analysis, summary: fields.summary,
+      });
+      return;
+    }
+    const parsed = parseDocumentBlocksCore(fields.content, config)
+      .find((block) => block.type === "question");
+    const originalNumber = numbers[0];
+    const answer = fields.answer?.replace(
+      new RegExp(`^(?:第\\s*)?${originalNumber}\\s*(?:题)?\\s*[.．、:：)）]\\s*`), "",
+    ).trim();
+    addBlock("question", parsed?.content || fields.content, {
+      options: parsed?.options || [],
+      questionType: unit.part === "写作" ? "essay"
+        : parsed?.questionType || (unit.part === "听力" ? "single" : "short"),
+      difficulty: 3, answer, analysis: fields.analysis, summary: fields.summary,
+    });
+  };
+  const addLine = (line: string, grouped: boolean) => {
+    if (!current) current = { lines: [], part: part!, grouped, gap };
+    current.lines.push(line);
+  };
+
+  let beforePart: string[] = [];
+  for (let index = 0; index < sourceLines.length; index += 1) {
+    const raw = sourceLines[index];
+    const line = structuralLines[index];
+    if (!line) continue;
+    const major = englishPartPattern.exec(line);
+    if (major) {
+      submitCurrent();
+      if (beforePart.length) {
+        addBlock("documentTitle", beforePart[0]);
+        if (beforePart.length > 1) addBlock("documentInfo", beforePart.slice(1).join("\n"));
+        beforePart = [];
+      }
+      part = major[1] as EnglishPart;
+      listeningAtomic = false;
+      gap = false;
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (!part) {
+      beforePart.push(raw);
+      continue;
+    }
+    if (englishSectionPattern.test(line)) {
+      submitCurrent();
+      gap = false;
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (part === "听力" && (englishListeningSinglePattern.test(line) || englishListeningGroupPattern.test(line))) {
+      submitCurrent();
+      listeningAtomic = englishListeningSinglePattern.test(line);
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (part === "阅读理解" && englishGapPattern.test(line)) {
+      submitCurrent();
+      gap = true;
+      addLine(raw, true);
+      continue;
+    }
+    if (part === "阅读理解" && !gap && /^[A-D]$/.test(line)) {
+      submitCurrent();
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (part === "听力" && englishListeningPassagePattern.test(line)) {
+      submitCurrent();
+      addLine(raw, true);
+      continue;
+    }
+    const numbered = extractLeadingQuestionNumber(line);
+    if (numbered && (
+      (part === "听力" && listeningAtomic)
+      || part === "写作"
+    )) {
+      submitCurrent();
+      addLine(raw, false);
+      continue;
+    }
+    addLine(raw, part !== "听力" && part !== "写作" || !listeningAtomic);
+  }
+  submitCurrent();
+  if (beforePart.length) {
+    addBlock("documentTitle", beforePart[0]);
+    if (beforePart.length > 1) addBlock("documentInfo", beforePart.slice(1).join("\n"));
+  }
+
+  // A single answer key often follows several independent listening questions.
+  // Distribute only explicitly numbered answer pairs; leave unnumbered answers untouched.
+  let sectionStart = 0;
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block.type === "groupTitle" && englishPartPattern.test(normalizeStructuralText(block.content))) {
+      sectionStart = index + 1;
+    }
+    if (block.type !== "question" || !block.answer) continue;
+    const answers = englishAnswerMap(block.answer);
+    if (answers.size < 2) continue;
+    for (const candidate of blocks.slice(sectionStart, index + 1)) {
+      if (candidate.type !== "question" || candidate.questionType === "comprehensive") continue;
+      const numbers = englishQuestionNumbers(candidate.content);
+      if (numbers.length === 1 && answers.has(numbers[0])) candidate.answer = answers.get(numbers[0]);
+    }
+    if (englishQuestionNumbers(block.content).length === 1) {
+      const number = englishQuestionNumbers(block.content)[0];
+      block.answer = answers.get(number) || block.answer;
+    }
+  }
+  return blocks;
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
+  const english = parseEnglishDocumentBlocks(content, config);
+  if (english) return english;
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const solutionHeadingIndexes = lines
     .map((line, index) => ({ index, kind: trailingSolutionHeadingKind(line.trim()) }))
