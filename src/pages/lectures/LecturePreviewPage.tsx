@@ -677,7 +677,6 @@ export default function LecturePreviewPage() {
         <DocumentQuestionBatchActions
           schoolId={schoolId}
           questionIds={questionIds}
-          disabled={Boolean(lecture.answerSheetPublishedAt) || answerRecords.length > 0}
           onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
           markAllButton={<DocumentQuestionCompletionBatch
             documentId={lecture.id}

@@ -13,7 +13,7 @@ import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
-import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeLecturePatch } from "./document-resource-lock.js";
+import { answerSheetInvalidationPatch, hasDocumentAnswerRecords, withUsagePublishedAnswerSheet, sanitizeLecturePatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveLectureToExamPaper } from "./document-library-move.js";
 import { lectureKnowledgePointIds } from "./document-knowledge.js";
@@ -61,7 +61,7 @@ function restoreEditableChapterHierarchy(sections: LectureSection[]): LectureSec
 }
 
 function withDerivedKnowledgePoints(lecture: Lecture): Lecture {
-  return { ...lecture, knowledgePointIds: lectureKnowledgePointIds(lecture) };
+  return { ...withUsagePublishedAnswerSheet(lecture), knowledgePointIds: lectureKnowledgePointIds(lecture) };
 }
 
 function matchFilter(l: Lecture, filter: LectureFilter): boolean {
@@ -146,13 +146,14 @@ export const lectureService = {
 
   async listPublishedAnswerSheets(): Promise<Lecture[]> {
     return db.read("lectures")
-      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt))
-      .map(withDerivedKnowledgePoints);
+      .map(withDerivedKnowledgePoints)
+      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt));
   },
 
   async getPublishedAnswerSheet(id: string): Promise<Lecture | null> {
     const item = db.read("lectures").find((entry) => entry.id === id);
-    return item?.hasAnswerSheet && item.answerSheetPublishedAt ? withDerivedKnowledgePoints(item) : null;
+    const result = item ? withDerivedKnowledgePoints(item) : null;
+    return result?.hasAnswerSheet && result.answerSheetPublishedAt ? result : null;
   },
 
   async publishAnswerSheet(id: string, settings?: Lecture["answerSheetSettings"]): Promise<Lecture> {
@@ -172,6 +173,7 @@ export const lectureService = {
   },
 
   async unpublishAnswerSheet(id: string): Promise<Lecture> {
+    if (hasDocumentAnswerRecords(id)) throw new Error("已有学生答题记录，不能撤回发布");
     let updated: Lecture | undefined;
     db.update("lectures", (list) => list.map((item) => {
       if (item.id !== id) return item;
@@ -311,10 +313,6 @@ export const lectureService = {
   async updateLecture(id: string, patch: Partial<Lecture>): Promise<Lecture> {
     await delay(300);
     maybeThrowError();
-    assertDocumentNotUsed(id);
-    if (db.read("lectures").some((item) => item.id === id && item.answerSheetPublishedAt)) {
-      throw new Error("答题卡已发布，请先撤回发布再编辑讲义");
-    }
     let updated: Lecture | null = null;
     db.update("lectures", (list) =>
       list.map((l) => {

@@ -31,6 +31,7 @@ interface LectureSectionEditorRowProps {
   onMoveDown: () => void;
   onEditSection: () => void;
   onReplaceQuestion?: (question: Question) => void;
+  onEditAttributes?: (question: Question) => void;
   onRemove: () => void;
   readOnly?: boolean;
   dragHandle?: ReactNode;
@@ -57,6 +58,7 @@ export function LectureSectionEditorRow({
   onMoveDown,
   onEditSection,
   onReplaceQuestion,
+  onEditAttributes,
   onRemove,
   readOnly = false,
   dragHandle,
@@ -96,6 +98,12 @@ export function LectureSectionEditorRow({
           </div>
         )}
         {answered && <span className="tag-gold text-[10px] py-0.5">已做过</span>}
+        {section.type === "question" && question && onEditAttributes && (
+          <button type="button" onClick={() => onEditAttributes(question)}
+            className="ml-auto rounded px-2 py-1 text-xs text-gold-700 hover:bg-gold-50">
+            编辑题目属性
+          </button>
+        )}
 
         {!readOnly && <div className="ml-auto flex items-center gap-0.5">
           {!replacementMode && (

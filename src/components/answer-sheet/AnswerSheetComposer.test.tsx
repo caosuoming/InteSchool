@@ -128,7 +128,7 @@ describe("AnswerSheetComposer", () => {
     expect(headings.map((heading) => heading.match(/、([^（]+)/)?.[1])).toEqual(["单选题", "多选题", "填空题"]);
   });
 
-  it("downloads preview pages as PDF and prints without changing publication status", async () => {
+  it("auto-publishes a downloaded or printed answer sheet", async () => {
     downloadPdfMock.mockClear();
     const onPublicationChange = vi.fn().mockResolvedValue(undefined);
     const print = vi.spyOn(window, "print").mockImplementation(() => {});
@@ -145,13 +145,14 @@ describe("AnswerSheetComposer", () => {
       expect(pages).toHaveLength(1);
       expect(name).toBe("高一数学期中考试_答题卡");
       expect(paperSize).toBe("8K");
-      expect(onPublicationChange).not.toHaveBeenCalled();
+      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(true, expect.anything()));
+      onPublicationChange.mockClear();
       expect(print).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByRole("button", { name: "打印答题卡" }));
       expect(print).toHaveBeenCalledTimes(1);
       window.dispatchEvent(new Event("afterprint"));
-      expect(onPublicationChange).not.toHaveBeenCalled();
+      await waitFor(() => expect(onPublicationChange).toHaveBeenCalledWith(true, expect.anything()));
       rerender(<AnswerSheetComposer title="期中" resourceType="exam-paper" resourceId="paper-1" resourceLabel="试卷"
         questions={questions} published initialViewMode="preview" onPublicationChange={onPublicationChange} onBack={vi.fn()} />);
       expect(screen.getByRole("button", { name: "撤回发布" })).toBeInTheDocument();

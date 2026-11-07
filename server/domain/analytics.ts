@@ -17,6 +17,7 @@ import type {
 import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import { publishAnswerSheetsForUsage } from "./document-resource-lock.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 
 /** 知识点掌握情况统计项 */
@@ -349,6 +350,7 @@ export const analyticsService = {
       db.update("answerRecords", (list) =>
         list.map((a) => (a.id === existing.id ? updated : a)),
       );
+      publishAnswerSheetsForUsage([input.lectureId], now);
       return updated;
     }
 
@@ -363,6 +365,7 @@ export const analyticsService = {
       answeredAt: new Date().toISOString(),
     };
     db.update("answerRecords", (list) => [...list, record]);
+    publishAnswerSheetsForUsage([input.lectureId], now);
     return record;
   },
 
@@ -416,6 +419,7 @@ export const analyticsService = {
     }
 
     db.update("answerRecords", () => Array.from(byKey.values()));
+    publishAnswerSheetsForUsage(items.map((item) => item.lectureId), now);
     const touchedQuestionIds = new Set(items.map((item) => item.questionId));
     db.update("questions", (list) =>
       list.map((question) =>

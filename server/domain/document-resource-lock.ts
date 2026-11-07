@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { genId } from "../domain-shared.js";
 import type {
   ExamPaper,
   ExamPaperQuestion,
@@ -6,10 +8,36 @@ import type {
 import { isDocumentStructureLocked } from "../../src/lib/document-resource.js";
 import { db } from "../runtime-db.js";
 
-export function assertDocumentNotUsed(documentId: string): void {
-  const used = (db.read("answerRecords") || []).some((record) => record.lectureId === documentId);
-  if (used) {
-    throw new Error("文档已用，已有学生答题记录，不能再编辑");
+export function hasDocumentAnswerRecords(documentId: string): boolean {
+  return (db.read("answerRecords") || []).some((record) => record.lectureId === documentId);
+}
+
+export function withUsagePublishedAnswerSheet<T extends ExamPaper | Lecture>(document: T): T {
+  if (document.answerSheetPublishedAt) return document;
+  const record = (db.read("answerRecords") || []).find((item) => item.lectureId === document.id);
+  if (!record) return document;
+  return {
+    ...document,
+    hasAnswerSheet: true,
+    answerSheetCreatedAt: document.answerSheetCreatedAt || record.answeredAt,
+    answerSheetPublishedAt: record.answeredAt,
+  };
+}
+
+export function publishAnswerSheetsForUsage(ids: Iterable<string>, now: string): void {
+  const usedIds = new Set(ids);
+  if (usedIds.size === 0) return;
+  for (const collection of ["examPapers", "lectures"] as const) {
+    db.update(collection, (documents) => documents.map((document) => {
+      if (!usedIds.has(document.id) || document.answerSheetPublishedAt) return document;
+      return {
+        ...document,
+        hasAnswerSheet: true,
+        answerSheetCreatedAt: document.answerSheetCreatedAt || now,
+        answerSheetRevisionId: document.answerSheetRevisionId || genId("sheet"),
+        answerSheetPublishedAt: now,
+      };
+    }));
   }
 }
 
@@ -29,6 +57,7 @@ function samePaperQuestionStructure(
     return Boolean(next)
       && question.id === next.id
       && question.questionId === next.questionId
+      && question.projectId === next.projectId
       && question.stem === next.stem
       && sameStringArray(question.options, next.options)
       && ((question.type === "single" || question.type === "multiple") || question.answer === next.answer)
@@ -57,7 +86,7 @@ export function answerSheetInvalidationPatch<T extends ExamPaper | Lecture>(
   patch: Partial<T>,
   type: "paper" | "lecture",
 ): Partial<T> {
-  if (!current.hasAnswerSheet) return {};
+  if (!current.hasAnswerSheet || current.answerSheetPublishedAt || hasDocumentAnswerRecords(current.id)) return {};
   const keys: readonly string[] = type === "paper" ? PAPER_CARD_FIELDS : LECTURE_CARD_FIELDS;
   const before = current as unknown as Record<string, unknown>;
   const after = patch as Record<string, unknown>;
@@ -81,7 +110,21 @@ export function sanitizeExamPaperPatch(
   delete metadataSafePatch.answerSheetPublishedAt;
   delete metadataSafePatch.answerSheetSettings;
   delete metadataSafePatch.answerSheetRevisionId;
-  if (!isDocumentStructureLocked(current)) return metadataSafePatch;
+  const used = Boolean(current.answerSheetPublishedAt) || hasDocumentAnswerRecords(current.id);
+  if (!isDocumentStructureLocked(current) && !used) return metadataSafePatch;
+  if (used) {
+    for (const [key, value] of Object.entries(metadataSafePatch)) {
+      if (key === "questions" || key === "totalScore") continue;
+      if (!isDeepStrictEqual(current[key as keyof ExamPaper], value)) {
+        throw new Error(current.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能修改文档结构" : "文档已用，不能修改文档结构");
+      }
+    }
+    if (patch.questions && !patch.questions.every((question, index) =>
+      isDeepStrictEqual({ ...question, score: current.questions[index]?.score }, current.questions[index])
+    )) {
+      throw new Error("文档已用或答题卡已发布，只能修改题目分值和题库属性");
+    }
+  }
 
   const safePatch = metadataSafePatch;
   delete safePatch.originalFileUrl;
@@ -138,7 +181,15 @@ export function sanitizeLecturePatch(
   delete metadataSafePatch.answerSheetPublishedAt;
   delete metadataSafePatch.answerSheetSettings;
   delete metadataSafePatch.answerSheetRevisionId;
-  if (!isDocumentStructureLocked(current)) return metadataSafePatch;
+  const used = Boolean(current.answerSheetPublishedAt) || hasDocumentAnswerRecords(current.id);
+  if (!isDocumentStructureLocked(current) && !used) return metadataSafePatch;
+  if (used) {
+    for (const [key, value] of Object.entries(metadataSafePatch)) {
+      if (!isDeepStrictEqual(current[key as keyof Lecture], value)) {
+        throw new Error(current.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能修改文档结构" : "文档已用，不能修改文档结构");
+      }
+    }
+  }
 
   if (patch.sections && !sameJsonStructure(current.sections, patch.sections)) {
     throw new Error("上传原稿和拆解稿不能编辑、删除或调整讲义内容顺序");

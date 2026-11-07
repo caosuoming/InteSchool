@@ -1011,6 +1011,28 @@ export function AnswerSheetComposer({
     '.answer-sheet-paper[data-paper-view="preview"]',
   ) || []);
 
+  const publishAfterExport = async () => {
+    if (published || !onPublicationChange) return;
+    setPublishing(true);
+    try {
+      await onPublicationChange(true, settings);
+      toast.success("答题卡已自动发布，可在待扫描列表中查看");
+    } catch (error) {
+      toast.error("答题卡已导出，但自动发布失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const printSheet = () => {
+    try {
+      printAnswerSheet(previewPages(), settings.paperSize);
+      void publishAfterExport();
+    } catch (error) {
+      toast.error("打印答题卡失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
   const downloadPdf = async () => {
     if (exporting) return;
     const pages = previewPages();
@@ -1018,6 +1040,7 @@ export function AnswerSheetComposer({
     try {
       await downloadAnswerSheetPdf(pages, `${title}_答题卡`, settings.paperSize);
       toast.success("答题卡 PDF 已下载");
+      await publishAfterExport();
     } catch (error) {
       toast.error("答题卡 PDF 下载失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -1554,11 +1577,11 @@ export function AnswerSheetComposer({
                         {published ? "撤回发布" : "发布答题卡"}
                       </Button>
                     )}
-                    <Button variant="gold" loading={exporting} disabled={exporting} onClick={() => void downloadPdf()}>
+                    <Button variant="gold" loading={exporting} disabled={exporting || publishing} onClick={() => void downloadPdf()}>
                       <Download className="h-4 w-4" />
                       下载答题卡
                     </Button>
-                    <Button variant="outline" onClick={() => printAnswerSheet(previewPages(), settings.paperSize)}>
+                    <Button variant="outline" onClick={printSheet} disabled={exporting || publishing}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>
