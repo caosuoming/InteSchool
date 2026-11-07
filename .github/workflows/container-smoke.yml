@@ -50,7 +50,7 @@ jobs:
           done
           docker exec inteschool-ci-db pg_isready -U inteschool -d inteschool
           docker run -d --name inteschool-ci --network inteschool-ci-network \
-            -p 127.0.0.1::3000 \
+            --env-file .env.example -p 127.0.0.1::3000 \
             -e INTESCHOOL_DATABASE_URL=postgresql://inteschool:ci-only-test-password@inteschool-ci-db:5432/inteschool \
             inteschool:ci
           port=$(docker port inteschool-ci 3000/tcp | awk -F: 'END {print $NF}')
