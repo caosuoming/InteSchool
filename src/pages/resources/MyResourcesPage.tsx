@@ -124,7 +124,7 @@ import {
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "answerSheet" | "basket";
 type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "basket">;
-type LeftTab = "chapter" | "knowledge" | "method";
+type LeftTab = "chapter" | "knowledge" | "method" | "error";
 type SortKey = "updated" | "created" | "title";
 
 type DocumentMetadataTarget =
@@ -273,6 +273,7 @@ function lessonDocumentBlocks(blocks: DocumentBlock[]): LessonDocumentBlock[] {
         type: "knowledge" as const,
         title: block.knowledgeTitle,
         content: block.content,
+        inlineAnswers: block.inlineAnswers,
       }];
     }
     if (block.type !== "question") return [];
@@ -585,12 +586,15 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
   const [checkedMethods, setCheckedMethods] = useState<string[]>([]);
+  const [checkedErrors, setCheckedErrors] = useState<string[]>([]);
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
   const [methodLogic, setMethodLogic] = useState<FilterLogic>("or");
+  const [errorLogic, setErrorLogic] = useState<FilterLogic>("or");
 
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   const [resourcePage, setResourcePage] = useState(1);
@@ -965,6 +969,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       knowledgeLogic,
       thoughtMethodIds: activeTab === "answerSheet" ? [] : checkedMethods,
       methodLogic,
+      errorReasonIds: activeTab === "answerSheet" ? [] : checkedErrors,
+      errorReasonLogic: errorLogic,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
       semester: (selectedSemester || undefined) as ResourceSemester | undefined,
@@ -1118,9 +1124,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     checkedChapters,
     checkedKnowledge,
     checkedMethods,
+    checkedErrors,
     chapterLogic,
     knowledgeLogic,
     methodLogic,
+    errorLogic,
     schoolId,
     selectedGrade,
     selectedYear,
@@ -1134,6 +1142,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (activeTab !== "answerSheet") {
       knowledgeService.getKnowledgeTree(teacher?.id || schoolId).then(setKnowledgeTree);
       knowledgeService.getMethodTree(teacher?.id || schoolId).then(setMethodTree);
+      knowledgeService.getErrorReasonTree(teacher?.id || schoolId).then(setErrorTree);
     }
   }, [activeTab, schoolId, teacher?.id, teacher?.subject]);
 
@@ -1676,11 +1685,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   const noTreeSelection = checkedChapters.length === 0
-    && (activeTab === "answerSheet" || (checkedKnowledge.length === 0 && checkedMethods.length === 0));
+    && (activeTab === "answerSheet" || (checkedKnowledge.length === 0 && checkedMethods.length === 0 && checkedErrors.length === 0));
   const resetDirectorySelections = useCallback(() => {
     setCheckedChapters([]);
     setCheckedKnowledge([]);
     setCheckedMethods([]);
+    setCheckedErrors([]);
   }, []);
 
   const coursewareTypeOptions = useMemo(
@@ -1833,6 +1843,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     if (!methodTree || !directoryCountResources) return methodTree;
     return annotateTreeWithResourceCounts(methodTree, directoryCountResources, "method");
   }, [directoryCountResources, methodTree]);
+
+  const displayedErrorTree = useMemo(() => {
+    if (!errorTree || !directoryCountResources) return errorTree;
+    return annotateTreeWithResourceCounts(errorTree, directoryCountResources, "error");
+  }, [directoryCountResources, errorTree]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
   const directoryLeftTab: LeftTab = activeTab === "answerSheet" ? "chapter" : leftTab;
@@ -3483,8 +3498,18 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 <Lightbulb className="w-3.5 h-3.5" />
                 思想方法
               </button>
+              <button
+                onClick={() => setLeftTab("error")}
+                aria-label="错因库"
+                className={cn(
+                  "flex-1 px-2 py-1.5 rounded text-sm font-medium transition-colors",
+                  leftTab === "error" ? "bg-paper text-gold-600 shadow-sm" : "text-ink-500 hover:text-ink-700",
+                )}
+              >
+                错因库
+              </button>
             </div>
-            {(directoryLeftTab === "chapter" ? displayedChapterTree : directoryLeftTab === "knowledge" ? displayedKnowledgeTree : displayedMethodTree) ? (
+            {(directoryLeftTab === "chapter" ? displayedChapterTree : directoryLeftTab === "knowledge" ? displayedKnowledgeTree : directoryLeftTab === "method" ? displayedMethodTree : displayedErrorTree) ? (
               directoryLeftTab === "chapter" ? (
                 <SearchableTree
                   data={displayedChapterTree!}
@@ -3513,6 +3538,21 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   showLogicSelector
                   logic={knowledgeLogic}
                   onLogicChange={setKnowledgeLogic}
+                  onReset={resetDirectorySelections}
+                />
+              ) : directoryLeftTab === "error" ? (
+                <SearchableTree
+                  data={displayedErrorTree!}
+                  title="错因库"
+                  showTitle={false}
+                  accent="teal"
+                  checkable
+                  checkedIds={checkedErrors}
+                  onCheck={setCheckedErrors}
+                  searchPlaceholder="搜索错因..."
+                  showLogicSelector
+                  logic={errorLogic}
+                  onLogicChange={setErrorLogic}
                   onReset={resetDirectorySelections}
                 />
               ) : (
@@ -4727,7 +4767,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         />
       )}
 
-      {/* 捐赠题目查重与合并 */}
+      {/* 捐赠题目查重与身份关联 */}
       <Modal
         open={!!donationCheck && donationCheck.conflicts.length > 0}
         onClose={() => {
@@ -4736,7 +4776,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           setDonationDecisions({});
         }}
         title="题目查重"
-        description="以下题目与平台现有题目的相似度超过 80%。题干只能二选一，答案、解析、总结可复选并保留为第二项。"
+        description="发现高度相似题目。可保留为独立新题，或标记为同一题；两题编号、题干、答案、解析及知识点均不合并。"
         size="full"
         footer={
           <div className="flex justify-end gap-2">
@@ -4777,7 +4817,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   <div className="flex rounded-md border border-ink-200 overflow-hidden">
                     {([
                       { value: "new", label: "作为新题新增" },
-                      { value: "merge", label: "合并到现有题" },
+                      { value: "same", label: "标记为同一题" },
                     ] as const).map((option) => (
                       <button
                         key={option.value}
@@ -4800,10 +4840,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 <DonationQuestionComparison
                   conflict={conflict}
                   decision={decision}
-                  onChange={(next) => updateDonationDecision(
-                    conflict.item.resourceId,
-                    () => next,
-                  )}
+                  onChange={(next) => updateDonationDecision(conflict.item.resourceId, () => next)}
                 />
               </Card>
             );

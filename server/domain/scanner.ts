@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../runtime-db.js";
+import { withUsagePublishedAnswerSheet } from "./document-resource-lock.js";
 import type { TeacherRecord } from "../types.js";
 import type { ExamPaper, Lecture } from "../../src/types/index.js";
 import type { ThirdPartyCard, CardRegion, CardRegionType } from "../../src/types/scanner.js";
@@ -71,9 +72,11 @@ export const scannerService = {
       }),
     });
     const papers = (db.read("examPapers") as ExamPaper[])
+      .map(withUsagePublishedAnswerSheet)
       .filter((item) => item.schoolId === schoolId && item.hasAnswerSheet && item.answerSheetPublishedAt)
       .map((item) => mapItem(item, "paper"));
     const lectures = (db.read("lectures") as Lecture[])
+      .map(withUsagePublishedAnswerSheet)
       .filter((item) => item.schoolId === schoolId && item.hasAnswerSheet && item.answerSheetPublishedAt)
       .map((item) => mapItem(item, "lecture"));
     return [...papers, ...lectures]

@@ -33,6 +33,7 @@ import {
   withDefaultTeacherScheduleTimeRanges,
 } from "../../src/lib/teacher-schedule.js";
 import { db } from "../runtime-db.js";
+import { extractUnderlinedAnswers, renderKnowledgeInlineAnswers } from "../../src/lib/lesson-inline-answers.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { assertResourceCapacity } from "./quota.js";
 import { examPaperKnowledgePointIds, lectureKnowledgePointIds } from "./document-knowledge.js";
@@ -625,14 +626,17 @@ function knowledgeSlide(
   title: string,
   content: string,
   headings: readonly string[] = [],
+  inlineAnswers?: string[],
 ): LessonSlide {
+  const extracted = inlineAnswers?.length ? { content, answers: inlineAnswers } : extractUnderlinedAnswers(content, true);
+  const renderedContent = renderKnowledgeInlineAnswers(extracted.content, extracted.answers);
   const slideHeadings = headings.map((heading) => heading.trim()).filter(Boolean);
   const hasHeading = slideHeadings.length > 0;
   return {
     id: genId("slide"),
     type: "knowledge",
     title,
-    content,
+    content: renderedContent,
     freeformLayout: true,
     elements: [
       ...(hasHeading ? [createTextElement(slideHeadings.join("\n"), {
@@ -643,7 +647,7 @@ function knowledgeSlide(
       }, {
         fontSize: 28,
       })] : []),
-      ...(content ? [createTextElement(content, {
+      ...(content ? [createTextElement(renderedContent, {
         x: 6,
         y: hasHeading ? 18 : 6,
         width: 88,
@@ -679,7 +683,7 @@ function examPaperSlides(examPaper: ExamPaper, canonicalQuestions: Question[]): 
       knowledgeNumber += 1;
       const headings = pendingHeadings;
       pendingHeadings = [];
-      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings)];
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings, block.inlineAnswers)];
     }
     if (block.type !== "question") return [];
 
@@ -767,7 +771,7 @@ function documentBlockSlides(
       knowledgeNumber += 1;
       const headings = pendingHeadings;
       pendingHeadings = [];
-      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings)];
+      return [knowledgeSlide(block.title || `知识块 ${knowledgeNumber}`, block.content, headings, block.inlineAnswers)];
     }
     if (block.type !== "question") return [];
 
@@ -1422,11 +1426,20 @@ export const lessonCoursewareService = {
     schoolId: string,
     source: string | Pick<Lecture, "id">,
     documentBlocks: LessonDocumentBlock[] = [],
+    personalClassIds?: string[],
   ): Promise<LessonCourseware> {
     const sourceId = typeof source === "string" ? source : source.id;
     const lecture = db.read("lectures").find((item) =>
       item.id === sourceId && item.teacherId === teacherId);
     if (!lecture) throw new Error("讲义不存在或无权访问");
+    if (personalClassIds !== undefined) {
+      const owned = new Set(db.read("personalClasses")
+        .filter((item) => item.teacherId === teacherId && lecture.classIds.includes(item.id))
+        .map((item) => item.id));
+      if (!personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
+        throw new Error("只能将讲义推送到本人所属的个人教学班");
+      }
+    }
 
     const questions = db.read("questions");
     const coverTitle = reviewedDocumentTitle(lecture.contentBlocks)
@@ -1474,7 +1487,7 @@ export const lessonCoursewareService = {
       } else if (sec.type === "knowledge") {
         const headings = pendingHeadings;
         pendingHeadings = [];
-        slides.push(knowledgeSlide(sec.title, sec.content, headings));
+        slides.push(knowledgeSlide(sec.title, sec.content, headings, sec.inlineAnswers));
       }
     });
     if (slides.length === 1) {
@@ -1494,7 +1507,7 @@ export const lessonCoursewareService = {
       sourceTitle: lecture.title,
       libraryCoursewareId,
       slides,
-      classIds: [],
+      classIds: personalClassIds ? [...new Set(personalClassIds)] : [],
     });
     saveGeneratedCoursewareToLibrary(
       lesson,

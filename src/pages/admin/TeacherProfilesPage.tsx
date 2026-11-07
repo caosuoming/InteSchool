@@ -10,7 +10,7 @@ import { GRADE_OPTIONS, SUBJECT_OPTIONS } from "@/lib/education";
 import { highestTeacherRoleLevel, TEACHER_ROLES, TEACHER_ROLE_LEVEL } from "@/lib/teacher-roles";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { SchoolClass, Teacher, TeacherAffiliation, TeacherRole } from "@/types";
+import type { SchoolClass, SchoolGrade, Teacher, TeacherAffiliation, TeacherRole } from "@/types";
 
 function affiliationFor(teacher: Teacher, schoolId: string | null): TeacherAffiliation | null {
   return teacher.affiliations.find((item) => item.schoolId === schoolId) || null;
@@ -21,6 +21,7 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
   const currentAffiliation = getCurrentAffiliation();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [schoolGrades, setSchoolGrades] = useState<SchoolGrade[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [subject, setSubject] = useState("数学");
   const [subjects, setSubjects] = useState<string[]>(["数学"]);
@@ -37,12 +38,14 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
 
   const load = useCallback(async () => {
     if (!schoolId) return;
-    const [teacherList, classList] = await Promise.all([
+    const [teacherList, classList, gradeList] = await Promise.all([
       organizationService.listTeachers(schoolId),
       classService.listSchoolClasses(schoolId),
+      classService.listSchoolGrades(schoolId),
     ]);
     setTeachers(teacherList);
     setClasses(classList);
+    setSchoolGrades(gradeList);
   }, [schoolId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -105,11 +108,39 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
     [isSchoolAdmin, managerLevel],
   );
 
-  const visibleClasses = useMemo(() => {
-    if (isSchoolAdmin || managerLevel > TEACHER_ROLE_LEVEL.gradeLeader) return classes;
+  const activeClasses = useMemo(() => {
+    const gradesById = new Map(schoolGrades.map((item) => [item.id, item]));
+    const graduatedCohorts = new Set(schoolGrades
+      .filter((item) => item.status === "graduated")
+      .map((item) => `${item.gradYear}:${item.grade}`));
+    return classes.filter((item) => {
+      if (item.status === "graduated" || item.status === "deleted") return false;
+      const grade = item.gradeId ? gradesById.get(item.gradeId) : undefined;
+      if (grade) return grade.status === "active";
+      const gradYear = item.gradYear ?? (item.gradeYear ? item.gradeYear + 3 : undefined);
+      return !gradYear || !graduatedCohorts.has(`${gradYear}:${item.grade}`);
+    }).map((item) => ({
+      ...item,
+      gradYear: item.gradYear ?? (item.gradeId ? gradesById.get(item.gradeId)?.gradYear : undefined)
+        ?? (item.gradeYear ? item.gradeYear + 3 : undefined),
+    }));
+  }, [classes, schoolGrades]);
+
+  const activeGradeOptions = useMemo(() => {
+    const available = new Set([
+      ...schoolGrades.filter((item) => item.status === "active").map((item) => item.grade),
+      ...activeClasses.map((item) => item.grade),
+    ]);
     const managerGrades = new Set(currentAffiliation?.teachingGrades || current?.teachingGrades || []);
-    return classes.filter((item) => managerGrades.has(item.grade));
-  }, [classes, current, currentAffiliation, isSchoolAdmin, managerLevel]);
+    return GRADE_OPTIONS.filter((grade) => available.has(grade)
+      && (isSchoolAdmin || managerLevel > TEACHER_ROLE_LEVEL.gradeLeader || managerGrades.has(grade)));
+  }, [activeClasses, current, currentAffiliation, isSchoolAdmin, managerLevel, schoolGrades]);
+
+  const visibleClasses = useMemo(() => {
+    if (isSchoolAdmin || managerLevel > TEACHER_ROLE_LEVEL.gradeLeader) return activeClasses;
+    const managerGrades = new Set(currentAffiliation?.teachingGrades || current?.teachingGrades || []);
+    return activeClasses.filter((item) => managerGrades.has(item.grade));
+  }, [activeClasses, current, currentAffiliation, isSchoolAdmin, managerLevel]);
 
   const toggle = (value: string, values: string[], setValues: (next: string[]) => void) => {
     setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
@@ -195,7 +226,7 @@ export default function TeacherProfilesPage({ embedded = false }: { embedded?: b
           if (!next.includes(subject)) setSubject(next[0]);
         }} />
         <Select label="默认学科" value={subjects.includes(subject) ? subject : subjects[0]} onChange={(event) => setSubject(event.target.value)} options={subjects.map((value) => ({ value, label: value }))} />
-        <Choices label="任教年级" values={isSchoolAdmin || managerLevel > TEACHER_ROLE_LEVEL.gradeLeader ? GRADE_OPTIONS : [...new Set(currentAffiliation?.teachingGrades || current?.teachingGrades || [])]} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
+        <Choices label="任教年级" values={activeGradeOptions} selected={grades} onToggle={(value) => toggle(value, grades, setGrades)} />
         <ClassChoices label="任教班级" classes={visibleClasses} selected={classIds} onToggle={(value) => toggle(value, classIds, setClassIds)} />
         <ClassChoices label="班主任班级" classes={visibleClasses} selected={homeroomClassIds} onToggle={(value) => toggle(value, homeroomClassIds, setHomeroomClassIds)} />
         <Button variant="gold" loading={saving} onClick={save}><Save className="w-4 h-4" />保存教师权限</Button>
@@ -224,11 +255,11 @@ function ClassChoices({ label, classes, selected, onToggle }: {
         {label}
       </legend>
       {groups.length === 0 ? (
-        <p className="text-sm text-ink-400">当前管理范围内尚未创建班级</p>
+        <p className="text-sm text-ink-400">当前管理范围内暂无在读班级</p>
       ) : (
         <div className="space-y-3">
           {groups.map((group) => (
-            <div key={group.grade} role="group" aria-label={group.grade} className="rounded-lg border border-ink-100 bg-ink-50/60 p-3">
+            <div key={group.key} role="group" aria-label={group.grade} className="rounded-lg border border-ink-100 bg-ink-50/60 p-3">
               <div className="mb-2 text-sm font-medium text-ink-700">{group.grade}</div>
               <div className="flex flex-wrap gap-2">
                 {group.classes.map((item) => (
@@ -246,22 +277,29 @@ function ClassChoices({ label, classes, selected, onToggle }: {
   );
 }
 
-function groupClassesByGrade(classes: SchoolClass[]): Array<{ grade: string; classes: SchoolClass[] }> {
-  const groups = new Map<string, SchoolClass[]>();
+function groupClassesByGrade(classes: SchoolClass[]): Array<{ key: string; grade: string; classes: SchoolClass[] }> {
+  const groups = new Map<string, { grade: string; year?: number; classes: SchoolClass[] }>();
   for (const item of classes) {
     const grade = item.grade.trim() || "未设置年级";
-    groups.set(grade, [...(groups.get(grade) || []), item]);
+    const year = item.gradYear ?? (item.gradeYear ? item.gradeYear + 3 : undefined);
+    const key = `${grade}:${year ?? "unknown"}`;
+    const group = groups.get(key) || { grade, year, classes: [] };
+    group.classes.push(item);
+    groups.set(key, group);
   }
 
   const gradeOrder = new Map(GRADE_OPTIONS.map((grade, index) => [grade, index]));
   return [...groups.entries()]
-    .sort(([left], [right]) => {
-      const leftOrder = gradeOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = gradeOrder.get(right) ?? Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder || left.localeCompare(right, "zh-CN", { numeric: true });
+    .sort(([, left], [, right]) => {
+      const leftOrder = gradeOrder.get(left.grade) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = gradeOrder.get(right.grade) ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder
+        || left.grade.localeCompare(right.grade, "zh-CN", { numeric: true })
+        || (right.year ?? 0) - (left.year ?? 0);
     })
-    .map(([grade, items]) => ({
-      grade,
-      classes: [...items].sort((left, right) => left.name.localeCompare(right.name, "zh-CN", { numeric: true })),
+    .map(([key, group]) => ({
+      key,
+      grade: group.year ? `${group.grade} · ${group.year}届` : group.grade,
+      classes: group.classes.sort((left, right) => left.name.localeCompare(right.name, "zh-CN", { numeric: true })),
     }));
 }

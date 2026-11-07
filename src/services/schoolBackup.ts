@@ -4,6 +4,7 @@ import type {
   SchoolResourceBackup,
   SchoolBackupResourceType,
   Teacher,
+  Question,
   ResourceSemester,
 } from "@/types";
 
@@ -80,7 +81,19 @@ export const schoolBackupService = {
     return rpcCall("schoolBackup", "autoBackupForResource", [schoolId, fromTeacherId, resourceType, resourceId, targetClassIds, backupReason, targetStudentIds]) as any;
   },
 
-  async saveAsOwnResource(backupId: string, teacher: Teacher): Promise<SchoolSaveAsOwnResult> {
-    return rpcCall("schoolBackup", "saveAsOwnResource", [backupId, teacher]) as any;
+  async checkSaveQuestionDuplicates(backupId: string, teacher: Teacher): Promise<Array<{
+    targetResourceId: string;
+    targetQuestion: Question;
+    sourceQuestion: Question;
+    similarity: number;
+  }>> {
+    return rpcCall("schoolBackup", "checkSaveQuestionDuplicates", [backupId, teacher]) as any;
+  },
+
+  async saveAsOwnResource(
+    backupId: string, teacher: Teacher,
+    decision?: { action: "new" | "same"; targetResourceId?: string },
+  ): Promise<SchoolSaveAsOwnResult> {
+    return rpcCall("schoolBackup", "saveAsOwnResource", [backupId, teacher, decision]) as any;
   }
 };

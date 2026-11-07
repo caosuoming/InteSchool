@@ -11,12 +11,15 @@ import type {
   NodePrerequisite,
   PrerequisiteNodeType,
   ThoughtMethod,
+  ErrorReason,
   Question,
   TreeNode,
   TreeNodeType,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import type { AppState, TeacherRecord } from "../types.js";
+import { resourceSubject, selectedSubject } from "../lib/resource-subject.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 
 // 收集某节点及其所有子孙 ID
@@ -106,7 +109,7 @@ function moveDirectoryRecord<T extends MovableDirectoryRecord>(
   });
 }
 
-type DirectoryRecord = Chapter | KnowledgePoint | ThoughtMethod;
+type DirectoryRecord = Chapter | KnowledgePoint | ThoughtMethod | ErrorReason;
 
 type DirectoryTeacher = {
   id: string;
@@ -121,16 +124,16 @@ type DirectoryTeacher = {
 
 function directoryCollection(
   type: TreeNodeType,
-): "chapters" | "knowledgePoints" | "thoughtMethods" {
-  return type === "chapter" ? "chapters" : type === "knowledge" ? "knowledgePoints" : "thoughtMethods";
+): "chapters" | "knowledgePoints" | "thoughtMethods" | "errorReasons" {
+  return type === "chapter" ? "chapters" : type === "knowledge" ? "knowledgePoints" : type === "method" ? "thoughtMethods" : "errorReasons";
 }
 
 function directoryLabel(type: TreeNodeType): string {
-  return type === "chapter" ? "章节课目录" : type === "knowledge" ? "知识点目录" : "思想方法目录";
+  return type === "chapter" ? "章节课目录" : type === "knowledge" ? "知识点目录" : type === "method" ? "思想方法目录" : "错因字典";
 }
 
 function defaultDirectoryRootName(type: TreeNodeType): string {
-  return type === "chapter" ? "全部章节" : type === "knowledge" ? "全部知识点" : "全部思想方法";
+  return type === "chapter" ? "全部章节" : type === "knowledge" ? "全部知识点" : type === "method" ? "全部思想方法" : "全部错因";
 }
 
 function directoryTeacher(teacherId: string): DirectoryTeacher {
@@ -243,7 +246,7 @@ function remapTeacherDirectoryReferences(
   replacements: Map<string, string>,
 ): void {
   if (replacements.size === 0) return;
-  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : type === "method" ? "thoughtMethodIds" : "errorReasonIds";
   for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
     const records = db.read(collection);
     if (!Array.isArray(records)) continue;
@@ -422,7 +425,7 @@ function snapshotDirectoryNodes(
       name: item.name,
       order: item.order,
       level: item.level,
-      ...(type !== "method" && item.prerequisites?.length ? { prerequisites: structuredClone(item.prerequisites) } : {}),
+      ...((type === "chapter" || type === "knowledge") && item.prerequisites?.length ? { prerequisites: structuredClone(item.prerequisites) } : {}),
       ...(type !== "chapter" && (item as KnowledgePoint).description
         ? { description: (item as KnowledgePoint).description }
         : {}),
@@ -565,12 +568,12 @@ function cloneDirectoryNodes(
 ): DirectoryCatalogNode[] {
   const idMap = new Map<string, string>();
   for (const node of nodes)
-    idMap.set(node.id, genId(type === "chapter" ? "ch" : type === "knowledge" ? "kp" : "tm"));
+    idMap.set(node.id, genId(type === "chapter" ? "ch" : type === "knowledge" ? "kp" : type === "method" ? "tm" : "er"));
   return nodes.map((node) => ({
     ...structuredClone(node),
     id: idMap.get(node.id)!,
     parentId: node.parentId ? idMap.get(node.parentId) || null : null,
-    prerequisites: type === "method" ? undefined : node.prerequisites
+    prerequisites: (type === "method" || type === "error") ? undefined : node.prerequisites
       ?.filter((ref) => ref.type === type && idMap.has(ref.id))
       .map((ref) => ({ type: ref.type, id: idMap.get(ref.id)! })),
   }));
@@ -608,7 +611,7 @@ function mergeDirectorySnapshots(
         .reduce((maximum, candidate) => Math.max(maximum, candidate.order), 0) +
       1;
     const created: DirectoryCatalogNode = {
-      id: genId(type === "chapter" ? "ch" : type === "knowledge" ? "kp" : "tm"),
+      id: genId(type === "chapter" ? "ch" : type === "knowledge" ? "kp" : type === "method" ? "tm" : "er"),
       parentId,
       name: node.name,
       order,
@@ -625,7 +628,7 @@ function mergeDirectorySnapshots(
   for (const node of incoming) {
     const targetId = incomingToMerged.get(node.id);
     const target = merged.find((item) => item.id === targetId);
-    if (!target || type === "method") continue;
+    if (!target || type === "method" || type === "error") continue;
     const references = (node.prerequisites || [])
       .filter((ref) => ref.type === type && incomingToMerged.has(ref.id))
       .map((ref) => ({ type: ref.type, id: incomingToMerged.get(ref.id)! }))
@@ -670,7 +673,7 @@ function remapTeacherDirectoryReferencesMany(
   replacements: Map<string, string[]>,
 ): void {
   if (replacements.size === 0) return;
-  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : type === "method" ? "thoughtMethodIds" : "errorReasonIds";
   for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
     const records = db.read(collection);
     if (!Array.isArray(records)) continue;
@@ -900,7 +903,7 @@ function updateDirectoryReferences(
   type: TreeNodeType,
   replacements: Map<string, string>,
 ): void {
-  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : type === "method" ? "thoughtMethodIds" : "errorReasonIds";
   for (const collection of DIRECTORY_REFERENCE_COLLECTIONS) {
     const records = db.read(collection);
     if (!Array.isArray(records)) continue;
@@ -955,7 +958,7 @@ function buildChapterTree(
 function buildKnowledgeTree(
   points: KnowledgePoint[],
   parentId: string | null = null,
-  type: "knowledge" | "method" = "knowledge",
+  type: "knowledge" | "method" | "error" = "knowledge",
 ): TreeNode[] {
   return points
     .filter((p) => p.parentId === parentId)
@@ -1003,9 +1006,16 @@ function getAliasIds(knowledgePointId: string, scopeId: string): string[] {
 }
 
 function directoryQuestions(scopeId: string): Question[] {
-  const isTeacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some((item) => item.id === scopeId);
-  return (db.read("questions") as Question[]).filter((question) =>
-    isTeacherScope ? question.teacherId === scopeId : question.schoolId === scopeId,
+  const teachers = (db.read("teachers") || []) as TeacherRecord[];
+  const teacher = teachers.find((item) => item.id === scopeId);
+  const questions = db.read("questions") as Question[];
+  if (!teacher) return questions.filter((question) => question.schoolId === scopeId);
+
+  const subject = selectedSubject(teacher);
+  const state = { teachers } as AppState;
+  return questions.filter((question) =>
+    question.teacherId === scopeId &&
+    (!subject || resourceSubject(state, question as unknown as Record<string, unknown>) === subject),
   );
 }
 
@@ -1023,6 +1033,11 @@ export const knowledgeService = {
   async listThoughtMethods(scopeId: string): Promise<ThoughtMethod[]> {
     await delay(200);
     return directoryRecords(scopeId, "method") as ThoughtMethod[];
+  },
+
+  async listErrorReasons(scopeId: string): Promise<ErrorReason[]> {
+    await delay(200);
+    return directoryRecords(scopeId, "error") as ErrorReason[];
   },
 
   async setNodePrerequisites(
@@ -1077,7 +1092,7 @@ export const knowledgeService = {
     return getAliasIds(knowledgePointId, scopeId);
   },
 
-  async getChapterTree(scopeId: string): Promise<TreeNode> {
+  async getChapterTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(300);
     const chapters = directoryRecords(scopeId, "chapter") as Chapter[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1093,10 +1108,10 @@ export const knowledgeService = {
       count: 0,
       children: buildChapterTree(chapters, null),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "chapter");
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "chapter") : tree;
   },
 
-  async getKnowledgeTree(scopeId: string): Promise<TreeNode> {
+  async getKnowledgeTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(300);
     const points = directoryRecords(scopeId, "knowledge") as KnowledgePoint[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1112,10 +1127,10 @@ export const knowledgeService = {
       count: 0,
       children: buildKnowledgeTree(points, null),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "knowledge", points);
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "knowledge", points) : tree;
   },
 
-  async getMethodTree(scopeId: string): Promise<TreeNode> {
+  async getMethodTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
     await delay(300);
     const methods = directoryRecords(scopeId, "method") as ThoughtMethod[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
@@ -1129,7 +1144,24 @@ export const knowledgeService = {
       count: 0,
       children: buildKnowledgeTree(methods, null, "method"),
     };
-    return annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "method");
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "method") : tree;
+  },
+
+  async getErrorReasonTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
+    await delay(200);
+    const reasons = directoryRecords(scopeId, "error") as ErrorReason[];
+    const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
+      (item) => item.id === scopeId,
+    );
+    const active = teacherScope ? ensureDefaultDirectoryCatalog(scopeId, "error") : null;
+    const tree: TreeNode = {
+      id: "root",
+      name: active?.rootName?.trim() || defaultDirectoryRootName("error"),
+      type: "error",
+      count: 0,
+      children: buildKnowledgeTree(reasons, null, "error"),
+    };
+    return includeCounts ? annotateTreeWithQuestionCounts(tree, directoryQuestions(scopeId), "error") : tree;
   },
 
   async listDirectoryCatalogs(
@@ -1596,6 +1628,34 @@ export const knowledgeService = {
     return method;
   },
 
+  async addErrorReason(
+    scopeId: string,
+    parentId: string | null,
+    name: string,
+  ): Promise<ErrorReason> {
+    const reasons = directoryRecords(scopeId, "error") as ErrorReason[];
+    const teacher = ((db.read("teachers") || []) as DirectoryTeacher[]).find((item) => item.id === scopeId);
+    const parent = parentId ? reasons.find((item) => item.id === parentId) : undefined;
+    if (parentId && !parent) throw new Error("父错因不存在");
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("名称不能为空");
+    if (reasons.some((item) => item.parentId === parentId && item.name === trimmed)) {
+      throw new Error("同一父节点下已存在同名节点");
+    }
+    const reason: ErrorReason = {
+      id: genId("er"),
+      schoolId: teacher ? personalDirectorySchoolId(scopeId) : scopeId,
+      ...(teacher ? { teacherId: scopeId, subject: currentDirectorySubject(scopeId) } : {}),
+      parentId,
+      name: trimmed,
+      order: reasons.reduce((max, item) => item.parentId === parentId ? Math.max(max, item.order) : max, 0) + 1,
+      level: (parent?.level ?? -1) + 1,
+      questionCount: 0,
+    };
+    db.update("errorReasons", (items: ErrorReason[] = []) => [...items, reason]);
+    return reason;
+  },
+
   // 获取章节/知识点的全路径名（用于显示）
   getChapterPath(chapterId: string): string {
     const chapters = db.read("chapters");
@@ -1663,13 +1723,13 @@ export const knowledgeService = {
           chapterIds: q.chapterIds.filter((cid) => !toDelete.has(cid)),
         })),
       );
-    } else if (type === "method") {
-      const list = (db.read("thoughtMethods") || []) as ThoughtMethod[];
+    } else if (type === "method" || type === "error") {
+      const list = (db.read(directoryCollection(type)) || []) as ThoughtMethod[];
       const target = list.find((item) => item.id === id);
       if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, type);
       const toDelete = collectSubtree(list, id);
       if (target?.teacherId) removeDirectoryNodeAssociations(target.teacherId, type, toDelete);
-      db.update("thoughtMethods", (items: ThoughtMethod[] = []) => items.filter((item) => !toDelete.has(item.id)));
+      db.update(directoryCollection(type), (items: ThoughtMethod[] = []) => items.filter((item) => !toDelete.has(item.id)));
       const replacements = new Map([...toDelete].map((methodId) => [methodId, ""]));
       updateDirectoryReferences(type, replacements);
     } else {
@@ -1750,14 +1810,14 @@ export const knowledgeService = {
       if (source?.teacherId) {
         remapDirectoryNodeAssociations(source.teacherId, type, replacements);
       }
-    } else if (type === "method") {
-      const source = ((db.read("thoughtMethods") || []) as ThoughtMethod[]).find((item) => item.id === sourceId);
+    } else if (type === "method" || type === "error") {
+      const source = ((db.read(directoryCollection(type)) || []) as ThoughtMethod[]).find((item) => item.id === sourceId);
       const { records, replacements } = mergeDirectoryRecords(
-        (db.read("thoughtMethods") || []) as ThoughtMethod[],
+        (db.read(directoryCollection(type)) || []) as ThoughtMethod[],
         sourceId,
         targetId,
       );
-      db.write("thoughtMethods", records);
+      db.write(directoryCollection(type), records);
       updateDirectoryReferences(type, replacements);
       if (source?.teacherId) remapDirectoryNodeAssociations(source.teacherId, type, replacements);
     } else {
@@ -1781,7 +1841,7 @@ export const knowledgeService = {
   // 移动节点到新的父节点下（null 表示顶级），并递归更新 level
   async moveNode(
     id: string,
-    type: "chapter" | "knowledge",
+    type: TreeNodeType,
     newParentId: string | null,
   ): Promise<void> {
     await delay(200);

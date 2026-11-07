@@ -23,7 +23,7 @@ interface QuickEditModalProps {
   onSaved: (question: Question) => void;
 }
 
-type DirectoryTab = "chapter" | "knowledge" | "method";
+type DirectoryTab = "chapter" | "knowledge" | "method" | "error";
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
@@ -36,11 +36,13 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
   const [chapterIds, setChapterIds] = useState<string[]>([]);
   const [knowledgePointIds, setKnowledgePointIds] = useState<string[]>([]);
   const [thoughtMethodIds, setThoughtMethodIds] = useState<string[]>([]);
+  const [errorReasonIds, setErrorReasonIds] = useState<string[]>([]);
   const [remarks, setRemarks] = useState<QuestionRemark[]>([]);
   const [activeDirectoryTab, setActiveDirectoryTab] = useState<DirectoryTab>("chapter");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [saving, setSaving] = useState(false);
   const [newRemarkContent, setNewRemarkContent] = useState("");
   const [addingRemark, setAddingRemark] = useState(false);
@@ -52,6 +54,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     setChapterIds([...(question.chapterIds || [])]);
     setKnowledgePointIds([...(question.knowledgePointIds || [])]);
     setThoughtMethodIds([...(question.thoughtMethodIds || [])]);
+    setErrorReasonIds([...(question.errorReasonIds || [])]);
     setRemarks([...(question.remarks || [])]);
     setActiveDirectoryTab("chapter");
     setNewRemarkContent("");
@@ -64,6 +67,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
     knowledgeService.getChapterTree(teacher.id).then(setChapterTree);
     knowledgeService.getKnowledgeTree(teacher.id).then(setKnowledgeTree);
     knowledgeService.getMethodTree(teacher.id).then(setMethodTree);
+    knowledgeService.getErrorReasonTree(teacher.id).then(setErrorTree);
   }, [teacher, open]);
 
   const handleSave = async () => {
@@ -75,6 +79,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
         chapterIds,
         knowledgePointIds,
         thoughtMethodIds,
+        errorReasonIds,
         remarks,
         remark: latestRemark,
       });
@@ -132,12 +137,12 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
 
   if (!open || !question) return null;
 
-  const activeTree = activeDirectoryTab === "chapter" ? chapterTree : activeDirectoryTab === "knowledge" ? knowledgeTree : methodTree;
-  const activeCheckedIds = activeDirectoryTab === "chapter" ? chapterIds : activeDirectoryTab === "knowledge" ? knowledgePointIds : thoughtMethodIds;
-  const activeSetCheckedIds = activeDirectoryTab === "chapter" ? setChapterIds : activeDirectoryTab === "knowledge" ? setKnowledgePointIds : setThoughtMethodIds;
-  const activeSetTree = activeDirectoryTab === "chapter" ? setChapterTree : activeDirectoryTab === "knowledge" ? setKnowledgeTree : setMethodTree;
-  const activeTitle = activeDirectoryTab === "chapter" ? "章节课目录" : activeDirectoryTab === "knowledge" ? "知识点目录" : "思想方法目录";
-  const activeSearchPlaceholder = activeDirectoryTab === "chapter" ? "搜索章节课目录..." : activeDirectoryTab === "knowledge" ? "搜索知识点目录..." : "搜索思想方法目录...";
+  const activeTree = activeDirectoryTab === "chapter" ? chapterTree : activeDirectoryTab === "knowledge" ? knowledgeTree : activeDirectoryTab === "method" ? methodTree : errorTree;
+  const activeCheckedIds = activeDirectoryTab === "chapter" ? chapterIds : activeDirectoryTab === "knowledge" ? knowledgePointIds : activeDirectoryTab === "method" ? thoughtMethodIds : errorReasonIds;
+  const activeSetCheckedIds = activeDirectoryTab === "chapter" ? setChapterIds : activeDirectoryTab === "knowledge" ? setKnowledgePointIds : activeDirectoryTab === "method" ? setThoughtMethodIds : setErrorReasonIds;
+  const activeSetTree = activeDirectoryTab === "chapter" ? setChapterTree : activeDirectoryTab === "knowledge" ? setKnowledgeTree : activeDirectoryTab === "method" ? setMethodTree : setErrorTree;
+  const activeTitle = activeDirectoryTab === "chapter" ? "章节课目录" : activeDirectoryTab === "knowledge" ? "知识点目录" : activeDirectoryTab === "method" ? "思想方法目录" : "错因库";
+  const activeSearchPlaceholder = activeDirectoryTab === "chapter" ? "搜索章节课目录..." : activeDirectoryTab === "knowledge" ? "搜索知识点目录..." : activeDirectoryTab === "method" ? "搜索思想方法目录..." : "搜索错因...";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -168,7 +173,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
             <div
               role="tablist"
               aria-label="题目目录"
-              className="grid grid-cols-3 border-b border-ink-200 bg-mist/30"
+              className="grid grid-cols-2 sm:grid-cols-4 border-b border-ink-200 bg-mist/30"
             >
               <button
                 type="button"
@@ -232,6 +237,22 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 )}>
                   已选 {thoughtMethodIds.length}
                 </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeDirectoryTab === "error"}
+                onClick={() => setActiveDirectoryTab("error")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-3 py-3 text-sm font-medium transition-colors",
+                  activeDirectoryTab === "error"
+                    ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
+                    : "text-ink-500 hover:bg-paper hover:text-ink-800",
+                )}
+              >
+                <FileText className="h-4 w-4" />
+                <span>可能错因</span>
+                <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-500">已选 {errorReasonIds.length}</span>
               </button>
             </div>
 

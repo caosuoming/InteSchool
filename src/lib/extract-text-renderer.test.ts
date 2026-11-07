@@ -8,6 +8,17 @@ function asElement(html: string): HTMLDivElement {
 }
 
 describe("extract text renderer", () => {
+  it("renders unmarked cases in the extraction review without exposing LaTeX commands", () => {
+    const container = asElement(renderExtractText(
+      String.raw`解得\begin{cases}x=4, y=3\end{cases}。`,
+      [], false,
+    ));
+
+    expect(container.querySelectorAll(".formula-inline")).toHaveLength(1);
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex-html")?.textContent).not.toContain(String.raw`\begin{cases}`);
+  });
+
   it("renders double-escaped formulas in highlighted knowledge text", () => {
     const html = renderExtractText(
       "核心结论：若 &amp;dollar;x\\neq 0&amp;dollar;，则 &dollar;\\Delta > 0&dollar;。",
@@ -233,5 +244,30 @@ QM: y-y_{2}=\sqrt{3}(x-x_{2}),
 
     expect(container.querySelector(".katex")).not.toBeNull();
     expect(container.querySelector(".katex-error")).toBeNull();
+  });
+
+  it("renders bare systems and negated implications in legacy exam solutions", () => {
+    const source = String.raw`解得 \begin{cases}b=2\\c=-1\end{cases}。因此 p\overset{}\Rightarrow }q。`;
+    const container = asElement(renderExtractText(source, [], false));
+
+    expect(container.querySelectorAll(".formula-inline")).toHaveLength(2);
+    expect(container.querySelector(".katex-error")).toBeNull();
+    const visibleMath = Array.from(container.querySelectorAll(".katex-html"))
+      .map((element) => element.textContent).join(" ");
+    expect(visibleMath).not.toContain("\\begin{cases}");
+    expect(visibleMath).not.toContain("\\overset");
+    expect(visibleMath).toContain("b");
+    expect(visibleMath).toContain("q");
+  });
+
+  it("renders legacy nested piecewise matrices instead of exposing LaTeX commands", () => {
+    const source = String.raw`函数 f(x)=\left\{\begin{matrix}\begin{matrix}-1,&x\leq0\\\log_{2}x-\frac{1}{x},&x>0\end{matrix}\right.\end{matrix} 的零点个数。`;
+    const container = asElement(renderExtractText(source, [], false));
+
+    expect(container.querySelector(".formula-inline .katex-html")).not.toBeNull();
+    expect(container.querySelector(".katex-error")).toBeNull();
+    const visibleMath = container.querySelector(".katex-html")?.textContent || "";
+    expect(visibleMath).toContain("log");
+    expect(visibleMath).not.toContain("\\begin{matrix}");
   });
 });

@@ -27,13 +27,14 @@ import type {
   DocumentRecord,
   PlatformResourceCorrection,
   PrepTask,
-  PrepTaskType, LessonCourseware, ExamPaper,
+  PrepTaskType, LessonCourseware, ExamPaper, DashboardTodoInput, DashboardTodoRecord, DashboardTodoType,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { examPaperService } from "@/services/examPaper";
 import { scannerService } from "@/services/scanner";
 import { DashboardQuickActions } from "./DashboardQuickActions";
+import { dashboardTodoService } from "@/services/dashboardTodo";
 import { pendingCoursewares, pendingScanPapers } from "./dashboard-todos";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
@@ -47,6 +48,60 @@ interface Stats {
   personalClassCount: number;
 }
 
+type DashboardTodoItem = Omit<DashboardTodoInput, "status">;
+
+const todoIcons = {
+  correction: { icon: AlertTriangle, style: "bg-red-50 text-red-600" },
+  document: { icon: Clock, style: "bg-amber-50 text-amber-600" },
+  courseware: { icon: Presentation, style: "bg-teal-50 text-teal-600" },
+  scan: { icon: ScanLine, style: "bg-amber-50 text-amber-600" },
+  lecture: { icon: FileText, style: "bg-teal-50 text-teal-600" },
+} satisfies Record<DashboardTodoType, { icon: typeof Clock; style: string }>;
+
+function todoKey(todo: DashboardTodoItem): string {
+  return `${todo.type}:${todo.resourceId}`;
+}
+
+function DashboardTodoRow({
+  todo, onStatusChange, disabled,
+}: {
+  todo: DashboardTodoItem;
+  onStatusChange?: (todo: DashboardTodoItem, status: DashboardTodoInput["status"]) => void;
+  disabled?: boolean;
+}) {
+  const { icon: Icon, style } = todoIcons[todo.type];
+  return (
+    <div className="flex items-center gap-2 rounded-md hover:bg-mist transition-colors">
+      <Link to={todo.href} className="flex flex-1 min-w-0 items-center gap-3 p-3 group">
+        <div className={cn("w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0", style)}>
+          <Icon className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-ink-900 truncate">{todo.title}</div>
+          <div className="text-xs text-ink-500 truncate">{todo.detail}</div>
+        </div>
+        <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors flex-shrink-0" />
+      </Link>
+      {onStatusChange && (
+        <div className="flex items-center gap-1 flex-shrink-0 pr-2">
+          <button type="button" disabled={disabled}
+            aria-label={`将${todo.title}标记为已完成`}
+            onClick={() => onStatusChange(todo, "completed")}
+            className="text-xs px-2 py-1.5 rounded text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+            已完成
+          </button>
+          <button type="button" disabled={disabled}
+            aria-label={`取消${todo.title}`}
+            onClick={() => onStatusChange(todo, "cancelled")}
+            className="text-xs px-2 py-1.5 rounded text-ink-500 hover:bg-ink-100 disabled:opacity-50">
+            取消
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { teacher } = useAuthStore();
   const { gradeOptions } = useSchoolResourceOptions(teacher?.schoolId);
@@ -54,6 +109,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [correctionTodos, setCorrectionTodos] = useState<PlatformResourceCorrection[]>([]);
   const [prepTasks, setPrepTasks] = useState<PrepTask[]>([]);
+  const [todoRecords, setTodoRecords] = useState<DashboardTodoRecord[]>([]);
+  const [todoRecordsLoading, setTodoRecordsLoading] = useState(true);
+  const [savingTodoKey, setSavingTodoKey] = useState<string | null>(null);
+  const [showAllCompleted, setShowAllCompleted] = useState(false);
+  const [showAllCancelled, setShowAllCancelled] = useState(false);
   const [draftCoursewares, setDraftCoursewares] = useState<LessonCourseware[]>([]);
   const [unscannedPapers, setUnscannedPapers] = useState<ExamPaper[]>([]);
   const [extraTodosLoading, setExtraTodosLoading] = useState(false);
@@ -142,6 +202,31 @@ export default function DashboardPage() {
     return () => { active = false; };
   }, [teacher]);
 
+  useEffect(() => {
+    if (!teacher) return;
+    let active = true;
+    setTodoRecordsLoading(true);
+    dashboardTodoService.listTodoRecords(teacher.id)
+      .then((records) => { if (active) setTodoRecords(records); })
+      .catch(() => { if (active) toast.error("待办状态加载失败，请刷新重试"); })
+      .finally(() => { if (active) setTodoRecordsLoading(false); });
+    return () => { active = false; };
+  }, [teacher]);
+
+  const handleTodoStatus = async (todo: DashboardTodoItem, status: DashboardTodoInput["status"]) => {
+    if (!teacher || savingTodoKey) return;
+    const key = todoKey(todo);
+    setSavingTodoKey(key);
+    try {
+      const record = await dashboardTodoService.setTodoStatus(teacher.id, { ...todo, status });
+      setTodoRecords((prev) => [record, ...prev.filter((item) => todoKey(item) !== key)]);
+    } catch {
+      toast.error("更新待办状态失败");
+    } finally {
+      setSavingTodoKey(null);
+    }
+  };
+
   const isGroupLeader = teacher?.roles.includes("prepLeader") || teacher?.roles.includes("subjectLeader");
 
   const subjectOptions = ["语文", "数学", "英语", "物理", "化学", "生物", "历史", "地理", "政治"];
@@ -218,9 +303,36 @@ export default function DashboardPage() {
     documents: stats?.documents.filter((item) => changedThisWeek(item.createdAt)).length ?? 0,
     baskets: stats?.baskets.filter((item) => changedThisWeek(item.updatedAt || item.createdAt)).length ?? 0,
   };
-  const pendingDocumentCount = stats?.documents.filter((document) => document.status === "recognized").length ?? 0;
-  const draftLectureCount = stats?.lectures.filter((lecture) => lecture.status === "draft").length ?? 0;
-  const todoCount = pendingDocumentCount + draftLectureCount + correctionTodos.length + draftCoursewares.length + unscannedPapers.length;
+  const activeTodos: DashboardTodoItem[] = [
+    ...correctionTodos.map((correction) => ({
+      type: "correction" as const, resourceId: correction.id, title: correction.resourceTitle,
+      detail: `平台资源纠错 · ${correction.reporterNickname}：${correction.message || `上传了 ${correction.attachments.length} 张图片`}`,
+      href: `/platform-resources?edit=${encodeURIComponent(correction.donationId)}&correction=${encodeURIComponent(correction.id)}`,
+    })),
+    ...(stats?.documents ?? []).filter((doc) => doc.status === "recognized").map((doc) => ({
+      type: "document" as const, resourceId: doc.id, title: doc.fileName,
+      detail: "AI 识别完成，等待您确认入库", href: "/import",
+    })),
+    ...draftCoursewares.map((courseware) => ({
+      type: "courseware" as const, resourceId: courseware.id, title: courseware.title,
+      detail: `待编辑课件 · ${timeAgo(courseware.updatedAt)}更新`,
+      href: `/my-lessons/${encodeURIComponent(courseware.id)}/edit`,
+    })),
+    ...unscannedPapers.map((paper) => ({
+      type: "scan" as const, resourceId: paper.id, title: paper.title,
+      detail: "待扫描作业 · 答题卡尚无扫描记录", href: "/homework-exams/homework",
+    })),
+    ...(stats?.lectures ?? []).filter((lecture) => lecture.status === "draft").map((lecture) => ({
+      type: "lecture" as const, resourceId: lecture.id, title: lecture.title,
+      detail: `草稿 · ${timeAgo(lecture.updatedAt)}更新`,
+      href: `/lectures/${encodeURIComponent(lecture.id)}/edit`,
+    })),
+  ];
+  const archivedKeys = new Set(todoRecords.map(todoKey));
+  const pendingTodos = activeTodos.filter((todo) => !archivedKeys.has(todoKey(todo)));
+  const completedTodos = todoRecords.filter((todo) => todo.status === "completed");
+  const cancelledTodos = todoRecords.filter((todo) => todo.status === "cancelled");
+  const todoCount = pendingTodos.length;
 
   const cards = [
     {
@@ -314,106 +426,51 @@ export default function DashboardPage() {
                   title="待办事项"
                   action={
                     <span className="tag-red">
-                      {extraTodosLoading ? "加载中…" : `${todoCount} 项待处理`}
+                      {extraTodosLoading || todoRecordsLoading ? "加载中…" : `${todoCount} 项待处理`}
                     </span>
                   }
                 />
                 <div className="space-y-2">
-                  {correctionTodos.map((correction) => (
-                    <Link
-                      key={correction.id}
-                      to={`/platform-resources?edit=${encodeURIComponent(correction.donationId)}&correction=${encodeURIComponent(correction.id)}`}
-                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group"
-                    >
-                      <div className="w-8 h-8 rounded-md bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0">
-                        <AlertTriangle className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-ink-900 truncate">{correction.resourceTitle}</div>
-                        <div className="text-xs text-ink-500 truncate">
-                          平台资源纠错 · {correction.reporterNickname}：{correction.message || `上传了 ${correction.attachments.length} 张图片`}
-                        </div>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
-                    </Link>
+                  {!todoRecordsLoading && pendingTodos.map((todo) => (
+                    <DashboardTodoRow key={todoKey(todo)} todo={todo}
+                      onStatusChange={handleTodoStatus} disabled={savingTodoKey !== null} />
                   ))}
-                  {stats.documents.filter((d) => d.status === "recognized").length > 0 ? (
-                    stats.documents
-                      .filter((d) => d.status === "recognized")
-                      .map((doc) => (
-                        <Link
-                          key={doc.id}
-                          to="/import"
-                          className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group"
-                        >
-                          <div className="w-8 h-8 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
-                            <Clock className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm text-ink-900 truncate">{doc.fileName}</div>
-                            <div className="text-xs text-ink-500">
-                              AI 识别完成，等待您确认入库
-                            </div>
-                          </div>
-                          <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
-                        </Link>
-                      ))
-                  ) : todoCount === 0 && !extraTodosLoading && !scanTodosUnavailable ? (
+                  {todoCount === 0 && !extraTodosLoading && !todoRecordsLoading && !scanTodosUnavailable && (
                     <div className="flex items-center gap-3 p-3 text-sm text-ink-500">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                       暂无待办事项，一切就绪
                     </div>
-                  ) : null}
-
-                  {draftCoursewares.map((courseware) => (
-                    <Link key={`courseware-${courseware.id}`} to={`/my-lessons/${encodeURIComponent(courseware.id)}/edit`}
-                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group">
-                      <div className="w-8 h-8 rounded-md bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0">
-                        <Presentation className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-ink-900 truncate">{courseware.title}</div>
-                        <div className="text-xs text-ink-500">待编辑课件 · {timeAgo(courseware.updatedAt)}更新</div>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
-                    </Link>
-                  ))}
-                  {unscannedPapers.map((paper) => (
-                    <Link key={`scan-${paper.id}`} to="/homework-exams/homework"
-                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group">
-                      <div className="w-8 h-8 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
-                        <ScanLine className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-ink-900 truncate">{paper.title}</div>
-                        <div className="text-xs text-ink-500">待扫描作业 · 答题卡尚无扫描记录</div>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
-                    </Link>
-                  ))}
-                  {scanTodosUnavailable && (
-                    <p role="status" className="text-xs text-amber-700 px-3">扫描待办暂时无法加载，请刷新重试。</p>
                   )}
-
-                  {/* 草稿讲义提醒 */}
-                  {stats.lectures.filter((l) => l.status === "draft").map((lec) => (
-                    <Link
-                      key={lec.id}
-                      to={`/lectures/${lec.id}/edit`}
-                      className="flex items-center gap-3 p-3 rounded-md hover:bg-mist transition-colors group"
-                    >
-                      <div className="w-8 h-8 rounded-md bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-ink-900 truncate">{lec.title}</div>
-                        <div className="text-xs text-ink-500">草稿 · {timeAgo(lec.updatedAt)}更新</div>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-gold-600 transition-colors" />
-                    </Link>
-                  ))}
+                  {scanTodosUnavailable && (
+                    <p role="status" className="text-xs text-amber-700 px-3">
+                      扫描待办暂时无法加载，请刷新重试。
+                    </p>
+                  )}
                 </div>
               </Card>
+
+              {([
+                { title: "已完成", todos: completedTodos, expanded: showAllCompleted, setExpanded: setShowAllCompleted },
+                { title: "已取消", todos: cancelledTodos, expanded: showAllCancelled, setExpanded: setShowAllCancelled },
+              ] as const).map(({ title, todos, expanded, setExpanded }) => (
+                <Card key={title}>
+                  <CardHeader title={title} action={<span className="text-xs text-ink-500">{todos.length} 项</span>} />
+                  <div className="space-y-2">
+                    {todos.slice(0, expanded ? undefined : 3).map((todo) => (
+                      <DashboardTodoRow key={todo.id} todo={todo} />
+                    ))}
+                    {todos.length === 0 && (
+                      <p className="text-xs text-ink-400 px-3 py-2">暂无{title}事项</p>
+                    )}
+                    {todos.length > 3 && (
+                      <button type="button" onClick={() => setExpanded(!expanded)}
+                        className="text-xs text-gold-700 hover:underline px-3 py-2">
+                        {expanded ? "收起" : `更多（${todos.length - 3}）`}
+                      </button>
+                    )}
+                  </div>
+                </Card>
+              ))}
 
               {/* 最近讲义 */}
               <Card>

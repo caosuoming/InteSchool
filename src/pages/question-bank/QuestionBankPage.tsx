@@ -17,6 +17,7 @@ import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/r
 import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { StudentPickerModal } from "@/components/student/StudentPickerModal";
 import { analyticsService, type DateRange, type KnowledgeMastery, type SchoolQuestionStat } from "@/services/analytics";
 import { lectureService } from "@/services/lecture";
@@ -58,7 +59,7 @@ import { treeNameMap } from "@/lib/basket-audience";
 
 type Mode = "manage" | "use";
 type SortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
-type LeftTab = "chapter" | "knowledge" | "method";
+type LeftTab = "chapter" | "knowledge" | "method" | "error";
 type TrainingStatusFilter = "all" | "trained" | "untrained";
 
 const difficultyOptions = [
@@ -199,13 +200,21 @@ export default function QuestionBankPage({
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
   const [checkedMethods, setCheckedMethods] = useState<string[]>([]);
+  const [checkedErrors, setCheckedErrors] = useState<string[]>([]);
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
   const [methodLogic, setMethodLogic] = useState<FilterLogic>("or");
+  const [errorLogic, setErrorLogic] = useState<FilterLogic>("or");
   const [includeDescendants, setIncludeDescendants] = useState(true);
+  const [showDirectoryCounts, setShowDirectoryCounts] = useState(false);
+  const [showDirectoryDone, setShowDirectoryDone] = useState(false);
+  const [showDirectoryPending, setShowDirectoryPending] = useState(false);
+  const [showDirectoryBasket, setShowDirectoryBasket] = useState(false);
+  const [annotatedDirectory, setAnnotatedDirectory] = useState<{ type: LeftTab; tree: TreeNode } | null>(null);
   const [noChapter, setNoChapter] = useState(false);
   const [noKnowledge, setNoKnowledge] = useState(false);
 
@@ -238,8 +247,11 @@ export default function QuestionBankPage({
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
+  const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(new Set());
+  const [sameQuestionIds, setSameQuestionIds] = useState<Record<string, string[]>>({});
 
-  const mode: Mode = selectedStudentIds.length > 0 ? "use" : "manage";
+  const hasSelectedStudents = selectedStudentIds.length > 0;
+  const mode: Mode = hasSelectedStudents ? "use" : "manage";
 
   // 选中学学生的答题记录（题库使用模式下用于在题目上方显示答题情况）
   const [studentAnswerRecords, setStudentAnswerRecords] = useState<AnswerRecord[]>([]);
@@ -312,6 +324,7 @@ export default function QuestionBankPage({
     checkedChapters.length > 0 ||
     checkedKnowledge.length > 0 ||
     checkedMethods.length > 0 ||
+    checkedErrors.length > 0 ||
     selectedDifficulties.length > 0 ||
     selectedTypes.length > 0 ||
     selectedGrade ||
@@ -351,6 +364,8 @@ export default function QuestionBankPage({
       knowledgeLogic,
       thoughtMethodIds: checkedMethods,
       methodLogic,
+      errorReasonIds: checkedErrors,
+      errorReasonLogic: errorLogic,
       noChapter,
       noKnowledge,
       difficulty: selectedDifficulties,
@@ -468,7 +483,7 @@ export default function QuestionBankPage({
     setTotalQuestionCount(sorted.length);
     setLoading(false);
   }, [
-    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, chapterLogic, knowledgeLogic, methodLogic,
+    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, checkedErrors, chapterLogic, knowledgeLogic, methodLogic, errorLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
@@ -484,10 +499,11 @@ export default function QuestionBankPage({
   useEffect(() => {
     if (!teacher) return;
     const load = async () => {
-      const [ch, kp, methods, bs, allClasses, stus] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.id),
-        knowledgeService.getKnowledgeTree(teacher.id),
-        knowledgeService.getMethodTree(teacher.id),
+      const [ch, kp, methods, errors, bs, allClasses, stus] = await Promise.all([
+        knowledgeService.getChapterTree(teacher.id, false),
+        knowledgeService.getKnowledgeTree(teacher.id, false),
+        knowledgeService.getMethodTree(teacher.id, false),
+        knowledgeService.getErrorReasonTree(teacher.id, false),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
@@ -495,6 +511,7 @@ export default function QuestionBankPage({
       setChapterTree(ch);
       setKnowledgeTree(kp);
       setMethodTree(methods);
+      setErrorTree(errors);
       setBaskets(bs.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })));
       setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
@@ -505,6 +522,31 @@ export default function QuestionBankPage({
     };
     load();
   }, [teacher]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!teacher?.id || !hasSelectedStudents) {
+      setFollowedStudentIds(new Set());
+      return;
+    }
+    studentInteractionService.listFollowedStudentIds()
+      .then((ids) => { if (!cancelled) setFollowedStudentIds(new Set(ids)); })
+      .catch(() => { if (!cancelled) setFollowedStudentIds(new Set()); });
+    return () => { cancelled = true; };
+  }, [teacher?.id, hasSelectedStudents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (mode !== "use" || questions.length === 0) {
+      setSameQuestionIds({});
+      return;
+    }
+    const visible = questions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    analyticsService.listSameQuestionIds(visible.map((item) => item.id))
+      .then((ids) => { if (!cancelled) setSameQuestionIds(ids); })
+      .catch(() => { if (!cancelled) setSameQuestionIds({}); });
+    return () => { cancelled = true; };
+  }, [mode, questions, currentPage, pageSize]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedKeyword(keyword), 180);
@@ -544,43 +586,43 @@ export default function QuestionBankPage({
     loadQuestions();
   }, [loadQuestions, refreshToken]);
 
-  // 题目变更或手工录入学情后，立即刷新目录总数与已做题数。
+  // 目录统计按需计算；默认只加载目录结构，不遍历题库或汇总学情。
+  const directoryDoneEnabled = showDirectoryDone && selectedStudentIds.length > 0;
+  const directoryPendingEnabled = showDirectoryPending && selectedStudentIds.length > 0;
+  const needsDirectoryCounts = showDirectoryCounts || directoryDoneEnabled
+    || directoryPendingEnabled || showDirectoryBasket;
+  const basketQuestionIds = useMemo(
+    () => Array.from(new Set(baskets.flatMap((basket) => basket.questionIds || []))),
+    [baskets],
+  );
   useEffect(() => {
-    if (!teacher) return;
+    const base = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : methodTree;
+    setAnnotatedDirectory(null);
+    if (!base || !needsDirectoryCounts) return;
+
     let cancelled = false;
-    (async () => {
-      const [baseChapterTree, baseKnowledgeTree] = await Promise.all([
-        knowledgeService.getChapterTree(teacher.id),
-        knowledgeService.getKnowledgeTree(teacher.id),
-      ]);
-      if (cancelled) return;
-      if (selectedStudentIds.length === 0) {
-        setChapterTree(baseChapterTree);
-        setKnowledgeTree(baseKnowledgeTree);
-        return;
-      }
-      const [annotatedChapterTree, annotatedKnowledgeTree] = await Promise.all([
-        analyticsService.annotateTreeWithStudentProgress(
-          baseChapterTree,
-          selectedStudentIds,
-          "chapter",
-          dateRange,
-        ),
-        analyticsService.annotateTreeWithStudentProgress(
-          baseKnowledgeTree,
-          selectedStudentIds,
-          "knowledge",
-          dateRange,
-        ),
-      ]);
-      if (cancelled) return;
-      setChapterTree(annotatedChapterTree);
-      setKnowledgeTree(annotatedKnowledgeTree);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedStudentIds, teacher, dateRange, questions, studentAnswerRecords]);
+    analyticsService.annotateTreeWithStudentProgress(
+      base,
+      directoryDoneEnabled || directoryPendingEnabled ? selectedStudentIds : [],
+      leftTab,
+      directoryDoneEnabled ? dateRange : undefined,
+      {
+        includeDone: directoryDoneEnabled,
+        includePending: directoryPendingEnabled,
+        basketQuestionIds: showDirectoryBasket ? basketQuestionIds : undefined,
+      },
+    ).then((tree) => {
+      if (!cancelled) setAnnotatedDirectory({ type: leftTab, tree });
+    }).catch(() => {
+      if (!cancelled) setAnnotatedDirectory(null);
+    });
+    return () => { cancelled = true; };
+  }, [
+    leftTab, chapterTree, knowledgeTree, methodTree, errorTree, needsDirectoryCounts,
+    directoryDoneEnabled, directoryPendingEnabled, selectedStudentIds, dateRange,
+    showDirectoryBasket, basketQuestionIds, questions, studentAnswerRecords,
+    pendingQuestionAssignments,
+  ]);
 
   // 拉取选中学生的答题记录和文档使用对象派生的“待做”题目。
   useEffect(() => {
@@ -714,6 +756,7 @@ export default function QuestionBankPage({
     setCheckedChapters([]);
     setCheckedKnowledge([]);
     setCheckedMethods([]);
+    setCheckedErrors([]);
     setNoChapter(false);
     setNoKnowledge(false);
     setSelectedDifficulties([]);
@@ -880,9 +923,11 @@ export default function QuestionBankPage({
   };
 
   // 获取当前显示的树
-  const displayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : methodTree;
-  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : checkedMethods;
-  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : setCheckedMethods;
+  const baseDisplayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : leftTab === "method" ? methodTree : errorTree;
+  const countsReady = needsDirectoryCounts && annotatedDirectory?.type === leftTab;
+  const displayTree = countsReady ? annotatedDirectory.tree : baseDisplayTree;
+  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : leftTab === "method" ? checkedMethods : checkedErrors;
+  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : leftTab === "method" ? setCheckedMethods : setCheckedErrors;
   const handleIncludeDescendantsChange = (next: boolean) => {
     setIncludeDescendants(next);
     setCheckedChapters((current) =>
@@ -893,6 +938,9 @@ export default function QuestionBankPage({
     );
     setCheckedMethods((current) =>
       adjustDirectorySelectionForDescendants(methodTree, current, next),
+    );
+    setCheckedErrors((current) =>
+      adjustDirectorySelectionForDescendants(errorTree, current, next),
     );
   };
 
@@ -937,6 +985,23 @@ export default function QuestionBankPage({
             </select>
           </div>
         )}
+
+        {selectedStudentIds.length > 0 && (
+          <>
+            <label className="inline-flex items-center gap-1 text-xs text-ink-600 cursor-pointer" title="显示已做题数量及已评分答题得分率">
+              <input type="checkbox" checked={showDirectoryDone} onChange={(e) => setShowDirectoryDone(e.target.checked)} />
+              已做题
+            </label>
+            <label className="inline-flex items-center gap-1 text-xs text-ink-600 cursor-pointer" title="显示当前分配但尚未完成的题目数量">
+              <input type="checkbox" checked={showDirectoryPending} onChange={(e) => setShowDirectoryPending(e.target.checked)} />
+              待做题
+            </label>
+          </>
+        )}
+        <label className="inline-flex items-center gap-1 text-xs text-ink-600 cursor-pointer" title="统计我的所有资源篮中的去重题目数量">
+          <input type="checkbox" checked={showDirectoryBasket} onChange={(e) => setShowDirectoryBasket(e.target.checked)} />
+          篮中题
+        </label>
 
         {/* 排序选择 */}
         <div className="ml-auto flex items-center gap-2">
@@ -1017,6 +1082,17 @@ export default function QuestionBankPage({
                       思想方法
                     </span>
                   </button>
+                  <button
+                    onClick={() => setLeftTab("error")}
+                    className={cn(
+                      "flex-1 px-2 py-2.5 text-sm font-medium transition-colors",
+                      leftTab === "error"
+                        ? "bg-teal-50 text-teal-800 border-b-2 border-teal-500"
+                        : "text-ink-500 hover:text-ink-700",
+                    )}
+                  >
+                    错因库
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -1040,21 +1116,35 @@ export default function QuestionBankPage({
                   onCheck={setDisplayCheckedIds}
                   cascadeCheck={includeDescendants}
                   includeDescendantCounts={includeDescendants}
-                  showDoneCount={selectedStudentIds.length > 0}
+                  showCount={Boolean(countsReady)}
+                  showDoneCount={directoryDoneEnabled}
+                  showPendingCount={directoryPendingEnabled}
+                  showBasketCount={showDirectoryBasket}
                   expandLevel={1}
-                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : leftTab === "knowledge" ? "搜索知识点..." : "搜索思想方法..."}
+                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : leftTab === "knowledge" ? "搜索知识点..." : leftTab === "method" ? "搜索思想方法..." : "搜索错因..."}
                   showLogicSelector
-                  logic={leftTab === "chapter" ? chapterLogic : leftTab === "knowledge" ? knowledgeLogic : methodLogic}
+                  logic={leftTab === "chapter" ? chapterLogic : leftTab === "knowledge" ? knowledgeLogic : leftTab === "method" ? methodLogic : errorLogic}
                   onLogicChange={(logic) => {
                     if (leftTab === "chapter") {
                       setChapterLogic(logic);
                     } else if (leftTab === "knowledge") {
                       setKnowledgeLogic(logic);
-                    } else {
+                    } else if (leftTab === "method") {
                       setMethodLogic(logic);
+                    } else {
+                      setErrorLogic(logic);
                     }
                   }}
                   headerActions={(
+                    <>
+                    <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-ink-600" title="显示目录节点题目数量">
+                      <input
+                        type="checkbox"
+                        checked={showDirectoryCounts}
+                        onChange={(event) => setShowDirectoryCounts(event.target.checked)}
+                      />
+                      显示
+                    </label>
                     <label
                       className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-ink-600"
                       title="包含子节点对应的题目"
@@ -1066,6 +1156,7 @@ export default function QuestionBankPage({
                       />
                       包含
                     </label>
+                    </>
                   )}
                 />
               </div>
@@ -1288,7 +1379,7 @@ export default function QuestionBankPage({
           )}
 
           {/* 题目列表 */}
-          {loading ? (
+          {loading && questions.length === 0 ? (
             <div className="flex items-center justify-center py-20">
               <Spinner size={24} />
             </div>
@@ -1309,7 +1400,8 @@ export default function QuestionBankPage({
               />
             </Card>
           ) : (
-            <div className="space-y-3 animate-fade-in">
+            <div className={cn("relative space-y-3 animate-fade-in", loading && "opacity-60")} aria-busy={loading}>
+              {loading && <div className="sticky top-4 z-10 flex justify-center"><Spinner size={20} /></div>}
               {paginatedQuestions.map((q) => (
                 <QuestionRow
                   key={q.id}
@@ -1321,6 +1413,9 @@ export default function QuestionBankPage({
                   methodMap={methodMap}
                   teacher={teacher}
                   students={students}
+                  classes={[...schoolClasses, ...personalClasses]}
+                  followedStudentIds={followedStudentIds}
+                  sameQuestionIds={sameQuestionIds[q.id] || []}
                   selectedStudentIds={selectedStudentIds}
                   studentAnswerRecords={studentAnswerRecords}
                   pendingQuestionKeys={pendingQuestionKeys}
@@ -1937,7 +2032,7 @@ function ToggleFilter({
 
 function QuestionRow({
   question, schoolStat, mode, chapterMap, knowledgeMap, methodMap, teacher,
-  students, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
+  students, classes, followedStudentIds, sameQuestionIds, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion, examPapersUsingQuestion,
   usageResourcesLoaded, usageResourcesLoading, onLoadUsageResources,
@@ -1965,6 +2060,9 @@ function QuestionRow({
   methodMap: Map<string, string>;
   teacher: any;
   students: Student[];
+  classes: Array<SchoolClass | PersonalClass>;
+  followedStudentIds: ReadonlySet<string>;
+  sameQuestionIds: string[];
   selectedStudentIds: string[];
   studentAnswerRecords: AnswerRecord[];
   pendingQuestionKeys: Set<string>;
@@ -2011,6 +2109,7 @@ function QuestionRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
+  const [expandedAnswerClassIds, setExpandedAnswerClassIds] = useState<Set<string>>(new Set());
   const chapterNames = question.chapterIds.map((id) => chapterMap.get(id)).filter(Boolean) as string[];
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
   const methodNames = (question.thoughtMethodIds || []).map((id) => methodMap.get(id)).filter(Boolean) as string[];
@@ -2023,19 +2122,129 @@ function QuestionRow({
     new Date(b.resource.updatedAt).getTime() - new Date(a.resource.updatedAt).getTime()
   )), [examPapersUsingQuestion, lecturesUsingQuestion]);
 
-  // 选中学生的答题情况：取该题对应的答题记录，按学生维度展示
   const questionStudentAnswers = useMemo(() => {
     if (mode !== "use" || selectedStudentIds.length === 0) return [];
+    const matchingIds = new Set([question.id, ...sameQuestionIds]);
+    const latest = new Map<string, AnswerRecord>();
+    for (const record of studentAnswerRecords) {
+      if (!matchingIds.has(record.questionId)) continue;
+      const existing = latest.get(record.studentId);
+      if (!existing || record.answeredAt > existing.answeredAt
+        || (record.answeredAt === existing.answeredAt && record.questionId === question.id)) {
+        latest.set(record.studentId, record);
+      }
+    }
     return selectedStudentIds.map((sid) => {
-      const student = students.find((s) => s.id === sid);
-      const record = studentAnswerRecords.find(
-        (r) => r.studentId === sid && r.questionId === question.id,
-      );
+      const student = students.find((item) => item.id === sid);
+      const record = latest.get(sid);
       const score = record ? inferScore(record) : null;
-      const pending = !record && pendingQuestionKeys.has(`${sid}:${question.id}`);
-      return { student, record, score, pending };
+      const pending = !record && pendingQuestionKeys.has(sid + ":" + question.id);
+      return { student, studentId: sid, record, score, pending };
     });
-  }, [mode, selectedStudentIds, students, studentAnswerRecords, pendingQuestionKeys, question.id]);
+  }, [mode, selectedStudentIds, students, studentAnswerRecords, pendingQuestionKeys, question.id, sameQuestionIds]);
+
+  const visibleStudentAnswers = useMemo(() => {
+    if (editingAnswers || questionStudentAnswers.length <= 5) return questionStudentAnswers;
+    return [...questionStudentAnswers]
+      .sort((a, b) => {
+        const priority = (item: typeof a) => item.score ? 0 : followedStudentIds.has(item.studentId) ? 1 : 2;
+        return priority(a) - priority(b);
+      })
+      .slice(0, 5);
+  }, [editingAnswers, questionStudentAnswers, followedStudentIds]);
+
+  const answerClassGroups = useMemo(() => {
+    const groups = new Map<string, { name: string; answers: typeof questionStudentAnswers }>();
+    for (const item of questionStudentAnswers) {
+      const schoolClass = classes.find((value) => value.type === "school" && value.id === item.student?.classId);
+      const personalClass = classes.find((value) => value.type === "personal" && value.studentIds.includes(item.studentId));
+      const classInfo = schoolClass || personalClass;
+      const id = classInfo?.id || "other";
+      if (!groups.has(id)) groups.set(id, { name: classInfo?.name || "其他学生", answers: [] });
+      groups.get(id)!.answers.push(item);
+    }
+    return [...groups.entries()].map(([id, value]) => ({ id, ...value }));
+  }, [classes, questionStudentAnswers]);
+
+  const renderStudentAnswer = ({ student, studentId: selectedId, score, pending }: typeof questionStudentAnswers[number]) => {
+    const name = student?.name || "未知学生";
+    const studentId = student?.id;
+    if (editingAnswers && onUpdateStudentAnswer && studentId) {
+      const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
+        { value: null, label: pending ? "待做" : "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
+        { value: "done", label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
+        { value: "correct", label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+        { value: "partial", label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+        { value: "wrong", label: "做错", cls: "bg-red-50 text-red-700 border-red-200" },
+      ];
+      return (
+        <div
+          key={studentId}
+          className="flex flex-col gap-1 p-1.5 rounded border border-ink-200 bg-paper"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-[10px] font-medium text-ink-700 px-1">{name}</span>
+          <div className="flex gap-0.5">
+            {options.map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => onUpdateStudentAnswer(studentId, question.id, opt.value)}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] border transition-colors",
+                  score === opt.value
+                    ? opt.cls + " font-semibold"
+                    : "bg-white text-ink-400 border-ink-100 hover:border-ink-300",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (!score) {
+      return (
+        <span
+          key={selectedId}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px]",
+            pending
+              ? "bg-sky-50 text-sky-700 border border-sky-200"
+              : "bg-ink-100 text-ink-500",
+          )}
+          title={pending ? "待做" : "未作答"}
+        >
+          <span className={cn(
+            "w-1.5 h-1.5 rounded-full",
+            pending ? "bg-sky-500" : "bg-ink-300",
+          )} />
+          {name}
+          <span className="opacity-70">{pending ? "待做" : "未做"}</span>
+        </span>
+      );
+    }
+    const config = {
+      done: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500", label: "已做" },
+      correct: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500", label: "全对" },
+      partial: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500", label: "半对" },
+      wrong: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500", label: "做错" },
+    }[score];
+    return (
+      <span
+        key={selectedId}
+        className={cn(
+          "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border",
+          config.bg, config.text, config.border,
+        )}
+        title={`${name}：${config.label}`}
+      >
+        <span className={cn("w-1.5 h-1.5 rounded-full", config.dot)} />
+        {name}
+        <span className="opacity-80">{config.label}</span>
+      </span>
+    );
+  };
 
   // 管理模式：只有点击题干/选项区域才展开，其他区域不触发
   const handleStemClick = (e: React.MouseEvent) => {
@@ -2095,6 +2304,7 @@ function QuestionRow({
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingAnswers(!editingAnswers);
+                      setExpandedAnswerClassIds(new Set());
                     }}
                     className="ml-auto text-[10px] text-gold-600 hover:text-gold-700 font-medium"
                   >
@@ -2103,85 +2313,40 @@ function QuestionRow({
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {questionStudentAnswers.map(({ student, score, pending }) => {
-                  const name = student?.name || "未知学生";
-                  const studentId = student?.id;
-                  if (editingAnswers && onUpdateStudentAnswer && studentId) {
-                    const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
-                      { value: null, label: pending ? "待做" : "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
-                      { value: "done", label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
-                      { value: "correct", label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-                      { value: "partial", label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-                      { value: "wrong", label: "做错", cls: "bg-red-50 text-red-700 border-red-200" },
-                    ];
-                    return (
-                      <div
-                        key={studentId}
-                        className="flex flex-col gap-1 p-1.5 rounded border border-ink-200 bg-paper"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <span className="text-[10px] font-medium text-ink-700 px-1">{name}</span>
-                        <div className="flex gap-0.5">
-                          {options.map((opt) => (
-                            <button
-                              key={opt.label}
-                              onClick={() => onUpdateStudentAnswer(studentId, question.id, opt.value)}
-                              className={cn(
-                                "px-1.5 py-0.5 rounded text-[10px] border transition-colors",
-                                score === opt.value
-                                  ? opt.cls + " font-semibold"
-                                  : "bg-white text-ink-400 border-ink-100 hover:border-ink-300",
-                              )}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (!score) {
-                    return (
-                      <span
-                        key={student?.id || name}
-                        className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px]",
-                          pending
-                            ? "bg-sky-50 text-sky-700 border border-sky-200"
-                            : "bg-ink-100 text-ink-500",
+                {editingAnswers && answerClassGroups.length > 1 ? (
+                  <div className="w-full space-y-1.5">
+                    {answerClassGroups.map((group) => (
+                      <div key={group.id} className="rounded border border-ink-200 bg-paper">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between px-2 py-1.5 text-xs text-ink-700"
+                          aria-expanded={expandedAnswerClassIds.has(group.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedAnswerClassIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(group.id)) next.delete(group.id);
+                              else next.add(group.id);
+                              return next;
+                            });
+                          }}
+                        >
+                          <span>{group.name}（{group.answers.length} 人）</span>
+                          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expandedAnswerClassIds.has(group.id) && "rotate-180")} />
+                        </button>
+                        {expandedAnswerClassIds.has(group.id) && (
+                          <div className="flex flex-wrap gap-1.5 border-t border-ink-100 p-2">
+                            {group.answers.map(renderStudentAnswer)}
+                          </div>
                         )}
-                        title={pending ? "待做" : "未作答"}
-                      >
-                        <span className={cn(
-                          "w-1.5 h-1.5 rounded-full",
-                          pending ? "bg-sky-500" : "bg-ink-300",
-                        )} />
-                        {name}
-                        <span className="opacity-70">{pending ? "待做" : "未做"}</span>
-                      </span>
-                    );
-                  }
-                  const config = {
-                    done: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500", label: "已做" },
-                    correct: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500", label: "全对" },
-                    partial: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500", label: "半对" },
-                    wrong: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500", label: "做错" },
-                  }[score];
-                  return (
-                    <span
-                      key={student?.id || name}
-                      className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border",
-                        config.bg, config.text, config.border,
-                      )}
-                      title={`${name}：${config.label}`}
-                    >
-                      <span className={cn("w-1.5 h-1.5 rounded-full", config.dot)} />
-                      {name}
-                      <span className="opacity-80">{config.label}</span>
-                    </span>
-                  );
-                })}
+                      </div>
+                    ))}
+                  </div>
+                ) : visibleStudentAnswers.map(renderStudentAnswer)}
+                {!editingAnswers && questionStudentAnswers.length > 5 && (
+                  <span className="px-1 py-0.5 text-[11px] text-ink-500">等</span>
+                )}
+
               </div>
             </div>
           )}

@@ -13,6 +13,9 @@ vi.mock("@/services/knowledge", () => ({
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
     getMethodTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
+    listErrorReasons: vi.fn(),
+    addErrorReason: vi.fn(),
     listThoughtMethods: vi.fn(),
     addThoughtMethod: vi.fn(),
     listDirectoryCatalogs: vi.fn(),
@@ -102,6 +105,9 @@ describe("KnowledgeTreePage", () => {
 
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
+    vi.mocked(knowledgeService.listErrorReasons).mockResolvedValue([]);
+    vi.mocked(knowledgeService.addErrorReason).mockResolvedValue({ id: "reason-new", schoolId: "school-1", parentId: null, name: "概念混淆", order: 1, level: 0 });
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
       id: "root", name: "全部思想方法", type: "method", count: 0, children: [],
     });
@@ -247,6 +253,16 @@ describe("KnowledgeTreePage", () => {
       expect(screen.getByRole("button", { name: "添加节点到「全部知识点」" })).toBeInTheDocument();
     });
     expect(screen.queryByText("章节课")).not.toBeInTheDocument();
+  });
+
+  it("switches to error dictionary and adds a nested error reason", async () => {
+    render(<MemoryRouter><KnowledgeTreePage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "错因字典" }));
+    expect(await screen.findByRole("button", { name: "添加节点到「全部错因」" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "添加节点到「全部错因」" }));
+    fireEvent.change(screen.getByLabelText("节点名称"), { target: { value: "概念混淆" } });
+    fireEvent.click(screen.getByRole("button", { name: /^添加$/ }));
+    await waitFor(() => expect(knowledgeService.addErrorReason).toHaveBeenCalledWith("teacher-1", null, "概念混淆"));
   });
 
   it("switches to an independent thought-method tree and adds a node", async () => {

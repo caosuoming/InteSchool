@@ -56,6 +56,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { QuestionEditor } from "@/components/question/QuestionEditor";
+import { QuestionAttributesModal } from "@/components/question/QuestionAttributesModal";
 import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
 import { QuestionDistributionPanel } from "@/components/editor/QuestionDistributionPanel";
 import { DocumentQuestionPicker } from "@/components/editor/DocumentQuestionPicker";
@@ -265,6 +266,7 @@ export default function LectureEditorPage() {
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(teacher?.schoolId);
 
   const [lecture, setLecture] = useState<Lecture | null>(null);
+  const [attributeQuestion, setAttributeQuestion] = useState<Question | null>(null);
   const [hasAnswerRecords, setIsUsedDocument] = useState(false);
   const isUsedDocument = hasAnswerRecords || Boolean(lecture?.answerSheetPublishedAt);
   const isStructureLocked = isDocumentStructureLocked(lecture);
@@ -1636,6 +1638,7 @@ export default function LectureEditorPage() {
         source: "manual" as const,
       }));
       await analyticsService.batchSaveAnswerRecords(items);
+      setIsUsedDocument(true);
       // 刷新讲义的答题记录
       const records = await analyticsService.listAnswerRecordsByLecture(lecture.id);
       setAnswerRecords(records);
@@ -1698,6 +1701,7 @@ export default function LectureEditorPage() {
         score,
         source: "manual",
       });
+      if (score) setIsUsedDocument(true);
       const records = await analyticsService.listAnswerRecordsByLecture(lecture.id);
       setAnswerRecords(records);
     } catch (e: any) {
@@ -1740,6 +1744,7 @@ export default function LectureEditorPage() {
       );
       if (pendingRecords.length > 0) {
         await analyticsService.batchSaveAnswerRecords(pendingRecords);
+        setIsUsedDocument(true);
       }
       const [records, answeredIds] = await Promise.all([
         analyticsService.listAnswerRecordsByLecture(lecture.id),
@@ -2204,7 +2209,7 @@ export default function LectureEditorPage() {
       {isUsedDocument && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{lecture?.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能编辑。" : "该文档已录入学生答题记录，现已锁定，不能再编辑。"}</span>
+          <span>答题卡已发布，题目和顺序已锁定；仍可修改题目属性和学生使用记录。</span>
         </div>
       )}
 
@@ -2620,6 +2625,7 @@ export default function LectureEditorPage() {
                                           child.id,
                                           isNestedChild ? section.id : undefined,
                                         )}
+                                        onEditAttributes={setAttributeQuestion}
                                         readOnly={isEditingLocked}
                                       />
                                       {prepTaskId && (
@@ -2692,6 +2698,7 @@ export default function LectureEditorPage() {
                                       handleReplaceSectionQuestion(section.id, undefined, replacement);
                                     } : undefined}
                                     onRemove={() => handleRemoveSection(section.id)}
+                                    onEditAttributes={setAttributeQuestion}
                                     readOnly={isEditingLocked}
                                   />
                                 );
@@ -2712,7 +2719,6 @@ export default function LectureEditorPage() {
                 <DocumentQuestionBatchActions
                   schoolId={teacher?.schoolId}
                   questionIds={lectureQuestionIds}
-                  disabled={isUsedDocument}
                   onUpdated={(updated) => setLectureQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
                 />
               </Card>
@@ -2724,7 +2730,7 @@ export default function LectureEditorPage() {
                 {isEditingLocked ? (
                   <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
                     <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                    <span>{isUsedDocument ? "当前文档已用，不能再编辑。" : "当前文档结构已锁定，不能新增、删除或调整内容。"}</span>
+                    <span>{isUsedDocument ? "当前文档结构已锁定，仍可修改题目属性。" : "当前文档结构已锁定，不能新增、删除或调整内容。"}</span>
                   </div>
                 ) : (
                   <>
@@ -3841,6 +3847,12 @@ export default function LectureEditorPage() {
           )}
         </div>
       </Modal>
+
+      {attributeQuestion && (
+        <QuestionAttributesModal key={attributeQuestion.id} question={attributeQuestion}
+          schoolId={teacher?.schoolId} onClose={() => setAttributeQuestion(null)}
+          onUpdated={(updated) => setLectureQuestions((previous) => ({ ...previous, [updated.id]: updated }))} />
+      )}
 
       {/* 题目编辑弹窗（同步题库） */}
       <Modal

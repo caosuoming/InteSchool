@@ -237,12 +237,14 @@ export const lessonCoursewareService = {
     schoolId: string,
     lectureId: string,
     documentBlocks: LessonDocumentBlock[] = [],
+    personalClassIds?: string[],
   ): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createFromLecture", [
       teacherId,
       schoolId,
       lectureId,
       documentBlocks,
+      personalClassIds,
     ]) as any;
   },
 

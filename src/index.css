@@ -232,12 +232,6 @@
   min-width: 34rem;
   pointer-events: none;
 }
-.preview-sidebar-intro {
-  border-left: 1px solid rgba(16, 42, 67, 0.2);
-  padding: 0.75rem 0 0.75rem 1.25rem;
-  background: #f5f7fa;
-  pointer-events: auto;
-}
 .preview-sticky-controls {
   position: sticky;
   top: 0;
@@ -253,9 +247,6 @@
   grid-template-columns: minmax(15rem, 1fr) minmax(16rem, 1fr);
   align-items: start;
   gap: 1rem;
-}
-.preview-sticky-controls-split > [role="toolbar"] {
-  align-content: start;
 }
 .preview-sticky-spacer {
   min-height: 15rem;

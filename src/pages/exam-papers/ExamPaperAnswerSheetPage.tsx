@@ -86,6 +86,21 @@ export default function ExamPaperAnswerSheetPage() {
       initialSettings={paper.answerSheetSettings}
       initialViewMode={initialViewMode}
       published={Boolean(paper.answerSheetPublishedAt)}
+      exported={Boolean(paper.answerSheetExportedAt)}
+      onExport={async (settings) => {
+        const updated = await examPaperService.markAnswerSheetExported(paper.id, settings);
+        setPaper(updated);
+      }}
+      onInvalidate={async () => {
+        if (!window.confirm("作废当前答题卡？需要重新制作并下载或打印。")) return;
+        try {
+          await examPaperService.invalidateAnswerSheet(paper.id);
+          toast.success("答题卡已作废");
+          navigate(`/exam-papers/${paper.id}/preview`);
+        } catch (error) {
+          toast.error("答题卡作废失败", error instanceof Error ? error.message : undefined);
+        }
+      }}
       onPublicationChange={async (publish, settings) => {
         const updated = publish
           ? await examPaperService.publishAnswerSheet(paper.id, settings)

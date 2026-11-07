@@ -22,7 +22,7 @@ import { createSqlClient, type SqlClient, type SqlConnection } from "./sql-clien
 
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
-  "schoolGrades", "classTypeCategories", "students", "chapters", "knowledgePoints", "thoughtMethods",
+  "schoolGrades", "classTypeCategories", "students", "chapters", "knowledgePoints", "thoughtMethods", "errorReasons",
   "directoryCatalogs", "directoryDonations", "directoryNodeAssociations",
   "schoolChapters", "schoolKnowledgePoints", "questions",
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "resourceFolders", "baskets", "documents",
@@ -33,7 +33,7 @@ export const COLLECTIONS = [
   "studentInteractions", "studentInteractionFollows", "studentInteractionIgnores", "homeworkAttitudeRecords", "homeworkKnowledgeRecords", "homeworkRecordPreferences", "homeworkClassOverviewRecords", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
   "gradeExams", "gradeExamAccess", "gradeExamAccessGrants", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements", "examInvigilationProfiles", "teachingScheduleProfiles",
-  "notifications", "parentAuthorizations", "parentAccounts",
+  "notifications", "dashboardTodos", "parentAuthorizations", "parentAccounts",
   "helpTopics", "helpReplies", "helpCategories", "helpChangelogEntries", "helpChangelogShares",
 ] as const;
 
@@ -149,6 +149,10 @@ function questionSearchWhere(filter: QuestionFilter): { clauses: string[]; param
   if (filter.thoughtMethodIds?.length) {
     if ((filter.methodLogic || "or") === "and") add("coalesce(data_json->'thoughtMethodIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.thoughtMethodIds));
     else add("coalesce(data_json->'thoughtMethodIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.thoughtMethodIds);
+  }
+  if (filter.errorReasonIds?.length) {
+    if ((filter.errorReasonLogic || "or") === "and") add("coalesce(data_json->'errorReasonIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.errorReasonIds));
+    else add("coalesce(data_json->'errorReasonIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.errorReasonIds);
   }
   if (filter.difficulty?.length) add("(data_json->>'difficulty')::int = ANY(__PARAM__::int[])", filter.difficulty);
   if (filter.recommendation?.length) add("(data_json->>'recommendation')::int = ANY(__PARAM__::int[])", filter.recommendation);

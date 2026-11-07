@@ -139,6 +139,29 @@ describe("GradeSettingsEditor", () => {
       .toEqual(settings.classSubjects.find((item) => item.classId === "class-10"));
   });
 
+  it("restores all ranking subjects when no selection is known, regardless of prior scores", async () => {
+    const user = userEvent.setup();
+    const subjects = ["数学", "化学"];
+    const settings = buildDefaultGradeSettings(subjects, classes.map((item) => item.id));
+    settings.classSubjects = settings.classSubjects.filter((item) => item.classId !== "class-10");
+    const onChange = vi.fn();
+    const noSelection = {
+      ...context,
+      classProfiles: {
+        ...context.classProfiles,
+        "class-10": { subjectSelections: [], scoreSubjects: ["数学"], hasImportedScores: true },
+      },
+    };
+    render(<GradeSettingsEditor settings={settings} subjects={subjects}
+      context={noSelection} onChange={onChange} section="settings" />);
+    const table = screen.getByRole("columnheader", { name: "纳入统一排名" }).closest("table")!;
+    const row = within(table).getAllByRole("row")[2];
+    const restore = within(row).getByRole("button", { name: "按选科恢复默认排名" });
+    await user.click(restore);
+    expect(onChange.mock.lastCall?.[0].classSubjects.find((item: { classId: string }) => item.classId === "class-10"))
+      .toMatchObject({ statisticSubjects: subjects, examSubjects: subjects, separateRankSubjects: [] });
+  });
+
   it("starts with no class teacher selected and changes only the chosen class", async () => {
     const user = userEvent.setup();
     const settings = buildDefaultGradeSettings(["数学"], classes.map((item) => item.id));

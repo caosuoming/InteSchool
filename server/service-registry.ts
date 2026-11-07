@@ -5,6 +5,7 @@ import { classService } from "./domain/class.js";
 import { classroomDeviceService } from "./domain/classroomDevice.js";
 import { classroomHomeworkService } from "./domain/classroomHomework.js";
 import { classroomNoticeService } from "./domain/classroomNotice.js";
+import { dashboardTodoService } from "./domain/dashboardTodo.js";
 import { coursewareService } from "./domain/courseware.js";
 import { donationService } from "./domain/donation.js";
 import { examPaperService } from "./domain/examPaper.js";
@@ -42,6 +43,7 @@ export const serviceRegistry = {
   classroomHomework: classroomHomeworkService,
   classroomNotice: classroomNoticeService,
   courseware: coursewareService,
+  dashboardTodo: dashboardTodoService,
   donation: donationService,
   examArrangement: examArrangementService,
   examPaper: examPaperService,

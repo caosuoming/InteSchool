@@ -9,14 +9,15 @@ import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
-import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeExamPaperPatch } from "./document-resource-lock.js";
+import { answerSheetInvalidationPatch, hasDocumentAnswerRecords, withUsagePublishedAnswerSheet, sanitizeExamPaperPatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
 import { examPaperKnowledgePointIds } from "./document-knowledge.js";
+import { withPaperAnnotationSummary } from "./document-annotation-summary.js";
 import { subjectAwareDefaultQuestionScore } from "../../src/lib/question-default-score.js";
 
 function withDerivedKnowledgePoints(paper: ExamPaper): ExamPaper {
-  return { ...paper, knowledgePointIds: examPaperKnowledgePointIds(paper) };
+  return { ...withUsagePublishedAnswerSheet(paper), knowledgePointIds: examPaperKnowledgePointIds(paper) };
 }
 
 function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
@@ -47,6 +48,12 @@ function matchFilter(p: ExamPaper, filter: ResourceFilter): boolean {
     if ((filter.methodLogic || "or") === "and") {
       if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
     } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
+  if (filter.errorReasonIds?.length) {
+    const ids = p.errorReasonIds || [];
+    if ((filter.errorReasonLogic || "or") === "and") {
+      if (!filter.errorReasonIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.errorReasonIds.some((id) => ids.includes(id))) return false;
   }
   if (filter.grade && p.grade !== filter.grade) return false;
   if (filter.schoolYear && p.schoolYear !== filter.schoolYear) return false;
@@ -113,11 +120,11 @@ function newlyReferencedQuestionIds(
 export const examPaperService = {
   async listPapers(filter: ResourceFilter = {}): Promise<ExamPaper[]> {
     await delay(300);
-    return db
+    return withPaperAnnotationSummary(db
       .read("examPapers")
       .filter((p) => matchFilter(p, filter))
       .map(withDerivedKnowledgePoints)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
   },
 
   async getPaper(id: string): Promise<ExamPaper | null> {
@@ -128,13 +135,14 @@ export const examPaperService = {
 
   async listPublishedAnswerSheets(): Promise<ExamPaper[]> {
     return db.read("examPapers")
-      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt))
-      .map(withDerivedKnowledgePoints);
+      .map(withDerivedKnowledgePoints)
+      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt));
   },
 
   async getPublishedAnswerSheet(id: string): Promise<ExamPaper | null> {
     const item = db.read("examPapers").find((entry) => entry.id === id);
-    return item?.hasAnswerSheet && item.answerSheetPublishedAt ? withDerivedKnowledgePoints(item) : null;
+    const result = item ? withDerivedKnowledgePoints(item) : null;
+    return result?.hasAnswerSheet && result.answerSheetPublishedAt ? result : null;
   },
 
   async publishAnswerSheet(id: string, settings?: ExamPaper["answerSheetSettings"]): Promise<ExamPaper> {
@@ -154,10 +162,69 @@ export const examPaperService = {
   },
 
   async unpublishAnswerSheet(id: string): Promise<ExamPaper> {
+    if (hasDocumentAnswerRecords(id)) throw new Error("已有学生答题记录，不能撤回发布");
     let updated: ExamPaper | undefined;
     db.update("examPapers", (list) => list.map((item) => {
       if (item.id !== id) return item;
       updated = { ...item, answerSheetPublishedAt: undefined };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async markPaperDownloaded(id: string): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      updated = item.paperDownloadedAt ? item : { ...item, paperDownloadedAt: new Date().toISOString() };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async invalidatePaperDownload(id: string): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      updated = { ...item, paperDownloadedAt: undefined };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async markAnswerSheetExported(id: string, settings?: ExamPaper["answerSheetSettings"]): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      if (!item.hasAnswerSheet) throw new Error("请先制作答题卡");
+      updated = {
+        ...item,
+        ...(settings ? { answerSheetSettings: settings } : {}),
+        answerSheetExportedAt: item.answerSheetExportedAt || new Date().toISOString(),
+      };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async invalidateAnswerSheet(id: string): Promise<ExamPaper> {
+    if (hasDocumentAnswerRecords(id)) throw new Error("文档已有答题记录，不能作废答题卡");
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      if (item.answerSheetPublishedAt) throw new Error("请先撤回发布答题卡再作废");
+      updated = {
+        ...item,
+        hasAnswerSheet: undefined,
+        answerSheetCreatedAt: undefined,
+        answerSheetRevisionId: undefined,
+        answerSheetSettings: undefined,
+        answerSheetExportedAt: undefined,
+      };
       return updated;
     }));
     if (!updated) throw new Error("试卷不存在");
@@ -238,10 +305,6 @@ export const examPaperService = {
   async updatePaper(id: string, patch: Partial<ExamPaper>): Promise<ExamPaper> {
     await delay(300);
     maybeThrowError();
-    assertDocumentNotUsed(id);
-    if (db.read("examPapers").some((item) => item.id === id && item.answerSheetPublishedAt)) {
-      throw new Error("答题卡已发布，请先撤回发布再编辑试卷");
-    }
     let updated: ExamPaper | null = null;
     let addedQuestionIds: string[] = [];
     db.update("examPapers", (list) =>
@@ -314,6 +377,8 @@ export const examPaperService = {
       isExtractCopy: undefined,
       sourceResourceId: undefined,
       extractStatus: undefined,
+      paperDownloadedAt: undefined,
+      answerSheetExportedAt: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
       answerSheetRevisionId: undefined,
@@ -451,6 +516,8 @@ export const examPaperService = {
       originalFileName: undefined,
       originalFileType: undefined,
       originalFileSize: undefined,
+      paperDownloadedAt: undefined,
+      answerSheetExportedAt: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
       answerSheetRevisionId: undefined,

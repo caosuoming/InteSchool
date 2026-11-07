@@ -122,6 +122,21 @@ describe("作业考试管理页面", () => {
     expect(screen.queryByRole("link", { name: "制作空白答题卡" })).not.toBeInTheDocument();
   });
 
+  it("shows a combined homework and its papers in the same management row", async () => {
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([{
+      ...homework, examPaperIds: [paper.id], linkedPapers: [{
+        id: paper.id, title: paper.title, originalFileUrl: "/api/files/file-1",
+      }],
+    }]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /函数专题作业/ });
+    expect(within(row).getByRole("link", { name: "资源篮函数练习" })).toHaveAttribute(
+      "href", "/resources/preview/paper-1?type=examPaper",
+    );
+    expect(screen.queryByRole("row", { name: /^资源篮函数练习/ })).not.toBeInTheDocument();
+  });
+
   it("lists each homework with its name, audience, status, and recorded attendance", async () => {
     mount("homework");
     const row = await screen.findByRole("row", { name: /函数专题作业/ });

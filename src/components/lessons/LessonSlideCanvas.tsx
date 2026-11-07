@@ -25,6 +25,7 @@ interface LessonSlideCanvasProps {
   showAnimationOrder?: boolean;
   disableAnimations?: boolean;
   animationMode?: "default" | "step";
+  inlineAnswerOrder?: number;
   allowTextEditing?: boolean;
   allowVerticalElementOverflow?: boolean;
   enableScheduledMediaPlayback?: boolean;
@@ -222,6 +223,7 @@ export function LessonSlideCanvas({
   showAnimationOrder = true,
   disableAnimations = false,
   animationMode = "default",
+  inlineAnswerOrder,
   allowTextEditing = editable,
   allowVerticalElementOverflow = false,
   enableScheduledMediaPlayback = false,
@@ -510,7 +512,7 @@ export function LessonSlideCanvas({
                   )}
                   style={textStyle}
                 >
-                  <MathHtml className="leading-snug">{element.content || element.href}</MathHtml>
+                  <MathHtml className="leading-snug" revealedAnswerStep={inlineAnswerOrder}>{element.content || element.href}</MathHtml>
                 </a>
               ) : (
                 <div
@@ -521,7 +523,7 @@ export function LessonSlideCanvas({
                   )}
                   style={textStyle}
                 >
-                  <MathHtml className="leading-snug">{element.content || "文本"}</MathHtml>
+                  <MathHtml className="leading-snug" revealedAnswerStep={inlineAnswerOrder}>{element.content || "文本"}</MathHtml>
                 </div>
               )
             )}

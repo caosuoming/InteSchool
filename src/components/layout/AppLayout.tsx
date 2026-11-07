@@ -7,11 +7,12 @@ import {
   FolderOpen, Download,
   ChevronDown, ChevronRight, Building2, Cloud,
   BookOpen, BookCheck, Check, Crown, ClipboardCheck, ClipboardList, MapPinned, FileSpreadsheet, CalendarRange,
-  CircleHelp, Monitor,
+  CircleHelp, Monitor, GraduationCap, FilePlus2, Files, Presentation,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore, toast } from "@/stores/ui";
 import { shareService } from "@/services/share";
+import { classService } from "@/services/class";
 import { cn } from "@/lib/utils";
 import { ToastContainer } from "@/components/ui/Toast";
 import { canManageSchoolExams } from "@/lib/exam-permissions";
@@ -58,6 +59,17 @@ const allNavItems: NavItem[] = [
     ],
   },
   { path: "/my-students", label: "我的学生", icon: Users },
+  {
+    path: "/individual-tutoring",
+    label: "个别辅导",
+    icon: GraduationCap,
+    children: [
+      { path: "/individual-tutoring/classes", label: "个人教学班管理", icon: Users },
+      { path: "/individual-tutoring/prepare", label: "根据学情编讲义", icon: FilePlus2 },
+      { path: "/individual-tutoring/materials", label: "讲义作业管理", icon: Files },
+      { path: "/individual-tutoring/coursewares", label: "个别辅导课件", icon: Presentation },
+    ],
+  },
   { path: "/my-classrooms", label: "我的教室", icon: Monitor },
   { path: "/school-resources", label: "校本资源", icon: Building2, schoolOnly: true },
   { path: "/platform-resources", label: "平台资源", icon: Cloud },
@@ -87,6 +99,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [affiliationDropdownOpen, setAffiliationDropdownOpen] = useState(false);
   const [donationRank, setDonationRank] = useState<number | null>(null);
+  const [hasPersonalClass, setHasPersonalClass] = useState(false);
   const [platformSchools, setPlatformSchools] = useState<SchoolRecord[]>([]);
   const [schoolFilter, setSchoolFilter] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -108,11 +121,24 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   // 根据当前身份过滤导航菜单
   const navItems = allNavItems.filter((item) => {
+    if (item.path === "/individual-tutoring" && !hasPersonalClass) return false;
     if (item.schoolOnly && isPersonalIdentity) return false;
     if (item.examManagerOnly && !canManageExams) return false;
     if (item.examViewerOnly && canManageExams) return false;
     return true;
   });
+
+  useEffect(() => {
+    if (!teacher?.id) {
+      setHasPersonalClass(false);
+      return;
+    }
+    let active = true;
+    classService.listPersonalClasses(teacher.id)
+      .then((classes) => { if (active) setHasPersonalClass(classes.length > 0); })
+      .catch(() => { if (active) setHasPersonalClass(false); });
+    return () => { active = false; };
+  }, [teacher?.id, location.pathname]);
 
   // 点击外部关闭下拉菜单
   useEffect(() => {

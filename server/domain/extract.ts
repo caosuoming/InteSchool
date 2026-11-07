@@ -208,6 +208,7 @@ export const extractService = {
         semester,
         type: "knowledgeBlock",
         content: item.content,
+        inlineAnswers: item.inlineAnswers,
         tags: [],
       });
       await materialService.updateMaterial(created.id, { sourceResourceId });

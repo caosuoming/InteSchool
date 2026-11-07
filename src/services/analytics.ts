@@ -67,6 +67,10 @@ export const analyticsService = {
     return rpcCall("analytics", "listUsedDocumentIds", [documentIds]) as any;
   },
 
+  async listSameQuestionIds(questionIds: string[]): Promise<Record<string, string[]>> {
+    return rpcCall("analytics", "listSameQuestionIds", [questionIds]) as any;
+  },
+
   async listAnswerRecordsByStudents(studentIds: string[], range?: DateRange): Promise<AnswerRecord[]> {
     return rpcCall("analytics", "listAnswerRecordsByStudents", [studentIds, range]) as any;
   },
@@ -85,6 +89,13 @@ export const analyticsService = {
 
   async listAllAnswerRecordsByQuestion(questionId: string): Promise<AnswerRecord[]> {
     return rpcCall("analytics", "listAllAnswerRecordsByQuestion", [questionId]) as any;
+  },
+
+  async recordClassroomQuestionProgress(input: {
+    coursewareId: string; classId: string; questionId: string;
+    studentId?: string; score?: "correct" | "partial" | "wrong";
+  }): Promise<AnswerRecord[]> {
+    return rpcCall("analytics", "recordClassroomQuestionProgress", [input]) as any;
   },
 
   async saveAnswerRecord(input: {
@@ -115,8 +126,14 @@ export const analyticsService = {
     return rpcCall("analytics", "getQuestionWeaknessScore", [schoolId, studentIds, range]) as any;
   },
 
-  async annotateTreeWithStudentProgress(tree: TreeNode, studentIds: string[], type: "chapter" | "knowledge", range?: DateRange): Promise<TreeNode> {
-    return rpcCall("analytics", "annotateTreeWithStudentProgress", [tree, studentIds, type, range]) as any;
+  async annotateTreeWithStudentProgress(
+    tree: TreeNode,
+    studentIds: string[],
+    type: "chapter" | "knowledge" | "method" | "error",
+    range?: DateRange,
+    options?: { includeDone?: boolean; includePending?: boolean; basketQuestionIds?: string[] },
+  ): Promise<TreeNode> {
+    return rpcCall("analytics", "annotateTreeWithStudentProgress", [tree, studentIds, type, range, options]) as any;
   },
 
   async getQuestionStats(schoolId: string, range?: DateRange): Promise<QuestionStat[]> {

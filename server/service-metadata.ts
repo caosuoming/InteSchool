@@ -74,6 +74,7 @@ export const serviceParameters = {
       "deviceToken",
       "input"
     ],
+    "recordClassroomQuestionProgress": ["deviceToken", "input"],
     "clearInstallationBinding": [
       "installationId"
     ],
@@ -111,6 +112,10 @@ export const serviceParameters = {
       "teacher"
     ]
   },
+  "dashboardTodo": {
+    "listTodoRecords": ["teacherId"],
+    "setTodoStatus": ["teacherId", "input"]
+  },
   "notification": {
     "listNotifications": [
       "teacherId"
@@ -142,6 +147,10 @@ export const serviceParameters = {
   "classroomHomework": {
     "listHomeworks": [
       "filter"
+    ],
+    "listHomeworkAnswers": [
+      "schoolId",
+      "classId"
     ],
     "createHomework": [
       "teacherId",
@@ -331,6 +340,7 @@ export const serviceParameters = {
     ]
   },
   "analytics": {
+    "recordClassroomQuestionProgress": ["input", "teacher"],
     "listAnswerRecordsByQuestion": [
       "questionId",
       "range"
@@ -346,6 +356,7 @@ export const serviceParameters = {
     "listUsedDocumentIds": [
       "documentIds"
     ],
+    "listSameQuestionIds": ["questionIds", "teacher"],
     "listAnswerRecordsByStudents": [
       "studentIds",
       "range"
@@ -375,7 +386,8 @@ export const serviceParameters = {
       "tree",
       "studentIds",
       "type",
-      "range"
+      "range",
+      "options"
     ],
     "getQuestionStats": [
       "schoolId",
@@ -922,12 +934,14 @@ export const serviceParameters = {
       "schoolId"
     ],
     "getChapterTree": [
-      "schoolId"
+      "schoolId",
+      "includeCounts"
     ],
     "getKnowledgeTree": [
-      "schoolId"
+      "schoolId",
+      "includeCounts"
     ],
-    "getMethodTree": ["schoolId"],
+    "getMethodTree": ["schoolId", "includeCounts"],
     "listDirectoryCatalogs": [
       "teacherId",
       "type"
@@ -1152,7 +1166,8 @@ export const serviceParameters = {
       "teacherId",
       "schoolId",
       "sourceId",
-      "documentBlocks"
+      "documentBlocks",
+      "personalClassIds"
     ],
     "createFromCourseware": [
       "teacherId",
@@ -1449,6 +1464,15 @@ export const serviceParameters = {
       "patch",
       "duplicateDecision"
     ],
+    "markSameQuestion": [
+      "questionId",
+      "otherQuestionId",
+      "teacherId"
+    ],
+    "getSameQuestionKnowledgeSuggestions": [
+      "questionId",
+      "teacherId"
+    ],
     "deleteQuestion": [
       "id"
     ],
@@ -1592,9 +1616,14 @@ export const serviceParameters = {
       "backupReason",
       "targetStudentIds"
     ],
-    "saveAsOwnResource": [
+    "checkSaveQuestionDuplicates": [
       "backupId",
       "teacher"
+    ],
+    "saveAsOwnResource": [
+      "backupId",
+      "teacher",
+      "decision"
     ]
   },
   "settings": {
@@ -1787,10 +1816,16 @@ export const serviceParameters = {
     "listOutgoingShares": [
       "teacherId"
     ],
-    "acceptShare": [
+    "checkShareQuestionDuplicates": [
       "shareId",
       "toTeacherId",
       "toSchoolId"
+    ],
+    "acceptShare": [
+      "shareId",
+      "toTeacherId",
+      "toSchoolId",
+      "decision"
     ],
     "rejectShare": [
       "shareId"

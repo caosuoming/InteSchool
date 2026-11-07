@@ -756,6 +756,31 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("only generates personal tutoring courseware for the teacher's own personal classes", async () => {
+    const state = createState();
+    const lecture = sourceLecture();
+    lecture.classIds = ["personal-1"];
+    state.lectures = [lecture];
+    state.personalClasses = [{
+      id: "personal-1", type: "personal", teacherId: "teacher-1",
+      name: "个别辅导班", description: "", studentIds: [], createdAt: now,
+    }];
+
+    await runWithState(state, async () => {
+      const generated = await lessonCoursewareService.createFromLecture(
+        "teacher-1", "school-1", lecture.id, [], ["personal-1"],
+      );
+      expect(generated.classIds).toEqual(["personal-1"]);
+      expect(generated.classIds).not.toContain("class-1");
+      await expect(lessonCoursewareService.createFromLecture(
+        "teacher-1", "school-1", lecture.id, [], ["class-1"],
+      )).rejects.toThrow("只能将讲义推送到本人所属的个人教学班");
+      await expect(lessonCoursewareService.createFromLecture(
+        "teacher-1", "school-1", lecture.id, [], ["other-personal"],
+      )).rejects.toThrow("只能将讲义推送到本人所属的个人教学班");
+    });
+  });
+
   it("normalizes existing lecture question labels and removes generated fallback numbers", async () => {
     const question = sourceQuestion();
     const lecture = sourceLecture();
@@ -1154,4 +1179,26 @@ describe("courseware lesson flow", () => {
     });
   });
 
+});
+
+
+describe("knowledge underlined answers in generated courseware", () => {
+  it("puts every extracted answer at its original position with its own reveal step", async () => {
+    const state = createState();
+    const lecture = sourceLecture();
+    lecture.sections = [{
+      id: "knowledge-1", title: "运算法则", type: "knowledge",
+      content: '加法 <span class="knowledge-answer-blank" data-answer-index="1">____</span>，乘法 <span class="knowledge-answer-blank" data-answer-index="2">____</span>',
+      inlineAnswers: ["交换律", "结合律"], children: [],
+    }];
+    state.lectures = [lecture];
+    await runWithState(state, async () => {
+      const courseware = await lessonCoursewareService.createFromLecture("teacher-1", "school-1", lecture.id);
+      const slide = courseware.slides.find((item) => item.type === "knowledge")!;
+      expect(slide.content).toContain('data-answer-step="1">交换律');
+      expect(slide.content).toContain('data-answer-step="2">结合律');
+      const content = slide.elements?.find((element) => element.kind === "text" && element.content.includes("lesson-inline-answer"));
+      expect(content?.kind === "text" && content.content).toBe(slide.content);
+    });
+  });
 });

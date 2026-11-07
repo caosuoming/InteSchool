@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseDocumentBlocks, type DocumentParseConfig } from "./document-block-parser";
+import {
+  findMathQuestionNumberGaps,
+  findMathQuestionNumberSequenceGaps,
+  findSuspectedMathQuestionNumbers,
+  parseDocumentBlocks,
+  reparseMathQuestionBlock,
+  type DocumentParseConfig,
+} from "./document-block-parser";
 import { normalizePlainMathText } from "./plain-math";
 
 const config: DocumentParseConfig = {
@@ -41,6 +48,88 @@ describe("document block parser", () => {
     });
 
     expect(blocks.some((block) => block.type === "groupTitle")).toBe(false);
+  });
+
+  it.each([
+    ["B", "single"],
+    ["（C）", "single"],
+    ["Ａ", "single"],
+    ["$\\mathrm{D}$", "single"],
+    ["AC", "multiple"],
+    ["A、C、D", "multiple"],
+    ["（A，B）", "multiple"],
+  ] as const)("recognizes math choice answers %s as %s", (answer, expected) => {
+    const blocks = parseDocumentBlocks(
+      ["一、选择题", "1. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁", `答案：${answer}`].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks[1]).toMatchObject({ questionType: expected, answer });
+  });
+
+  it("uses the math answer to distinguish single from multiple even when the section disagrees", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、多选题",
+        "1. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：B",
+        "二、单选题",
+        "2. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "答案：AC",
+      ].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.questionType))
+      .toEqual(["single", "multiple"]);
+  });
+
+  it("recognizes a math choice answer when option text was not extracted", () => {
+    const blocks = parseDocumentBlocks(
+      ["一、选择题", "1. 判断哪个选项正确。", "答案：B、D"].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks[1]).toMatchObject({ questionType: "multiple", answer: "B、D", options: [] });
+  });
+
+  it("reclassifies math choice questions using answers in the trailing answer section", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、选择题",
+        "1. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 下列结论正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+        "参考答案",
+        "1. AC",
+        "2. B",
+      ].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.questionType))
+      .toEqual(["multiple", "single"]);
+  });
+
+  it("does not treat math variable answers as choice keys or change other subjects", () => {
+    const source = ["一、多选题", "1. 判断下列结论 A. 甲 B. 乙 C. 丙 D. 丁", "答案：A=2"].join("\n");
+    const mathBlocks = parseDocumentBlocks(source, { ...config, subject: "数学" });
+    const mathFormulaBlocks = parseDocumentBlocks(
+      ["一、单选题", "1. 判断下列结论 A. 甲 B. 乙 C. 丙 D. 丁", "答案：A=2，B=3"].join("\n"),
+      { ...config, subject: "数学" },
+    );
+    const geographyBlocks = parseDocumentBlocks(
+      source.replace("答案：A=2", "答案：A"), { ...config, subject: "地理" },
+    );
+    const nonChoiceBlocks = parseDocumentBlocks(
+      ["例1 已知向量 A，求其模。", "答案：A"].join("\n"),
+      { ...config, subject: "数学" },
+    );
+
+    expect(mathBlocks[1].questionType).toBe("multiple");
+    expect(mathFormulaBlocks[1].questionType).toBe("single");
+    expect(geographyBlocks[1].questionType).toBe("multiple");
+    expect(nonChoiceBlocks[0].questionType).not.toBe("single");
+    expect(nonChoiceBlocks[0].questionType).not.toBe("multiple");
   });
 
   it("keeps formulas and extracts inline options", () => {
@@ -131,6 +220,56 @@ describe("document block parser", () => {
       type: "question",
       content: `${number}\n已知集合 A={1,2}，写出其所有子集。`,
     });
+  });
+
+  it("recovers consecutive math questions when their number punctuation is missing", () => {
+    const blocks = parseDocumentBlocks([
+      "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：",
+      "（1）任意一个质数都是奇数；",
+      "（2）所有实数的绝对值都是正数。",
+      "本题考查全称量词与存在量词。",
+      "62（苏教版必修第一册）试判断下列命题的真假：",
+      "（1）∀x∈R，2x²-3x+4>0；",
+      "（2）∃x∈N，x²≤x。",
+      "63。已知集合 A={1,2}，求其子集个数。",
+      "64. 求方程 x²=1 的解。",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.content)).toEqual([
+      "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：\n（1）任意一个质数都是奇数；\n（2）所有实数的绝对值都是正数。\n本题考查全称量词与存在量词。",
+      "62. （苏教版必修第一册）试判断下列命题的真假：\n（1）∀x∈R，2x²-3x+4>0；\n（2）∃x∈N，x²≤x。",
+      "63. 已知集合 A={1,2}，求其子集个数。",
+      "64. 求方程 x²=1 的解。",
+    ]);
+  });
+
+  it("recovers a missing first math question marker using the following numbered question", () => {
+    const blocks = parseDocumentBlocks([
+      "61: 已知 x+1=2，求 x。",
+      "62. 已知 y+1=3，求 y。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.content)).toEqual([
+      "61. 已知 x+1=2，求 x。",
+      "62. 已知 y+1=3，求 y。",
+    ]);
+  });
+
+  it("does not mistake math expressions, quantities, or unanchored numbers for consecutive questions", () => {
+    const text = [
+      "61. 已知 x 的取值范围，求 x。",
+      "62x+1=0 为另一个条件。",
+      "62 个数据组成一组样本。",
+      "63 已知另一个条件，求其值。",
+      "64. 求最后一个问题的解。",
+    ].join("\n");
+    const mathBlocks = parseDocumentBlocks(text, { ...config, subject: "数学" });
+    const otherBlocks = parseDocumentBlocks(text, { ...config, subject: "语文" });
+    expect(mathBlocks.filter((block) => block.type === "question").map((block) => block.content)).toEqual([
+      "61. 已知 x 的取值范围，求 x。\n62x+1=0 为另一个条件。\n62 个数据组成一组样本。",
+      "63. 已知另一个条件，求其值。",
+      "64. 求最后一个问题的解。",
+    ]);
+    expect(otherBlocks.filter((block) => block.type === "question")).toHaveLength(2);
   });
 
   it("keeps an established numbered list inside a summary", () => {
@@ -2216,6 +2355,7 @@ describe("document block parser", () => {
       type: "question",
       questionType: "short",
       content: "1. 函数的值域为______。",
+      fillBlankOriginalContent: "1. 函数的值域为   。",
       answer: "正无穷",
     });
   });
@@ -2234,7 +2374,342 @@ describe("document block parser", () => {
       type: "question",
       questionType: "short",
       content: "1. 方程的根为____。",
+      fillBlankOriginalContent: "1. 方程的根为。",
       answer: "2",
     });
+  });
+});
+
+describe("geography paper extraction", () => {
+  const geographyConfig = { ...config, subject: "地理" };
+
+  it("joins a passage across blank lines with numbered choice subquestions and maps end-of-paper answers", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单项选择题",
+      "下图表示某区域的气温分布。",
+      "图中甲地海拔较高，据此完成下面小题。",
+      "",
+      "1. 甲地气温较低的主要原因是 A. 纬度 B. 海拔 C. 洋流 D. 季风",
+      "",
+      "2. 乙地气温的影响因素是 A. 洋流 B. 地形 C. 光照 D. 植被",
+      "某校地理试卷参考答案",
+      "1. B",
+      "2. A",
+    ].join("\n"), geographyConfig);
+
+    expect(blocks.filter((block) => block.type === "knowledge")).toHaveLength(0);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({
+      questionType: "single",
+      answer: "（1）B\n（2）A",
+      categories: expect.arrayContaining(["单选题·2个小题"]),
+    });
+    expect(questions[0].content).toContain("下图表示某区域的气温分布。");
+    expect(questions[0].content).toContain("据此完成下面小题");
+    expect(questions[0].content).toContain("2. 乙地气温");
+  });
+
+  it("starts a new passage after a blank line rather than appending it to the preceding option", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单项选择题",
+      "1. 降水的主要来源是 A. 河流 B. 湖泊 C. 海洋 D. 土壤",
+      "",
+      "图2表示另一地区的气候，据此完成下面小题。",
+      "",
+      "2. 该区主要气候类型是 A. 热带 B. 温带 C. 寒带 D. 高山",
+      "3. 该区冬季降水较多的原因是 A. 西风 B. 季风 C. 台风 D. 寒流",
+    ].join("\n"), geographyConfig);
+
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].options).toEqual(["河流", "湖泊", "海洋", "土壤"]);
+    expect(questions[1].content).toContain("图2表示另一地区的气候");
+    expect(questions[1].content).toContain("3. 该区冬季降水");
+    expect(blocks.some((block) => block.type === "knowledge")).toBe(false);
+  });
+
+  it("recognizes a shared stem without an explicit choice-section heading", () => {
+    const blocks = parseDocumentBlocks([
+      "下图为某地聚落分布。据此完成下面小题。",
+      "",
+      "1. 聚落主要沿什么分布 A. 河流 B. 沙漠 C. 山脊 D. 冰川",
+      "2. 聚落用水来自哪里 A. 海洋 B. 河流 C. 冰川 D. 雨水",
+    ].join("\n"), geographyConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({
+      questionType: "single",
+      categories: expect.arrayContaining(["单选题·2个小题"]),
+    });
+    expect(questions[0].content).toContain("下图为某地聚落分布");
+    expect(blocks.some((block) => block.type === "knowledge")).toBe(false);
+  });
+
+  it("keeps separate reading passages in distinct geography groups", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单项选择题",
+      "材料甲为季风环流示意图，据此完成下面小题。",
+      "1. 甲季风盛行于 A. 春 B. 夏 C. 秋 D. 冬",
+      "2. 该季风形成原因是 A. 热力差异 B. 地转偏向 C. 洋流 D. 山地",
+      "",
+      "材料乙为洋流示意图，据此完成下面小题。",
+      "3. 乙洋流性质为 A. 暖流 B. 寒流 C. 潮汐 D. 河流",
+      "4. 乙洋流影响是 A. 降温 B. 增温 C. 增盐 D. 降盐",
+      "学校地理试卷参考答案",
+      "1. B",
+      "2. A",
+      "3. C",
+      "4. D",
+    ].join("\n"), geographyConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions.map((block) => block.answer)).toEqual(["（1）B\n（2）A", "（1）C\n（2）D"]);
+    expect(questions[0].content).toContain("材料甲");
+    expect(questions[0].content).not.toContain("材料乙");
+    expect(questions[1].content).toContain("材料乙");
+    expect(blocks.some((block) => block.type === "knowledge")).toBe(false);
+  });
+
+  it("groups numbered geography comprehensive subquestions under their common reading passage", () => {
+    const blocks = parseDocumentBlocks([
+      "二、综合题",
+      "阅读下列资料，据此回答下列问题。",
+      "",
+      "21. 描述该流域的气候特征。",
+      "22. 分析区域农业发展的条件。",
+      "参考答案",
+      "21. 夏季湿润，冬季干燥。",
+      "22. 光热充足，水源便利。",
+    ].join("\n"), geographyConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].content).toContain("阅读下列资料");
+    expect(questions[0].content).toContain("22. 分析区域农业");
+    expect(questions[0]).toMatchObject({
+      questionType: "comprehensive",
+      categories: expect.arrayContaining(["综合题·2问"]),
+      answer: "（1）夏季湿润，冬季干燥。\n（2）光热充足，水源便利。",
+    });
+  });
+
+  it("reads compact numbered answers on the same line as the answer section label", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案：1. C  2. D",
+    ].join("\n"), geographyConfig);
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.answer)).toEqual(["C", "D"]);
+  });
+
+  it("does not confuse an inline question answer with a new trailing answer section", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 题目一 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：1. B",
+      "2. 题目二 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：A",
+    ].join("\n"), config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].answer).toBe("1. B");
+    expect(blocks[1].answer).toBe("A");
+  });
+
+  it("accepts an answer-section heading with descriptive text after it", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二小题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案与解析（地理学科）",
+      "1. C",
+      "2. D",
+    ].join("\n"), geographyConfig);
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.answer)).toEqual(["C", "D"]);
+  });
+});
+
+
+describe("inline answers in mathematics documents", () => {
+  it("recognizes a correct letter inside the stem parentheses and removes the leaked letter", () => {
+    const blocks = parseDocumentBlocks("一、单项选择题\n1. 下列结论正确的是（ B ）。 A. 甲 B. 乙 C. 丙 D. 丁", config);
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question).toMatchObject({ questionType: "single", answer: "B" });
+    expect(question.content).not.toContain("（ B ）");
+    expect(question.content).toContain("（ ）");
+  });
+
+  it("extracts multiple correct choice letters without treating normal formulas as answers", () => {
+    const blocks = parseDocumentBlocks("一、多项选择题\n1. 正确的是（ACD） A. 甲 B. 乙 C. 丙 D. 丁", config);
+    expect(blocks.find((block) => block.type === "question")).toMatchObject({ answer: "ACD" });
+    const unchanged = parseDocumentBlocks("一、单项选择题\n1. 若 x∈(A)，则判断正确的是（ ） A. 甲 B. 乙 C. 丙 D. 丁", config);
+    expect(unchanged.find((block) => block.type === "question")?.content).toContain("(A)");
+  });
+
+  it("extracts each underlined fill answer, keeping the blank positions", () => {
+    const blocks = parseDocumentBlocks("二、填空题\n2. 解为 <u>2</u>，根的个数是 <u>两个</u>。", config);
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question).toMatchObject({ questionType: "short", answer: "2；两个" });
+    expect(question.content).not.toContain("<u>");
+    expect(question.content.match(/_{4,}/g)).toHaveLength(2);
+  });
+
+  it("preserves an explicit answer instead of overwriting it with an underlined run", () => {
+    const blocks = parseDocumentBlocks("二、填空题\n2. 求值：<u>2</u>\n答案：3", config);
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question.answer).toBe("3");
+    expect(question.content).toContain("____");
+  });
+
+  it("extracts ordered knowledge answers but leaves ordinary blank lines and math intact", () => {
+    const blocks = parseDocumentBlocks("【知识点1】公式为 <u>a+b</u>，定义域是 <u>实数集</u>，另留 ____，且 $x_1$ 不变。", config);
+    const block = blocks.find((item) => item.type === "knowledge")!;
+    expect(block.inlineAnswers).toEqual(["a+b", "实数集"]);
+    expect(block.content).toContain('data-answer-index="1"');
+    expect(block.content).toContain('data-answer-index="2"');
+    expect(block.content).toContain("$x_1$");
+    expect(block.content).toContain("另留 ____");
+    expect(block.content).not.toContain("<u>");
+  });
+});
+
+
+describe("math question number continuity", () => {
+  const mathConfig = { ...config, subject: "数学" };
+
+  it("recognizes alternative numbering punctuation without changing the source text", () => {
+    const source = [
+      "1. 第一题：计算。",
+      "2，第二题：求值。",
+      "3。第三题：证明。",
+      "4；第四题：计算。",
+      "5—第五题：求解。",
+      "6：第六题：求解。",
+    ].join("\n");
+    const blocks = parseDocumentBlocks(source, mathConfig);
+    expect(blocks.map((block) => block.content)).toEqual(source.split("\n"));
+    expect(blocks.every((block) => block.type === "question")).toBe(true);
+    expect(findMathQuestionNumberSequenceGaps(blocks)).toEqual([]);
+  });
+
+  it("reports uncertain gaps instead of silently inventing missing questions", () => {
+    const source = ["1. 第一题", "2? 第二题", "3. 第三题"].join("\n");
+    const blocks = parseDocumentBlocks(source, mathConfig);
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+    expect(findMathQuestionNumberSequenceGaps(blocks)).toEqual([{
+      previous: 1, next: 3, missing: [2],
+    }]);
+    const recovered = parseDocumentBlocks(source, {
+      ...mathConfig,
+      confirmedMathQuestionNumbers: [2],
+    });
+    expect(recovered.map((block) => block.content)).toEqual(source.split("\n"));
+    expect(findMathQuestionNumberSequenceGaps(recovered, [2])).toEqual([]);
+  });
+
+  it("does not split expressions starting with multiplication dots or a minus sign", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 计算以下表达式。",
+      "2·x+1=3",
+      "3-x=2",
+      "4. 计算另一道题。",
+    ].join("\n"), mathConfig);
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+    expect(blocks[0].content).toContain("2·x+1=3");
+    expect(blocks[0].content).toContain("3-x=2");
+  });
+
+  it("never uses confirmed question numbers to cut through an arithmetic expression", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 求下列各式的值：",
+      "2+3=5",
+      "3. 计算另一个式子。",
+    ].join("\n"), { ...mathConfig, confirmedMathQuestionNumbers: [2] });
+    expect(blocks).toHaveLength(2);
+    expect(findMathQuestionNumberSequenceGaps(blocks, [2])[0]?.missing).toEqual([2]);
+  });
+
+  it("does not change punctuation parsing for other subjects", () => {
+    const blocks = parseDocumentBlocks("1. 第一题\n2，第二题\n3. 第三题", config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].content).toContain("2，第二题");
+  });
+});
+
+
+describe("math question numbering", () => {
+  const mathConfig = { ...config, subject: "数学" };
+
+  it("separates the next consecutive question from an unnumbered summary", () => {
+    const blocks = parseDocumentBlocks([
+      "12. 已知命题 p 与 q，判断真假。",
+      "解：分别讨论四种情况。",
+      "总结：",
+      "对于命题，学生要能判断它们的真假。",
+      "13.指出下列命题中的条件 p 和结论 q：",
+      "（1）若 ab=0，则 a=0。",
+      "（2）若 a<0，则 |a|>0。",
+    ].join("\n"), mathConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].summary).toBe("对于命题，学生要能判断它们的真假。");
+    expect(questions[1].content).toContain("13.指出下列命题中的条件");
+    expect(questions[1].content).toContain("（2）若 a<0");
+  });
+
+  it.each(["13·指出条件", "13。指出条件", "13—指出条件", "13 指出条件", "１３．指出条件"])(
+    "recovers a consecutive math number with an unusual delimiter (%s)", (next) => {
+      const blocks = parseDocumentBlocks([
+        "12. 判断命题 p 的真假。",
+        "总结：需要辨析命题和条件。",
+        next,
+        "14. 求函数的定义域。",
+      ].join("\n"), mathConfig);
+      expect(blocks.filter((block) => block.type === "question")).toHaveLength(3);
+      expect(blocks[1]).toMatchObject({ type: "question", content: next });
+    },
+  );
+
+  it("does not treat decimals or established numbered summary lists as new questions", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 判断下列命题。",
+      "总结：",
+      "1. 先辨析条件。",
+      "2. 再判断命题的真假。",
+      "补充：13.5 是小数，不是题号。",
+      "2. 求下列函数的值。",
+    ].join("\n"), mathConfig);
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+    expect(blocks[0].summary).toContain("2. 再判断");
+  });
+
+  it("reports missing math numbers and supports teacher-confirmed local repair", () => {
+    const blocks = parseDocumentBlocks([
+      "12. 已知命题 p，求证。",
+      "总结：先化简。",
+      "13指出下列命题的条件。",
+      "（1）若 ab=0，则 a=0。",
+    ].join("\n"), mathConfig);
+    expect(blocks).toHaveLength(1);
+    expect(findSuspectedMathQuestionNumbers(blocks, mathConfig)).toEqual([{
+      blockId: blocks[0].id,
+      number: 13,
+    }]);
+    const repaired = reparseMathQuestionBlock(blocks[0], mathConfig, [13]);
+    expect(repaired).toHaveLength(2);
+    expect(repaired![0].summary).toBe("先化简。");
+    expect(repaired![1].content).toContain("13指出下列命题");
+    expect(repaired![1].content).toContain("（1）若 ab=0");
+    expect(reparseMathQuestionBlock(blocks[0], mathConfig, [13, 14])).toBeNull();
+    expect(findMathQuestionNumberGaps(repaired!, mathConfig)).toEqual([]);
+  });
+
+  it("highlights gaps between recognized questions within a section", () => {
+    const blocks = parseDocumentBlocks([
+      "11. 解方程。",
+      "13. 判断命题。",
+    ].join("\n"), mathConfig);
+    expect(findMathQuestionNumberGaps(blocks, mathConfig)).toEqual([{
+      afterBlockId: blocks[0].id,
+      previousNumber: 11,
+      nextNumber: 13,
+    }]);
   });
 });

@@ -46,6 +46,7 @@ const SchoolAdminApplicationsPage = lazy(() => import("@/pages/admin/SchoolAdmin
 const SchoolCreationApplicationsPage = lazy(() => import("@/pages/admin/SchoolCreationApplicationsPage"));
 const SchoolRosterPage = lazy(() => import("@/pages/admin/SchoolRosterPage"));
 const ClassesPage = lazy(() => import("@/pages/classes/ClassesPage"));
+const IndividualTutoringPage = lazy(() => import("@/pages/individual-tutoring/IndividualTutoringPage"));
 const PrepWorkspacePage = lazy(() => import("@/pages/prep/PrepWorkspacePage"));
 const PrepTaskDetailPage = lazy(() => import("@/pages/prep/PrepTaskDetailPage"));
 const MyLessonsPage = lazy(() => import("@/pages/lessons/MyLessonsPage"));
@@ -134,6 +135,9 @@ export default function App() {
             <Route path="/my-students/grades" element={<StudentGradesPage />} />
             <Route path="/my-students/exam-rooms" element={<Navigate to="/my-exams/rooms" replace />} />
             <Route path="/student-learning" element={<MyStudentsPage />} />
+
+            <Route path="/individual-tutoring" element={<Navigate to="/individual-tutoring/classes" replace />} />
+            <Route path="/individual-tutoring/:section" element={<IndividualTutoringPage />} />
 
             {/* 我的考试（年级组长及学校管理身份） */}
             <Route path="/my-exams" element={<RequireExamManager><MyExamsPage /></RequireExamManager>} />

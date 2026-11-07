@@ -44,6 +44,7 @@ import {
   normalizeGradeSettings,
 } from "@/lib/grade-statistics";
 import { GradeSettingsEditor } from "@/pages/students/GradeSettingsEditor";
+import { previewGradeExam } from "@/lib/grade-exam-preview";
 import { GradeImportWizard } from "@/pages/students/GradeImportWizard";
 import { GradeClassAverageTable } from "@/pages/students/GradeClassAverageTable";
 import { GradeTotalScoreSegmentTable } from "@/pages/students/GradeTotalScoreSegmentTable";
@@ -299,6 +300,10 @@ function GradePreprocessing({
     canManageExams && selectedExam && (selectedExam.teacherId === teacherId || isSchoolAdmin),
   );
   const readOnly = !canManageExams || Boolean(selectedExam && !canEditSelected);
+  const previewExam = useMemo(() => selectedExam && draft && context
+    && !readOnly && !selectedExam.publication && !selectedExam.accessControl?.locked
+    ? previewGradeExam(selectedExam, draft, context)
+    : selectedExam, [selectedExam, draft, context, readOnly]);
   useEffect(() => {
     const key = `${cohortKey}:${selectedExam?.id || ""}:${Boolean(selectedExam?.accessControl?.locked)}`;
     if (lastSelectedExam.current === key) return;
@@ -371,8 +376,24 @@ function GradePreprocessing({
     setImportOpen(false);
     setExams((current) => [exam, ...current.filter((item) => item.id !== exam.id)]);
     setSelectedExamId(exam.id);
+    setSubjects(exam.subjects);
+    setCohortDraft(structuredClone(exam.settings));
     setContext((current) => current ? {
       ...current,
+      classProfiles: Object.fromEntries(current.classes.map((classItem) => {
+        const imported = exam.records.filter((record) => record.classId === classItem.id);
+        const previous = current.classProfiles?.[classItem.id];
+        return [classItem.id, {
+          ...previous,
+          subjectSelections: [...new Set([
+            ...(previous?.subjectSelections || []),
+            ...imported.map((record) => record.subjectSelection?.trim()).filter((value): value is string => Boolean(value)),
+          ])],
+          scoreSubjects: exam.subjects.filter((subject) => imported.some((record) =>
+            typeof record.scores[subject] === "number" || typeof record.sourceAssignedScores?.[subject] === "number")),
+          hasImportedScores: imported.length > 0,
+        }];
+      })),
       sampleRecords: exam.records.slice(0, 8),
     } : current);
   };
@@ -506,13 +527,13 @@ function GradePreprocessing({
     }
     await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
     await exportGradeTablesOneToFive({
-      exam: selectedExam,
+      exam: previewExam!,
       settings: draft,
       context,
       classAverageTemplate,
       totalScoreSegmentTemplate,
     });
-  }, [classAverageTemplate, context, draft, selectedExam, teacherId, totalScoreSegmentTemplate]);
+  }, [classAverageTemplate, context, draft, previewExam, selectedExam, teacherId, totalScoreSegmentTemplate]);
 
   const printTablesOneToFive = useCallback(() => {
     document.body.classList.add("grade-summary-printing");
@@ -526,13 +547,13 @@ function GradePreprocessing({
   const downloadClassStatistics = useCallback(async () => {
     if (!selectedExam) throw new Error("请选择需要导出的考试");
     const report = buildGradeClassStatisticsReport(
-      selectedExam,
+      previewExam!,
       previousExams,
       classStatisticsOptions,
     );
     await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
     await exportGradeClassStatisticsReport(report, selectedExam.name);
-  }, [classStatisticsOptions, previousExams, selectedExam, teacherId]);
+  }, [classStatisticsOptions, previousExams, previewExam, selectedExam, teacherId]);
 
   const copy = async () => {
     if (!copySource || !cohortKey || readOnly || settingsScope === "exam") return;
@@ -752,7 +773,7 @@ function GradePreprocessing({
           <div className="grade-summary-print-root space-y-4">
             {selectedExam && classAverageTemplate && (
               <GradeClassAverageTable
-                exam={selectedExam}
+                exam={previewExam!}
                 settings={draft}
                 template={classAverageTemplate}
                 context={context}
@@ -762,7 +783,7 @@ function GradePreprocessing({
             {selectedExam && totalScoreSegmentTemplate && (
               <>
               <GradeTotalScoreSegmentTable
-                exam={selectedExam}
+                exam={previewExam!}
                 settings={draft}
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
@@ -771,7 +792,7 @@ function GradePreprocessing({
                 onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               <GradeSubjectScoreSegmentTable
-                exam={selectedExam}
+                exam={previewExam!}
                 settings={draft}
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
@@ -780,7 +801,7 @@ function GradePreprocessing({
                 onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               <GradeElectiveScoreSegmentTable
-                exam={selectedExam}
+                exam={previewExam!}
                 settings={draft}
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
@@ -789,7 +810,7 @@ function GradePreprocessing({
                 onAutoSave={readOnly || selectedExam?.publication ? undefined : autoSaveSegmentSettings}
               />
               <GradeTotalScoreRankingTable
-                exam={selectedExam}
+                exam={previewExam!}
                 settings={draft}
                 template={totalScoreSegmentTemplate}
                 classAverageTemplate={classAverageTemplate || undefined}
@@ -802,7 +823,7 @@ function GradePreprocessing({
           </div>
           {selectedExam && (
             <GradeClassStatisticsTable
-              exam={selectedExam}
+              exam={previewExam!}
               comparisonExams={previousExams}
               options={classStatisticsOptions}
               onOptionsChange={setClassStatisticsOptions}
@@ -847,7 +868,7 @@ function GradePreprocessing({
         onChange={readOnly || Boolean(selectedExam?.publication) ? () => {} : setDraft}
         onTeacherImport={selectedExam?.publication ? undefined : saveTeacherImport}
         section="settings"
-        records={selectedExam?.records || []}
+        records={previewExam?.records || []}
       />}
 
       {canManageExams && <GradeImportWizard

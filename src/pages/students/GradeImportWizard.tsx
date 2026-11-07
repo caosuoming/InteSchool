@@ -50,7 +50,6 @@ import {
 import {
   buildDefaultGradeSettings,
   DEFAULT_ASSIGNMENT_RULES,
-  inferClassSubjectAvailability,
   normalizeGradeSettings,
 } from "@/lib/grade-statistics";
 import {
@@ -325,41 +324,7 @@ export function GradeImportWizard({
       setSelectedRowKeys(new Set());
       setSortKey(null);
       setSortDirection("asc");
-      const importedSubjects = mappedSubjects(mappings);
-      const studentClassIds = new Map<string, string>(
-        context.students.map((student): [string, string] => [student.id, student.classId]),
-      );
-      const classSubjectAvailability = inferClassSubjectAvailability(
-        matched.flatMap((row) => {
-          const classId: string | undefined = row.createStudent?.classId
-            || (row.studentId ? studentClassIds.get(row.studentId) : undefined);
-          return classId ? [{ classId, scores: row.scores, assignedScores: row.assignedScores }] : [];
-        }),
-        importedSubjects,
-      );
-      const defaults = buildDefaultGradeSettings(
-        importedSubjects,
-        context.classes.map((item) => item.id),
-        context.teachers,
-        classSubjectAvailability,
-        Object.fromEntries(Object.entries(context.classProfiles || {}).map(
-          ([classId, profile]) => [classId, profile.subjectSelections],
-        )),
-      );
-      const formulaDefaults = context.templateProfile
-        ? { ...defaults, templates: structuredClone(context.templateProfile.templates) }
-        : defaults;
-      const preparedSettings = cohortSettings
-        ? normalizeGradeSettings(
-            context.templateProfile
-              ? { ...cohortSettings.settings, templates: structuredClone(context.templateProfile.templates) }
-              : cohortSettings.settings,
-            importedSubjects,
-            context.classes.map((item) => item.id),
-            context.teachers.map((item) => item.id),
-          )
-        : formulaDefaults;
-      setSettings(withoutImportedAssignmentRules(preparedSettings, scoreAvailability));
+      setSettings(null);
       setStep(2);
     } catch (error) {
       toast.error("字段映射不完整", error instanceof Error ? error.message : undefined);
@@ -454,6 +419,34 @@ export function GradeImportWizard({
       );
       return;
     }
+    if (!context) return;
+    const studentById = new Map(context.students.map((student) => [student.id, student]));
+    const selectionsByClass = Object.fromEntries(context.classes.map((classItem) => {
+      const studentSelections = context.students
+        .filter((student) => student.classId === classItem.id)
+        .map((student) => student.subjectSelection?.trim())
+        .filter((selection): selection is string => Boolean(selection));
+      const incomingSelections = rows
+        .filter((row) => (row.createStudent?.classId || studentById.get(row.studentId || "")?.classId) === classItem.id)
+        .map((row) => row.subjectSelection?.trim())
+        .filter((selection): selection is string => Boolean(selection));
+      return [classItem.id, [...new Set(studentSelections.length || incomingSelections.length
+        ? [...studentSelections, ...incomingSelections]
+        : context.classProfiles?.[classItem.id]?.subjectSelections || [])]];
+    }));
+    const defaults = buildDefaultGradeSettings(
+      subjects, context.classes.map((item) => item.id), context.teachers, {}, selectionsByClass,
+    );
+    const source = cohortSettings
+      ? { ...cohortSettings.settings, classSubjects: defaults.classSubjects }
+      : defaults;
+    const withTemplates = context.templateProfile
+      ? { ...source, templates: structuredClone(context.templateProfile.templates) }
+      : source;
+    const prepared = normalizeGradeSettings(
+      withTemplates, subjects, context.classes.map((item) => item.id), context.teachers.map((item) => item.id),
+    );
+    setSettings(withoutImportedAssignmentRules(prepared, scoreAvailability));
     setStep(3);
   };
 

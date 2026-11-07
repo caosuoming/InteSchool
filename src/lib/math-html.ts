@@ -8,7 +8,7 @@ import {
 } from "@/lib/office-metafile";
 
 const ESCAPED_DOLLAR = "\uE000INTESCHOOL_DOLLAR\uE001";
-const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea";
+const SKIP_SELECTOR = ".katex, .katex-formula, script, style, textarea, pre, code";
 const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
 const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)(math-(?:variable|vector)(?:\s+math-vector-zero)?)(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
@@ -28,7 +28,7 @@ function sanitizeRichText(content: string): string {
   return sanitizeHtml(content, {
     allowedTags: SAFE_RICH_TEXT_TAGS,
     allowedAttributes: {
-      "*": ["class", "title", "role", "aria-hidden", "data-latex", "style"],
+      "*": ["class", "title", "role", "aria-hidden", "data-latex", "data-answer-index", "data-answer-step", "style"],
       a: ["href", "title", "target", "rel"],
       img: ["src", "alt", "title", "width", "height", "loading"],
       th: ["colspan", "rowspan", "scope"],

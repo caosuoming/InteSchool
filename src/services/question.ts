@@ -127,6 +127,18 @@ export const questionService = {
     return result;
   },
 
+  async markSameQuestion(questionId: string, otherQuestionId: string, teacherId: string): Promise<Question> {
+    const result = await rpcCall<Question>("question", "markSameQuestion", [questionId, otherQuestionId, teacherId]);
+    clearResourceCache("question");
+    return result;
+  },
+
+  async getSameQuestionKnowledgeSuggestions(questionId: string, teacherId: string): Promise<Array<{ id: string; name: string }>> {
+    return rpcCall<Array<{ id: string; name: string }>>(
+      "question", "getSameQuestionKnowledgeSuggestions", [questionId, teacherId],
+    );
+  },
+
   async deleteQuestion(id: string): Promise<void> {
     await rpcCall("question", "deleteQuestion", [id]);
     clearResourceCache("question");

@@ -28,6 +28,9 @@ import { ResizableSplitPane } from "@/components/layout/ResizableSplitPane";
 import { StudentRosterSidebar } from "./StudentRosterSidebar";
 import { buildStudentRosterGroups } from "./student-roster";
 import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
+import { AllSubjectScoreChart, RankTrendStrip } from "./StudentScoreTrends";
+import { classRankTrend, studentScoreHistory, studentSubjectTrend } from "./student-score-trends";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Textarea, Select } from "@/components/ui/Input";
@@ -78,6 +81,8 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [myClasses, setMyClasses] = useState<AnyClass[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [interactions, setInteractions] = useState<StudentInteractionView[]>([]);
   const [keyword, setKeyword] = useState("");
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
@@ -263,23 +268,21 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     () => new Map(knowledgePoints.map((point) => [point.id, point] as const)),
     [knowledgePoints],
   );
-  const recentExamScores = useMemo(() => {
-    if (!selectedStudentId || !gradeQueryData?.subject) return [];
-    const subject = gradeQueryData.subject;
-    return gradeQueryData.exams
-      .flatMap((exam) => {
-        const record = exam.records.find((item) => item.studentId === selectedStudentId);
-        if (!record) return [];
-        const assigned = record.assignedScores[subject];
-        const raw = record.scores[subject];
-        const score = typeof assigned === "number" ? assigned : raw;
-        if (typeof score !== "number" || !Number.isFinite(score)) return [];
-        const timestamp = new Date(exam.examDate || exam.createdAt).getTime();
-        return [{ exam, score, timestamp: Number.isFinite(timestamp) ? timestamp : 0 }];
-      })
-      .sort((left, right) => right.timestamp - left.timestamp)
-      .slice(0, 2);
-  }, [gradeQueryData, selectedStudentId]);
+  const subjectTrend = useMemo(() => studentSubjectTrend(gradeQueryData, selectedStudentId), [gradeQueryData, selectedStudentId]);
+  const classTrend = useMemo(() => classRankTrend(gradeQueryData, selectedGroupId), [gradeQueryData, selectedGroupId]);
+  const scoreHistory = useMemo(() => studentScoreHistory(gradeQueryData, selectedStudentId), [gradeQueryData, selectedStudentId]);
+  const selectedGroup = studentGroups.find((group) => group.id === selectedGroupId);
+  const canViewFullHistory = Boolean(selectedStudent?.classId && gradeQueryData?.homeroomClassIds.includes(selectedStudent.classId));
+  const selectStudent = (studentId: string) => {
+    setSelectedGroupId(null);
+    setSelectedStudentId(studentId);
+    setHistoryOpen(false);
+  };
+  const selectGroup = (groupId: string) => {
+    setSelectedGroupId(groupId);
+    setSelectedStudentId(null);
+    setHistoryOpen(false);
+  };
 
   const handleToggleFollow = useCallback(async (studentId: string) => {
     if (followPendingStudentIds.has(studentId) || ignorePendingStudentIds.has(studentId)) return;
@@ -514,6 +517,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
             loading={loading}
             keyword={keyword}
             selectedStudentId={selectedStudentId}
+            selectedGroupId={selectedGroupId}
             expandedGroupIds={expandedGroupIds}
             followedStudentIds={followedStudentIds}
             ignoredStudentIds={ignoredStudentIds}
@@ -522,7 +526,8 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
             lastInteractionMap={lastInteractionMap}
             onKeywordChange={setKeyword}
             onToggleGroup={toggleStudentGroup}
-            onSelectStudent={setSelectedStudentId}
+            onSelectStudent={selectStudent}
+            onSelectGroup={selectGroup}
             onToggleFollow={(studentId) => void handleToggleFollow(studentId)}
             onToggleIgnore={(studentId) => void handleToggleIgnore(studentId)}
           />
@@ -560,18 +565,14 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                         )}
                       </div>
                     </div>
-                    <div className="min-w-[160px] rounded-lg bg-mist/60 px-3 py-2">
-                      <div className="text-[11px] font-medium text-ink-500">最近考试成绩{gradeQueryData?.subject ? ` · ${gradeQueryData.subject}` : ""}</div>
-                      <div className="mt-1 space-y-1">
-                        {recentExamScores.length > 0 ? recentExamScores.map(({ exam, score }) => (
-                          <div key={exam.id} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="max-w-[110px] truncate text-ink-700" title={exam.name}>{exam.name}</span>
-                            <span className="shrink-0 font-medium tabular-nums text-ink-800">{score}</span>
-                          </div>
-                        )) : (
-                          <div className="text-xs text-ink-400">暂无成绩</div>
+                    <div className="w-[260px] max-w-full min-w-0 rounded-lg bg-mist/60 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-medium text-ink-500">历次单科成绩 · {subjectTrend.subject || "暂无科目"}</div>
+                        {canViewFullHistory && (
+                          <button type="button" onClick={() => setHistoryOpen(true)} className="shrink-0 text-xs text-gold-700 hover:underline">更多</button>
                         )}
                       </div>
+                      <RankTrendStrip points={subjectTrend.points} label={`${selectedStudent.name}单科成绩与名次`} />
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -897,6 +898,21 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                 )}
               </Card>
             </div>
+          ) : selectedGroup ? (
+            <div className="h-full space-y-4">
+              <Card className="p-5">
+                <div className="text-lg font-serif font-semibold text-ink-900">{selectedGroup.name} · 历次考试班级名次</div>
+                <div className="mt-1 text-xs text-ink-500">
+                  {classTrend.subject ? `按${classTrend.subject}班级均分在同届参与比较的班级中排名；名次越小越靠前。` : "暂无可比较的班级考试数据。"}
+                </div>
+                <div className="mt-4">
+                  <RankTrendStrip points={classTrend.points} label={`${selectedGroup.name}班级考试名次`} large />
+                </div>
+                {classTrend.points.length > 0 && (
+                  <div className="mt-3 text-xs text-ink-500">各次考试的比较班级数可能不同；悬停在数据点上可查看考试、均分和名次。</div>
+                )}
+              </Card>
+            </div>
           ) : (
             <Card className="h-full flex items-center justify-center">
               <div className="text-center">
@@ -906,6 +922,15 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
             </Card>
           )}
       </ResizableSplitPane>
+      <Modal
+        open={historyOpen && canViewFullHistory}
+        onClose={() => setHistoryOpen(false)}
+        title={`${selectedStudent?.name || "学生"} · 全科历次成绩`}
+        description="展示有权限查看的历次考试各科成绩；使用赋分成绩（有赋分时），悬停数据点查看详情。"
+        size="xl"
+      >
+        <AllSubjectScoreChart exams={scoreHistory.exams} subjects={scoreHistory.subjects} />
+      </Modal>
     </div>
   );
 }

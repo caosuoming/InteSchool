@@ -15,9 +15,12 @@ import type {
   TreeNode,
 } from "../../src/types/index.js";
 import type { TeacherRecord } from "../types.js";
-import { db } from "../runtime-db.js";
+import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import { publishAnswerSheetsForUsage } from "./document-resource-lock.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
+import { recordClassroomQuestionProgress, type ClassroomQuestionProgressInput } from "./classroomQuestionProgress.js";
+import { sameQuestionIds, sameQuestionKey } from "./sameQuestion.js";
 
 /** 知识点掌握情况统计项 */
 export interface KnowledgeMastery {
@@ -120,6 +123,19 @@ function selectedAudienceStudentIds(
 }
 
 export const analyticsService = {
+  async recordClassroomQuestionProgress(input: ClassroomQuestionProgressInput, teacher: Teacher): Promise<AnswerRecord[]> {
+    const courseware = db.read("lessonCoursewares").find((item) => item.id === input?.coursewareId);
+    if (!teacher?.schoolId || courseware?.schoolId !== teacher.schoolId) throw new Error("无权访问该学校课件");
+    const currentAffiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId);
+    const assignedClasses = new Set([
+      ...(currentAffiliation?.teachingClassIds || teacher.teachingClassIds || []),
+      ...(currentAffiliation?.homeroomClassIds || teacher.homeroomClassIds || []),
+    ]);
+    if (courseware.teacherId !== teacher.id && !assignedClasses.has(input.classId)) {
+      throw new Error("无权记录该班级的课堂答题情况");
+    }
+    return recordClassroomQuestionProgress(input, teacher.schoolId);
+  },
   async listAnswerRecordsByQuestion(questionId: string, range?: DateRange): Promise<AnswerRecord[]> {
     await delay(200);
     const records = db.read("answerRecords").filter((a) => a.questionId === questionId);
@@ -150,6 +166,38 @@ export const analyticsService = {
         .map((record) => record.lectureId),
     );
     return requestedIds.filter((id) => used.has(id));
+  },
+
+  /** 查询与当前题目内容完全相同的题目，用于合并学生的历史作答。 */
+  async listSameQuestionIds(questionIds: string[], teacher: TeacherRecord): Promise<Record<string, string[]>> {
+    if (questionIds.length === 0) return {};
+    const questions = db.read("questions") as Question[];
+    const requested = new Set(questionIds);
+    const visible = questions.filter((q) =>
+      requested.has(q.id) && (q.teacherId === teacher.id || q.isShared),
+    );
+    const keyOf = (q: Question) =>
+      q.duplicateHash || computeDuplicateHash(q.stem, q.answer, q.options);
+    const schoolIdsByHash = new Map<string, string[]>();
+    const sharedIdsByHash = new Map<string, string[]>();
+    for (const candidate of questions) {
+      const hash = keyOf(candidate);
+      const schoolKey = JSON.stringify([candidate.schoolId, hash]);
+      schoolIdsByHash.set(schoolKey, [...(schoolIdsByHash.get(schoolKey) || []), candidate.id]);
+      if (candidate.isShared) {
+        sharedIdsByHash.set(hash, [...(sharedIdsByHash.get(hash) || []), candidate.id]);
+      }
+    }
+    const result: Record<string, string[]> = {};
+    for (const question of visible) {
+      const hash = keyOf(question);
+      const schoolKey = JSON.stringify([question.schoolId, hash]);
+      result[question.id] = [...new Set([
+        ...(schoolIdsByHash.get(schoolKey) || []),
+        ...(sharedIdsByHash.get(hash) || []),
+      ])].filter((id) => id !== question.id);
+    }
+    return result;
   },
 
   /** 批量获取多个学生在所有题目上的答题记录 */
@@ -196,7 +244,7 @@ export const analyticsService = {
         personalClassIdsByStudent,
       );
       if (audienceStudentIds.length === 0) return;
-      const ids = Array.from(questionIds);
+      const ids = Array.from(sameQuestionIds(questionIds, db.read("questions") as Question[]));
       if (ids.length === 0) return;
       for (const studentId of audienceStudentIds) {
         const assigned = pendingByStudent.get(studentId) || new Set<string>();
@@ -349,6 +397,7 @@ export const analyticsService = {
       db.update("answerRecords", (list) =>
         list.map((a) => (a.id === existing.id ? updated : a)),
       );
+      publishAnswerSheetsForUsage([input.lectureId], now);
       return updated;
     }
 
@@ -363,6 +412,7 @@ export const analyticsService = {
       answeredAt: new Date().toISOString(),
     };
     db.update("answerRecords", (list) => [...list, record]);
+    publishAnswerSheetsForUsage([input.lectureId], now);
     return record;
   },
 
@@ -416,6 +466,7 @@ export const analyticsService = {
     }
 
     db.update("answerRecords", () => Array.from(byKey.values()));
+    publishAnswerSheetsForUsage(items.map((item) => item.lectureId), now);
     const touchedQuestionIds = new Set(items.map((item) => item.questionId));
     db.update("questions", (list) =>
       list.map((question) =>
@@ -430,7 +481,7 @@ export const analyticsService = {
     await delay(150);
     let records = db.read("answerRecords").filter((a) => studentIds.includes(a.studentId));
     records = filterByDateRange(records, range);
-    return new Set(records.map((r) => r.questionId));
+    return sameQuestionIds(records.map((r) => r.questionId), db.read("questions") as Question[]);
   },
 
   // 获取指定学生列表在每道题上的平均正确率（用于推荐排序）
@@ -440,8 +491,9 @@ export const analyticsService = {
     let records = db.read("answerRecords").filter((a) => studentIds.includes(a.studentId));
     records = filterByDateRange(records, range);
     const scoreMap = new Map<string, number>();
+    const identities = new Map((db.read("questions") as Question[]).map((item) => [item.id, sameQuestionKey(item)]));
     for (const q of questions) {
-      const qRecords = records.filter((r) => r.questionId === q.id);
+      const qRecords = records.filter((r) => (identities.get(r.questionId) || r.questionId) === sameQuestionKey(q));
       const scoredRecords = qRecords.filter((r) => r.score !== "done");
       if (scoredRecords.length === 0) {
         scoreMap.set(q.id, 0.5);
@@ -454,12 +506,17 @@ export const analyticsService = {
     return scoreMap;
   },
 
-  // 为章节/知识点树注入学生已做题数与掌握率
+  // 按需为目录树注入已做、待做与资源篮题数及得分率
   async annotateTreeWithStudentProgress(
     tree: TreeNode,
     studentIds: string[],
-    type: "chapter" | "knowledge",
+    type: "chapter" | "knowledge" | "method" | "error",
     range?: DateRange,
+    options: {
+      includeDone?: boolean;
+      includePending?: boolean;
+      basketQuestionIds?: string[];
+    } = {},
   ): Promise<TreeNode> {
     await delay(100);
     const treeNodeIds = new Set<string>();
@@ -470,17 +527,29 @@ export const analyticsService = {
     collectTreeNodeIds(tree);
 
     const allQuestions = db.read("questions").filter((question: Question) => {
-      const ids = type === "chapter" ? question.chapterIds : question.knowledgePointIds;
+      const ids = type === "chapter" ? question.chapterIds
+        : type === "knowledge" ? question.knowledgePointIds : type === "method" ? question.thoughtMethodIds || [] : question.errorReasonIds || [];
       return ids.some((id) => treeNodeIds.has(id));
     });
     const knowledgePoints = type === "knowledge"
       ? db.read("knowledgePoints").filter((point: { id: string }) => treeNodeIds.has(point.id))
       : [];
-    let answeredRecords: AnswerRecord[] = db
-      .read("answerRecords")
-      .filter((record: AnswerRecord) => studentIds.includes(record.studentId));
-    answeredRecords = filterByDateRange(answeredRecords, range);
-    const answeredIds = new Set<string>(answeredRecords.map((record) => record.questionId));
+    const selectedStudents = new Set(studentIds);
+    const needAnswers = options.includeDone !== false || options.includePending;
+    const allAnswerRecords: AnswerRecord[] = needAnswers
+      ? db.read("answerRecords").filter((record: AnswerRecord) => selectedStudents.has(record.studentId))
+      : [];
+    const answeredRecords = options.includeDone === false ? [] : filterByDateRange(allAnswerRecords, range);
+    const answeredIds = options.includeDone === false ? undefined
+      : new Set<string>(answeredRecords.map((record) => record.questionId));
+    let pendingIds: Set<string> | undefined;
+    if (options.includePending && studentIds.length > 0) {
+      const alreadyAnswered = new Set(allAnswerRecords.map((record) => `${record.studentId}:${record.questionId}`));
+      const pending = await analyticsService.listPendingQuestionAssignments(studentIds);
+      pendingIds = new Set(pending
+        .filter((item) => !alreadyAnswered.has(`${item.studentId}:${item.questionId}`))
+        .map((item) => item.questionId));
+    }
     const scoredProgressByQuestionId = new Map<string, { correct: number; total: number }>();
     for (const record of answeredRecords) {
       const score = inferScore(record);
@@ -488,6 +557,7 @@ export const analyticsService = {
       const progress = scoredProgressByQuestionId.get(record.questionId) ?? { correct: 0, total: 0 };
       progress.total += 1;
       if (score === "correct") progress.correct += 1;
+      else if (score === "partial") progress.correct += 0.5;
       scoredProgressByQuestionId.set(record.questionId, progress);
     }
     return annotateTreeWithQuestionCounts(
@@ -496,7 +566,9 @@ export const analyticsService = {
       type,
       knowledgePoints,
       answeredIds,
-      scoredProgressByQuestionId,
+      options.includeDone === false ? undefined : scoredProgressByQuestionId,
+      pendingIds,
+      options.basketQuestionIds ? new Set(options.basketQuestionIds) : undefined,
     );
   },
 

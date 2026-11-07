@@ -4,6 +4,7 @@ import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
 import type { ExamPublication, ExamPublishTarget } from "../../src/types/index.js";
 import { hashPassword, verifyPassword as verifyPasswordHash } from "../lib/password.js";
+import { sameQuestionIds } from "./sameQuestion.js";
 
 /**
  * 试卷发布服务（校际统一考试）
@@ -52,11 +53,12 @@ export const examPublishService = {
 
     // 将关联题目在题库中隐藏（同校老师题库中相同题目也隐藏）
     if (params.questionIds.length > 0) {
-      db.update("questions", (list) =>
-        list.map((q) => {
+      db.update("questions", (list) => {
+        const linkedIds = sameQuestionIds(params.questionIds, list);
+        return list.map((q) => {
           // 通过查重哈希匹配同校老师题库中的相同题目
           const shouldHide =
-            params.questionIds.includes(q.id) ||
+            linkedIds.has(q.id) ||
             (q.schoolId === params.publisherSchoolId &&
               list.some((orig) =>
                 params.questionIds.includes(orig.id) &&
@@ -74,8 +76,8 @@ export const examPublishService = {
             }
           }
           return q;
-        }),
-      );
+        });
+      });
     }
 
     // 校本资源自动备份：发布到非自己所教的班级或学生时，备份试卷和关联题目

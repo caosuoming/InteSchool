@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import { uploadFile } from "@/services/api";
 import { HomeworkImageGallery } from "@/components/homework/HomeworkImageGallery";
+import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
 import { HOMEWORK_IMAGE_CATEGORIES, imageCategory } from "@/components/homework/homeworkImageCategories";
 import type { ChangeEvent } from "react";
 
@@ -397,6 +398,7 @@ export function ClassHomeworkOverview({
                 {homework.content && (
                   <div className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink-700">{homework.content}</div>
                 )}
+                <HomeworkPaperLinks papers={homework.linkedPapers} className="mt-2" />
                 {(homework.attachments?.length || 0) > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {homework.attachments?.map((attachment) => (

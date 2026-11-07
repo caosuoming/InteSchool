@@ -13,10 +13,11 @@ import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
 import { schoolBackupService } from "./schoolBackup.js";
 import { classService } from "./class.js";
-import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeLecturePatch } from "./document-resource-lock.js";
+import { answerSheetInvalidationPatch, hasDocumentAnswerRecords, withUsagePublishedAnswerSheet, sanitizeLecturePatch } from "./document-resource-lock.js";
 import { assertResourceCapacity } from "./quota.js";
 import { moveLectureToExamPaper } from "./document-library-move.js";
 import { lectureKnowledgePointIds } from "./document-knowledge.js";
+import { withLectureAnnotationSummary } from "./document-annotation-summary.js";
 
 function collectQuestionIds(sections: LectureSection[]): string[] {
   const ids: string[] = [];
@@ -61,7 +62,7 @@ function restoreEditableChapterHierarchy(sections: LectureSection[]): LectureSec
 }
 
 function withDerivedKnowledgePoints(lecture: Lecture): Lecture {
-  return { ...lecture, knowledgePointIds: lectureKnowledgePointIds(lecture) };
+  return { ...withUsagePublishedAnswerSheet(lecture), knowledgePointIds: lectureKnowledgePointIds(lecture) };
 }
 
 function matchFilter(l: Lecture, filter: LectureFilter): boolean {
@@ -91,6 +92,12 @@ function matchFilter(l: Lecture, filter: LectureFilter): boolean {
     if ((filter.methodLogic || "or") === "and") {
       if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
     } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
+  }
+  if (filter.errorReasonIds?.length) {
+    const ids = l.errorReasonIds || [];
+    if ((filter.errorReasonLogic || "or") === "and") {
+      if (!filter.errorReasonIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.errorReasonIds.some((id) => ids.includes(id))) return false;
   }
   if (filter.grade && l.grade !== filter.grade) return false;
   if (filter.schoolYear && l.schoolYear !== filter.schoolYear) return false;
@@ -131,11 +138,11 @@ export interface LectureColumnTemplateInput {
 export const lectureService = {
   async listLectures(filter: LectureFilter = {}): Promise<Lecture[]> {
     await delay(300);
-    return db
+    return withLectureAnnotationSummary(db
       .read("lectures")
       .filter((l) => matchFilter(l, filter))
       .map(withDerivedKnowledgePoints)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
   },
 
   async getLecture(id: string): Promise<Lecture | null> {
@@ -146,13 +153,14 @@ export const lectureService = {
 
   async listPublishedAnswerSheets(): Promise<Lecture[]> {
     return db.read("lectures")
-      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt))
-      .map(withDerivedKnowledgePoints);
+      .map(withDerivedKnowledgePoints)
+      .filter((item) => Boolean(item.hasAnswerSheet && item.answerSheetPublishedAt));
   },
 
   async getPublishedAnswerSheet(id: string): Promise<Lecture | null> {
     const item = db.read("lectures").find((entry) => entry.id === id);
-    return item?.hasAnswerSheet && item.answerSheetPublishedAt ? withDerivedKnowledgePoints(item) : null;
+    const result = item ? withDerivedKnowledgePoints(item) : null;
+    return result?.hasAnswerSheet && result.answerSheetPublishedAt ? result : null;
   },
 
   async publishAnswerSheet(id: string, settings?: Lecture["answerSheetSettings"]): Promise<Lecture> {
@@ -172,6 +180,7 @@ export const lectureService = {
   },
 
   async unpublishAnswerSheet(id: string): Promise<Lecture> {
+    if (hasDocumentAnswerRecords(id)) throw new Error("已有学生答题记录，不能撤回发布");
     let updated: Lecture | undefined;
     db.update("lectures", (list) => list.map((item) => {
       if (item.id !== id) return item;
@@ -311,10 +320,6 @@ export const lectureService = {
   async updateLecture(id: string, patch: Partial<Lecture>): Promise<Lecture> {
     await delay(300);
     maybeThrowError();
-    assertDocumentNotUsed(id);
-    if (db.read("lectures").some((item) => item.id === id && item.answerSheetPublishedAt)) {
-      throw new Error("答题卡已发布，请先撤回发布再编辑讲义");
-    }
     let updated: Lecture | null = null;
     db.update("lectures", (list) =>
       list.map((l) => {
@@ -558,6 +563,7 @@ export const lectureService = {
           title: block.title || `知识块 ${index + 1}`,
           type: "knowledge",
           content: block.content,
+          inlineAnswers: block.inlineAnswers,
           children: [],
         };
       }

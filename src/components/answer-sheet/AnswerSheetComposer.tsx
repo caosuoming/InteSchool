@@ -787,6 +787,7 @@ function AnswerField({
       boxStyle={boxStyle}
       compact={isFillQuestion(question)}
       lined={isFillQuestion(question)}
+      showScore={!isFillQuestion(question)}
       editable={editable}
       resizableBoth={isFillQuestion(question)}
       height={height}
@@ -899,6 +900,9 @@ interface AnswerSheetComposerProps {
   published?: boolean;
   onPublicationChange?: (publish: boolean, settings: AnswerSheetSettings) => Promise<void>;
   onSettingsChange?: (settings: AnswerSheetSettings) => void;
+  onExport?: (settings: AnswerSheetSettings) => Promise<void>;
+  onInvalidate?: () => Promise<void>;
+  exported?: boolean;
   onBack: () => void;
 }
 
@@ -944,6 +948,9 @@ export function AnswerSheetComposer({
   published = false,
   onPublicationChange,
   onSettingsChange,
+  onExport,
+  onInvalidate,
+  exported = false,
   onBack,
 }: AnswerSheetComposerProps) {
   const [settings, setSettings] = useState<AnswerSheetSettings>(() => buildInitialSettings(initialSettings));
@@ -1011,13 +1018,39 @@ export function AnswerSheetComposer({
     '.answer-sheet-paper[data-paper-view="preview"]',
   ) || []);
 
+  const publishAfterExport = async () => {
+    if (published || !onPublicationChange) return;
+    setPublishing(true);
+    try {
+      await onPublicationChange(true, settings);
+      toast.success("答题卡已自动发布，可在待扫描列表中查看");
+    } catch (error) {
+      toast.error("答题卡已导出，但自动发布失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const printSheet = () => {
+    try {
+      printAnswerSheet(previewPages(), settings.paperSize);
+      void Promise.resolve(onExport?.(settings))
+        .then(() => publishAfterExport())
+        .catch((error) => toast.error("记录答题卡打印失败", error instanceof Error ? error.message : undefined));
+    } catch (error) {
+      toast.error("打印答题卡失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
   const downloadPdf = async () => {
     if (exporting) return;
     const pages = previewPages();
     setExporting(true);
     try {
       await downloadAnswerSheetPdf(pages, `${title}_答题卡`, settings.paperSize);
+      await onExport?.(settings);
       toast.success("答题卡 PDF 已下载");
+      await publishAfterExport();
     } catch (error) {
       toast.error("答题卡 PDF 下载失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -1172,12 +1205,14 @@ export function AnswerSheetComposer({
     }
 
     groups.forEach((group, groupIndex) => {
-      items.push({
-        key: `group-heading-${groupIndex}`,
-        kind: "group-heading",
-        group,
-        groupIndex,
-      });
+      if (sourceLayoutMode !== "flat" || projects.length > 0) {
+        items.push({
+          key: `group-heading-${groupIndex}`,
+          kind: "group-heading",
+          group,
+          groupIndex,
+        });
+      }
       group.items.forEach((item, itemIndex) => {
         items.push({
           key: `question-${item.question.id}`,
@@ -1193,7 +1228,7 @@ export function AnswerSheetComposer({
 
     items.push({ key: "footer", kind: "footer" });
     return items;
-  }, [choiceItems, choiceRows, fillItems, fillRows, groups, settings.choiceLayout, settings.mode]);
+  }, [choiceItems, choiceRows, fillItems, fillRows, groups, projects.length, settings.choiceLayout, settings.mode, sourceLayoutMode]);
 
   const recalculatePagination = useCallback(() => {
     if (flowItems.length === 0 || pageContentHeightPx <= 0) return;
@@ -1288,7 +1323,10 @@ export function AnswerSheetComposer({
           className="box-border w-[38mm] shrink-0 border border-ink-900 px-[1mm] pb-[1mm] pt-[1mm]"
           data-testid="answer-sheet-identity-fields"
         >
-          <div className={isWidePaper ? "mb-1 whitespace-nowrap text-[10px]" : "mb-1 whitespace-nowrap text-xs"}>学校：______________</div>
+          <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
+            <span className="shrink-0">学校：</span>
+            <span className="h-5 min-w-0 flex-1 border-b border-ink-700" aria-label="学校填写区" />
+          </div>
           <div className={isWidePaper ? "mb-1 flex items-center gap-1 text-xs" : "mb-2 flex items-center gap-2 text-sm"}>
             <span className="shrink-0">班级：</span>
             <span className="h-5 min-w-10 flex-1 border-b border-ink-700" aria-label="班级填写区" />
@@ -1309,7 +1347,7 @@ export function AnswerSheetComposer({
             : "ml-auto flex w-[52mm] shrink-0 flex-col items-center border border-ink-900 p-2"}
           data-testid="answer-sheet-student-number-column"
         >
-          <div className="w-full text-left text-xs font-semibold leading-tight tracking-[0.35em]">学号</div>
+          <div className="w-full text-center text-xs font-semibold leading-tight tracking-[0.35em]">学号</div>
           <StudentNumberGrid digits={settings.studentNumberDigits} />
         </div>
         <div
@@ -1554,11 +1592,16 @@ export function AnswerSheetComposer({
                         {published ? "撤回发布" : "发布答题卡"}
                       </Button>
                     )}
-                    <Button variant="gold" loading={exporting} disabled={exporting} onClick={() => void downloadPdf()}>
+                    {exported && onInvalidate && (
+                      <Button variant="outline" onClick={() => void onInvalidate()}>
+                        答题卡作废
+                      </Button>
+                    )}
+                    <Button variant="gold" loading={exporting} disabled={exporting || publishing} onClick={() => void downloadPdf()}>
                       <Download className="h-4 w-4" />
                       下载答题卡
                     </Button>
-                    <Button variant="outline" onClick={() => printAnswerSheet(previewPages(), settings.paperSize)}>
+                    <Button variant="outline" onClick={printSheet} disabled={exporting || publishing}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>

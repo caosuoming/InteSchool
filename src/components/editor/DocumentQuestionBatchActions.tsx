@@ -85,10 +85,10 @@ export function DocumentQuestionBatchActions({ schoolId, questionIds, onUpdated,
   return (
     <div className="space-y-2" data-testid="document-question-batch-actions">
       <div className="text-[11px] font-medium text-ink-500">批量操作（{uniqueIds.length} 题）</div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-col items-stretch gap-1.5">
         {markAllButton}
         {modes.map(({ key, label, icon: Icon }) => (
-          <Button key={key} variant="outline" size="sm" onClick={() => void openPicker(key)}
+          <Button key={key} variant="outline" size="sm" className="w-full justify-start" onClick={() => void openPicker(key)}
             disabled={disabled || !schoolId || uniqueIds.length === 0}>
             <Icon className="h-3.5 w-3.5" />{label}
           </Button>

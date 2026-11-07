@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  BookCheck,
   CalendarClock,
   CalendarDays,
   Check,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
+import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
 import { Spinner } from "@/components/ui/Spinner";
 import { SUBJECT_OPTIONS } from "@/lib/education";
 import { cn } from "@/lib/utils";
@@ -45,6 +47,7 @@ import { toast } from "@/stores/ui";
 import type {
   ClassroomDeviceSnapshot,
   ClassroomHomework,
+  ClassroomHomeworkAnswer,
   HomeworkClassOverviewRecord,
   ClassroomNotice,
   LessonCourseware,
@@ -53,6 +56,7 @@ import type {
   Student,
 } from "@/types";
 import { PresentationMode } from "./PresentationMode";
+import { HomeworkAnswersPanel } from "./HomeworkAnswersPanel";
 
 const CLASSROOM_KEY = "inteschool-classroom-id";
 const DEFAULT_FONT_SIZE = 30;
@@ -180,6 +184,7 @@ function HomeworkRow({
                 fullscreenImages
                 className={cn(homework.content && "mt-4")}
               />
+              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" className="mt-3" />
             </div>
           ))}
         </div>
@@ -295,6 +300,9 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [answersOpen, setAnswersOpen] = useState(false);
+  const [answersLoading, setAnswersLoading] = useState(false);
+  const [homeworkAnswers, setHomeworkAnswers] = useState<ClassroomHomeworkAnswer[]>([]);
   const [allLessonsOpen, setAllLessonsOpen] = useState(false);
   const [selectedLessonSubject, setSelectedLessonSubject] = useState("");
   const [presenting, setPresenting] = useState<LessonCourseware | null>(null);
@@ -320,6 +328,8 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     setPreferences(readPreferences(selectedClassId));
     setHiddenPanelOpen(false);
     setHistoryOpen(false);
+    setAnswersOpen(false);
+    setHomeworkAnswers([]);
     setAllLessonsOpen(false);
     setSelectedLessonSubject("");
     setHistoryHomeworks([]);
@@ -353,6 +363,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         setStudents(snapshot.students);
         setHomeworks(snapshot.homeworks);
         setClassHomeworkRecords(snapshot.homeworkRecords || []);
+        setHomeworkAnswers(snapshot.homeworkAnswers || []);
         setNotices(snapshot.notices);
         return;
       }
@@ -362,6 +373,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         setNotices([]);
         setStudents([]);
         setClassHomeworkRecords([]);
+        setHomeworkAnswers([]);
         return;
       }
       const [lessonData, studentData, homeworkData, noticeData, followedIds, ignoredIds, homeworkRecords, highlightEnabled] = await Promise.all([
@@ -601,6 +613,24 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
     }
   };
 
+  const openHomeworkAnswers = async () => {
+    setAnswersOpen(true);
+    if (deviceMode) {
+      setHomeworkAnswers(deviceSnapshot?.homeworkAnswers || []);
+      return;
+    }
+    if (!teacher?.schoolId || !selectedClassId) return;
+    setAnswersLoading(true);
+    try {
+      const answers = await classroomHomeworkService.listHomeworkAnswers(teacher.schoolId, selectedClassId);
+      setHomeworkAnswers(answers);
+    } catch (error) {
+      toast.error("作业答案加载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setAnswersLoading(false);
+    }
+  };
+
   const historyGroups = useMemo(() => {
     const grouped = new Map<string, ClassroomHomework[]>();
     for (const homework of historyHomeworks) {
@@ -710,6 +740,9 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
           ? presenting.slides.filter((slide) => !(slide.hiddenClassIds || []).includes(selectedClassId))
           : BLANK_CLASSROOM_SLIDES}
         initialIndex={0}
+        coursewareId={presenting?.id}
+        classId={selectedClassId}
+        deviceToken={deviceMode ? localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY) || undefined : undefined}
         students={students}
         homeworkRecords={classHomeworkRecords}
         followedStudentIds={presentationFollowedStudentIds}
@@ -1025,6 +1058,14 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
               <CalendarClock className="h-3.5 w-3.5" />
               往期作业查看
             </button>
+            <button
+              type="button"
+              onClick={() => void openHomeworkAnswers()}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-700 px-2.5 text-[10px] text-neutral-300 hover:border-amber-400 hover:text-amber-300 sm:text-xs"
+            >
+              <BookCheck className="h-3.5 w-3.5" />
+              作业答案
+            </button>
 
             {hiddenHomeworkGroups.length > 0 && (
               <button
@@ -1136,6 +1177,26 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
         </div>
       )}
 
+      {answersOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/70" onClick={() => setAnswersOpen(false)}>
+          <section role="dialog" aria-label="作业答案" aria-modal="true"
+            className="flex h-[85vh] max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl border border-neutral-800 bg-neutral-950 shadow-2xl lg:m-6 lg:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}>
+            <header className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold">作业答案</h2>
+                <p className="mt-1 text-xs text-neutral-500">选择学科，按时间查看已有作业记录或扫描件的参考答案。</p>
+              </div>
+              <button type="button" onClick={() => setAnswersOpen(false)}
+                className="text-sm text-neutral-400 hover:text-white">关闭</button>
+            </header>
+            {answersLoading ? (
+              <div className="flex flex-1 items-center justify-center"><Spinner size={28} /></div>
+            ) : <HomeworkAnswersPanel answers={homeworkAnswers} />}
+          </section>
+        </div>
+      )}
+
       {historyOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/70" onClick={() => setHistoryOpen(false)}>
           <section
@@ -1178,6 +1239,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
                                 fullscreenImages
                                 className={cn(homework.content && "mt-3")}
                               />
+                              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" className="mt-2" />
                               <div className="mt-2 text-[10px] text-neutral-600">{homework.teacherName}</div>
                             </div>
                           </div>

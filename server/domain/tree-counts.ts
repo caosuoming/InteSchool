@@ -1,6 +1,6 @@
 import type { KnowledgePoint, Question, TreeNode } from "../../src/types/index.js";
 
-type DirectoryType = "chapter" | "knowledge" | "method";
+type DirectoryType = "chapter" | "knowledge" | "method" | "error";
 
 function buildKnowledgeAliasMap(points: KnowledgePoint[]): Map<string, Set<string>> {
   const idsByName = new Map<string, Set<string>>();
@@ -30,11 +30,13 @@ export function annotateTreeWithQuestionCounts(
   knowledgePoints: KnowledgePoint[] = [],
   doneQuestionIds?: ReadonlySet<string>,
   scoredProgressByQuestionId?: ReadonlyMap<string, { correct: number; total: number }>,
+  pendingQuestionIds?: ReadonlySet<string>,
+  basketQuestionIds?: ReadonlySet<string>,
 ): TreeNode {
   const aliasesById = type === "knowledge"
     ? buildKnowledgeAliasMap(knowledgePoints)
     : new Map<string, Set<string>>();
-  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : "thoughtMethodIds";
+  const field = type === "chapter" ? "chapterIds" : type === "knowledge" ? "knowledgePointIds" : type === "method" ? "thoughtMethodIds" : "errorReasonIds";
   const questionIdsByDirectoryId = new Map<string, Set<string>>();
   for (const question of questions) {
     for (const directoryId of question[field] ?? []) {
@@ -78,7 +80,13 @@ export function annotateTreeWithQuestionCounts(
       }
       if (total > 0) masteryRate = correct / total;
     }
-    return { doneCount, masteryRate };
+    const countMatching = (selected?: ReadonlySet<string>): number | undefined => {
+      if (!selected) return undefined;
+      let count = 0;
+      for (const id of ids) if (selected.has(id)) count++;
+      return count;
+    };
+    return { doneCount, masteryRate, pendingCount: countMatching(pendingQuestionIds), basketCount: countMatching(basketQuestionIds) };
   };
 
   const annotate = (node: TreeNode): { node: TreeNode; subtreeIds: Set<string> } => {
@@ -102,6 +110,10 @@ export function annotateTreeWithQuestionCounts(
         directCount: directQuestionIds.size,
         doneCount: subtreeProgress.doneCount,
         directDoneCount: directProgress.doneCount,
+        pendingCount: subtreeProgress.pendingCount,
+        directPendingCount: directProgress.pendingCount,
+        basketCount: subtreeProgress.basketCount,
+        directBasketCount: directProgress.basketCount,
         masteryRate: subtreeProgress.masteryRate,
         directMasteryRate: directProgress.masteryRate,
         children: annotatedChildren.map((child) => child.node),

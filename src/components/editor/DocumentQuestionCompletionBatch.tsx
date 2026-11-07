@@ -49,7 +49,7 @@ export function DocumentQuestionCompletionBatch({ documentId, questions, disable
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={openPicker}
+      <Button variant="outline" size="sm" className="w-full justify-start" onClick={openPicker}
         disabled={disabled || uniqueQuestions.length === 0}>
         <CheckSquare className="w-3.5 h-3.5" /> 全部设为已做
       </Button>

@@ -222,7 +222,7 @@ describe("LectureEditorPage courseware action", () => {
 
     renderPage();
 
-    expect(await screen.findByText("该文档已录入学生答题记录，现已锁定，不能再编辑。")).toBeInTheDocument();
+    expect(await screen.findByText("答题卡已发布，题目和顺序已锁定；仍可修改题目属性和学生使用记录。")).toBeInTheDocument();
     expect(screen.getAllByLabelText("标题")[0]).toBeDisabled();
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发布" })).toBeDisabled();

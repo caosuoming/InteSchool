@@ -148,6 +148,28 @@ export function ensureFillBlankAnswerArea(stem: string, answer?: string): string
   return protectedContent.restore(insertInferredBlank(protectedContent.text, blank));
 }
 
+/** Restore only underlines generated from the original stem, keeping later edits. */
+export function restoreFillBlankAnswerArea(stem: string, original: string, answer?: string): string {
+  const formatted = protectRichContent(ensureFillBlankAnswerArea(original, answer));
+  const source = protectRichContent(original);
+  const current = protectRichContent(stem);
+  const sourceBlanks = [...source.text.matchAll(/(?:[_＿]{2,}|[ \t\u3000]{3,})/g)];
+  const formattedBlanks = [...formatted.text.matchAll(/[_＿]{2,}/g)];
+  const currentBlanks = [...current.text.matchAll(/[_＿]{2,}/g)];
+
+  if (formattedBlanks.length !== currentBlanks.length) return stem;
+  if (sourceBlanks.length && sourceBlanks.length !== formattedBlanks.length) return stem;
+
+  let index = 0;
+  const restored = current.text.replace(/[_＿]{2,}/g, (blank) => {
+    const expected = formattedBlanks[index]?.[0];
+    const originalBlank = sourceBlanks[index]?.[0] || "";
+    index += 1;
+    return blank === expected ? originalBlank : blank;
+  });
+  return current.restore(restored);
+}
+
 /**
  * Normalizes a fill-in-the-blank stem and wraps only real answer underlines in
  * a marker span. Rich HTML and LaTeX are protected so formula subscripts such

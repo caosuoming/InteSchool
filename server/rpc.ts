@@ -26,6 +26,7 @@ const PUBLIC_CALLS = new Set([
   "classroomDevice.getDeviceSession",
   "classroomDevice.getClassroomSnapshot",
   "classroomDevice.reportHeartbeat",
+  "classroomDevice.recordClassroomQuestionProgress",
   "grade.getPublishedReportByToken",
   "help.getSharedChangelog",
 ]);

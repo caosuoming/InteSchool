@@ -5,8 +5,12 @@ import { ExtractReviewModal } from "../ExtractReviewModal";
 
 const mocks = vi.hoisted(() => ({
   getLecture: vi.fn(),
+  getPaper: vi.fn(),
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
+  findMathQuestionNumberGaps: vi.fn(),
+  findSuspectedMathQuestionNumbers: vi.fn(),
+  reparseMathQuestionBlock: vi.fn(),
   findSimilarQuestionsBatch: vi.fn(),
   confirmExtract: vi.fn(),
   createLectureExtractCopy: vi.fn(),
@@ -71,7 +75,7 @@ vi.mock("@/services/lecture", () => ({
 
 vi.mock("@/services/examPaper", () => ({
   examPaperService: {
-    getPaper: vi.fn(),
+    getPaper: mocks.getPaper,
     createExtractCopy: mocks.createExamExtractCopy,
   },
 }));
@@ -92,8 +96,20 @@ vi.mock("@/services/api", () => ({
   extractStoredFile: mocks.extractStoredFile,
 }));
 
-vi.mock("@/lib/document-block-parser", () => ({
+vi.mock("@/lib/document-block-parser", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/document-block-parser")>()),
   parseDocumentBlocks: mocks.parseDocumentBlocks,
+  findMathQuestionNumberGaps: mocks.findMathQuestionNumberGaps,
+  findSuspectedMathQuestionNumbers: mocks.findSuspectedMathQuestionNumbers,
+  reparseMathQuestionBlock: mocks.reparseMathQuestionBlock,
+}));
+
+vi.mock("@/lib/math-html", () => ({
+  renderMathHtml: (text: string) => text,
+}));
+
+vi.mock("@/lib/extract-text-renderer", () => ({
+  renderExtractText: (text: string) => text,
 }));
 
 describe("ExtractReviewModal", () => {
@@ -101,6 +117,11 @@ describe("ExtractReviewModal", () => {
     vi.clearAllMocks();
     mocks.authState.teacher.subject = "物理";
     mocks.extractConfig.questionKeywords = ["题目"];
+    mocks.getPaper.mockResolvedValue({
+      id: "paper-1",
+      originalFileUrl: "/uploads/paper.docx",
+      originalFileName: "paper.docx",
+    });
     mocks.getLecture.mockResolvedValue({
       id: "lecture-1",
       originalFileUrl: "/uploads/lecture.docx",
@@ -117,6 +138,9 @@ describe("ExtractReviewModal", () => {
     });
     mocks.createLectureExtractCopy.mockResolvedValue({ id: "lecture-copy" });
     mocks.createExamExtractCopy.mockResolvedValue({ id: "paper-copy" });
+    mocks.findMathQuestionNumberGaps.mockReturnValue([]);
+    mocks.findSuspectedMathQuestionNumbers.mockReturnValue([]);
+    mocks.reparseMathQuestionBlock.mockReturnValue(null);
     mocks.parseDocumentBlocks.mockReturnValue([
       {
         id: "block-question",
@@ -319,6 +343,74 @@ describe("ExtractReviewModal", () => {
     await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).toContain("单选题·3个小题");
     expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).not.toContain("单选题·2个小题");
+  });
+
+  it("restores original math blanks when a parsed fill-in question becomes an essay", async () => {
+    mocks.authState.teacher.subject = "数学";
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="数学试题"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{
+          id: "block-question", type: "question",
+          content: "计算 $a_1$ 后填____，再填______。",
+          fillBlankOriginalContent: "计算 $a_1$ 后填   ，再填____。",
+          questionType: "short", order: 0, status: "new", answer: "12；123456",
+        }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "编辑内容" }));
+    const stem = screen.getByRole("textbox", { name: "题干" });
+    await user.type(stem, "请给出步骤");
+    await user.selectOptions(screen.getByLabelText("题型选择"), "essay");
+    expect(stem).toHaveValue("计算 $a_1$ 后填   ，再填____。请给出步骤");
+
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0]).toMatchObject({
+      type: "essay",
+      stem: "计算 $a_1$ 后填   ，再填____。请给出步骤",
+    });
+  });
+
+  it("restores whitespace after manually switching an essay to fill-in and back", async () => {
+    mocks.authState.teacher.subject = "数学";
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="数学试题"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{
+          id: "block-question", type: "question", content: "计算得   。",
+          questionType: "essay", order: 0, status: "new", answer: "2",
+        }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "编辑内容" }));
+    const stem = screen.getByRole("textbox", { name: "题干" });
+    await user.selectOptions(screen.getByLabelText("题型选择"), "short");
+    expect(stem).toHaveValue("计算得____。");
+    await user.selectOptions(screen.getByLabelText("题型选择"), "essay");
+    expect(stem).toHaveValue("计算得   。");
   });
 
   it("does not offer or save comprehensive for a math document", async () => {
@@ -953,5 +1045,110 @@ describe("ExtractReviewModal", () => {
         content: "示例知识内容",
       },
     ]);
+  });
+
+  it("asks for confirmation of missing math numbers and reparses them on request", async () => {
+    const user = userEvent.setup();
+    mocks.authState.teacher.subject = "数学";
+    const first = { id: "math-1", type: "question" as const, content: "1. 第一题\n2? 第二题", questionType: "essay" as const, status: "new" as const, order: 0 };
+    const third = { id: "math-3", type: "question" as const, content: "3. 第三题", questionType: "essay" as const, status: "new" as const, order: 1 };
+    mocks.extractStoredFile.mockResolvedValue({ text: "1. 第一题\n2? 第二题\n3. 第三题" });
+    mocks.parseDocumentBlocks.mockImplementation((_text, parseConfig) =>
+      parseConfig.confirmedMathQuestionNumbers?.includes(2)
+        ? [{ ...first, content: "1. 第一题" }, { ...first, id: "math-2", content: "2? 第二题", order: 1 }, { ...third, order: 2 }]
+        : [first, third]);
+    render(
+      <ExtractReviewModal
+        open onClose={vi.fn()} resourceId="paper-1" resourceType="examPaper"
+        resourceTitle="数学试卷" chapterIds={[]} knowledgePointIds={[]}
+        grade="高一" schoolYear="2026-2027" semester="上学期"
+        initialBlocks={[first, third]}
+      />,
+    );
+    expect(screen.getByText("数学试卷题号可能不连续，请确认")).toBeInTheDocument();
+    expect(screen.getByText("1 → 3（缺 2）")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "按确认题号重新拆解" }));
+    await waitFor(() => expect(mocks.parseDocumentBlocks).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ confirmedMathQuestionNumbers: [2], subject: "数学" }),
+    ));
+    await waitFor(() => expect(screen.queryByText("数学试卷题号可能不连续，请确认")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+    expect(mocks.getPaper).toHaveBeenCalledWith("paper-1");
+  });
+
+  it("allows explicit acceptance of a genuine gap without inventing a question", async () => {
+    const user = userEvent.setup();
+    mocks.authState.teacher.subject = "数学";
+    render(
+      <ExtractReviewModal
+        open onClose={vi.fn()} resourceId="paper-1" resourceType="examPaper"
+        resourceTitle="数学试卷" chapterIds={[]} knowledgePointIds={[]}
+        grade="高一" schoolYear="2026-2027" semester="上学期"
+        initialBlocks={[
+          { id: "math-1", type: "question", content: "1. 第一题", questionType: "essay", status: "new", order: 0 },
+          { id: "math-3", type: "question", content: "3. 第三题", questionType: "essay", status: "new", order: 1 },
+        ]}
+      />,
+    );
+    const confirm = screen.getByRole("button", { name: "确认入库" });
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "确认原稿确实跳号" }));
+    expect(confirm).toBeEnabled();
+    expect(screen.getByText("已确认原稿编号，允许继续入库。")).toBeInTheDocument();
+  });
+
+});
+
+
+describe("math numbering review", () => {
+  const question = (id: string, content: string) => ({
+    id, type: "question" as const, content, order: 0, status: "new" as const,
+    questionType: "essay" as const, difficulty: 3,
+  });
+  const props = {
+    open: true, onClose: vi.fn(), resourceId: "lecture-1", resourceType: "lecture" as const,
+    resourceTitle: "数学试卷", chapterIds: [], knowledgePointIds: [],
+    grade: "高一", schoolYear: "2026-2027", semester: "上学期" as const,
+  };
+
+  it("requires confirmation before storing an observed question-number gap", async () => {
+    mocks.authState.teacher.subject = "数学";
+    mocks.findMathQuestionNumberGaps.mockReturnValue([{
+      afterBlockId: "question-11", previousNumber: 11, nextNumber: 13,
+    }]);
+    const user = userEvent.setup();
+    render(<ExtractReviewModal {...props} initialBlocks={[
+      question("question-11", "11. 已知函数，求解。"),
+      { ...question("question-13", "13. 判断命题。"), order: 1 },
+    ]} />);
+    expect(screen.getByText("数学试卷题号可能不连续，请确认原文")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "确认原文题号无需补拆" }));
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+  });
+
+  it("reparses only the selected math block after entering confirmed consecutive numbers", async () => {
+    mocks.authState.teacher.subject = "数学";
+    mocks.reparseMathQuestionBlock.mockReturnValue([
+      { ...question("question-12", "12. 判断命题。"), summary: "判断时应明确条件。", status: "edited" },
+      question("question-13", "13指出下列命题的条件。"),
+    ]);
+    const user = userEvent.setup();
+    render(<ExtractReviewModal {...props} initialBlocks={[
+      { ...question("question-12", "12. 判断命题。"), summary: "判断时应明确条件。\n13指出下列命题的条件。" },
+      { ...question("question-14", "14. 求函数定义域。"), order: 1 },
+    ]} />);
+    await user.click(screen.getAllByRole("button", { name: "按题号补拆" })[0]);
+    await user.type(screen.getByLabelText("需要补拆的连续题号"), "13");
+    await user.click(screen.getByRole("button", { name: "确认并局部重拆" }));
+    expect(mocks.reparseMathQuestionBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "question-12" }),
+      expect.objectContaining({ subject: "数学" }),
+      [13],
+    );
+    expect(screen.getByText("题目 3")).toBeInTheDocument();
+    expect(screen.getByText(/14. 求函数定义域/)).toBeInTheDocument();
   });
 });

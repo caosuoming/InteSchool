@@ -9,6 +9,5 @@ export function pendingCoursewares(coursewares: LessonCourseware[], teacherId: s
 export function pendingScanPapers(papers: ExamPaper[], pages: ScannerPageRecord[], teacherId: string, schoolId: string) {
   const scannedIds = new Set(pages.filter((page) => page.schoolId === schoolId && page.sheetType === "paper").map((page) => page.sheetId));
   return papers.filter((paper) => paper.teacherId === teacherId && paper.schoolId === schoolId
-    && paper.managementCategory !== "exam" && paper.status === "published"
-    && !!paper.assignedDate && !!paper.answerSheetPublishedAt && !scannedIds.has(paper.id));
+    && !!paper.answerSheetPublishedAt && !scannedIds.has(paper.id));
 }

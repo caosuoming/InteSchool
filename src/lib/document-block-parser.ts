@@ -1,4 +1,5 @@
 import type { Material, Question, QuestionType } from "@/types";
+import { extractUnderlinedAnswers, extractParenthesizedChoiceAnswer } from "@/lib/lesson-inline-answers";
 import { normalizeQuestionTypeForSubject } from "@/lib/question-types";
 import {
   ensureFillBlankAnswerArea,
@@ -21,6 +22,7 @@ export interface DocumentBlock {
   id: string;
   type: DocumentBlockType;
   content: string;
+  fillBlankOriginalContent?: string;
   order: number;
   questionType?: QuestionType;
   categories?: string[];
@@ -31,6 +33,7 @@ export interface DocumentBlock {
   summary?: string;
   difficulty?: number;
   knowledgeTitle?: string;
+  inlineAnswers?: string[];
   status: "new" | "duplicate" | "edited";
   duplicateOf?: Question | Material;
 }
@@ -47,6 +50,8 @@ export interface DocumentParseConfig {
   multipleChoiceKeywords: string[];
   fillBlankKeywords: string[];
   essayKeywords: string[];
+  /** 用户确认存在的数学题号。仅用于重新识别非标准题号标记。 */
+  confirmedMathQuestionNumbers?: number[];
 }
 
 interface OptionMarker {
@@ -297,6 +302,18 @@ function answerLetters(answer: string): string[] {
   return [...new Set(normalized)];
 }
 
+function mathChoiceAnswerType(answer: string): QuestionType | undefined {
+  const normalized = normalizeStructuralText(answer)
+    .replace(/^(?:参考答案|答案|正确选项|选项|答)\s*[:：]?\s*/, "")
+    .replace(/\$\\(?:mathrm|mathit|mathbf)\{([A-D])\}\$/gi, "$1")
+    .replace(/\$([A-D])\$/gi, "$1")
+    .trim();
+  if (!/^[A-Da-d\s,，、;；.．()（）【】]+$/.test(normalized)) return undefined;
+  const letters = normalized.match(/[A-D]/gi);
+  if (!letters) return undefined;
+  return new Set(letters.map((letter) => letter.toUpperCase())).size > 1 ? "multiple" : "single";
+}
+
 function inferAtomicQuestionType(
   block: Partial<DocumentBlock>,
   sectionType: QuestionType | undefined,
@@ -304,14 +321,24 @@ function inferAtomicQuestionType(
 ): QuestionType {
   const text = [block.content, block.answer].filter(Boolean).join("\n");
   if (config.subject?.trim() === "地理" && sectionType === "comprehensive") return "comprehensive";
+  const options = block.options || [];
+  if (
+    config.subject?.trim() === "数学"
+    && (options.length >= 2
+      || sectionType === "single" || sectionType === "multiple"
+      || block.questionType === "single" || block.questionType === "multiple"
+      || /选择|选出|选项/.test(block.content || ""))
+  ) {
+    const answerType = mathChoiceAnswerType(block.answer || "");
+    if (answerType) return answerType;
+  }
   if (config.multipleChoiceKeywords.some((keyword) => keyword && text.includes(keyword))) return "multiple";
   if (config.singleChoiceKeywords.some((keyword) => keyword && text.includes(keyword))) return "single";
   if (/判断题|判断正误|正确还是错误/.test(text)) return "judge";
   if (config.fillBlankKeywords.some((keyword) => keyword && text.includes(keyword))) return "short";
   if (config.essayKeywords.some((keyword) => keyword && text.includes(keyword))) return "essay";
 
-  const options = block.options || [];
-  const letters = answerLetters(block.answer || "");
+  const letters = config.subject?.trim() === "数学" ? [] : answerLetters(block.answer || "");
   if (options.length >= 2) {
     if (letters.length > 1) return "multiple";
     if (sectionType === "multiple" || sectionType === "single") return sectionType;
@@ -472,7 +499,28 @@ function isStandaloneQuestionScoreAnnotation(text: string): boolean {
   return new RegExp(`^\\s*(?:${questionScoreAnnotationSource}\\s*)+$`).test(text);
 }
 
+function mathQuestionNumber(text: string, confirmedNumbers: number[] = []): string | undefined {
+  const normalized = normalizeStructuralText(text).trim();
+  // 非标准标点只在数学科目中识别，避免其他学科的枚举列表被当成题目。
+  const marked = /^(\d{1,4})\s*([,，。｡:：;；·•—–])\s*(.*)$/.exec(normalized);
+  if (marked) {
+    const [, number, separator, remainder] = marked;
+    const rest = remainder.trim();
+    if (!/^\d/.test(rest)
+      && (!/[,·•—–]/.test(separator) || !rest || /^[\p{Script=Han}]/u.test(rest))) {
+      return number;
+    }
+  }
+
+  // 人工确认后才容许没有常规标点的行；必须有独立编号和正文。
+  const uncertain = /^(\d{1,4})(?:\s+|[\p{P}])\s*(\S.*)$/u.exec(normalized);
+  if (uncertain && confirmedNumbers.includes(Number(uncertain[1]))
+    && !/^\d/.test(uncertain[2])) return uncertain[1];
+  return undefined;
+}
+
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
+  if (config.subject?.trim() === "数学" && mathQuestionNumber(text, config.confirmedMathQuestionNumbers)) return true;
   if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
   if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)(?:\s*\S|\s*$)/.test(text)) return true;
 
@@ -540,6 +588,36 @@ function extractLeadingQuestionNumber(text: string): { number: string; rest: str
   return null;
 }
 
+function mathQuestionNumberCandidate(text: string): { number: number; separated: boolean } | null {
+  const normalized = normalizeStructuralText(text.trim());
+  const match = /^([0-9]{1,4})([、.:：)；;!?！？·•。—–-]|\s+|(?=[\u3400-\u9fff]))/.exec(normalized);
+  if (!match) return null;
+  const rest = normalized.slice(match[0].length);
+  // A decimal like "13.5" is not question 13.
+  if (match[2] === "." && /^\d/.test(rest)) return null;
+  return { number: Number(match[1]), separated: Boolean(match[2]) };
+}
+
+function isConfirmedMathQuestionStart(line: string, config: DocumentParseConfig): boolean {
+  if (config.subject?.trim() !== "数学" || !config.confirmedMathQuestionNumbers?.length) return false;
+  const candidate = mathQuestionNumberCandidate(line);
+  return Boolean(candidate && config.confirmedMathQuestionNumbers.includes(candidate.number));
+}
+
+function isSequentialMathQuestionStart(
+  line: string,
+  block: Partial<DocumentBlock>,
+  config: DocumentParseConfig,
+): boolean {
+  if (config.subject?.trim() !== "数学" || block.type !== "question") return false;
+  const normalized = normalizeStructuralText(line.trim());
+  const candidate = mathQuestionNumber(normalized, config.confirmedMathQuestionNumbers)
+    || (/^\d{1,4}\s+(?:已知|设|若|求|计算|证明|判断|试|下列|选择|指出|写出|解答|阅读|根据|关于|如图|在|有)/.test(normalized)
+      ? String(mathQuestionNumberCandidate(normalized)?.number || "") : undefined);
+  const currentNumber = extractQuestionNumber(block.content || "", config);
+  return Boolean(candidate && currentNumber && Number(candidate) === Number(currentNumber) + 1);
+}
+
 function shouldContinueNumberedSummary(
   line: string,
   block: Partial<DocumentBlock>,
@@ -562,10 +640,16 @@ function shouldContinueNumberedSummary(
   // exception is the expected next top-level question. Word/PDF extraction can
   // put its number (for example, "4.") on a line by itself.
   const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
+  if (config.subject?.trim() === "数学" && previous && candidateNumber === Number(previous.number) + 1) {
+    return true;
+  }
   if (
     currentQuestionNumber
     && candidateNumber === Number(currentQuestionNumber) + 1
     && (
+      (config.subject?.trim() === "数学"
+        && !(previous && candidateNumber === Number(previous.number) + 1))
+      ||
       (config.subject?.trim() === "地理" && candidate.rest.length >= 5)
       || looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
       || (!candidate.rest && !previous)
@@ -980,6 +1064,14 @@ function isNestedTrailingAnswerLine(
 function extractQuestionNumber(text: string, config: DocumentParseConfig): string | undefined {
   const direct = extractLeadingQuestionNumber(text);
   if (direct) return direct.number;
+  if (config.subject?.trim() === "数学") {
+    const mathNumber = mathQuestionNumber(text, config.confirmedMathQuestionNumbers);
+    if (mathNumber) return mathNumber;
+    const confirmedCandidate = mathQuestionNumberCandidate(text);
+    if (confirmedCandidate && config.confirmedMathQuestionNumbers?.includes(confirmedCandidate.number)) {
+      return String(confirmedCandidate.number);
+    }
+  }
 
   const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
   if (!prefixes.length) return undefined;
@@ -990,12 +1082,26 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
 }
 
 function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind | null {
-  const normalized = normalizeStructuralText(text)
+  const compact = normalizeStructuralText(text)
     .replace(/\s+/g, "")
-    .replace(/^[【［[(（]+/, "")
-    .replace(/[】］\])）:：]+$/, "");
+    .replace(/^[【［[(（]+/, "");
+  const normalized = compact.replace(/[】］\])）:：]+$/, "");
   if (/^(?:参考)?答案$/.test(normalized)) return "answer";
   if (/^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
+  const heading = /(?:参考)?答案(?:与|和|及)?解析|(?:参考)?答案/;
+  const leading = new RegExp(`^(${heading.source})`).exec(compact);
+  if (leading && (/^(?:[（(【［][^）)】］]{1,40}[）)】］])?$/.test(compact.slice(leading[0].length))
+    || (leading[0].startsWith("参考答案")
+      && /^[:：](?:第)?[\d０-９]{1,4}[、.．:：)）]\S/.test(compact.slice(leading[0].length))))) {
+    return leading[0].includes("解析") ? "answerAnalysis" : "answer";
+  }
+  const trailing = new RegExp(`(${heading.source})$`).exec(normalized);
+  if (trailing) {
+    const prefix = normalized.slice(0, trailing.index);
+    if (prefix.length > 0 && prefix.length <= 60 && !/[?？。！:：]/.test(prefix)) {
+      return trailing[0].includes("解析") ? "answerAnalysis" : "answer";
+    }
+  }
   return null;
 }
 
@@ -1435,6 +1541,86 @@ function continuesSharedStemExtendedInquiry(
   return leadingNestedSubQuestionIndex(line) === (markers.at(-1)?.index || 0) + 1;
 }
 
+function recoverSequentialMathQuestionLines(lines: string[], config: DocumentParseConfig): string[] {
+  if (config.subject?.trim() !== "数学") return lines;
+
+  const sections: number[] = [];
+  const known = new Map<number, number>();
+  const candidates = new Map<number, { number: number; rest: string }>();
+  let section = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (isHeading(line, config) || isProjectHeading(line, config) || isKnowledgeBlockStart(line)) section += 1;
+    sections.push(section);
+    if (!line) continue;
+
+    const explicit = extractLeadingQuestionNumber(line);
+    if (explicit && isQuestionStart(line, config)) {
+      known.set(index, Number(explicit.number));
+      continue;
+    }
+
+    const match = /^([\d０-９]{1,4})(.*)$/.exec(line);
+    if (!match) continue;
+    const rest = match[2].replace(/^[\s\u3000。·•:：\-－—?？]+/, "").trim();
+    if (rest.length < 3 || !/^[（(【［\u3400-\u9fff]/.test(rest)) continue;
+    // A number embedded in a formula or measurement is not a question label.
+    if (!/^(?:[（(【［]|已知|设|若|求|计算|证明|判断|试|下列|选择|指出|写出|解答|阅读|根据|关于|如图|在|有)/.test(rest)) continue;
+    candidates.set(index, { number: Number(normalizeQuestionNumber(match[1])), rest });
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [index, candidate] of candidates) {
+      if (known.has(index) || candidate.number <= 0) continue;
+      let previous: number | undefined;
+      let next: number | undefined;
+      for (let cursor = index - 1; cursor >= 0 && sections[cursor] === sections[index]; cursor -= 1) {
+        if (known.has(cursor)) {
+          previous = known.get(cursor);
+          break;
+        }
+      }
+      for (let cursor = index + 1; cursor < lines.length && sections[cursor] === sections[index]; cursor += 1) {
+        if (known.has(cursor)) {
+          next = known.get(cursor);
+          break;
+        }
+      }
+      const hasSeparator = /^[\d０-９]{1,4}\s*[、.．:：)）,，。｡;；·•—–]/.test(lines[index].trim());
+      if ((hasSeparator && (candidate.number === (previous ?? -1) + 1 || candidate.number + 1 === next))
+        || (next !== undefined && candidate.number + 1 === next
+          && (previous === undefined || previous < candidate.number))) {
+        known.set(index, candidate.number);
+        changed = true;
+      }
+    }
+  }
+
+  return lines.map((line, index) => {
+    const candidate = candidates.get(index);
+    if (candidate && known.get(index) === candidate.number) {
+      const original = line.trim();
+      const priorRecovered = [...candidates].some(([otherIndex, other]) => otherIndex < index
+        && known.get(otherIndex) === other.number && other.number === candidate.number - 1
+        && !mathQuestionNumber(lines[otherIndex]));
+      const directMath = mathQuestionNumber(original, config.confirmedMathQuestionNumbers);
+      const whitespaceNumber = /^\d{1,4}\s+[\u3400-\u9fff]/.test(original);
+      const priorIsSequential = [...known].some(([otherIndex, number]) => otherIndex < index
+        && sections[otherIndex] === sections[index] && number === candidate.number - 1);
+      if (!priorRecovered && (directMath || (whitespaceNumber && priorIsSequential))) return line;
+      return `${candidate.number}. ${candidate.rest}`;
+    }
+    const colon = /^\s*([\d０-９]{1,4})\s*[:：]\s*(.*)$/.exec(line);
+    if (colon && known.has(index) && known.get(index) === known.get(index + 1)! - 1) {
+      return `${normalizeQuestionNumber(colon[1])}. ${colon[2]}`;
+    }
+    return line;
+  });
+}
+
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
@@ -1455,6 +1641,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
   let independentSubQuestionNextIndex: number | undefined;
+  let separatedByBlank = false;
   let order = 0;
 
   const submitCurrent = () => {
@@ -1477,8 +1664,8 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         || config.fillBlankKeywords.some((keyword) => (
           keyword && [block.content, block.answer].filter(Boolean).join("\n").includes(keyword)
         ));
-      if (block.questionType === "short" && fillBlankSignal) {
-        block.content = ensureFillBlankAnswerArea(block.content, block.answer);
+      if (block.questionType === "short" && fillBlankSignal && !/<u\b[^>]*>[^<]*\S[^<]*<\/u>/i.test(block.content)) {
+        normalizeBlockFillBlankArea(block);
       }
       block.difficulty ||= 3;
     }
@@ -1491,7 +1678,8 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     currentQuestionField = "content";
   };
 
-  const lines = expandIndependentSubQuestionLines(content, config);
+  const normalizedContent = recoverSequentialMathQuestionLines(content.replace(/\r\n?/g, "\n").split("\n"), config).join("\n");
+  const lines = expandIndependentSubQuestionLines(normalizedContent, config);
   const structuredFieldAhead = new Array<boolean>(lines.length).fill(false);
   let hasSeenStructuredField = false;
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -1518,7 +1706,36 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const originalLine = lines[lineIndex];
     let line = originalLine.trim();
-    if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
+    if (!line) {
+      separatedByBlank = true;
+      continue;
+    }
+    const afterBlank = separatedByBlank;
+    separatedByBlank = false;
+    if (/^[-—–=*]{3,}$/.test(line)) continue;
+
+    // Blank lines in geography papers often separate a new reading passage
+    // from the previous question's final option.
+    if (
+      config.subject?.trim() === "地理"
+      && afterBlank
+      && currentBlock.type === "question"
+      && currentQuestionField === "content"
+      && (currentBlock.options?.length || 0) >= 2
+      && !isQuestionStart(line, config)
+      && !isImageLine(line)
+      && !isDocumentTableFragment(line)
+      && !extractOptionLine(line, currentBlock.options?.length || 0, true)
+    ) {
+      submitCurrent();
+      const isUnnumberedQuestion = /[?？]/.test(line)
+        && !/(?:据此|根据|阅读|读图|结合).{0,40}(?:完成|回答|作答)/.test(line);
+      currentBlock = {
+        type: isUnnumberedQuestion ? "question" : "knowledge",
+        content: originalLine,
+      };
+      continue;
+    }
 
     if (isKnowledgeBlockStart(line)) {
       submitCurrent();
@@ -1557,16 +1774,22 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 
     line = stripQuestionScoreAnnotation(line, config);
 
+    const confirmedMathStart = isConfirmedMathQuestionStart(line, config);
+    const mathDecimal = config.subject?.trim() === "数学"
+      && /^[\d０-９]{1,4}\s*[.．][\d０-９]/.test(line);
     if (
       currentBlock.type === "question"
       && currentQuestionField === "summary"
-      && shouldContinueNumberedSummary(line, currentBlock, config)
+      && !confirmedMathStart
+      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config))
     ) {
       appendQuestionField(currentBlock, "summary", line);
       continue;
     }
 
-    if (isQuestionStart(line, config) && !continuesSharedStemExtendedInquiry(
+    if (!mathDecimal && (isQuestionStart(line, config)
+      || isSequentialMathQuestionStart(line, currentBlock, config)
+      || confirmedMathStart) && !continuesSharedStemExtendedInquiry(
       line, currentBlock, currentQuestionField, config,
     )) {
       submitCurrent();
@@ -1767,6 +1990,37 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   return blocks;
 }
 
+function normalizeBlockFillBlankArea(block: DocumentBlock): void {
+  const content = ensureFillBlankAnswerArea(block.content, block.answer);
+  if (content === block.content) return;
+  block.fillBlankOriginalContent ??= block.content;
+  block.content = content;
+}
+
+function normalizeInlineDocumentAnswers(blocks: DocumentBlock[]): DocumentBlock[] {
+  for (const block of blocks) {
+    if (block.type === "knowledge") {
+      const extracted = extractUnderlinedAnswers(block.content, true);
+      block.content = extracted.content;
+      if (extracted.answers.length) block.inlineAnswers = extracted.answers;
+      continue;
+    }
+    if (block.type !== "question") continue;
+    if (block.questionType === "single" || block.questionType === "multiple") {
+      const extracted = extractParenthesizedChoiceAnswer(block.content, block.questionType === "single" ? "single" : "multiple");
+      block.content = extracted.stem;
+      if (extracted.answer && !block.answer?.trim()) block.answer = extracted.answer;
+    } else if (block.questionType === "short") {
+      const extracted = extractUnderlinedAnswers(block.content);
+      block.content = extracted.content;
+      if (extracted.answers.length && !block.answer?.trim()) {
+        block.answer = extracted.answers.join("；");
+      }
+    }
+  }
+  return blocks;
+}
+
 function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
   for (const block of blocks) {
     if (block.type === "question" && block.questionType) {
@@ -1777,7 +2031,7 @@ function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): Doc
       || block.questionType !== "short"
       || !hasFillBlankAnswerArea(block.content)
     ) continue;
-    block.content = ensureFillBlankAnswerArea(block.content, block.answer);
+    normalizeBlockFillBlankArea(block);
   }
   return blocks;
 }
@@ -1801,43 +2055,64 @@ function geographyDetailCategory(type: QuestionType, content: string): string | 
 }
 
 function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
-  // A geographic reading passage can introduce several consecutive, globally numbered
-  // choice questions. Blank lines delimit independent passages, not their sub-questions.
-  const paragraphs = source.replace(/\r\n?/g, "\n").split(/\n\s*\n+/);
-  const groups = paragraphs.flatMap((paragraph) => {
-    const lines = paragraph.split("\n");
-    const firstNumbered = lines.findIndex((line) => /^\s*\d{1,4}\s*[.．、]\s*\S/.test(line));
-    const introduction = lines.slice(0, firstNumbered < 0 ? undefined : firstNumbered)
-      .filter((line) => !isHeading(line.trim(), config))
-      .join("\n").trim();
-    if (!/(?:阅读|读.{0,8}[图表材料]|据.{0,12}(?:回答|完成)|根据.{0,30}(?:回答|完成)|回答下列|完成下列)/.test(introduction)) return [];
-    if (isHeading(introduction, config) || trailingSolutionHeadingKind(introduction)) return [];
-    if (firstNumbered < 0) {
-      const range = /(?:回答|完成|作答)\s*(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
-      if (!range) return [];
-      const start = Number(range[1]);
-      const end = Number(range[2]);
-      if (start < 1 || end <= start || end - start > 9) return [];
-      return [{ introduction, numbers: Array.from({ length: end - start + 1 }, (_, index) => String(start + index)) }];
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const sharedStemPattern = /(?:据.{0,24}(?:完成|回答|作答)|根据.{0,40}(?:完成|回答|作答)|(?:阅读|读|观察|结合).{0,40}(?:完成|回答|作答)|(?:完成|回答)下[列面])/;
+  const numberedPattern = /^\s*([\d０-９]{1,4})\s*[.．、]\s*\S/;
+  const optionPattern = /^\s*[A-Ha-h]\s*[.．、:：)）]/;
+  const groups: Array<{ introduction: string; numbers: string[] }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const cue = lines[index].trim();
+    if (!sharedStemPattern.test(cue) || isHeading(cue, config) || trailingSolutionHeadingKind(cue)) continue;
+
+    let start = index;
+    while (start > 0 && index - start < 12) {
+      const preceding = lines[start - 1].trim();
+      if (isHeading(preceding, config)
+        || isQuestionStart(preceding, config)
+        || optionPattern.test(preceding)
+        || trailingSolutionHeadingKind(preceding)
+        || /(?:试卷|测试卷|考试卷)$/.test(preceding)
+        || (preceding && sharedStemPattern.test(preceding))) break;
+      start -= 1;
     }
-    if (firstNumbered === 0) return [];
-    const numbers = lines.slice(firstNumbered)
-      .map((line) => /^\s*(\d{1,4})\s*[.．、]\s*\S/.exec(line)?.[1])
-      .filter((number): number is string => Boolean(number));
-    if (numbers.length < 2 || !numbers.every((number, index) => index === 0 || Number(number) === Number(numbers[index - 1]) + 1)) return [];
-    return [{ introduction, numbers }];
-  });
+    const introduction = lines.slice(start, index + 1).map((line) => line.trim()).filter(Boolean).join("\n");
+    const range = /(?:回答|完成|作答)\s*(?:下[列面]\s*)?(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
+    const lastInRange = range && Number(range[2]) > Number(range[1])
+      && Number(range[2]) - Number(range[1]) <= 9 ? Number(range[2]) : undefined;
+    const numbers: string[] = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const candidate = lines[next].trim();
+      if (!candidate) continue;
+      if (isHeading(candidate, config) || trailingSolutionHeadingKind(candidate)
+        || sharedStemPattern.test(candidate)) break;
+      const match = numberedPattern.exec(candidate);
+      if (match) {
+        const number = normalizeQuestionNumber(match[1]);
+        if (numbers.length > 0 && Number(number) !== Number(numbers[numbers.length - 1]) + 1) break;
+        numbers.push(number);
+        if (lastInRange && Number(number) >= lastInRange) break;
+      } else if (numbers.length > 0 && !optionPattern.test(candidate)
+        && !isImageLine(candidate) && !isDocumentTableFragment(candidate)
+        && /^(?:图|表|材料|据|根据|阅读)/.test(candidate)) break;
+    }
+    if (numbers.length >= 2) groups.push({ introduction, numbers });
+  }
   if (groups.length === 0) return blocks;
 
   const result = [...blocks];
+  let searchFrom = 0;
   for (const group of groups) {
-    const first = result.findIndex((block) => block.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[0]);
+    const first = result.findIndex((block, index) => index >= searchFrom
+      && block.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[0]);
     if (first < 0) continue;
     const members = result.slice(first, first + group.numbers.length);
     if (!members.every((block, index) => block?.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[index])) continue;
     const section = [...result.slice(0, first)].reverse().find((block) => block.type === "groupTitle");
-    const type = section ? detectSectionQuestionType(section.content) : undefined;
-    if (type !== "single" && type !== "multiple") continue;
+    const sectionType = section ? detectSectionQuestionType(section.content) : undefined;
+    const type = sectionType || (members.every((member) => (member.options?.length || 0) >= 2)
+      ? (members.some((member) => member.questionType === "multiple") ? "multiple" : "single")
+      : undefined);
+    if (type !== "single" && type !== "multiple" && type !== "comprehensive") continue;
 
     const field = (key: "answer" | "analysis" | "summary") => members
       .map((item, index) => item[key] ? `（${index + 1}）${item[key]}` : "")
@@ -1857,9 +2132,15 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
       summary: field("summary"),
     };
     result.splice(first, members.length, merged);
-    if (first > 0 && result[first - 1].type === "knowledge" && result[first - 1].content.trim() === group.introduction) {
-      result.splice(first - 1, 1);
+    let mergedIndex = first;
+    while (mergedIndex > 0) {
+      const preceding = result[mergedIndex - 1];
+      if (!["knowledge", "documentTitle", "documentInfo"].includes(preceding.type)) break;
+      if (!group.introduction.includes(preceding.content.trim())) break;
+      result.splice(mergedIndex - 1, 1);
+      mergedIndex -= 1;
     }
+    searchFrom = mergedIndex + 1;
   }
   return result;
 }
@@ -1867,6 +2148,19 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
 function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
   if (config.subject?.trim() !== "地理") return blocks;
   const grouped = groupGeographyChoiceQuestions(blocks, source, config);
+  for (let index = 0; index < grouped.length; index += 1) {
+    const block = grouped[index];
+    if (block.type !== "knowledge") continue;
+    const next = grouped[index + 1];
+    if (next?.type === "question") {
+      next.content = block.content.trim() + "\n" + next.content;
+      grouped.splice(index, 1);
+      index -= 1;
+    } else {
+      block.type = "documentInfo";
+      delete block.knowledgeTitle;
+    }
+  }
   let sectionType: QuestionType | undefined;
   grouped.forEach((block, index) => {
     block.order = index;
@@ -1884,7 +2178,216 @@ function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: 
   return grouped;
 }
 
+type EnglishPart = "听力" | "阅读理解" | "语言运用" | "写作";
+
+const englishPartPattern = /^第\s*[一二三四五六七八九十百\d]+\s*部分\s*(听力|阅读理解|语言运用|写作)(?:\b|\s|[（(：:]|$)/;
+const englishSectionPattern = /^第\s*[一二三四五六七八九十百\d]+\s*节(?:\s|[（(：:]|$)/;
+const englishListeningSinglePattern = /每\s*段\s*录音\s*后\s*有\s*一个\s*小题/;
+const englishListeningGroupPattern = /每\s*段\s*录音\s*后\s*有\s*几\s*个\s*小题/;
+const englishListeningPassagePattern = /^听\s*下\s*面\s*(?:一|[\d一二三四五六七八九十]+)\s*段\s*(?:对话|独白|材料|录音)/;
+const englishGapPattern = /阅读\s*下\s*面\s*短文[，,。]?\s*从\s*短文\s*后\s*的\s*选项\s*中\s*选出/;
+const englishFieldPattern = /【\s*(答案|原文|导语|点睛|总结|详解|解析|解答|\d+题详解|第\d+题详解)\s*】/g;
+
+interface EnglishUnit {
+  lines: string[];
+  part: EnglishPart;
+  grouped: boolean;
+  gap: boolean;
+}
+
+function englishFieldParts(lines: string[]): {
+  content: string;
+  answer?: string;
+  analysis?: string;
+  summary?: string;
+} {
+  const text = lines.join("\n").trim();
+  const markers = [...text.matchAll(englishFieldPattern)];
+  if (markers.length === 0) return { content: text };
+  const result: { content: string; answer?: string; analysis?: string; summary?: string } = {
+    content: text.slice(0, markers[0].index).trim(),
+  };
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    const label = marker[1];
+    const field = label === "答案" ? "answer"
+      : label === "导语" || label === "点睛" || label === "总结" ? "summary"
+        : "analysis";
+    const start = marker.index! + marker[0].length;
+    const value = text.slice(start, markers[index + 1]?.index ?? text.length).trim();
+    // Keep numbered explanation labels and transcripts to preserve their subquestion mapping.
+    const prefix = /^\d+题详解$|^第\d+题详解$|^原文$/.test(label) ? `【${label}】` : "";
+    appendQuestionField(result, field, `${prefix}${value}`);
+  }
+  return result;
+}
+
+function englishQuestionNumbers(content: string): string[] {
+  return content.split("\n")
+    .map((line) => extractLeadingQuestionNumber(line.trim())?.number)
+    .filter((value): value is string => Boolean(value));
+}
+
+function englishAnswerMap(value: string): Map<string, string> {
+  const matches = [...value.matchAll(/(?:^|[\s,，;；])(?:第\s*)?(\d{1,3})\s*(?:题)?\s*[.．、:：)）]\s*([A-Ha-h]|(?:正确|错误|对|错))(?=\s|$|[,，;；]|\d{1,3}\s*[.．、:：)）])/g)];
+  return new Map(matches.map((match) => [match[1], match[2]]));
+}
+
+function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] | null {
+  if (config.subject?.trim() !== "英语") return null;
+  const sourceLines = content.replace(/\r\n?/g, "\n").split("\n");
+  const structuralLines = sourceLines.map((line) => normalizeStructuralText(line).trim());
+  const firstPart = structuralLines.find((line) => englishPartPattern.test(line));
+  const inferredPart: EnglishPart | undefined = structuralLines.some((line) => englishGapPattern.test(line))
+    ? "阅读理解"
+    : structuralLines.some((line) => englishListeningSinglePattern.test(line) || englishListeningGroupPattern.test(line))
+      ? "听力" : undefined;
+  if (!firstPart && !inferredPart) return null;
+
+  const blocks: DocumentBlock[] = [];
+  let part: EnglishPart | undefined = firstPart ? undefined : inferredPart;
+  let listeningAtomic = false;
+  let gap = false;
+  let current: EnglishUnit | undefined;
+  const addBlock = (type: DocumentBlockType, text: string, fields: Partial<DocumentBlock> = {}) => {
+    if (!text.trim()) return;
+    blocks.push({
+      id: createBlockId(), type, content: text.trim(), order: blocks.length, status: "new", ...fields,
+    });
+  };
+  const submitCurrent = () => {
+    if (!current) return;
+    const unit = current;
+    current = undefined;
+    const fields = englishFieldParts(unit.lines);
+    if (!fields.content) return;
+    const numbers = englishQuestionNumbers(fields.content);
+    const isQuestion = numbers.length > 0 || unit.gap;
+    if (!isQuestion) {
+      addBlock("knowledge", fields.content, { knowledgeTitle: fields.content.slice(0, 20) });
+      return;
+    }
+    const grouped = unit.grouped || numbers.length > 1 || unit.gap;
+    if (grouped) {
+      addBlock("question", fields.content, {
+        questionType: "comprehensive", difficulty: 3,
+        answer: fields.answer, analysis: fields.analysis, summary: fields.summary,
+      });
+      return;
+    }
+    const parsed = parseDocumentBlocksCore(fields.content, config)
+      .find((block) => block.type === "question");
+    const originalNumber = numbers[0];
+    const answer = fields.answer?.replace(
+      new RegExp(`^(?:第\\s*)?${originalNumber}\\s*(?:题)?\\s*[.．、:：)）]\\s*`), "",
+    ).trim();
+    addBlock("question", parsed?.content || fields.content, {
+      options: parsed?.options || [],
+      questionType: unit.part === "写作" ? "essay"
+        : parsed?.questionType || (unit.part === "听力" ? "single" : "short"),
+      difficulty: 3, answer, analysis: fields.analysis, summary: fields.summary,
+    });
+  };
+  const addLine = (line: string, grouped: boolean) => {
+    if (!current) current = { lines: [], part: part!, grouped, gap };
+    current.lines.push(line);
+  };
+
+  let beforePart: string[] = [];
+  for (let index = 0; index < sourceLines.length; index += 1) {
+    const raw = sourceLines[index];
+    const line = structuralLines[index];
+    if (!line) continue;
+    const major = englishPartPattern.exec(line);
+    if (major) {
+      submitCurrent();
+      if (beforePart.length) {
+        addBlock("documentTitle", beforePart[0]);
+        if (beforePart.length > 1) addBlock("documentInfo", beforePart.slice(1).join("\n"));
+        beforePart = [];
+      }
+      part = major[1] as EnglishPart;
+      listeningAtomic = false;
+      gap = false;
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (!part) {
+      beforePart.push(raw);
+      continue;
+    }
+    if (englishSectionPattern.test(line)) {
+      submitCurrent();
+      gap = false;
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (part === "听力" && (englishListeningSinglePattern.test(line) || englishListeningGroupPattern.test(line))) {
+      submitCurrent();
+      listeningAtomic = englishListeningSinglePattern.test(line);
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (part === "阅读理解" && englishGapPattern.test(line)) {
+      submitCurrent();
+      gap = true;
+      addLine(raw, true);
+      continue;
+    }
+    if (part === "阅读理解" && !gap && /^[A-D]$/.test(line)) {
+      submitCurrent();
+      addBlock("groupTitle", raw);
+      continue;
+    }
+    if (part === "听力" && englishListeningPassagePattern.test(line)) {
+      submitCurrent();
+      addLine(raw, true);
+      continue;
+    }
+    const numbered = extractLeadingQuestionNumber(line);
+    if (numbered && (
+      (part === "听力" && listeningAtomic)
+      || part === "写作"
+    )) {
+      submitCurrent();
+      addLine(raw, false);
+      continue;
+    }
+    addLine(raw, part !== "听力" && part !== "写作" || !listeningAtomic);
+  }
+  submitCurrent();
+  if (beforePart.length) {
+    addBlock("documentTitle", beforePart[0]);
+    if (beforePart.length > 1) addBlock("documentInfo", beforePart.slice(1).join("\n"));
+  }
+
+  // A single answer key often follows several independent listening questions.
+  // Distribute only explicitly numbered answer pairs; leave unnumbered answers untouched.
+  let sectionStart = 0;
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block.type === "groupTitle" && englishPartPattern.test(normalizeStructuralText(block.content))) {
+      sectionStart = index + 1;
+    }
+    if (block.type !== "question" || !block.answer) continue;
+    const answers = englishAnswerMap(block.answer);
+    if (answers.size < 2) continue;
+    for (const candidate of blocks.slice(sectionStart, index + 1)) {
+      if (candidate.type !== "question" || candidate.questionType === "comprehensive") continue;
+      const numbers = englishQuestionNumbers(candidate.content);
+      if (numbers.length === 1 && answers.has(numbers[0])) candidate.answer = answers.get(numbers[0]);
+    }
+    if (englishQuestionNumbers(block.content).length === 1) {
+      const number = englishQuestionNumbers(block.content)[0];
+      block.answer = answers.get(number) || block.answer;
+    }
+  }
+  return blocks;
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
+  const english = parseEnglishDocumentBlocks(content, config);
+  if (english) return english;
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const solutionHeadingIndexes = lines
     .map((line, index) => ({ index, kind: trailingSolutionHeadingKind(line.trim()) }))
@@ -1892,7 +2395,12 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     .reverse();
 
   for (const { index: headingIndex, kind } of solutionHeadingIndexes) {
-    const solutions = parseTrailingSolutions(lines.slice(headingIndex + 1), config);
+    const headingLine = lines[headingIndex].trim();
+    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
+    const solutionLines = inlineAnswers !== headingLine
+      ? [inlineAnswers, ...lines.slice(headingIndex + 1)]
+      : lines.slice(headingIndex + 1);
+    const solutions = parseTrailingSolutions(solutionLines, config);
     if (solutions.length === 0) continue;
 
     const blocks = parseDocumentBlocksCore(lines.slice(0, headingIndex).join("\n"), config);
@@ -1904,8 +2412,152 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
       allowPositionalFallback: kind !== "answer",
     });
     const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(blocks, config.subject), content, config);
+    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config);
   }
 
-  return refineGeographyBlocks(normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject), content, config);
+  return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
+}
+
+export interface MathQuestionNumberSequenceGap {
+  previous: number;
+  next: number;
+  missing: number[];
+}
+
+/** 仅检查已识别为顶层数学题的编号，忽略小问和示例题的局部编号。 */
+export function findMathQuestionNumberSequenceGaps(blocks: DocumentBlock[], confirmedNumbers: number[] = []): MathQuestionNumberSequenceGap[] {
+  const gaps: MathQuestionNumberSequenceGap[] = [];
+  let previous: number | undefined;
+  for (const block of blocks) {
+    if (block.type !== "question") continue;
+    const firstLine = block.content.trim().split("\n", 1)[0];
+    const numberText = extractLeadingQuestionNumber(firstLine)?.number || mathQuestionNumber(firstLine, confirmedNumbers);
+    if (!numberText) continue;
+    const number = Number(numberText);
+    if (previous !== undefined && number > previous + 1) {
+      gaps.push({
+        previous,
+        next: number,
+        missing: Array.from({ length: Math.min(number - previous - 1, 100) }, (_, index) => previous! + index + 1),
+      });
+    }
+    previous = number;
+  }
+  return gaps;
+}
+
+
+export interface MathQuestionNumberGap {
+  afterBlockId: string;
+  previousNumber: number;
+  nextNumber: number;
+}
+
+export interface SuspectedMathQuestionNumber {
+  blockId: string;
+  number: number;
+}
+
+export function findMathQuestionNumberGaps(
+  blocks: DocumentBlock[],
+  config: DocumentParseConfig,
+): MathQuestionNumberGap[] {
+  if (config.subject?.trim() !== "数学") return [];
+  const gaps: MathQuestionNumberGap[] = [];
+  let previous: { id: string; number: number } | undefined;
+  for (const block of blocks) {
+    if (block.type === "groupTitle") {
+      previous = undefined;
+      continue;
+    }
+    if (block.type !== "question") continue;
+    const number = Number(extractQuestionNumber(block.content, config));
+    if (!Number.isInteger(number) || number < 1) continue;
+    if (previous && number > previous.number + 1 && number - previous.number <= 30) {
+      gaps.push({ afterBlockId: previous.id, previousNumber: previous.number, nextNumber: number });
+    }
+    previous = { id: block.id, number };
+  }
+  return gaps;
+}
+
+export function findSuspectedMathQuestionNumbers(
+  blocks: DocumentBlock[],
+  config: DocumentParseConfig,
+): SuspectedMathQuestionNumber[] {
+  if (config.subject?.trim() !== "数学") return [];
+  const warnings: SuspectedMathQuestionNumber[] = [];
+  for (const block of blocks) {
+    if (block.type !== "question") continue;
+    const number = Number(extractQuestionNumber(block.content, config));
+    if (!Number.isInteger(number) || number < 1) continue;
+    const fields: Array<keyof Pick<DocumentBlock, "content" | "answer" | "analysis" | "summary">> =
+      ["content", "answer", "analysis", "summary"];
+    const hasPossibleNext = fields.some((field) => (block[field] || "")
+      .split("\n")
+      .some((line, index) => {
+        if (field === "content" && index === 0) return false;
+        const candidate = mathQuestionNumberCandidate(line);
+        return candidate?.number === number + 1 && !candidate.separated;
+      }));
+    if (hasPossibleNext) warnings.push({ blockId: block.id, number: number + 1 });
+  }
+  return warnings;
+}
+
+// The teacher explicitly confirms these numbers. Only numbered lines in the
+// selected block are reparsed; all neighboring reviewed blocks remain intact.
+export function reparseMathQuestionBlock(
+  block: DocumentBlock,
+  config: DocumentParseConfig,
+  confirmedNumbers: number[],
+): DocumentBlock[] | null {
+  if (
+    config.subject?.trim() !== "数学" || block.type !== "question"
+    || confirmedNumbers.length === 0 || confirmedNumbers.length > 50
+    || confirmedNumbers.some((number) => !Number.isInteger(number) || number < 1 || number > 9999)
+  ) return null;
+
+  const fields = ["content", "answer", "analysis", "summary"] as const;
+  for (let fieldIndex = 0; fieldIndex < fields.length; fieldIndex += 1) {
+    const field = fields[fieldIndex];
+    const lines = (block[field] || "").split("\n");
+    for (let lineIndex = field === "content" ? 1 : 0; lineIndex < lines.length; lineIndex += 1) {
+      const candidate = mathQuestionNumberCandidate(lines[lineIndex]);
+      if (!candidate || !confirmedNumbers.includes(candidate.number)) continue;
+      // Already extracted option fields cannot be reliably attributed to two
+      // different questions when their stems were concatenated.
+      if (field === "content" && block.options?.length) return null;
+
+      const previousText = lines.slice(0, lineIndex).join("\n").trim();
+      const remainder = lines.slice(lineIndex).join("\n").trim();
+      const after = fields.slice(fieldIndex + 1).flatMap((nextField) => {
+        const value = block[nextField]?.trim();
+        if (!value) return [];
+        const labels = { answer: "答案：", analysis: "解析：", summary: "总结：" };
+        return [labels[nextField as keyof typeof labels] + value];
+      });
+      const parsed = parseDocumentBlocks([remainder, ...after].join("\n"), {
+        ...config,
+        confirmedMathQuestionNumbers: confirmedNumbers,
+      });
+      const parsedNumbers = parsed
+        .filter((item) => item.type === "question")
+        .map((item) => Number(extractQuestionNumber(item.content, {
+          ...config, confirmedMathQuestionNumbers: confirmedNumbers,
+        })));
+      if (
+        !parsed.length || parsed[0].type !== "question"
+        || !confirmedNumbers.every((number) => parsedNumbers.includes(number))
+      ) return null;
+
+      const original: DocumentBlock = { ...block, [field]: previousText, status: "edited" };
+      for (const nextField of fields.slice(fieldIndex + 1)) {
+        delete original[nextField];
+      }
+      if (!original.content.trim()) return null;
+      return [original, ...parsed];
+    }
+  }
+  return null;
 }

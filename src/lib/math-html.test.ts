@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { containsMathDelimiter, renderMathHtml, serializeMathHtml } from "./math-html";
 
 describe("renderMathHtml", () => {
+  it("renders math systems missing dollar delimiters in old decomposition records", () => {
+    const source = String.raw`得\begin{cases}x-y-z=0 2x-z=0\end{cases}，取\begin{cases}x=1\\y=-1\end{cases}`;
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(source);
+    const formulas = container.querySelectorAll<HTMLElement>(".katex-formula");
+
+    expect(formulas).toHaveLength(2);
+    expect(formulas[0].dataset.latex).toBe(String.raw`\begin{cases}x-y-z=0\\2x-z=0\end{cases}`);
+    expect(formulas[1].dataset.latex).toBe(String.raw`\begin{cases}x=1\\y=-1\end{cases}`);
+    expect(container.textContent).not.toContain(String.raw`\begin{cases}`);
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(serializeMathHtml(container.innerHTML)).toContain(String.raw`$\begin{cases}`);
+  });
+
   it("renders multiline systems with a legacy missing left delimiter", () => {
     const source = String.raw`联立 $\left\begin{cases}x=1\\y=2\end{cases}\right.$。`;
     const container = document.createElement("div");

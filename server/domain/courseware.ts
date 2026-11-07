@@ -33,6 +33,12 @@ function matchFilter(c: Courseware, filter: ResourceFilter): boolean {
       if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
     } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
   }
+  if (filter.errorReasonIds?.length) {
+    const ids = c.errorReasonIds || [];
+    if ((filter.errorReasonLogic || "or") === "and") {
+      if (!filter.errorReasonIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.errorReasonIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.grade && c.grade !== filter.grade) return false;
   if (filter.schoolYear && c.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (c.semester || "上学期") !== filter.semester) return false;

@@ -81,6 +81,8 @@ interface QuestionMetadataDraft {
   sourceType: string;
   chapterIds: string[];
   knowledgePointIds: string[];
+  thoughtMethodIds: string[];
+  errorReasonIds: string[];
 }
 
 const difficultyLabel = ["", "简单", "较易", "中等", "较难", "困难"];
@@ -135,6 +137,8 @@ export default function LecturePreviewPage() {
   const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
+  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [metadataQuestion, setMetadataQuestion] = useState<Question | null>(null);
   const [metadataDraft, setMetadataDraft] = useState<QuestionMetadataDraft | null>(null);
   const [savingQuestionMetadata, setSavingQuestionMetadata] = useState(false);
@@ -155,6 +159,8 @@ export default function LecturePreviewPage() {
   } = useQuestionMetadataOptions(schoolId);
   const chapterNameMap = useMemo(() => treeNameMap(chapterTree), [chapterTree]);
   const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
+  const methodNameMap = useMemo(() => treeNameMap(methodTree), [methodTree]);
+  const errorNameMap = useMemo(() => treeNameMap(errorTree), [errorTree]);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,6 +216,8 @@ export default function LecturePreviewPage() {
     if (!schoolId) {
       setChapterTree(null);
       setKnowledgeTree(null);
+      setMethodTree(null);
+      setErrorTree(null);
       return;
     }
 
@@ -217,20 +225,26 @@ export default function LecturePreviewPage() {
     Promise.all([
       knowledgeService.getChapterTree(schoolId),
       knowledgeService.getKnowledgeTree(schoolId),
-    ]).then(([nextChapterTree, nextKnowledgeTree]) => {
+      knowledgeService.getMethodTree(lecture?.teacherId || teacher?.id || schoolId),
+      knowledgeService.getErrorReasonTree(lecture?.teacherId || teacher?.id || schoolId),
+    ]).then(([nextChapterTree, nextKnowledgeTree, nextMethodTree, nextErrorTree]) => {
       if (cancelled) return;
       setChapterTree(nextChapterTree);
       setKnowledgeTree(nextKnowledgeTree);
+      setMethodTree(nextMethodTree);
+      setErrorTree(nextErrorTree);
     }).catch(() => {
       if (cancelled) return;
       setChapterTree(null);
       setKnowledgeTree(null);
+      setMethodTree(null);
+      setErrorTree(null);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [schoolId]);
+  }, [schoolId, lecture?.teacherId, teacher?.id]);
 
   useEffect(() => {
     if (!lecture || !teacher || lecture.teacherId !== teacher.id || !teacher.schoolId) {
@@ -458,6 +472,8 @@ export default function LecturePreviewPage() {
       sourceType: question.sourceType || "",
       chapterIds: [...question.chapterIds],
       knowledgePointIds: [...question.knowledgePointIds],
+      thoughtMethodIds: [...(question.thoughtMethodIds || [])],
+      errorReasonIds: [...(question.errorReasonIds || [])],
     });
   };
 
@@ -483,6 +499,8 @@ export default function LecturePreviewPage() {
         sourceType: metadataDraft.sourceType,
         chapterIds: metadataDraft.chapterIds,
         knowledgePointIds: metadataDraft.knowledgePointIds,
+        thoughtMethodIds: metadataDraft.thoughtMethodIds,
+        errorReasonIds: metadataDraft.errorReasonIds,
       });
       setQuestions((current) => ({ ...current, [updated.id]: updated }));
       setMetadataQuestion(null);
@@ -673,22 +691,6 @@ export default function LecturePreviewPage() {
         </select>
       </div>
 
-      <div className="no-print mb-3 rounded-lg border border-ink-200 bg-paper p-3">
-        <DocumentQuestionBatchActions
-          schoolId={schoolId}
-          questionIds={questionIds}
-          disabled={Boolean(lecture.answerSheetPublishedAt) || answerRecords.length > 0}
-          onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-          markAllButton={<DocumentQuestionCompletionBatch
-            documentId={lecture.id}
-            questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
-              .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
-            disabled={students.length === 0 || questionIds.length === 0}
-            onApplied={refreshCompletionRecords}
-          />}
-        />
-      </div>
-
       <div
         className={cn(
           "preview-sticky-shell",
@@ -696,19 +698,23 @@ export default function LecturePreviewPage() {
         )}
       >
         <aside className="preview-sticky-rail no-print">
-          <div className="preview-sidebar-intro">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-serif text-sm font-semibold text-ink-900">题目属性与使用情况</div>
-                <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
-              </div>
-
-            </div>
-          </div>
-          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
+          <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="lecture-preview-details">
             <PreviewSidebarControls
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
+            />
+            <DocumentQuestionBatchActions
+              schoolId={schoolId}
+              questionIds={questionIds}
+              disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
+              onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+              markAllButton={<DocumentQuestionCompletionBatch
+                documentId={lecture.id}
+                questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
+                  .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
+                disabled={students.length === 0 || questionIds.length === 0}
+                onApplied={refreshCompletionRecords}
+              />}
             />
           </div>
         </aside>
@@ -774,6 +780,8 @@ export default function LecturePreviewPage() {
                         : undefined}
                       chapterNameMap={chapterNameMap}
                       knowledgeNameMap={knowledgeNameMap}
+                      methodNameMap={methodNameMap}
+                      errorNameMap={errorNameMap}
                       visibility={previewSidebarVisibility}
                     />
                   ) : undefined}
@@ -944,6 +952,22 @@ export default function LecturePreviewPage() {
                 ) : (
                   <div className="p-6 text-center text-xs text-ink-400">知识点目录加载失败</div>
                 )}
+              </div>
+              <div className="overflow-hidden rounded-lg border border-ink-150">
+                {methodTree ? (
+                  <SearchableTree editable data={methodTree} onDataChange={setMethodTree}
+                    title="思想方法" accent="teal" checkable checkedIds={metadataDraft.thoughtMethodIds}
+                    onCheck={(thoughtMethodIds) => setMetadataDraft((current) => current && ({ ...current, thoughtMethodIds }))}
+                    searchPlaceholder="搜索思想方法..." treeMaxHeightClassName="max-h-[320px]" />
+                ) : <div className="p-6 text-center text-xs text-ink-400">思想方法目录加载失败</div>}
+              </div>
+              <div className="overflow-hidden rounded-lg border border-ink-150">
+                {errorTree ? (
+                  <SearchableTree editable data={errorTree} onDataChange={setErrorTree}
+                    title="可能错因" accent="teal" checkable checkedIds={metadataDraft.errorReasonIds}
+                    onCheck={(errorReasonIds) => setMetadataDraft((current) => current && ({ ...current, errorReasonIds }))}
+                    searchPlaceholder="搜索错因..." treeMaxHeightClassName="max-h-[320px]" />
+                ) : <div className="p-6 text-center text-xs text-ink-400">错因字典加载失败</div>}
               </div>
             </div>
           </div>
@@ -1212,6 +1236,8 @@ function LectureQuestionDetails({
   onEditMetadata,
   chapterNameMap,
   knowledgeNameMap,
+  methodNameMap,
+  errorNameMap,
   visibility,
 }: {
   question: Question | null | undefined;
@@ -1223,6 +1249,8 @@ function LectureQuestionDetails({
   onEditMetadata?: (question: Question) => void;
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
+  methodNameMap: Map<string, string>;
+  errorNameMap: Map<string, string>;
   visibility: PreviewSidebarVisibility;
 }) {
   if (!question) {
@@ -1256,7 +1284,7 @@ function LectureQuestionDetails({
                 onClick={() => onEditMetadata(question)}
                 className="no-print inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700"
                 aria-label={`编辑第 ${questionNumber} 题属性`}
-                title="编辑章节课和知识点"
+                title="编辑章节课、知识点、思想方法和可能错因"
               >
                 <Edit3 className="h-3 w-3" />
                 编辑
@@ -1271,6 +1299,12 @@ function LectureQuestionDetails({
             <div>
               <span className="text-ink-400">知识点：</span>
               {knowledgeNames.length > 0 ? knowledgeNames.join("、") : "暂无关联知识点"}
+            </div>
+            <div><span className="text-ink-400">思想方法：</span>
+              {(question.thoughtMethodIds || []).map((id) => methodNameMap.get(id)).filter(Boolean).join("、") || "暂无关联思想方法"}
+            </div>
+            <div><span className="text-ink-400">可能错因：</span>
+              {(question.errorReasonIds || []).map((id) => errorNameMap.get(id)).filter(Boolean).join("、") || "暂无关联错因"}
             </div>
           </div>
         </div>

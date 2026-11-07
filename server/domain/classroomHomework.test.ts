@@ -239,6 +239,93 @@ describe("classroomHomeworkService", () => {
     });
   });
 
+  it("merges multiple selected papers into one homework and keeps class-specific paper visibility", async () => {
+    const state = createState();
+    const base = {
+      teacherId: "teacher-1", schoolId: "school-1", title: "函数卷",
+      classIds: ["class-1"], questions: [], chapterIds: [], knowledgePointIds: [],
+      grade: "高一", schoolYear: "2026-2027", duration: 45, totalScore: 100,
+      status: "published" as const, createdAt: now, updatedAt: now,
+    };
+    state.examPapers = [
+      { ...base, id: "paper-1", originalFileUrl: "/api/files/file-1" },
+      { ...base, id: "paper-2", title: "复习卷" },
+    ];
+    await runWithState(state, async () => {
+      const created = await classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        content: "", classIds: ["class-1"], examPaperIds: ["paper-1", "paper-2", "paper-1"],
+        assignedDate: "2026-08-02", publishAt: now,
+      });
+      expect(created.examPaperIds).toEqual(["paper-1", "paper-2"]);
+      expect(state.classroomHomeworks).toHaveLength(1);
+      const [linked] = await classroomHomeworkService.listHomeworks({ classId: "class-1" });
+      expect(linked.linkedPapers).toEqual([
+        { id: "paper-1", title: "函数卷", originalFileUrl: "/api/files/file-1" },
+        { id: "paper-2", title: "复习卷", originalFileUrl: undefined },
+      ]);
+      const edited = await classroomHomeworkService.updateHomework(created.id, "teacher-1", "school-1", {
+        content: "订正试卷", classIds: ["class-1"], examPaperIds: ["paper-2"],
+        assignedDate: "2026-08-03", publishAt: now,
+      });
+      expect(edited.examPaperIds).toEqual(["paper-2"]);
+      expect(state.classroomHomeworks).toHaveLength(1);
+    });
+  });
+
+  it("shows only papers relevant to the requested class and checks paper-only class coverage", async () => {
+    const state = createState();
+    state.teachers![0].teachingClassIds = ["class-1", "class-2"];
+    state.teachers![0].affiliations![0].teachingClassIds = ["class-1", "class-2"];
+    const base = {
+      teacherId: "teacher-1", schoolId: "school-1", title: "专用试卷",
+      questions: [], chapterIds: [], knowledgePointIds: [], grade: "高一",
+      schoolYear: "2026-2027", duration: 60, totalScore: 100,
+      status: "published" as const, createdAt: now, updatedAt: now,
+    };
+    state.examPapers = [
+      { ...base, id: "paper-1", classIds: ["class-1"] },
+      { ...base, id: "paper-2", classIds: ["class-2"] },
+    ];
+    await runWithState(state, async () => {
+      const input = { content: "", classIds: ["class-1", "class-2"],
+        examPaperIds: ["paper-1"], assignedDate: "2026-08-02", publishAt: now };
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", input))
+        .rejects.toThrow("所选试卷未覆盖全部发布班级");
+      await classroomHomeworkService.createHomework("teacher-1", "school-1", {
+        ...input, examPaperIds: ["paper-1", "paper-2"],
+      });
+      const [classOne] = await classroomHomeworkService.listHomeworks({ classId: "class-1" });
+      expect(classOne.examPaperIds).toEqual(["paper-1"]);
+      expect(classOne.linkedPapers?.map((paper) => paper.id)).toEqual(["paper-1"]);
+      const [classTwo] = await classroomHomeworkService.listHomeworks({ classId: "class-2" });
+      expect(classTwo.examPaperIds).toEqual(["paper-2"]);
+      expect(classTwo.linkedPapers?.map((paper) => paper.id)).toEqual(["paper-2"]);
+    });
+  });
+
+  it("rejects papers outside the school or target classes while allowing papers shared by another teacher", async () => {
+    const state = createState();
+    const base = {
+      id: "paper-1", teacherId: "teacher-1", schoolId: "school-1", title: "函数卷",
+      classIds: ["class-2"], questions: [], chapterIds: [], knowledgePointIds: [],
+      grade: "高一", schoolYear: "2026-2027", duration: 45, totalScore: 100,
+      status: "published" as const, createdAt: now, updatedAt: now,
+    };
+    state.examPapers = [base];
+    const input = { content: "", classIds: ["class-1"], examPaperIds: ["paper-1"],
+      assignedDate: "2026-08-02", publishAt: now };
+    await runWithState(state, async () => {
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", input))
+        .rejects.toThrow("所选试卷不存在或不适用于发布班级");
+      state.examPapers = [{ ...base, classIds: ["class-1"], teacherId: "teacher-2" }];
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", input))
+        .resolves.toMatchObject({ examPaperIds: ["paper-1"] });
+      state.examPapers = [{ ...base, classIds: ["class-1"], schoolId: "school-2" }];
+      await expect(classroomHomeworkService.createHomework("teacher-1", "school-1", input))
+        .rejects.toThrow("所选试卷不存在或不适用于发布班级");
+    });
+  });
+
   it("deletes an existing homework", async () => {
     const state = createState();
     state.classroomHomeworks = [homework({})];

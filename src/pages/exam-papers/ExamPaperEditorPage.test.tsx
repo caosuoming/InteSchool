@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   listPapers: vi.fn(),
   listLectures: vi.fn(),
   updatePaper: vi.fn(),
+  markPaperDownloaded: vi.fn(),
+  invalidatePaperDownload: vi.fn(),
+  invalidateAnswerSheet: vi.fn(),
   duplicatePaper: vi.fn(),
   listQuestions: vi.fn(),
   getQuestion: vi.fn(),
@@ -25,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   listSettings: vi.fn(),
   getChapterTree: vi.fn(),
   getKnowledgeTree: vi.fn(),
+  getMethodTree: vi.fn(),
+  getErrorReasonTree: vi.fn(),
   downloadExamPaperDocxVariants: vi.fn(),
   createLessonFromExamPaper: vi.fn(),
   getLessonCoursewareBySource: vi.fn(),
@@ -49,6 +54,9 @@ vi.mock("@/services/examPaper", () => ({
   examPaperService: {
     getPaper: mocks.getPaper,
     updatePaper: mocks.updatePaper,
+    markPaperDownloaded: mocks.markPaperDownloaded,
+    invalidatePaperDownload: mocks.invalidatePaperDownload,
+    invalidateAnswerSheet: mocks.invalidateAnswerSheet,
     duplicatePaper: mocks.duplicatePaper,
     listPapers: mocks.listPapers,
   },
@@ -94,6 +102,8 @@ vi.mock("@/services/examPublish", () => ({
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getKnowledgeTree: mocks.getKnowledgeTree,
+    getMethodTree: mocks.getMethodTree,
+    getErrorReasonTree: mocks.getErrorReasonTree,
     getChapterTree: mocks.getChapterTree,
   },
 }));
@@ -291,6 +301,9 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listLectures.mockResolvedValue([]);
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.duplicatePaper.mockResolvedValue({ ...paper, id: "paper-copy", isExtractCopy: false });
+    mocks.markPaperDownloaded.mockResolvedValue({ ...paper, paperDownloadedAt: "2026-11-07T00:00:00Z" });
+    mocks.invalidatePaperDownload.mockResolvedValue({ ...paper, paperDownloadedAt: undefined });
+    mocks.invalidateAnswerSheet.mockResolvedValue({ ...paper, answerSheetExportedAt: undefined, hasAnswerSheet: undefined });
     mocks.listQuestions.mockResolvedValue([question]);
     mocks.getQuestion.mockResolvedValue(question);
     mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
@@ -321,6 +334,8 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listSettings.mockResolvedValue([]);
     mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
+    mocks.getMethodTree.mockResolvedValue({ id: "root", name: "全部思想方法", type: "method", count: 0, children: [] });
+    mocks.getErrorReasonTree.mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
     mocks.downloadExamPaperDocxVariants.mockResolvedValue(undefined);
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
     mocks.getLessonCoursewareBySource.mockResolvedValue(null);
@@ -452,7 +467,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     const previewControls = screen.getByTestId("exam-paper-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    const batchActions = screen.getByTestId("document-question-batch-actions");
+    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
     expect(batchActions).toHaveTextContent("批量操作");
     expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
     expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
@@ -460,13 +475,20 @@ describe("ExamPaperEditorPage preview", () => {
     expect(previewControls).not.toHaveTextContent("题目信息与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
-    const previewIntro = previewControls.previousElementSibling as HTMLElement;
-    expect(previewIntro).toHaveClass("preview-sidebar-intro");
-    expect(previewIntro).toHaveTextContent("题目信息与使用情况");
-    expect(within(batchActions).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
-    expect(previewControls).not.toHaveTextContent("批量操作");
-    expect(batchActions.parentElement?.nextElementSibling).toHaveClass("preview-sticky-shell");
-    expect(within(previewIntro).queryByRole("button", { name: "全部设为已做" })).not.toBeInTheDocument();
+    expect(previewControls.previousElementSibling).toBeNull();
+    expect(screen.queryByText("题目信息与使用情况")).not.toBeInTheDocument();
+    expect(screen.queryByText("选择具体学生后可重新设置该题的答题情况")).not.toBeInTheDocument();
+    expect(within(previewControls).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    const displayToolbar = within(previewControls).getByRole("toolbar", { name: "题目侧栏显示控制" });
+    expect(displayToolbar).toHaveClass("flex-col");
+    const displayButtons = within(displayToolbar).getAllByRole("button");
+    expect(displayButtons).toHaveLength(4);
+    expect(displayButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
+    const sidebarBatchActions = within(previewControls).getByTestId("document-question-batch-actions");
+    expect(sidebarBatchActions.children[1]).toHaveClass("flex-col");
+    const batchButtons = within(sidebarBatchActions).getAllByRole("button");
+    expect(batchButtons).toHaveLength(4);
+    expect(batchButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();
     expect(preview.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("exam-question-details-1");
@@ -547,6 +569,8 @@ describe("ExamPaperEditorPage preview", () => {
       expect(mocks.updateQuestion).toHaveBeenCalledWith(question.id, {
         chapterIds: ["chapter-1"],
         knowledgePointIds: [],
+        thoughtMethodIds: [],
+        errorReasonIds: [],
       });
     });
     expect(details).toHaveTextContent("函数与方程");
@@ -1399,6 +1423,86 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.getByLabelText("未练类型题数（未练知识点）")).toHaveValue(3);
   });
 
+  it("locks arrangement after downloading and allows explicit download invalidation", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, isExtractCopy: false, paperDownloadedAt: "2026-11-07T00:00:00Z" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      renderPage();
+      const button = await screen.findByRole("button", { name: "下载作废" });
+      fireEvent.click(button);
+      await waitFor(() => expect(mocks.invalidatePaperDownload).toHaveBeenCalledWith(paper.id));
+      await waitFor(() => expect(screen.queryByRole("button", { name: "下载作废" })).not.toBeInTheDocument());
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it("keeps paper attributes editable after export while blocking arrangement changes", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+      paperDownloadedAt: "2026-11-07T00:00:00Z",
+    });
+    renderEditorPage();
+    expect(await screen.findByText(/试卷已下载或答题卡已导出，题目编排已锁定/)).toBeInTheDocument();
+    expect(screen.getByLabelText("文档名")).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: "按题型" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "按项目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加题目" })).not.toBeInTheDocument();
+  });
+
+  it("reviews generated questions by type and knowledge point, deletes and replaces individual questions", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, isExtractCopy: false, contentBlocks: [], classIds: [] });
+    mocks.getKnowledgeTree.mockResolvedValue({ ...knowledgeTree, children: [
+      ...knowledgeTree.children,
+      { id: "knowledge-2", name: "函数值域", type: "knowledge", children: [] },
+    ] });
+    const candidates = Array.from({ length: 7 }, (_, index) => ({
+      ...question,
+      id: `auto-${index}`,
+      stem: `自动选题测试 ${index}`,
+      knowledgePointIds: [index % 2 === 0 ? "knowledge-1" : "knowledge-2"],
+      recommendation: (index < 5 ? 5 : 1) as Question["recommendation"],
+    }));
+    mocks.listQuestions.mockResolvedValue([question, ...candidates]);
+
+    renderEditorPage();
+    fireEvent.click(await screen.findByRole("button", { name: "AI 自动组卷" }));
+    const chapter = await screen.findByText("函数与方程");
+    const chapterRow = chapter.closest(".group") as HTMLElement;
+    fireEvent.click(within(chapterRow).getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始智能组卷" }));
+
+    const filters = await screen.findByRole("complementary", { name: "已选题目筛选" });
+    const results = screen.getByLabelText("自动选题结果");
+    expect(within(results).getAllByRole("button", { name: /删除第/ })).toHaveLength(5);
+    expect(within(filters).getByRole("button", { name: /函数定义域/ })).toHaveTextContent("3");
+    expect(within(filters).getByRole("button", { name: /函数值域/ })).toHaveTextContent("2");
+
+    fireEvent.click(within(filters).getByRole("button", { name: /函数定义域/ }));
+    expect(results).toHaveTextContent("当前显示 3 / 5 题");
+    fireEvent.click(within(results).getAllByRole("button", { name: /删除第 \d+ 道题/ })[0]);
+    expect(results).toHaveTextContent("当前显示 2 / 4 题");
+    expect(within(filters).getByRole("button", { name: /函数定义域/ })).toHaveTextContent("2");
+
+    fireEvent.click(within(results).getAllByRole("button", { name: /更换第 \d+ 道题/ })[0]);
+    expect(within(results).getByText("同题型、相近知识点的候选题")).toBeInTheDocument();
+    fireEvent.click(within(results).getByRole("button", { name: "替换为：自动选题测试 6" }));
+    expect(within(results).getByText("自动选题测试 6")).toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: /函数定义域/ })).toHaveTextContent("2");
+
+    fireEvent.click(screen.getByRole("button", { name: "添加到试卷（4题）" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
+      questions: expect.arrayContaining([expect.objectContaining({ questionId: "auto-6" })]),
+    })));
+    const saved = mocks.updatePaper.mock.calls.at(-1)?.[1].questions as Array<{ questionId: string }>;
+    expect(saved).toHaveLength(5);
+    expect(new Set(saved.map((item) => item.questionId)).size).toBe(5);
+  });
+
   it("locks an already-used paper against further editing", async () => {
     mocks.getPaper.mockResolvedValue({
       ...paper,
@@ -1409,7 +1513,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     renderEditorPage();
 
-    expect(await screen.findByText("该文档已录入学生答题记录，现已锁定，不能再编辑。")).toBeInTheDocument();
+    expect(await screen.findByText("答题卡已发布，题目和顺序已锁定；仍可修改题目属性、分值和学生使用记录。")).toBeInTheDocument();
     expect(screen.getByLabelText("文档名")).toBeDisabled();
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "添加题目" })).not.toBeInTheDocument();

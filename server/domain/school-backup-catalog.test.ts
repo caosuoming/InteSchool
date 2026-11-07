@@ -159,7 +159,7 @@ function findNode(tree: TreeNode, name: string): TreeNode | undefined {
 }
 
 describe("independent school resource catalogs", () => {
-  it("starts empty, merges same-name directory paths, and deduplicates question content", async () => {
+  it("starts empty, merges same-name directory paths, and keeps question sources independent", async () => {
     const state = baseState();
     await runWithState(state, async () => {
       expect((state.schoolChapters as Chapter[])).toEqual([]);
@@ -186,9 +186,10 @@ describe("independent school resource catalogs", () => {
 
       const backups = (state.schoolBackups as SchoolResourceBackup[])
         .filter((item) => item.resourceType === "question");
-      expect(backups).toHaveLength(1);
-      expect(backups[0].targetClassIds).toEqual(expect.arrayContaining(["class-a", "class-b"]));
-      expect(backups[0].targetStudentIds).toEqual(expect.arrayContaining(["student-a", "student-b"]));
+      expect(backups).toHaveLength(2);
+      expect(backups.map((item) => item.sourceResourceId)).toEqual(expect.arrayContaining(["q-a", "q-b"]));
+      expect(backups.flatMap((item) => item.targetClassIds)).toEqual(expect.arrayContaining(["class-a", "class-b"]));
+      expect(backups.flatMap((item) => item.targetStudentIds)).toEqual(expect.arrayContaining(["student-a", "student-b"]));
 
       const schoolChapters = state.schoolChapters as Chapter[];
       const schoolPoints = state.schoolKnowledgePoints as KnowledgePoint[];
@@ -200,9 +201,9 @@ describe("independent school resource catalogs", () => {
 
       const chapterTree = await schoolBackupService.getChapterTree("school-a");
       const knowledgeTree = await schoolBackupService.getKnowledgeTree("school-a");
-      expect(findNode(chapterTree, "必修第一册")?.count).toBe(1);
-      expect(findNode(chapterTree, "函数")?.count).toBe(1);
-      expect(findNode(knowledgeTree, "导数")?.count).toBe(1);
+      expect(findNode(chapterTree, "必修第一册")?.count).toBe(2);
+      expect(findNode(chapterTree, "函数")?.count).toBe(2);
+      expect(findNode(knowledgeTree, "导数")?.count).toBe(2);
     });
   });
 
@@ -550,9 +551,14 @@ describe("independent school resource catalogs", () => {
       );
       const beforeCount = (state.questions as Question[]).length;
 
+      await expect(schoolBackupService.saveAsOwnResource(
+        backup!.id, teacher("teacher-b"),
+      )).rejects.toThrow("相似题目");
+      const conflicts = await schoolBackupService.checkSaveQuestionDuplicates(backup!.id, teacher("teacher-b"));
+      expect(conflicts[0].targetResourceId).toBe(existing.id);
       const saved = await schoolBackupService.saveAsOwnResource(
-        backup!.id,
-        teacher("teacher-b"),
+        backup!.id, teacher("teacher-b"),
+        { action: "same", targetResourceId: existing.id },
       );
 
       expect(saved).toEqual({

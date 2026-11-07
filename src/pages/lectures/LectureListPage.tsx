@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
 import { knowledgeService } from "@/services/knowledge";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { QuestionAnnotationSummary } from "@/components/resources/QuestionAnnotationSummary";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -307,7 +308,10 @@ export default function LectureListPage() {
                 <Card key={lec.id} hoverable className="flex flex-col">
                   <CardHeader
                     title={lec.title}
-                    subtitle={lec.description || "无描述"}
+                    subtitle={<>
+                      <QuestionAnnotationSummary summary={lec.annotationSummary} />
+                      {lec.description && <div className="mt-1">{lec.description}</div>}
+                    </>}
                     action={
                       <Badge variant={lec.status === "published" ? "green" : "default"}>
                         {lec.status === "published" ? "已发布" : "草稿"}

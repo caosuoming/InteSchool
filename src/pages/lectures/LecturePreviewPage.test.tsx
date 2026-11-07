@@ -52,6 +52,8 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
+    getMethodTree: vi.fn(),
   },
 }));
 vi.mock("@/services/analytics", () => ({
@@ -291,6 +293,8 @@ describe("LecturePreviewPage", () => {
       updatedAt: "2026-08-01T00:00:00.000Z",
     });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({ id: "root", name: "全部思想方法", type: "method", count: 0, children: [] });
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
@@ -366,7 +370,7 @@ describe("LecturePreviewPage", () => {
     expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
     const previewControls = screen.getByTestId("lecture-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    const batchActions = screen.getByTestId("document-question-batch-actions");
+    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
     expect(batchActions).toHaveTextContent("批量操作");
     expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
     expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
@@ -374,13 +378,20 @@ describe("LecturePreviewPage", () => {
     expect(previewControls).not.toHaveTextContent("题目属性与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
-    const previewIntro = previewControls.previousElementSibling as HTMLElement;
-    expect(previewIntro).toHaveClass("preview-sidebar-intro");
-    expect(previewIntro).toHaveTextContent("题目属性与使用情况");
-    expect(within(batchActions).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
-    expect(previewControls).not.toHaveTextContent("批量操作");
-    expect(batchActions.parentElement?.nextElementSibling).toHaveClass("preview-sticky-shell");
-    expect(within(previewIntro).queryByRole("button", { name: "全部设为已做" })).not.toBeInTheDocument();
+    expect(previewControls.previousElementSibling).toBeNull();
+    expect(screen.queryByText("题目属性与使用情况")).not.toBeInTheDocument();
+    expect(screen.queryByText("选择具体学生后可重新设置该题的答题情况")).not.toBeInTheDocument();
+    expect(within(previewControls).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
+    const displayToolbar = within(previewControls).getByRole("toolbar", { name: "题目侧栏显示控制" });
+    expect(displayToolbar).toHaveClass("flex-col");
+    const displayButtons = within(displayToolbar).getAllByRole("button");
+    expect(displayButtons).toHaveLength(4);
+    expect(displayButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
+    const sidebarBatchActions = within(previewControls).getByTestId("document-question-batch-actions");
+    expect(sidebarBatchActions.children[1]).toHaveClass("flex-col");
+    const batchButtons = within(sidebarBatchActions).getAllByRole("button");
+    expect(batchButtons).toHaveLength(4);
+    expect(batchButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
     const previewShell = paper.closest(".preview-sticky-shell");
     expect(previewShell).not.toBeNull();
     expect(paper.querySelector(".preview-sticky-spacer")).not.toBeNull();
@@ -612,6 +623,8 @@ describe("LecturePreviewPage", () => {
         sourceType: "",
         chapterIds: ["chapter-1"],
         knowledgePointIds: ["knowledge-point-1"],
+        thoughtMethodIds: [],
+        errorReasonIds: [],
       });
     });
     const details = screen.getByTestId("lecture-question-details-1");

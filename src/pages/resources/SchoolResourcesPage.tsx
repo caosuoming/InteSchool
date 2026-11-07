@@ -302,7 +302,14 @@ export default function SchoolResourcesPage() {
     }
     setSavingIds((prev) => new Set(prev).add(item.id));
     try {
-      const result = await schoolBackupService.saveAsOwnResource(item.id, teacher);
+      const conflicts = await schoolBackupService.checkSaveQuestionDuplicates(item.id, teacher);
+      const candidate = conflicts[0];
+      const decision = candidate
+        ? window.confirm(`发现高度相似题目（${(candidate.similarity * 100).toFixed(1)}%）：\n${candidate.targetQuestion.stem.slice(0, 160)}\n\n确定：关联为同一题并保留已有题目；取消：另存独立副本。`)
+          ? { action: "same" as const, targetResourceId: candidate.targetResourceId }
+          : { action: "new" as const }
+        : undefined;
+      const result = await schoolBackupService.saveAsOwnResource(item.id, teacher, decision);
       setSavedIds((prev) => new Set(prev).add(item.id));
       const typeLabel = resourceTypeLabel[result.resourceType];
       if (result.deduplicated) {

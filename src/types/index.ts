@@ -548,6 +548,7 @@ export interface ClassroomDeviceSnapshot extends ClassroomDeviceSession {
   homeworks: ClassroomHomework[];
   homeworkHistory: ClassroomHomework[];
   homeworkRecords: HomeworkClassOverviewRecord[];
+  homeworkAnswers: ClassroomHomeworkAnswer[];
   notices: ClassroomNotice[];
   students: Array<Pick<Student, "id" | "name">>;
   studentAttentionByTeacherId?: Record<string, {
@@ -1357,7 +1358,7 @@ export interface GradeExamImportInput {
   settings?: GradeExamSettings;
 }
 
-export type TreeNodeType = "chapter" | "knowledge" | "method";
+export type TreeNodeType = "chapter" | "knowledge" | "method" | "error";
 export type PrerequisiteNodeType = "chapter" | "knowledge";
 export interface NodePrerequisite {
   type: PrerequisiteNodeType;
@@ -1397,6 +1398,7 @@ export interface KnowledgePoint {
 }
 
 export type ThoughtMethod = Omit<KnowledgePoint, "chapterId">;
+export type ErrorReason = Omit<KnowledgePoint, "chapterId">;
 
 export interface TreeNode {
   id: string;
@@ -1407,6 +1409,10 @@ export interface TreeNode {
   directCount?: number;
   doneCount?: number;
   directDoneCount?: number;
+  pendingCount?: number;
+  directPendingCount?: number;
+  basketCount?: number;
+  directBasketCount?: number;
   /** 选中学生在该目录已评分答题中的正确率，范围 0~1。 */
   masteryRate?: number;
   directMasteryRate?: number;
@@ -1571,6 +1577,7 @@ export interface Question {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   difficulty: 1 | 2 | 3 | 4 | 5;
   recommendation: 1 | 2 | 3 | 4 | 5;
   usageCount: number;
@@ -1594,6 +1601,10 @@ export interface Question {
   /** 可叠加的题类，包括拆解时自动识别并经人工确认的题类。 */
   categories?: string[];
   isShared: boolean;
+  /** 人工确认的同一题身份组；题号和内容均保持独立。 */
+  sameQuestionGroupId?: string;
+  /** 与平台题目建立身份关联（不等同于从平台创建副本）。 */
+  sameQuestionDonationIds?: string[];
   /** 查重哈希：基于题干+选项+答案计算，用于入库查重 */
   duplicateHash?: string;
   /** 被哪些已发布的考试隐藏（考试到期前题库中不展示） */
@@ -1664,11 +1675,20 @@ export interface ExtractedDocumentBlock {
   questionType?: QuestionType;
   questionId?: string;
   materialId?: string;
+  inlineAnswers?: string[];
   examPaperQuestionId?: string;
 }
 
 /** 试卷 */
+export interface QuestionAnnotationSummary {
+  totalQuestions: number;
+  missingChapterCount: number;
+  missingKnowledgePointCount: number;
+}
+
 export interface ExamPaper {
+  /** 仅资源列表接口提供的题目属性缺失统计。 */
+  annotationSummary?: QuestionAnnotationSummary;
   /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
   subject?: string;
   id: string;
@@ -1679,6 +1699,7 @@ export interface ExamPaper {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1726,6 +1747,10 @@ export interface ExamPaper {
   schoolSourceBackupIds?: string[];
   /** 拆解状态：pending=待拆解，extracting=拆解中，done=已拆解 */
   extractStatus?: "pending" | "extracting" | "done";
+  /** 最近一次试卷文档下载时间；未作废时锁定试卷编排。 */
+  paperDownloadedAt?: string;
+  /** 最近一次答题卡下载或打印时间；未作废时锁定试卷编排。 */
+  answerSheetExportedAt?: string;
   /** 是否已制作答题卡。 */
   hasAnswerSheet?: boolean;
   /** 首次制作答题卡的时间。 */
@@ -1774,6 +1799,7 @@ export interface Courseware {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -1820,11 +1846,13 @@ export interface Material {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
   type: MaterialType;
   content: string; // 素材内容
+  inlineAnswers?: string[]; // 知识块中的逐空答案，顺序与正文占位符对应
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
@@ -1851,7 +1879,9 @@ export interface ResourceFilter {
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   methodLogic?: FilterLogic;
+  errorReasonLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
@@ -1930,7 +1960,7 @@ export interface DonationRequest {
   resourceId: string;
   /** 从专辑发起捐赠时携带专辑 ID；服务端会校验并补全快照。 */
   albumId?: string;
-  duplicateAction?: "add" | "merge";
+  duplicateAction?: "add" | "same" | "merge";
   duplicateTargetDonationId?: string;
   mergeFields?: Partial<Record<DonationMergeField, DonationMergeChoice>>;
 }
@@ -2082,7 +2112,7 @@ export type DonationMergeFieldSource = "source" | "target" | "both";
 
 export interface DonationDecision {
   sourceResourceId: string;
-  action: "new" | "merge";
+  action: "new" | "same" | "merge";
   targetDonationId?: string;
   fields: {
     stem: DonationMergeFieldSource;
@@ -2143,7 +2173,7 @@ export interface PlatformSaveCheckResult {
 }
 
 export interface PlatformSaveDecision {
-  action: "new" | "merge";
+  action: "new" | "same" | "merge";
   targetResourceId?: string;
   fields: {
     stem: DonationMergeFieldSource;
@@ -2157,6 +2187,7 @@ export interface PlatformSaveResult {
   resourceType: ShareableResourceType;
   resourceId: string;
   merged: boolean;
+  linked?: boolean;
 }
 
 export interface PlatformSaveStatus {
@@ -2254,7 +2285,9 @@ export interface QuestionFilter {
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   methodLogic?: FilterLogic;
+  errorReasonLogic?: FilterLogic;
   noChapter?: boolean;
   noKnowledge?: boolean;
   difficulty?: number[];
@@ -2280,6 +2313,7 @@ export interface LectureSection {
   type: LectureSectionType;
   content: string;
   questionId?: string;
+  inlineAnswers?: string[];
   children: LectureSection[];
   /** 个性化编号标签（如"例1""变式2"），为空时使用默认序号 */
   customLabel?: string;
@@ -2307,6 +2341,8 @@ export interface LectureColumnTemplate {
 export type LectureStatus = "draft" | "published";
 
 export interface Lecture {
+  /** 仅资源列表接口提供的题目属性缺失统计。 */
+  annotationSummary?: QuestionAnnotationSummary;
   /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
   subject?: string;
   id: string;
@@ -2317,6 +2353,7 @@ export interface Lecture {
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   grade: string;
   schoolYear: string;
   semester?: ResourceSemester;
@@ -2408,7 +2445,9 @@ export interface LectureFilter {
   knowledgePointIds?: string[];
   knowledgeLogic?: FilterLogic;
   thoughtMethodIds?: string[];
+  errorReasonIds?: string[];
   methodLogic?: FilterLogic;
+  errorReasonLogic?: FilterLogic;
   grade?: string;
   schoolYear?: string;
   semester?: ResourceSemester;
@@ -2535,6 +2574,7 @@ export interface ExtractedKnowledgeItem {
   id: string;
   title: string;
   content: string;
+  inlineAnswers?: string[];
   status: "new" | "duplicate" | "confirmed" | "edited";
   duplicateOf?: Material;
   createdMaterial?: Material;
@@ -2809,6 +2849,7 @@ export interface LessonDocumentBlock {
   type: "documentTitle" | "documentInfo" | "knowledge" | "groupTitle" | "question";
   title?: string;
   content: string;
+  inlineAnswers?: string[];
   questionType?: QuestionType;
   options?: string[];
   answer?: string;
@@ -3138,6 +3179,10 @@ export interface ClassroomHomework {
   managementCategory?: "homework" | "exam";
   content: string;
   attachments?: ClassroomHomeworkAttachment[];
+  /** 与本次作业合并布置的试卷 ID。 */
+  examPaperIds?: string[];
+  /** 服务器按班级过滤后的试卷展示信息。 */
+  linkedPapers?: { id: string; title: string; originalFileUrl?: string }[];
   classIds: string[];
   /** 作业展示开始日期，格式为 YYYY-MM-DD。 */
   assignedDate: string;
@@ -3147,6 +3192,15 @@ export interface ClassroomHomework {
   publishAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 班级已有作业记录或扫描件时可公开展示的试卷参考答案。 */
+export interface ClassroomHomeworkAnswer {
+  id: string;
+  title: string;
+  subject: string;
+  assignedDate: string;
+  questions: Array<{ id: string; number: number; answer: string }>;
 }
 
 export interface ClassroomHomeworkFilter {
@@ -3493,5 +3547,24 @@ export interface SchoolResourceBackup {
   /** 备份时间 */
   createdAt: string;
   /** 最后更新时间（备课组长修改属性时更新） */
+  updatedAt: string;
+}
+
+// ============ 工作台待办状态 ============
+export type DashboardTodoType = "correction" | "document" | "courseware" | "scan" | "lecture";
+export type DashboardTodoStatus = "completed" | "cancelled";
+
+export interface DashboardTodoInput {
+  type: DashboardTodoType;
+  resourceId: string;
+  title: string;
+  detail: string;
+  href: string;
+  status: DashboardTodoStatus;
+}
+
+export interface DashboardTodoRecord extends DashboardTodoInput {
+  id: string;
+  teacherId: string;
   updatedAt: string;
 }

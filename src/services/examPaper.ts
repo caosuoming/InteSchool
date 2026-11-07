@@ -59,6 +59,22 @@ export const examPaperService = {
     return rpcCall("examPaper", "unpublishAnswerSheet", [id]) as any;
   },
 
+  async markPaperDownloaded(id: string): Promise<ExamPaper> {
+    return rpcCall("examPaper", "markPaperDownloaded", [id]) as any;
+  },
+
+  async invalidatePaperDownload(id: string): Promise<ExamPaper> {
+    return rpcCall("examPaper", "invalidatePaperDownload", [id]) as any;
+  },
+
+  async markAnswerSheetExported(id: string, settings?: ExamPaper["answerSheetSettings"]): Promise<ExamPaper> {
+    return rpcCall("examPaper", "markAnswerSheetExported", [id, settings]) as any;
+  },
+
+  async invalidateAnswerSheet(id: string): Promise<ExamPaper> {
+    return rpcCall("examPaper", "invalidateAnswerSheet", [id]) as any;
+  },
+
   async markAnswerSheetCreated(
     id: string,
     settings?: ExamPaper["answerSheetSettings"],

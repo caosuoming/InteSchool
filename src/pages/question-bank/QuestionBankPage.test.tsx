@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
@@ -8,14 +8,15 @@ import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { prepService } from "@/services/prep";
 import { quotaService } from "@/services/quota";
-import { analyticsService } from "@/services/analytics";
+import { analyticsService, inferScore } from "@/services/analytics";
 import { lectureService } from "@/services/lecture";
 import { examPaperService } from "@/services/examPaper";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { openPage } from "@/lib/navigation";
-import type { ExamPaper, Lecture, Question, Teacher, TreeNode } from "@/types";
+import type { AnswerRecord, ExamPaper, Lecture, Question, SchoolClass, Student, Teacher, TreeNode } from "@/types";
 
 vi.mock("@/lib/navigation", () => ({
   openPage: vi.fn(),
@@ -58,6 +59,10 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     onDataChange,
     cascadeCheck = true,
     includeDescendantCounts = true,
+    showCount = true,
+    showDoneCount = false,
+    showPendingCount = false,
+    showBasketCount = false,
     headerActions,
   }: {
     data: TreeNode;
@@ -65,6 +70,10 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     onDataChange?: (data: TreeNode) => void;
     cascadeCheck?: boolean;
     includeDescendantCounts?: boolean;
+    showCount?: boolean;
+    showDoneCount?: boolean;
+    showPendingCount?: boolean;
+    showBasketCount?: boolean;
     headerActions?: import("react").ReactNode;
   }) => (
     <div
@@ -73,6 +82,10 @@ vi.mock("@/components/tree/SearchableTree", () => ({
       data-has-data-change={String(Boolean(onDataChange))}
       data-cascade-check={String(cascadeCheck)}
       data-include-descendant-counts={String(includeDescendantCounts)}
+      data-show-count={String(showCount)}
+      data-show-done={String(showDoneCount)}
+      data-show-pending={String(showPendingCount)}
+      data-show-basket={String(showBasketCount)}
     >
       目录
       {headerActions}
@@ -92,6 +105,7 @@ vi.mock("@/services/knowledge", () => ({
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
     getMethodTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
     listChapters: vi.fn(),
     listKnowledgePoints: vi.fn(),
   },
@@ -111,6 +125,10 @@ vi.mock("@/services/class", () => ({
   },
 }));
 
+vi.mock("@/services/studentInteraction", () => ({
+  studentInteractionService: { listFollowedStudentIds: vi.fn() },
+}));
+
 vi.mock("@/services/analytics", () => ({
   analyticsService: {
     getSchoolQuestionStats: vi.fn(),
@@ -118,6 +136,7 @@ vi.mock("@/services/analytics", () => ({
     listPendingQuestionAssignments: vi.fn(),
     getQuestionWeaknessScore: vi.fn(),
     annotateTreeWithStudentProgress: vi.fn(),
+    listSameQuestionIds: vi.fn(),
     listAnswerRecordsByStudents: vi.fn(),
     getKnowledgeMastery: vi.fn(),
     saveAnswerRecord: vi.fn(),
@@ -183,6 +202,7 @@ describe("QuestionBankPage personal resource scope", () => {
     vi.mocked(questionService.listQuestions).mockResolvedValue([]);
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
       id: "root", name: "全部思想方法", type: "method", count: 0, children: [],
     });
@@ -199,7 +219,10 @@ describe("QuestionBankPage personal resource scope", () => {
     vi.mocked(analyticsService.getQuestionWeaknessScore).mockResolvedValue(new Map());
     vi.mocked(analyticsService.annotateTreeWithStudentProgress).mockImplementation(async (tree) => tree);
     vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([]);
+    vi.mocked(analyticsService.listSameQuestionIds).mockResolvedValue({});
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue([]);
     vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([]);
+    vi.mocked(inferScore).mockImplementation((record) => record.score || (record.isCorrect ? "correct" : "wrong"));
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
     vi.mocked(lectureService.listLectures).mockResolvedValue([]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
@@ -209,6 +232,91 @@ describe("QuestionBankPage personal resource scope", () => {
         hidden: ["source", "category", "grade", "schoolYear"],
       },
     });
+  });
+
+  it("limits status chips to five, prioritizing completed same questions and followed students, and groups the full editor by class", async () => {
+    const studentIds = Array.from({ length: 8 }, (_, i) => "student-" + (i + 1));
+    const students: Student[] = studentIds.map((id, index) => ({
+      id, name: "学生" + (index + 1), studentNo: String(index + 1),
+      schoolId: "school-2", classId: index < 4 ? "class-1" : "class-2",
+      grade: "高一", status: "active",
+    }));
+    const classes: SchoolClass[] = ["一班", "二班"].map((name, i) => ({
+      id: "class-" + (i + 1), type: "school", schoolId: "school-2",
+      name, grade: "高一", studentCount: 4, createdBy: "teacher-1",
+      createdAt: "2026-09-01T00:00:00.000Z",
+    }));
+    const question: Question = {
+      id: "question-summary", teacherId: "teacher-1", schoolId: "school-2",
+      type: "short", stem: "答题情况测试题", answer: "1", analysis: "",
+      chapterIds: [], knowledgePointIds: [], difficulty: 3, recommendation: 3,
+      usageCount: 0, remark: "", isShared: false,
+      createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const record = (studentId: string, questionId: string, score: AnswerRecord["score"]): AnswerRecord => ({
+      id: studentId + ":" + questionId, studentId, questionId, lectureId: "lecture-1",
+      isCorrect: score === "correct", score, answeredAt: "2026-09-10T00:00:00.000Z",
+    });
+    vi.mocked(classService.listMyStudents).mockResolvedValue(students);
+    vi.mocked(classService.listMyClasses).mockResolvedValue(classes);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([question]);
+    vi.mocked(studentInteractionService.listFollowedStudentIds).mockResolvedValue(["student-6", "student-8"]);
+    vi.mocked(analyticsService.listSameQuestionIds).mockResolvedValue({ "question-summary": ["question-same"] });
+    vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([
+      record("student-2", "question-summary", "correct"),
+      record("student-5", "question-same", "wrong"),
+    ]);
+
+    render(<MemoryRouter><QuestionBankPage studentIds={studentIds} hideStudentPicker /></MemoryRouter>);
+
+    const stem = await screen.findByText("答题情况测试题");
+    const row = stem.closest(".card-base") as HTMLElement;
+    const statusTitle = within(row).getByText("学生答题情况");
+    const status = statusTitle.parentElement!.parentElement!;
+    await waitFor(() => expect(within(status).getByText("学生5")).toBeInTheDocument());
+    await waitFor(() => expect(within(status).getByText("学生6")).toBeInTheDocument());
+    for (const name of ["学生1", "学生2", "学生5", "学生6", "学生8"]) {
+      expect(within(status).getByText(name)).toBeInTheDocument();
+    }
+    for (const name of ["学生3", "学生4", "学生7"]) {
+      expect(within(status).queryByText(name)).not.toBeInTheDocument();
+    }
+    expect(within(status).getByText("等")).toBeInTheDocument();
+    expect(within(status).getByText(/2\/8 已答/)).toBeInTheDocument();
+
+    fireEvent.click(within(status).getByRole("button", { name: "编辑" }));
+    expect(within(status).getByRole("button", { name: "一班（4 人）" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(status).getByRole("button", { name: "二班（4 人）" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(status).queryByText("学生2")).not.toBeInTheDocument();
+    fireEvent.click(within(status).getByRole("button", { name: "一班（4 人）" }));
+    expect(within(status).getByText("学生4")).toBeInTheDocument();
+    fireEvent.click(within(status).getByRole("button", { name: "二班（4 人）" }));
+    expect(within(status).getByText("学生8")).toBeInTheDocument();
+    expect(within(status).queryByText("等")).not.toBeInTheDocument();
+    fireEvent.click(within(status).getByRole("button", { name: "完成" }));
+    expect(within(status).getByText("等")).toBeInTheDocument();
+  });
+
+  it("shows every selected student without abbreviation when five or fewer are selected", async () => {
+    const students: Student[] = Array.from({ length: 5 }, (_, i) => ({
+      id: "student-" + i, name: "小组" + i, studentNo: String(i),
+      classId: "class-1", schoolId: "school-2", grade: "高一", status: "active",
+    }));
+    vi.mocked(classService.listMyStudents).mockResolvedValue(students);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([{
+      id: "question-five", teacherId: "teacher-1", schoolId: "school-2",
+      type: "short", stem: "五人题目", answer: "1", analysis: "",
+      chapterIds: [], knowledgePointIds: [], difficulty: 3, recommendation: 3,
+      usageCount: 0, remark: "", isShared: false,
+      createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z",
+    }]);
+    render(<MemoryRouter><QuestionBankPage studentIds={students.map((item) => item.id)} hideStudentPicker /></MemoryRouter>);
+    const stem = await screen.findByText("五人题目");
+    const row = stem.closest(".card-base") as HTMLElement;
+    const title = within(row).getByText("学生答题情况");
+    const status = title.parentElement!.parentElement!;
+    for (const student of students) expect(within(status).getByText(student.name)).toBeInTheDocument();
+    expect(within(status).queryByText("等")).not.toBeInTheDocument();
   });
 
   it("renders a cached question page before the server responds and then replaces it", async () => {
@@ -339,6 +447,20 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(text.indexOf("思想方法：")).toBeLessThan(text.indexOf("数形结合"));
   });
 
+  it("refreshes method counts when the question list changes", async () => {
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [], total: 0 });
+    const view = render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalled());
+    expect(analyticsService.annotateTreeWithStudentProgress).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "思想方法" }));
+    fireEvent.click(screen.getByLabelText("显示"));
+    await waitFor(() => expect(analyticsService.annotateTreeWithStudentProgress).toHaveBeenCalled());
+    const previousCalls = vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.calls.length;
+    view.rerender(<MemoryRouter><QuestionBankPage refreshToken={1} /></MemoryRouter>);
+    await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.calls.length)
+      .toBeGreaterThan(previousCalls));
+  });
+
   it("keeps the chapter and knowledge directory trees read-only", async () => {
     render(
       <MemoryRouter>
@@ -363,6 +485,87 @@ describe("QuestionBankPage personal resource scope", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "包含" }));
     expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-cascade-check", "false");
     expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-include-descendant-counts", "false");
+  });
+
+  it("keeps the previous question rows mounted while tree filters refresh", async () => {
+    const question = {
+      id: "q-stable",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      type: "short",
+      stem: "原有题目",
+      answer: "1",
+      analysis: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      createdAt: "2026-11-01T00:00:00Z",
+      updatedAt: "2026-11-01T00:00:00Z",
+    } as Question;
+    vi.mocked(questionService.listQuestionPage).mockResolvedValueOnce({ items: [question], total: 1 });
+    let resolveReload!: (page: { items: Question[]; total: number }) => void;
+    vi.mocked(questionService.listQuestionPage).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveReload = resolve;
+    }));
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    expect(await screen.findByText("原有题目")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索题干、解析、总结、备注..."), { target: { value: "另一个" } });
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("原有题目")).toBeInTheDocument();
+    expect(screen.getByText("原有题目").closest('[aria-busy="true"]')).not.toBeNull();
+
+    await act(async () => resolveReload({ items: [], total: 0 }));
+    expect(screen.queryByText("原有题目")).not.toBeInTheDocument();
+  });
+
+  it("does not compute directory counts until one of the display options is enabled", async () => {
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    await waitFor(() => expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("teacher-1", false));
+    expect(screen.getByRole("checkbox", { name: "显示" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "篮中题" })).not.toBeChecked();
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-count", "false");
+    expect(analyticsService.annotateTreeWithStudentProgress).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示" }));
+    await waitFor(() => expect(analyticsService.annotateTreeWithStudentProgress).toHaveBeenCalled());
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-count", "true");
+    expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]).toMatchObject({
+      includeDone: false,
+      includePending: false,
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示" }));
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-count", "false");
+  });
+
+  it("enables done and pending indicators only when students are selected", async () => {
+    render(<MemoryRouter><QuestionBankPage studentIds={["student-1"]} /></MemoryRouter>);
+    expect(await screen.findByRole("checkbox", { name: "已做题" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "待做题" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "已做题" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "待做题" }));
+    await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]).toMatchObject({
+      includeDone: true, includePending: true,
+    }));
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-done", "true");
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-pending", "true");
+  });
+
+  it("counts questions from every basket without double counting duplicates", async () => {
+    vi.mocked(basketService.listBaskets).mockResolvedValue([
+      { id: "basket-a", questionIds: ["q-a", "q-b"] },
+      { id: "basket-b", questionIds: ["q-b", "q-c"] },
+    ] as never);
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("checkbox", { name: "篮中题" }));
+    await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]?.basketQuestionIds)
+      .toEqual(["q-a", "q-b", "q-c"]));
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-basket", "true");
   });
 
   it("queries personal questions by teacher while keeping class context on the active school", async () => {

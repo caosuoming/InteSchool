@@ -79,6 +79,7 @@ function snapshot(state: "active" | "locked" | "closed" = "active"): ClassroomDe
     }],
     homeworkHistory: [],
     homeworkRecords: [],
+    homeworkAnswers: [],
     notices: [],
     students: [],
   };

@@ -46,7 +46,8 @@ const RECORD_MIME = new Map([["image/png", ".png"], ["image/jpeg", ".jpg"]]);
 function sheetFor(state: Record<string, unknown>, type: "paper" | "lecture", id: string) {
   const key = type === "paper" ? "examPapers" : "lectures";
   return (state[key] as Array<{ id: string; schoolId: string; hasAnswerSheet?: boolean; answerSheetPublishedAt?: string; answerSheetRevisionId?: string }> || [])
-    .find((item) => item.id === id && item.hasAnswerSheet && item.answerSheetPublishedAt);
+    .find((item) => item.id === id && ((item.hasAnswerSheet && item.answerSheetPublishedAt)
+      || (state.answerRecords as Array<{ lectureId: string }> || []).some((record) => record.lectureId === id)));
 }
 function qrFor(type: "paper" | "lecture", id: string, revisionId?: string) {
   return buildAnswerSheetQrPayload(type === "paper" ? "exam-paper" : "lecture", id, revisionId);

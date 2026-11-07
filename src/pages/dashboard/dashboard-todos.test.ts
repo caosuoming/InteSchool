@@ -32,7 +32,7 @@ describe("dashboard pending work", () => {
     expect(result.map((item) => item.id)).toEqual(["draft", "legacy"]);
   });
 
-  it("only shows assigned published homework sheets with no scans", () => {
+  it("shows every published answer sheet with no scans", () => {
     const result = pendingScanPapers([
       paper("pending"), paper("scanned"), paper("draft", { status: "draft" }),
       paper("exam", { managementCategory: "exam" }),
@@ -42,6 +42,6 @@ describe("dashboard pending work", () => {
       paper("other-teacher", { teacherId: "teacher2" }),
     ], [scan("scanned"), scan("pending", { sheetType: "lecture" }),
       scan("pending", { schoolId: "school2" })], "teacher1", "school1");
-    expect(result.map((item) => item.id)).toEqual(["pending"]);
+    expect(result.map((item) => item.id)).toEqual(["pending", "draft", "exam", "unassigned"]);
   });
 });

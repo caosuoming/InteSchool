@@ -158,6 +158,16 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
   // Use the exam's subject structure, not the current scores: clearing the last
   // complete student's grade must not lower the required number of subjects.
   const expectedCount = expectedGradeSubjectCount(exam.subjects, exam.records);
+  const classSettings = new Map(exam.settings.classSubjects.map((item) => [item.classId, item]));
+  const rankedSubjects = (record: GradeScoreRecord) => {
+    const setting = classSettings.get(record.classId);
+    return setting
+      ? [...new Set([...setting.statisticSubjects, ...(setting.separateRankSubjects || [])])]
+        .filter((subject) => exam.subjects.includes(subject))
+      : exam.subjects;
+  };
+  const takesSubjectRank = (record: GradeScoreRecord, subject: string) =>
+    rankedSubjects(record).includes(subject);
   const totals = new Map(exam.records.map((record) => [record.studentId, {
     raw: completeTotal(record, exam.subjects, expectedCount, "raw"),
     assigned: completeTotal(record, exam.subjects, expectedCount, "assigned"),
@@ -169,13 +179,14 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
     subject,
     ranksByGroup(
       exam.records,
-      (record) => finalSubjectScore(record, subject),
+      (record) => takesSubjectRank(record, subject) ? finalSubjectScore(record, subject) : null,
       (record) => separateByClass.get(record.classId)?.has(subject) ? "separate" : "unified",
     ),
   ]));
   const subjectClassRanks = Object.fromEntries(subjects.map((subject) => [
     subject,
-    ranksByClass(exam.records, (record) => finalSubjectScore(record, subject)),
+    ranksByClass(exam.records, (record) => takesSubjectRank(record, subject)
+      ? finalSubjectScore(record, subject) : null),
   ]));
   // Split total-score ranking pools only for exams that actually contain both tracks.
   // Non-exam subjects are null, while a score of zero still indicates attendance.

@@ -48,6 +48,33 @@ describe("thought method directories", () => {
     });
   });
 
+  it("counts only questions from the active subject, including legacy questions", async () => {
+    const appState = state();
+    const teacher = appState.teachers[0];
+    teacher.subject = "数学";
+    teacher.subjects = ["数学", "英语"];
+    teacher.affiliations = [{
+      id: "aff-1", schoolId: "school-1", status: "active", isCurrent: true,
+      subject: "数学", subjects: ["数学", "英语"],
+    }];
+    teacher.currentAffiliationId = "aff-1";
+    (appState.questions as Question[])[1].subject = "英语";
+
+    await runWithState(appState, async () => {
+      const method = await knowledgeService.addThoughtMethod("t1", null, "数形结合");
+      await questionService.updateQuestion("q1", { thoughtMethodIds: [method.id] });
+      await questionService.updateQuestion("q2", { thoughtMethodIds: [method.id] });
+
+      const matching = await questionService.listQuestions({
+        teacherId: "t1", subject: "数学", thoughtMethodIds: [method.id],
+      });
+      const tree = await knowledgeService.getMethodTree("t1");
+      expect(matching.map((question) => question.id)).toEqual(["q1"]);
+      expect(tree.children[0].count).toBe(matching.length);
+      expect(tree.children[0].directCount).toBe(matching.length);
+    });
+  });
+
   it("merges method directories and preserves question assignments", async () => {
     const appState = state();
     await runWithState(appState, async () => {
