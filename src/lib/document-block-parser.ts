@@ -375,7 +375,35 @@ const builtInProjectHeadingLabels = [
   "拓展提升",
   "提升练习",
   "提升训练",
+  "题型突破",
+  "举题说法",
+  "随堂内化",
+  "配套精炼",
 ];
+
+const descriptiveProjectHeadingPattern = /^(?:题型突破|举题说法|随堂内化|配套精炼)(?:\s*[:：、]\s*|\s+)(?![。！？；;])[^。！？；;]{1,60}$/;
+
+function isCompactImageHeading(text: string): boolean {
+  const match = /^!\[[^\]]*\]\(([^)]+)\)/.exec(text);
+  if (!match) return false;
+
+  let imageUrl: URL;
+  try {
+    imageUrl = new URL(match[1], "https://inteschool.invalid");
+  } catch {
+    return false;
+  }
+  const width = Number(imageUrl.searchParams.get("officeWidth"));
+  const height = Number(imageUrl.searchParams.get("officeHeight"));
+  if (!width || !height || height > 56 || width > 480 || width < 32) return false;
+
+  const rest = text.slice(match[0].length).trim();
+  if (!rest) return width >= height * 1.3;
+  return rest.length <= 60
+    && !/[。！？；;]$/.test(rest)
+    && !/^(?:已知|若|设|求|证明|求证|计算|选择|解析|分析|答案|解答|解：|答：)/.test(rest)
+    && !/^(?:\d{1,3}\s*[.．、]|第\s*[一二三四五六七八九十百\d]+\s*题)/.test(rest);
+}
 
 function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
@@ -395,8 +423,10 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const normalized = normalizeStructuralText(text).trim();
   if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
   if (builtInProjectHeadingLabels.includes(normalized)) return true;
-  if (/^[A-Z]组$/.test(normalized.toUpperCase())) return true;
-  return /^(?:热点|考向|题型|类型)\s*(?:第\s*)?(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\s|[、.．:：)）]|$)/.test(normalized);
+  if (descriptiveProjectHeadingPattern.test(normalized)) return true;
+  if (/^[A-Z]组(?:$|(?:\s+|[:：、]\s*)[^。！？；;]{1,60}$)/.test(normalized.toUpperCase())) return true;
+  if (isCompactImageHeading(normalized)) return true;
+  return /^(?:热点|考向|题型|类型|视角|目标)\s*(?:第\s*)?(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\s|[、.．:：)）]|$)/.test(normalized);
 }
 
 function questionKeywordPrefixes(config: DocumentParseConfig): string[] {
@@ -1503,7 +1533,11 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       continue;
     }
 
-    if (isHeading(line, config) || isProjectHeading(line, config)) {
+    const isExpectedQuestionImage = isCompactImageHeading(line)
+      && currentBlock.type === "question"
+      && currentQuestionField === "content"
+      && /(?:图|图形|图像|图示|如下|如图|下图|如下图|示意图)\s*[：:.。]?$/.test(currentBlock.content?.trim() || "");
+    if (isHeading(line, config) || (!isExpectedQuestionImage && isProjectHeading(line, config))) {
       submitCurrent();
       independentSubQuestionNextIndex = undefined;
       sectionQuestionType = detectSectionQuestionType(line);
