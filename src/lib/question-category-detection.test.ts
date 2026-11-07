@@ -18,6 +18,31 @@ describe("detectQuestionCategories", () => {
     expect(detectQuestionCategories({ content })).toContain("一题多问");
   });
 
+  it.each([
+    "已知条件。（1）求值；（2）化简；（3）证明。",
+    "（1）求解\n（2）证明\n（3）讨论",
+    "① 求值 ② 判断 ③ 证明",
+    "第1问：求值。第2问：比较。第3问：讨论。",
+    "（1）求值（2）求导（4）证明",
+  ])("does not detect fewer than four math subquestions: %s", (content) => {
+    expect(detectQuestionCategories({ content }, "数学")).not.toContain("一题多问");
+  });
+
+  it.each([
+    "（1）求值；（2）化简；（3）证明；（4）讨论。",
+    "① 求值 ② 判断 ③ 证明 ④ 讨论",
+    "第1问：求值。第2问：比较。第3问：讨论。第4问：证明。",
+  ])("detects four math subquestions: %s", (content) => {
+    expect(detectQuestionCategories({ content }, "数学")).toContain("一题多问");
+  });
+
+  it("keeps multi-solution detection independent of the math subquestion threshold", () => {
+    expect(detectQuestionCategories({
+      content: "（1）计算（2）证明（3）判断",
+      analysis: "方法一：代数法。方法二：几何法。",
+    }, "数学")).toEqual(["一题多解"]);
+  });
+
   it("allows both categories on the same question", () => {
     expect(detectQuestionCategories({
       content: "（1）计算 （2）证明 （3）判断",

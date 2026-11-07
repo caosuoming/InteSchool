@@ -129,10 +129,10 @@ const blockTypeLabel: Record<BlockType, string> = {
   knowledge: "知识块",
 };
 
-function withDetectedQuestionCategories(blocks: DocBlock[]): DocBlock[] {
+function withDetectedQuestionCategories(blocks: DocBlock[], subject?: string): DocBlock[] {
   return blocks.map((block) => {
     if (block.type !== "question") return block;
-    const suggestedCategories = detectQuestionCategories(block);
+    const suggestedCategories = detectQuestionCategories(block, subject);
     return {
       ...block,
       suggestedCategories,
@@ -319,7 +319,7 @@ export function ExtractReviewModal({
   const [progress, setProgress] = useState(initialBlocks ? 100 : 0);
   const [progressMsg, setProgressMsg] = useState(initialBlocks ? "拆解完成，等待审阅" : "正在初始化...");
   const [error, setError] = useState<string | null>(null);
-  const [blocks, setBlocks] = useState<DocBlock[]>(withDetectedQuestionCategories(initialBlocks || []));
+  const [blocks, setBlocks] = useState<DocBlock[]>(withDetectedQuestionCategories(initialBlocks || [], subject));
   const [preservedScoreLabelBlockIds, setPreservedScoreLabelBlockIds] = useState<Set<string>>(new Set());
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [mergeTargets, setMergeTargets] = useState<Record<string, MergeTarget>>({});
@@ -391,7 +391,7 @@ export function ExtractReviewModal({
       await new Promise((r) => setTimeout(r, 300));
       
       setProgress(100);
-      setBlocks(withDetectedQuestionCategories(blocks));
+      setBlocks(withDetectedQuestionCategories(blocks, subject));
       setPhase("review");
     } catch (e) {
       if (cancelled) return;
@@ -410,7 +410,7 @@ export function ExtractReviewModal({
       setError(null);
       setBlocks(withDetectedQuestionCategories(initialBlocks.map((block) => (block.type === "question" && block.questionType
         ? { ...block, questionType: normalizeQuestionTypeForSubject(block.questionType, subject) }
-        : block))));
+        : block)), subject));
       setPreservedScoreLabelBlockIds(new Set());
       setEditingBlockId(null);
       setMergeTargets({});
@@ -496,7 +496,7 @@ export function ExtractReviewModal({
         if (b.id !== id) return b;
         const updated: DocBlock = { ...b, type, status: "edited" };
         if (type === "question" && b.type !== "question") {
-          updated.suggestedCategories = detectQuestionCategories(updated);
+          updated.suggestedCategories = detectQuestionCategories(updated, subject);
           updated.categories = [...new Set([...(updated.categories || []), ...updated.suggestedCategories])];
         }
         if (type === "question" && !updated.questionType) {

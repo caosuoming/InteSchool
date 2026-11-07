@@ -179,6 +179,46 @@ describe("ExtractReviewModal", () => {
     expect(mocks.confirmExtract.mock.calls[0][10]).toBe("practice");
   });
 
+  it.each(["lecture", "examPaper"] as const)(
+    "requires at least four math subquestions when extracting a %s",
+    async (resourceType) => {
+      mocks.authState.teacher.subject = "数学";
+      const user = userEvent.setup();
+      render(
+        <ExtractReviewModal
+          open
+          onClose={vi.fn()}
+          resourceId="resource-1"
+          resourceType={resourceType}
+          resourceTitle="数学试题"
+          chapterIds={[]}
+          knowledgePointIds={[]}
+          grade="高一"
+          schoolYear="2026-2027"
+          semester="上学期"
+          initialBlocks={[
+            {
+              id: "question-three", type: "question", content: "（1）求值（2）化简（3）证明",
+              questionType: "essay", order: 0, status: "new", analysis: "方法一：计算。",
+            },
+            {
+              id: "question-four", type: "question", content: "（1）求值（2）化简（3）证明（4）讨论",
+              questionType: "essay", order: 1, status: "new",
+            },
+          ]}
+        />,
+      );
+
+      expect(screen.getByRole("checkbox", { name: "第1题：一题多问" })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "第2题：一题多问" })).toBeChecked();
+      await user.click(screen.getByRole("button", { name: "确认入库" }));
+      await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
+      const questions = mocks.confirmExtract.mock.calls[0][2].questions;
+      expect(questions[0].categories).not.toContain("一题多问");
+      expect(questions[1].categories).toContain("一题多问");
+    },
+  );
+
   it("uses one block column with controls inside each block", async () => {
     render(
       <ExtractReviewModal

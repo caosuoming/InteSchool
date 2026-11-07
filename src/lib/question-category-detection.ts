@@ -12,7 +12,7 @@ function hasMultipleSolutions(analysis: string): boolean {
   );
 }
 
-function hasThreeSubquestions(stem: string): boolean {
+function hasSubquestions(stem: string, minimumCount: number): boolean {
   const indices = new Set<number>();
   const pattern = /[（(]\s*([1-9]\d?|[一二三四五六七八九十])\s*[）)]|(?:^|[\s；;。])([1-9]\d?)[.．、]|第\s*([1-9]\d?|[一二三四五六七八九十])\s*问|[①-⑳]/gmu;
   const chineseNumbers = "一二三四五六七八九十";
@@ -23,13 +23,13 @@ function hasThreeSubquestions(stem: string): boolean {
       : match[0].codePointAt(match[0].length - 1)! - 0x2460 + 1;
     if (index > 0) indices.add(index);
   }
-  return indices.has(1) && indices.has(2) && indices.has(3);
+  return Array.from({ length: minimumCount }, (_, index) => index + 1).every((index) => indices.has(index));
 }
 
-export function detectQuestionCategories(question: QuestionCategoryText): AutoQuestionCategory[] {
+export function detectQuestionCategories(question: QuestionCategoryText, subject?: string): AutoQuestionCategory[] {
   const result: AutoQuestionCategory[] = [];
   if (hasMultipleSolutions(question.analysis || "")) result.push("一题多解");
-  if (hasThreeSubquestions(question.content)) result.push("一题多问");
+  if (hasSubquestions(question.content, subject?.trim() === "数学" ? 4 : 3)) result.push("一题多问");
   return result;
 }
 
