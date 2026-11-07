@@ -21,6 +21,7 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
+import { recordClassroomQuestionProgress, type ClassroomQuestionProgressInput } from "./classroomQuestionProgress.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 
 interface ClassroomCoursewareSession {
@@ -479,6 +480,12 @@ function nextCoursewareSession(
 }
 
 export const classroomDeviceService = {
+  async recordClassroomQuestionProgress(deviceToken: string, input: ClassroomQuestionProgressInput) {
+    const device = findStoredByToken(deviceToken);
+    const classroom = classroomForDevice(device, input?.classId);
+    if (classroom.id !== input?.classId) throw new Error("无权记录其他班级的答题情况");
+    return recordClassroomQuestionProgress(input, device.schoolId);
+  },
   async listPublicClassroomNumbers(schoolIdInput: string): Promise<number[]> {
     await delay(20);
     const schoolId = String(schoolIdInput || "").trim();

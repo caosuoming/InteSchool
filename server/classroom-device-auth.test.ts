@@ -57,6 +57,9 @@ describe("classroom device authorization", () => {
       args: [TOKEN],
     })).toBe(TOKEN);
     expect(classroomDeviceTokenFromRpc({
+      service: "classroomDevice", method: "recordClassroomQuestionProgress", args: [TOKEN, { questionId: "q" }],
+    })).toBe(TOKEN);
+    expect(classroomDeviceTokenFromRpc({
       service: "classroomDevice",
       method: "unlockDevice",
       args: ["device-1"],

@@ -710,6 +710,9 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
           ? presenting.slides.filter((slide) => !(slide.hiddenClassIds || []).includes(selectedClassId))
           : BLANK_CLASSROOM_SLIDES}
         initialIndex={0}
+        coursewareId={presenting?.id}
+        classId={selectedClassId}
+        deviceToken={deviceMode ? localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY) || undefined : undefined}
         students={students}
         homeworkRecords={classHomeworkRecords}
         followedStudentIds={presentationFollowedStudentIds}

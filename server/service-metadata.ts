@@ -74,6 +74,7 @@ export const serviceParameters = {
       "deviceToken",
       "input"
     ],
+    "recordClassroomQuestionProgress": ["deviceToken", "input"],
     "clearInstallationBinding": [
       "installationId"
     ],
@@ -335,6 +336,7 @@ export const serviceParameters = {
     ]
   },
   "analytics": {
+    "recordClassroomQuestionProgress": ["input", "teacher"],
     "listAnswerRecordsByQuestion": [
       "questionId",
       "range"

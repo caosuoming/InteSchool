@@ -58,6 +58,13 @@ export const classroomDeviceService = {
     return rpcCall("classroomDevice", "getClassroomSnapshot", [deviceToken, classId]) as any;
   },
 
+  async recordClassroomQuestionProgress(deviceToken: string, input: {
+    coursewareId: string; classId: string; questionId: string;
+    studentId?: string; score?: "correct" | "partial" | "wrong";
+  }): Promise<void> {
+    await rpcCall("classroomDevice", "recordClassroomQuestionProgress", [deviceToken, input]);
+  },
+
   async reportHeartbeat(deviceToken: string, input: ClassroomDeviceHeartbeatInput): Promise<ClassroomDevice> {
     return rpcCall("classroomDevice", "reportHeartbeat", [deviceToken, input]) as any;
   },

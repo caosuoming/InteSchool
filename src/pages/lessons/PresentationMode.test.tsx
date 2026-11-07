@@ -8,10 +8,19 @@ import { PresentationMode } from "./PresentationMode";
 const serviceMocks = vi.hoisted(() => ({
   uploadFile: vi.fn(),
   updateQuestion: vi.fn(),
+  recordClassroomQuestionProgress: vi.fn(),
+  deviceRecordClassroomQuestionProgress: vi.fn(),
 }));
 
 vi.mock("@/services/api", () => ({
   uploadFile: serviceMocks.uploadFile,
+}));
+
+vi.mock("@/services/analytics", () => ({
+  analyticsService: { recordClassroomQuestionProgress: serviceMocks.recordClassroomQuestionProgress },
+}));
+vi.mock("@/services/classroomDevice", () => ({
+  classroomDeviceService: { recordClassroomQuestionProgress: serviceMocks.deviceRecordClassroomQuestionProgress },
 }));
 
 vi.mock("@/services/question", () => ({
@@ -75,6 +84,8 @@ beforeEach(() => {
   vi.restoreAllMocks();
   serviceMocks.uploadFile.mockReset();
   serviceMocks.updateQuestion.mockReset();
+  serviceMocks.recordClassroomQuestionProgress.mockReset().mockResolvedValue([]);
+  serviceMocks.deviceRecordClassroomQuestionProgress.mockReset().mockResolvedValue(undefined);
   localStorage.clear();
   Object.defineProperty(window, "PointerEvent", {
     configurable: true,
@@ -121,6 +132,76 @@ beforeEach(() => {
 });
 
 describe("PresentationMode", () => {
+  it("marks a classroom question done only after two continuous visible minutes, and not after leaving the page", async () => {
+    vi.useFakeTimers();
+    try {
+      const props = {
+        slides: [questionSlide, slides[0]], initialIndex: 0,
+        students: [{ id: "student-1", name: "学生甲" }],
+        coursewareId: "course-1", classId: "class-1",
+        relatedQuestionsById: {}, onExit: vi.fn(),
+      };
+      render(<PresentationMode {...props} />);
+      await act(async () => vi.advanceTimersByTime(119_999));
+      expect(serviceMocks.recordClassroomQuestionProgress).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(serviceMocks.recordClassroomQuestionProgress).toHaveBeenCalledExactlyOnceWith({
+        coursewareId: "course-1", classId: "class-1", questionId: "question-1",
+      });
+      fireEvent.click(screen.getByRole("button", { name: "右侧下一页" }));
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(serviceMocks.recordClassroomQuestionProgress).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole("button", { name: "右侧上一页" }));
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(serviceMocks.recordClassroomQuestionProgress).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not credit a question when a slide changes before the two-minute threshold", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<PresentationMode slides={[questionSlide, slides[0]]} initialIndex={0}
+        students={[]} coursewareId="course-1" classId="class-1"
+        relatedQuestionsById={{}} onExit={vi.fn()} />);
+      await act(async () => vi.advanceTimersByTime(90_000));
+      fireEvent.click(screen.getByRole("button", { name: "右侧下一页" }));
+      await act(async () => vi.advanceTimersByTime(90_000));
+      expect(serviceMocks.recordClassroomQuestionProgress).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "右侧上一页" }));
+      await act(async () => vi.advanceTimersByTime(90_000));
+      expect(serviceMocks.recordClassroomQuestionProgress).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("saves a drawn student's scored mastery using the device token", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      render(<PresentationMode slides={[questionSlide]} initialIndex={0}
+        students={[{ id: "student-1", name: "学生甲" }]}
+        coursewareId="course-1" classId="class-1" deviceToken="device-token"
+        relatedQuestionsById={{}} onExit={vi.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: "右侧提问学生" }));
+      fireEvent.click(screen.getByRole("button", { name: "摇人" }));
+      await act(async () => vi.advanceTimersByTime(5000));
+      fireEvent.click(within(screen.getByRole("group", { name: "学生甲掌握情况" }))
+        .getByRole("button", { name: "做错" }));
+      await act(async () => Promise.resolve());
+      expect(serviceMocks.deviceRecordClassroomQuestionProgress).toHaveBeenCalledExactlyOnceWith("device-token", {
+        coursewareId: "course-1", classId: "class-1", questionId: "question-1",
+        studentId: "student-1", score: "wrong",
+      });
+      expect(serviceMocks.recordClassroomQuestionProgress).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+
   it("shows followed student markers in the first-page homework panel only when enabled", async () => {
     const record: HomeworkClassOverviewRecord = {
       id: "record-1", classId: "class-1", schoolId: "school-1", teacherId: "teacher-1",

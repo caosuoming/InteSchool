@@ -87,6 +87,13 @@ export const analyticsService = {
     return rpcCall("analytics", "listAllAnswerRecordsByQuestion", [questionId]) as any;
   },
 
+  async recordClassroomQuestionProgress(input: {
+    coursewareId: string; classId: string; questionId: string;
+    studentId?: string; score?: "correct" | "partial" | "wrong";
+  }): Promise<AnswerRecord[]> {
+    return rpcCall("analytics", "recordClassroomQuestionProgress", [input]) as any;
+  },
+
   async saveAnswerRecord(input: {
     studentId: string;
     questionId: string;
