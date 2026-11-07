@@ -9,8 +9,13 @@ import type {
 } from "../types/index.js";
 import { resolveClassAverageOptions } from "./grade-class-average.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
-import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
-import { ELECTIVE_GRADE_SUBJECTS, inferStatisticSubjectsFromSelections } from "./grade-statistics.js";
+import {
+  ELECTIVE_GRADE_SUBJECTS,
+  inferStatisticSubjectsFromSelections,
+  participatingGradeRecords,
+  rankedClassSubjects,
+  totalRankingGroupKey,
+} from "./grade-statistics.js";
 
 export type GradeAcademicTrackClassification = GradeAcademicTrack | "unclassified";
 
@@ -276,28 +281,39 @@ export function buildGradeTotalScoreSegmentReport(
 
   const studentSelections = new Map(context.students.map((student) => [student.id, student.subjectSelection || ""]));
   const electiveSubjects = new Set<string>(ELECTIVE_GRADE_SUBJECTS);
-  const requiredCoreSubjects = effectiveTemplate.subjects.filter((subject) => !electiveSubjects.has(subject));
-  const availableElectives = effectiveTemplate.subjects.filter((subject) => electiveSubjects.has(subject));
-  const expectedSubjectCount = requiredCoreSubjects.length + Math.min(3, availableElectives.length);
   const totalsByClass = new Map(classes.map((classItem) => [
     classItem.classId,
     (recordsByClass.get(classItem.classId) || []).flatMap((record) => {
-      const selected = inferStatisticSubjectsFromSelections(effectiveTemplate.subjects, [
+      const rankedSubjects = rankedClassSubjects(effectiveTemplate.subjects, rankSettings, record.classId);
+      const requiredCoreSubjects = rankedSubjects.filter((subject) => !electiveSubjects.has(subject));
+      const availableElectives = rankedSubjects.filter((subject) => electiveSubjects.has(subject));
+      const expectedSubjectCount = requiredCoreSubjects.length + Math.min(3, availableElectives.length);
+      const requiredFullCore = effectiveTemplate.subjects.filter((subject) => !electiveSubjects.has(subject));
+      const expectedFullCount = requiredFullCore.length + Math.min(3, effectiveTemplate.subjects.filter((subject) => electiveSubjects.has(subject)).length);
+      if (expectedSubjectCount === 0) return [];
+      const sourceScores = effectiveTemplate.scoreMode === "raw" ? record.scores : record.assignedScores;
+      const fullAttended = effectiveTemplate.subjects.filter((subject) =>
+        typeof record.scores[subject] === "number" && Number.isFinite(record.scores[subject])
+        && typeof sourceScores[subject] === "number" && Number.isFinite(sourceScores[subject]));
+      if (expectedFullCount > 0 && (fullAttended.length < expectedFullCount
+        || !requiredFullCore.every((subject) => fullAttended.includes(subject)))) return [];
+      const totalTemplate = { ...effectiveTemplate, subjects: rankedSubjects };
+      const selected = inferStatisticSubjectsFromSelections(rankedSubjects, [
         record.subjectSelection || studentSelections.get(record.studentId) || "",
       ]);
       const required = selected?.length ? [...new Set([...requiredCoreSubjects, ...selected])] : null;
       if (required && required.length >= expectedSubjectCount) {
         return hasCompleteTotal(record, required, effectiveTemplate.scoreMode)
-          ? [gradeTemplateTotal(record, effectiveTemplate)] : [];
+          ? [gradeTemplateTotal(record, totalTemplate)] : [];
       }
       const modeScores = effectiveTemplate.scoreMode === "raw" ? record.scores : record.assignedScores;
-      const attended = effectiveTemplate.subjects.filter((subject) =>
+      const attended = rankedSubjects.filter((subject) =>
         typeof record.scores[subject] === "number" && Number.isFinite(record.scores[subject])
         && typeof modeScores[subject] === "number" && Number.isFinite(modeScores[subject]),
       );
-      return expectedSubjectCount > 0 && requiredCoreSubjects.every((subject) => attended.includes(subject))
+      return requiredCoreSubjects.every((subject) => attended.includes(subject))
         && attended.length >= expectedSubjectCount
-        ? [gradeTemplateTotal(record, effectiveTemplate)] : [];
+        ? [gradeTemplateTotal(record, totalTemplate)] : [];
     }),
   ]));
   const validTotalCounts = Object.fromEntries(columns.map((column) => [

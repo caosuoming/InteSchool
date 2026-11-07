@@ -744,11 +744,7 @@ function ClassSubjectSettings({
           <tbody className="divide-y divide-ink-100">
             {classes.map((classItem) => {
               const profile = context.classProfiles?.[classItem.id];
-              const inferredSubjects = defaultClassRankingSubjects(
-                subjects,
-                profile?.subjectSelections,
-                profile?.hasImportedScores ? profile.scoreSubjects : undefined,
-              );
+              const inferredSubjects = defaultClassRankingSubjects(subjects, profile?.subjectSelections);
               const current = settings.classSubjects.find((item) => item.classId === classItem.id) || {
                 classId: classItem.id,
                 examSubjects: inferredSubjects,
@@ -781,8 +777,7 @@ function ClassSubjectSettings({
                   <td className="px-4 py-3">
                     <ClassSummary classItem={classItem} context={context} />
                     <div className="mt-1.5 text-[11px] text-blue-600">
-                      {profile?.subjectSelections.length ? "默认依据学生选科" : profile?.hasImportedScores
-                        ? "无选科信息，参考已导入科目" : "无选科信息，默认所有科目"}
+                      {profile?.subjectSelections.length ? "默认依据学生选科" : "无选科信息，默认所有科目"}
                     </div>
                     <button
                       type="button"

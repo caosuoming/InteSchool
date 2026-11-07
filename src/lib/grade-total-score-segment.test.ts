@@ -313,7 +313,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     expect(report.separateStandards).toHaveLength(1);
     expect(report.separateStandards[0].classIds).toEqual(["class-1"]);
   });
-  it("uses only complete totals for threshold counts and rates, per class and subtotal", () => {
+  it("counts only complete examinees and uses configured ranking subjects for thresholds", () => {
     const reportExam: GradeExam = {
       ...exam,
       subjects: ["数学", "语文"],
@@ -350,7 +350,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
     });
     expect(report.rows[0].counts).toEqual({
-      "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
+      "class-1": 0, "class-2": 1, __science_subtotal__: 0, __arts_subtotal__: 1, __total__: 1,
     });
     expect(byKey.highScore1Count.values).toEqual({
       "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,

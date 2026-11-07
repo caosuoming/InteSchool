@@ -9,7 +9,7 @@ import type {
   GradeStatisticsTemplate,
 } from "../types/index.js";
 import { averageGradeValues } from "./grade-reports.js";
-import { expectedGradeSubjectCount, participatingGradeRecords } from "./grade-statistics.js";
+import { expectedGradeSubjectCount, participatingGradeRecords, rankedClassSubjects } from "./grade-statistics.js";
 import { isAssignableGradeSubject } from "./grade-subjects.js";
 
 export interface GradeClassAverageScorePair {
@@ -245,7 +245,13 @@ function summaryForRecords(
   subjects: string[],
   examSubjects: string[],
   expectedCount: number,
+  settings: GradeExamSettings,
 ): GradeClassAverageSummary {
+  const totalForRecord = (record: GradeScoreRecord, mode: GradeScoreMode) => {
+    const examRanked = rankedClassSubjects(examSubjects, settings, record.classId);
+    const reportRanked = rankedClassSubjects(subjects, settings, record.classId);
+    return recordTotal(record, reportRanked, mode, examRanked, Math.min(expectedCount, examRanked.length));
+  };
   return {
     subjectValues: Object.fromEntries(subjects.map((subject) => [
       subject,
@@ -255,8 +261,8 @@ function summaryForRecords(
       },
     ])),
     totalValues: {
-      raw: averageGradeValues(records.map((record) => recordTotal(record, subjects, "raw", examSubjects, expectedCount))),
-      assigned: averageGradeValues(records.map((record) => recordTotal(record, subjects, "assigned", examSubjects, expectedCount))),
+      raw: averageGradeValues(records.map((record) => totalForRecord(record, "raw"))),
+      assigned: averageGradeValues(records.map((record) => totalForRecord(record, "assigned"))),
     },
   };
 }
@@ -371,7 +377,7 @@ export function buildGradeClassAverageReport(
     .map((classId) => {
       const records = recordsByClass.get(classId) || [];
       const className = contextClassNames.get(classId) || records[0]?.className || "未知班级";
-      const summary = summaryForRecords(records, effectiveSubjects, exam.subjects, expectedCount);
+      const summary = summaryForRecords(records, effectiveSubjects, exam.subjects, expectedCount, settings);
       return {
         classId,
         className,
@@ -404,7 +410,7 @@ export function buildGradeClassAverageReport(
       category,
       rows,
       difference: differenceForRows(rows, effectiveSubjects),
-      average: summaryForRecords(groupRecords, effectiveSubjects, exam.subjects, expectedCount),
+      average: summaryForRecords(groupRecords, effectiveSubjects, exam.subjects, expectedCount, settings),
       subjectScoreModes: combinedSubjectScoreModes(rows, effectiveSubjects, template.scoreMode),
     } satisfies GradeClassAverageGroup;
   });
@@ -440,7 +446,7 @@ export function buildGradeClassAverageReport(
         assigned: averageGradeValues(records.map((record) => recordSubjectValue(record, subject, "assigned"))),
       }];
     })),
-    totalValues: summaryForRecords(unifiedTotalRecords, effectiveSubjects, exam.subjects, expectedCount).totalValues,
+    totalValues: summaryForRecords(unifiedTotalRecords, effectiveSubjects, exam.subjects, expectedCount, settings).totalValues,
   };
 
   return {

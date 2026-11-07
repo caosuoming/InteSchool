@@ -134,6 +134,22 @@ describe("buildGradeTotalScoreRankingReport", () => {
     expect(assignedReport.tables[1].rows.map((row) => row.studentName)).toEqual(["丙"]);
   });
 
+  it("recalculates ranking tables when a class is excluded from the configured subject", () => {
+    const changed: GradeExam = {
+      ...exam,
+      settings: {
+        ...exam.settings,
+        classSubjects: [
+          { classId: "science-class", examSubjects: ["数学"], statisticSubjects: [] },
+          { classId: "arts-class", examSubjects: ["数学"], statisticSubjects: ["数学"] },
+        ],
+      },
+    };
+    const report = buildGradeTotalScoreRankingReport(changed, template, context, classAverageTemplate);
+    expect(report.tables[0].rows).toEqual([]);
+    expect(report.tables[1].rows.map((row) => row.studentName)).toEqual(["丙"]);
+  });
+
   it("falls back to one cohort table when tracks are not fully classifiable", () => {
     const report = buildGradeTotalScoreRankingReport(
       exam,

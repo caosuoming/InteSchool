@@ -1,5 +1,6 @@
 import type {
   GradeExam,
+  GradeExamSettings,
   GradeImportContext,
   GradeScoreMode,
   GradeScoreRecord,
@@ -12,7 +13,7 @@ import {
   type GradeAcademicTrackClassification,
 } from "./grade-total-score-segment.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
-import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
+import { participatingGradeRecords, rankedClassSubjects, totalRankingGroupKey } from "./grade-statistics.js";
 
 export const DEFAULT_TOTAL_SCORE_TOP_N = 50;
 
@@ -55,9 +56,16 @@ function rankedRows(
   subjects: string[],
   classLabels: Record<string, string>,
   topN: number,
+  settings: GradeExamSettings,
 ): GradeTotalScoreRankingRow[] {
   const sorted = records
-    .map((record) => ({ record, score: gradeTemplateTotal(record, template) }))
+    .flatMap((record) => {
+      const ranked = rankedClassSubjects(template.subjects, settings, record.classId);
+      return ranked.length ? [{
+        record,
+        score: gradeTemplateTotal(record, { ...template, subjects: ranked }),
+      }] : [];
+    })
     .sort((left, right) => (
       right.score - left.score
       || left.record.studentNo.localeCompare(right.record.studentNo, "zh-CN", { numeric: true })
@@ -134,7 +142,7 @@ export function buildGradeTotalScoreRankingReport(
   ): GradeTotalScoreRankingTable => ({
     key,
     title: `${exam.name}${label}（${scoreModeLabel}）`,
-    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit),
+    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit, exam.settings),
   });
 
   const rankedGroups = new Map<string, GradeScoreRecord[]>();
