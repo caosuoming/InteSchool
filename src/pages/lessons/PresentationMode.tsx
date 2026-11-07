@@ -33,6 +33,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { inlineAnswerAnimationOrders } from "@/lib/lesson-inline-answers";
 import type { LessonSlide, LessonSlideElement, LessonSlideTextElement, Question, HomeworkClassOverviewRecord } from "@/types";
 import { cn } from "@/lib/utils";
 import { getMaximumContrastTextColor, normalizeHexColor } from "@/lib/color-contrast";
@@ -514,9 +515,10 @@ function animationOrderOf(element: LessonSlideElement): number | null {
 }
 
 function getAnimationSteps(elements: LessonSlideElement[]): number[] {
-  return [...new Set(elements
-    .map(animationOrderOf)
-    .filter((order): order is number => order !== null))]
+  return [...new Set(elements.flatMap((element) => [
+    ...(animationOrderOf(element) === null ? [] : [animationOrderOf(element)!]),
+    ...(element.kind === "text" ? inlineAnswerAnimationOrders(element.content) : []),
+  ]))]
     .sort((left, right) => left - right);
 }
 
@@ -2722,6 +2724,9 @@ export function PresentationMode({
                   editable={tool === "select"}
                   showAnimationOrder={false}
                   animationMode="step"
+                  inlineAnswerOrder={currentAnimationProgress > 0
+                    ? currentAnimationSteps[currentAnimationProgress - 1]
+                    : 0}
                   allowTextEditing={false}
                   allowVerticalElementOverflow
                   enableScheduledMediaPlayback

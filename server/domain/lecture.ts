@@ -565,6 +565,7 @@ export const lectureService = {
           title: block.title || `知识块 ${index + 1}`,
           type: "knowledge",
           content: block.content,
+          inlineAnswers: block.inlineAnswers,
           children: [],
         };
       }

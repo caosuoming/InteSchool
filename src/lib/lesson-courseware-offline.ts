@@ -425,7 +425,13 @@ function presentationElements(slide){
 }
 function animationSteps(slide){
   var set={};
-  presentationElements(slide).forEach(function(element){var order=animationOrder(element);if(order!==null)set[order]=true;});
+  presentationElements(slide).forEach(function(element){
+    var order=animationOrder(element);if(order!==null)set[order]=true;
+    if(element.kind==="text"){
+      var pattern=/class="lesson-inline-answer" data-answer-step="(\\d+)"/g, match;
+      while((match=pattern.exec(element.content||""))!==null){set[Number(match[1])]=true;}
+    }
+  });
   return Object.keys(set).map(Number).sort(function(a,b){return a-b;});
 }
 function shownElements(slide){
@@ -455,6 +461,13 @@ function styleElement(node,element){
   if(enter==="zoom") node.classList.add("enter-zoom");
 }
 function appendRich(node,html){node.classList.add("rich");node.innerHTML=html||"";}
+function maskInlineAnswers(node,slide){
+  var steps=animationSteps(slide),progress=animationProgress[slide.id]||0;
+  var last=progress>0?steps[Math.min(progress,steps.length)-1]:0;
+  node.querySelectorAll(".lesson-inline-answer[data-answer-step]").forEach(function(answer){
+    if(Number(answer.getAttribute("data-answer-step"))>last)answer.textContent="______";
+  });
+}
 function renderCoursewareSlide(slide){
   var box=document.createElement("div"); box.className="courseware-file";
   var type=slide.coursewareType||"other", url=slide.fileUrl||"";
@@ -506,6 +519,7 @@ function renderSlide(){
       } else if(element.kind==="audio"){
         var audio=document.createElement("audio");audio.src=element.src;audio.controls=true;audio.preload="metadata";node.appendChild(audio);
       }
+      if(element.kind==="text")maskInlineAnswers(node,slide);
       slideEl.appendChild(node);
     });
     appendSupplementary(slide);

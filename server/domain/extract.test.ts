@@ -76,3 +76,22 @@ describe("extractService", () => {
     });
   });
 });
+
+
+describe("knowledge answers in extraction storage", () => {
+  it("persists ordered underlined answers separately from knowledge content", async () => {
+    const state: AppState = { teachers: [], currentTeacherId: null, questions: [], knowledgePoints: [], materials: [] };
+    await runWithState(state, async () => {
+      const result = await extractService.confirmExtract(
+        "teacher-1", "school-1",
+        { questions: [], knowledgeBlocks: [{
+          id: "knowledge-1", title: "等式", content: '等式的右边是 <span class="knowledge-answer-blank" data-answer-index="1">____</span>',
+          inlineAnswers: ["6"], status: "new",
+        }] },
+        [], [], "高一", "2026-2027", "上学期", "lecture-1",
+      );
+      expect(result.createdMaterials[0]).toMatchObject({ inlineAnswers: ["6"] });
+      expect(result.createdMaterials[0].content).not.toContain("右边是 6");
+    });
+  });
+});

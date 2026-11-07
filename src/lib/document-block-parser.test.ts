@@ -2516,3 +2516,47 @@ describe("geography paper extraction", () => {
     expect(blocks.filter((block) => block.type === "question").map((block) => block.answer)).toEqual(["C", "D"]);
   });
 });
+
+
+describe("inline answers in mathematics documents", () => {
+  it("recognizes a correct letter inside the stem parentheses and removes the leaked letter", () => {
+    const blocks = parseDocumentBlocks("一、单项选择题\n1. 下列结论正确的是（ B ）。 A. 甲 B. 乙 C. 丙 D. 丁", config);
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question).toMatchObject({ questionType: "single", answer: "B" });
+    expect(question.content).not.toContain("（ B ）");
+    expect(question.content).toContain("（ ）");
+  });
+
+  it("extracts multiple correct choice letters without treating normal formulas as answers", () => {
+    const blocks = parseDocumentBlocks("一、多项选择题\n1. 正确的是（ACD） A. 甲 B. 乙 C. 丙 D. 丁", config);
+    expect(blocks.find((block) => block.type === "question")).toMatchObject({ answer: "ACD" });
+    const unchanged = parseDocumentBlocks("一、单项选择题\n1. 若 x∈(A)，则判断正确的是（ ） A. 甲 B. 乙 C. 丙 D. 丁", config);
+    expect(unchanged.find((block) => block.type === "question")?.content).toContain("(A)");
+  });
+
+  it("extracts each underlined fill answer, keeping the blank positions", () => {
+    const blocks = parseDocumentBlocks("二、填空题\n2. 解为 <u>2</u>，根的个数是 <u>两个</u>。", config);
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question).toMatchObject({ questionType: "short", answer: "2；两个" });
+    expect(question.content).not.toContain("<u>");
+    expect(question.content.match(/_{4,}/g)).toHaveLength(2);
+  });
+
+  it("preserves an explicit answer instead of overwriting it with an underlined run", () => {
+    const blocks = parseDocumentBlocks("二、填空题\n2. 求值：<u>2</u>\n答案：3", config);
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question.answer).toBe("3");
+    expect(question.content).toContain("____");
+  });
+
+  it("extracts ordered knowledge answers but leaves ordinary blank lines and math intact", () => {
+    const blocks = parseDocumentBlocks("【知识点1】公式为 <u>a+b</u>，定义域是 <u>实数集</u>，另留 ____，且 $x_1$ 不变。", config);
+    const block = blocks.find((item) => item.type === "knowledge")!;
+    expect(block.inlineAnswers).toEqual(["a+b", "实数集"]);
+    expect(block.content).toContain('data-answer-index="1"');
+    expect(block.content).toContain('data-answer-index="2"');
+    expect(block.content).toContain("$x_1$");
+    expect(block.content).toContain("另留 ____");
+    expect(block.content).not.toContain("<u>");
+  });
+});

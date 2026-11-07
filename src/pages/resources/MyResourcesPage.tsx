@@ -273,6 +273,7 @@ function lessonDocumentBlocks(blocks: DocumentBlock[]): LessonDocumentBlock[] {
         type: "knowledge" as const,
         title: block.knowledgeTitle,
         content: block.content,
+        inlineAnswers: block.inlineAnswers,
       }];
     }
     if (block.type !== "question") return [];

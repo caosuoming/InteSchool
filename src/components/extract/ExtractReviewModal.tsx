@@ -845,6 +845,7 @@ export function ExtractReviewModal({
         id: b.id,
         title: b.knowledgeTitle || truncate(removeKeywords(b.content, questionKeywords), 20),
         content: removeKeywords(b.content, questionKeywords),
+        inlineAnswers: b.inlineAnswers,
         status: b.status as "new" | "duplicate" | "confirmed" | "edited",
         duplicateOf: b.duplicateOf as Material | undefined,
       }));
@@ -873,6 +874,7 @@ export function ExtractReviewModal({
             type: "knowledge",
             title: item?.title || block.knowledgeTitle,
             content: item?.content || block.content,
+            inlineAnswers: item?.inlineAnswers || block.inlineAnswers,
           };
         }
         return { id: block.id, type: block.type, content: block.content };

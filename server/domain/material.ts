@@ -62,6 +62,7 @@ export interface MaterialInput {
   semester?: ResourceSemester;
   type: MaterialType;
   content: string;
+  inlineAnswers?: string[];
   fileUrl?: string;
   fileName?: string;
   fileSize?: number;
@@ -105,6 +106,7 @@ export const materialService = {
       semester: input.semester || "上学期",
       type: input.type,
       content: input.content,
+      inlineAnswers: input.inlineAnswers,
       fileUrl: input.fileUrl,
       fileName: input.fileName,
       fileSize: input.fileSize,
