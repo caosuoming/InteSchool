@@ -1,4 +1,5 @@
 import { getProjectSections } from "@/pages/exam-papers/project-sections";
+import { getQuestionTypeHeading, getQuestionTypeSections } from "@/pages/exam-papers/question-type-sections";
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   AlignmentType, Tab, TabStopPosition, TabStopType,
@@ -1176,32 +1177,42 @@ export async function buildExamPaperDocxBlob(
         },
       ));
     }
-    const projectSections = paper.layoutMode === "flat"
-      ? getProjectSections(paper.questions, paper.projects || [])
-      : [{ project: null, questions: paper.questions }];
+    const sections = paper.layoutMode === "flat"
+      ? getProjectSections(paper.questions, paper.projects || []).map((section) => {
+        const index = (paper.projects || []).findIndex((project) => project.id === section.project?.id);
+        const numeral = ["一", "二", "三", "四", "五", "六", "七", "八"][index] || index + 1;
+        return {
+          heading: section.project?.name.trim() ? `${numeral}、${section.project.name.trim()}` : null,
+          questions: section.questions,
+        };
+      })
+      : getQuestionTypeSections(paper.questions, questionsById, paper.questionTypeOrder).map((section, index) => ({
+        heading: getQuestionTypeHeading(section.type, index),
+        questions: section.questions,
+      }));
     let questionNumber = 0;
-    for (const section of projectSections) {
-      if (section.project && mode !== "answers") {
-        children.push(createHeading(plainDocumentText(section.project.name)));
+    for (const section of sections) {
+      if (section.heading && mode !== "answers") {
+        children.push(createHeading(plainDocumentText(section.heading)));
       }
       for (const question of section.questions) {
-      const index = questionNumber++;
-      const linkedQuestion = question.questionId ? questionsById[question.questionId] : undefined;
-      solutions.push({
-        number: index + 1,
-        answer: question.answer || linkedQuestion?.answer || "暂无答案",
-        analysis: question.analysis || linkedQuestion?.analysis || "暂无解析",
-      });
-      if (mode !== "answers") {
-        await appendExamQuestion(
-          children,
-          question,
-          linkedQuestion,
-          index + 1,
-          mode,
-          markMultiple,
-        );
-      }
+        questionNumber += 1;
+        const linkedQuestion = question.questionId ? questionsById[question.questionId] : undefined;
+        solutions.push({
+          number: questionNumber,
+          answer: question.answer || linkedQuestion?.answer || "暂无答案",
+          analysis: question.analysis || linkedQuestion?.analysis || "暂无解析",
+        });
+        if (mode !== "answers") {
+          await appendExamQuestion(
+            children,
+            question,
+            linkedQuestion,
+            questionNumber,
+            mode,
+            markMultiple,
+          );
+        }
       }
     }
   }

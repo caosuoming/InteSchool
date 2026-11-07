@@ -109,6 +109,7 @@ import { treeNameMap } from "@/lib/basket-audience";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
 import { isDocumentStructureLocked } from "@/lib/document-resource";
 import { getProjectSections } from "./project-sections";
+import { DEFAULT_QUESTION_TYPE_ORDER, getQuestionTypeHeading, getQuestionTypeSections } from "./question-type-sections";
 import { basketsForAudience, selectAssignmentQuestions } from "./assignment-selection";
 import type { KnowledgeMastery } from "@/services/analytics";
 
@@ -175,42 +176,22 @@ interface QuestionGroup {
   }[];
 }
 
-const typeOrder = ["single", "multiple", "judge", "short", "essay", "comprehensive"];
-const typeLabels: Record<string, string> = {
-  single: "一、单选题",
-  multiple: "二、多选题",
-  judge: "三、判断题",
-  short: "四、填空题",
-  essay: "五、解答题",
-  comprehensive: "六、综合题",
-};
 const sectionNumerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
-const getGroupHeading = (type: string, index: number) =>
-  `${sectionNumerals[index] || index + 1}、${typeLabel[type] || type}题`;
+const getGroupHeading = getQuestionTypeHeading;
 
 const groupByType = (questions: ExamPaperQuestion[], qMap: Record<string, Question>, order?: string[]): QuestionGroup[] => {
-  const groups: Record<string, QuestionGroup> = {};
-  const effectiveOrder = order || typeOrder;
-
-  questions.forEach((pq, idx) => {
-    const q = pq.questionId ? qMap[pq.questionId] : null;
-    const qType = q?.type || pq.type;
-    if (!groups[qType]) {
-      groups[qType] = { type: qType, label: typeLabels[qType] || qType, questions: [] };
-    }
-    groups[qType].questions.push({ pq, index: idx, displayIndex: -1, question: q });
-  });
-
+  const indices = new Map(questions.map((question, index) => [question.id, index]));
   let displayIndex = 0;
-  return effectiveOrder
-    .filter((t) => groups[t])
-    .map((t) => ({
-      ...groups[t],
-      questions: groups[t].questions.map((item) => ({
-        ...item,
-        displayIndex: displayIndex++,
-      })),
-    }));
+  return getQuestionTypeSections(questions, qMap, order).map((section, groupIndex) => ({
+    type: section.type,
+    label: getGroupHeading(section.type, groupIndex),
+    questions: section.questions.map((pq) => ({
+      pq,
+      index: indices.get(pq.id)!,
+      displayIndex: displayIndex++,
+      question: pq.questionId ? qMap[pq.questionId] : null,
+    })),
+  }));
 };
 
 type AddSource = "choose" | "basket" | "bank" | "examPaper" | "lecture";
@@ -233,6 +214,7 @@ interface ExamPaperNavigationDraft {
   paperQuestions: ExamPaperQuestion[];
   contentBlocks: ExtractedDocumentBlock[];
   layoutMode: "grouped" | "flat";
+  questionTypeOrder: string[];
   projects: ExamPaperProject[];
   selectedClassIds: string[];
   questions: Record<string, Question>;
@@ -257,6 +239,7 @@ type ExamPaperSaveState = Pick<
   | "typeId"
   | "contentBlocks"
   | "layoutMode"
+  | "questionTypeOrder"
   | "projects"
 >;
 
@@ -277,6 +260,7 @@ function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
     ...(structureLocked ? {} : {
       contentBlocks: paper.contentBlocks || [],
       layoutMode: paper.layoutMode || "grouped",
+      questionTypeOrder: paper.questionTypeOrder || [...DEFAULT_QUESTION_TYPE_ORDER],
       projects: paper.projects || [],
     }),
   };
@@ -357,7 +341,7 @@ export default function ExamPaperEditorPage() {
   const [revoking, setRevoking] = useState(false);
 
   // 大题型顺序（编辑模式）
-  const [groupOrder, setGroupOrder] = useState<string[]>(typeOrder);
+  const [groupOrder, setGroupOrder] = useState<string[]>([...DEFAULT_QUESTION_TYPE_ORDER]);
   const [collapsedGroupTypes, setCollapsedGroupTypes] = useState<Set<string>>(new Set());
   const [collapsedHeadingIds, setCollapsedHeadingIds] = useState<Set<string>>(new Set());
 
@@ -570,6 +554,7 @@ export default function ExamPaperEditorPage() {
       setPaperQuestions(nextPaperQuestions);
       setContentBlocks(nextContentBlocks);
       setLayoutMode(draft?.layoutMode ?? p.layoutMode ?? "grouped");
+      setGroupOrder(draft?.questionTypeOrder ?? p.questionTypeOrder ?? [...DEFAULT_QUESTION_TYPE_ORDER]);
       setProjects(draft?.projects ?? p.projects ?? []);
       setSelectedClassIds(draft?.selectedClassIds ?? p.classIds ?? []);
       setPrepPasswordOpen(false);
@@ -912,6 +897,7 @@ export default function ExamPaperEditorPage() {
       paperQuestions,
       contentBlocks,
       layoutMode,
+      questionTypeOrder: groupOrder,
       projects,
       selectedClassIds,
       questions,
@@ -922,6 +908,7 @@ export default function ExamPaperEditorPage() {
     duration,
     grade,
     layoutMode,
+    groupOrder,
     projects,
     paper,
     paperQuestions,
@@ -1339,7 +1326,7 @@ export default function ExamPaperEditorPage() {
     classIds: selectedClassIds,
     studentIds: [],
     typeId: typeId || undefined,
-    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, projects }),
+    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, questionTypeOrder: groupOrder, projects }),
   }), [
     contentBlocks,
     description,
@@ -1347,6 +1334,7 @@ export default function ExamPaperEditorPage() {
     grade,
     isStructureLocked,
     layoutMode,
+    groupOrder,
     projects,
     paperQuestions,
     schoolYear,
@@ -1375,6 +1363,7 @@ export default function ExamPaperEditorPage() {
     if (!isStructureLocked) {
       setContentBlocks(structuredClone(savedDraft.contentBlocks || []));
       setLayoutMode(savedDraft.layoutMode || "grouped");
+      setGroupOrder(savedDraft.questionTypeOrder || [...DEFAULT_QUESTION_TYPE_ORDER]);
       setProjects(structuredClone(savedDraft.projects || []));
     }
     toast.success("已撤销未保存修改");
@@ -1491,6 +1480,7 @@ export default function ExamPaperEditorPage() {
         questions: paperQuestions,
         contentBlocks,
         layoutMode,
+        questionTypeOrder: groupOrder,
         projects,
       }, questions, downloadModes);
       setDownloadModalOpen(false);
@@ -1537,13 +1527,13 @@ export default function ExamPaperEditorPage() {
   const handleGroupMove = (groupType: string, dir: "up" | "down") => {
     if (isEditingLocked) return;
     setGroupOrder((prev) => {
-      const idx = prev.indexOf(groupType);
+      const next = getQuestionTypeSections(paperQuestions, questions, prev).map((section) => section.type);
+      const idx = next.indexOf(groupType);
       if (idx === -1) return prev;
       const target = dir === "up" ? idx - 1 : idx + 1;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
+      if (target < 0 || target >= next.length) return prev;
       [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
+      return [...next, ...prev.filter((type) => !next.includes(type))];
     });
   };
 
