@@ -35,6 +35,11 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+export function fixedRoomIdsForSubject(rule: ExamClassRoomRule | null | undefined, subject: string): string[] {
+  const value = rule?.fixedSubjectRoomIds?.[subject];
+  return uniqueStrings(Array.isArray(value) ? value : typeof value === "string" ? [value] : []);
+}
+
 function stableHash(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -407,19 +412,19 @@ function normalizeRules(
     if (rules.has(source.classId)) throw new Error("同一班级只能配置一组考场规则");
     const defaultSubjects = uniqueStrings(source.defaultSubjects || []).filter((subject) => subjectSet.has(subject));
     const subjectRoomIds: Record<string, string[]> = {};
-    const fixedSubjectRoomIds: Record<string, string> = {};
+    const fixedSubjectRoomIds: Record<string, string[]> = {};
     for (const subject of subjects) {
       const configured = uniqueStrings(source.subjectRoomIds?.[subject] || []);
       if (configured.some((roomId) => !roomIds.has(roomId))) {
         throw new Error("班级考场规则引用了不存在的考场");
       }
-      const fixedRoomId = source.fixedSubjectRoomIds?.[subject]?.trim();
-      if (fixedRoomId && !roomIds.has(fixedRoomId)) {
+      const fixedRoomIds = fixedRoomIdsForSubject(source, subject);
+      if (fixedRoomIds.some((roomId) => !roomIds.has(roomId))) {
         throw new Error("班级固定考场规则引用了不存在的考场");
       }
-      if (fixedRoomId) fixedSubjectRoomIds[subject] = fixedRoomId;
-      subjectRoomIds[subject] = fixedRoomId
-        ? [fixedRoomId]
+      if (fixedRoomIds.length > 0) fixedSubjectRoomIds[subject] = fixedRoomIds;
+      subjectRoomIds[subject] = fixedRoomIds.length > 0
+        ? fixedRoomIds
         : configured.length > 0 ? configured : rooms.map((room) => room.id);
     }
     rules.set(source.classId, { classId: source.classId, defaultSubjects, subjectRoomIds, fixedSubjectRoomIds });

@@ -155,6 +155,37 @@ describe("exam arrangement service", () => {
     });
   });
 
+  it("persists multi-room class subject constraints and assigns students across rooms", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const saved = await examArrangementService.saveArrangement("school-1", "teacher-1", {
+        cohortKey: "grad-2026",
+        name: "多考场测试",
+        mode: "subject",
+        subjects: ["物理"],
+        rooms: [
+          { id: "room-1", name: "第一考场", capacity: 1 },
+          { id: "room-2", name: "第二考场", capacity: 1 },
+        ],
+        classRules: [{
+          classId: "class-1",
+          defaultSubjects: ["物理"],
+          subjectRoomIds: { 物理: ["room-1"] },
+          fixedSubjectRoomIds: { 物理: ["room-1", "room-2"] },
+        }],
+        studentSubjects: [
+          { studentId: "student-1", subjects: ["物理"] },
+          { studentId: "student-2", subjects: ["物理"] },
+        ],
+      });
+
+      expect(new Set(saved.assignments.map((item) => item.roomId))).toEqual(new Set(["room-1", "room-2"]));
+      expect(saved.classRules[0].fixedSubjectRoomIds?.物理).toEqual(["room-1", "room-2"]);
+      const reloaded = await examArrangementService.listArrangements("school-1", "grad-2026");
+      expect(reloaded[0].classRules[0].fixedSubjectRoomIds?.物理).toEqual(["room-1", "room-2"]);
+    });
+  });
+
   it("does not allow one teacher to overwrite another teacher's plan", async () => {
     const appState = state();
     await runWithState(appState, async () => {

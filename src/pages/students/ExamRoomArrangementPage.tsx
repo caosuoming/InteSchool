@@ -49,7 +49,7 @@ import {
   groupDeskLabelsByRoom,
   groupStudentArrangements,
 } from "@/lib/exam-arrangement-export";
-import { examGroupsShareExamTime, normalizeExamRoomSharing, summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangement";
+import { examGroupsShareExamTime, fixedRoomIdsForSubject, normalizeExamRoomSharing, summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangement";
 
 const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 const CORE_SUBJECTS = ["语文", "数学", "英语"];
@@ -441,8 +441,9 @@ function normalizeClassRules(
   return context.classes.map((classItem) => {
     const existing = currentRules.get(classItem.id);
     const defaultSubjects = uniqueSubjects(existing?.defaultSubjects || subjects).filter((subject) => subjects.includes(subject));
-    const fixedSubjectRoomIds = Object.fromEntries(Object.entries(existing?.fixedSubjectRoomIds || {})
-      .filter(([subject, roomId]) => subjects.includes(subject) && validRoomIds.has(roomId)));
+    const fixedSubjectRoomIds = Object.fromEntries(subjects
+      .map((subject) => [subject, fixedRoomIdsForSubject(existing, subject).filter((roomId) => validRoomIds.has(roomId))] as const)
+      .filter(([, roomIds]) => roomIds.length > 0));
     return {
       classId: classItem.id,
       defaultSubjects,
@@ -1419,24 +1420,31 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     });
   };
 
-  const setClassSubjectRoom = (classId: string, subject: string, roomId: string) => {
+  const setClassSubjectRoom = (classId: string, subject: string, roomId: string, selected: boolean) => {
     if (!context) return;
     updateDraft((current) => {
-      const affectedGroupKeys = roomId
+      const affectedGroupKeys = selected
         ? summarizeExamGroups(current, context)
           .filter((group) => group.classIds.includes(classId) && group.subjectLabel.split(" / ").includes(subject))
           .map((group) => group.key)
         : [];
       return {
         ...current,
-        classRules: current.classRules.map((rule) => rule.classId === classId ? {
-          ...rule,
-          fixedSubjectRoomIds: {
-            ...Object.fromEntries(Object.entries(rule.fixedSubjectRoomIds || {}).filter(([key]) => key !== subject)),
-            ...(roomId ? { [subject]: roomId } : {}),
-          },
-        } : rule),
-        groupRoomIds: roomId
+        classRules: current.classRules.map((rule) => {
+          if (rule.classId !== classId) return rule;
+          const previous = fixedRoomIdsForSubject(rule, subject);
+          const next = selected
+            ? [...new Set([...previous, roomId])]
+            : previous.filter((id) => id !== roomId);
+          return {
+            ...rule,
+            fixedSubjectRoomIds: {
+              ...Object.fromEntries(Object.entries(rule.fixedSubjectRoomIds || {}).filter(([key]) => key !== subject)),
+              ...(next.length > 0 ? { [subject]: next } : {}),
+            },
+          };
+        }),
+        groupRoomIds: selected
           ? Object.fromEntries(Object.entries(current.groupRoomIds || {}).map(([groupKey, roomIds]) => [
             groupKey,
             affectedGroupKeys.includes(groupKey) ? [...new Set([...roomIds, roomId])] : roomIds,
@@ -2001,7 +2009,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                 </div>
                 <div className="mt-4 border-t border-ink-100 pt-4">
                   <div className="text-sm font-medium text-ink-800">班级学科固定考场</div>
-                  <div className="mt-1 text-xs text-ink-500">默认自动分配；个别班级的个别学科可固定到指定考场。</div>
+                  <div className="mt-1 text-xs text-ink-500">默认自动分配；每个班级的每门学科可固定选择多个考场，取消全部勾选即可恢复自动分配。</div>
                   <div className="mt-3 space-y-3">
                     <ClassSwitchTabs
                       classes={context.classes}
@@ -2014,20 +2022,38 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         <div className="mb-3 text-sm font-medium text-ink-900">{activeFixedRoomClass.name}</div>
                         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                           {draft.subjects.map((subject) => {
-                            const fixedRoomId = activeFixedRoomClassRule?.fixedSubjectRoomIds?.[subject] || "";
+                            const fixedRoomIds = fixedRoomIdsForSubject(activeFixedRoomClassRule, subject);
+                            const selectedNames = draft.rooms
+                              .filter((room) => fixedRoomIds.includes(room.id))
+                              .map((room) => room.number || room.name);
                             return (
-                              <label key={subject} className="flex items-center gap-2 text-xs text-ink-600">
-                                <span className="w-10 shrink-0">{subject}</span>
-                                <select
-                                  aria-label={`${activeFixedRoomClass.name}${subject}固定考场`}
-                                  value={fixedRoomId}
-                                  onChange={(event) => setClassSubjectRoom(activeFixedRoomClass.id, subject, event.target.value)}
-                                  className="min-w-0 flex-1 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700"
-                                >
-                                  <option value="">自动分配</option>
-                                  {draft.rooms.map((room) => <option key={room.id} value={room.id}>{room.number || room.name}</option>)}
-                                </select>
-                              </label>
+                              <div key={subject} className="flex min-w-0 items-start gap-2 text-xs text-ink-600">
+                                <span className="w-10 shrink-0 pt-2">{subject}</span>
+                                <details className="group relative min-w-0 flex-1">
+                                  <summary
+                                    aria-label={`${activeFixedRoomClass.name}${subject}固定考场`}
+                                    className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-2 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 [&::-webkit-details-marker]:hidden"
+                                  >
+                                    <span className="min-w-0 truncate" title={selectedNames.join("、")}>
+                                      {selectedNames.length > 0 ? selectedNames.join("、") : "自动分配"}
+                                    </span>
+                                    <ChevronDown className="h-3.5 w-3.5 shrink-0 group-open:rotate-180" />
+                                  </summary>
+                                  <div className="absolute right-0 z-30 mt-1 max-h-56 w-full min-w-40 overflow-y-auto rounded-md border border-ink-200 bg-paper p-1 shadow-lg">
+                                    {draft.rooms.map((room) => (
+                                      <label key={room.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-ink-50">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`${activeFixedRoomClass.name}${subject}固定考场：${room.number || room.name}`}
+                                          checked={fixedRoomIds.includes(room.id)}
+                                          onChange={(event) => setClassSubjectRoom(activeFixedRoomClass.id, subject, room.id, event.target.checked)}
+                                        />
+                                        <span className="min-w-0 truncate">{room.number || room.name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </details>
+                              </div>
                             );
                           })}
                         </div>

@@ -412,6 +412,49 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByRole("group", { name: "李同学考试设置" })).toBeInTheDocument();
   });
 
+  it("allows multiple fixed rooms per class and subject and restores automatic selection", async () => {
+    const user = userEvent.setup();
+    const secondClass = { ...context.classes[0], id: "class-2", name: "高三（2）班" };
+    const secondStudent = {
+      ...context.students[0],
+      id: "student-2",
+      name: "李同学",
+      studentNo: "002",
+      classId: "class-2",
+    };
+    vi.mocked(examArrangementService.getContext).mockResolvedValue({
+      ...context,
+      cohort: { ...cohort, classIds: ["class-1", "class-2"], studentCount: 2 },
+      classes: [context.classes[0], secondClass],
+      students: [context.students[0], secondStudent],
+    });
+    renderPage();
+
+    const fixedRoom = await screen.findByLabelText("高三（1）班语文固定考场");
+    await user.click(fixedRoom);
+    const first = screen.getByRole("checkbox", { name: "高三（1）班语文固定考场：1考场" });
+    const second = screen.getByRole("checkbox", { name: "高三（1）班语文固定考场：2考场" });
+    await user.click(first);
+    await user.click(second);
+    expect(first).toBeChecked();
+    expect(second).toBeChecked();
+    expect(fixedRoom).toHaveTextContent("1考场、2考场");
+
+    await user.click(first);
+    expect(first).not.toBeChecked();
+    expect(second).toBeChecked();
+    await user.click(second);
+    expect(fixedRoom).toHaveTextContent("自动分配");
+
+    await user.click(first);
+    await user.click(second);
+    const tabs = screen.getByRole("tablist", { name: "班级学科固定考场班级" });
+    await user.click(within(tabs).getByRole("tab", { name: "高三（2）班" }));
+    expect(screen.getByLabelText("高三（2）班语文固定考场")).toHaveTextContent("自动分配");
+    await user.click(within(tabs).getByRole("tab", { name: "高三（1）班" }));
+    expect(screen.getByLabelText("高三（1）班语文固定考场")).toHaveTextContent("1考场、2考场");
+  });
+
   it("supports class batch subjects, fixed rooms, special students, and external-student labels", async () => {
     const user = userEvent.setup();
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
@@ -455,9 +498,12 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("李同学特殊要求")).toHaveValue("last");
 
     const fixedRoom = screen.getByLabelText("高三（1）班语文固定考场");
-    expect(fixedRoom).toHaveValue("");
-    await user.selectOptions(fixedRoom, "room-class-1");
-    expect(fixedRoom).toHaveValue("room-class-1");
+    expect(fixedRoom).toHaveTextContent("自动分配");
+    await user.click(fixedRoom);
+    const roomChoice = screen.getByRole("checkbox", { name: "高三（1）班语文固定考场：1考场" });
+    await user.click(roomChoice);
+    expect(roomChoice).toBeChecked();
+    expect(fixedRoom).toHaveTextContent("1考场");
   });
 
   it("shows the student's actual combined electives as a selectable room group", async () => {
