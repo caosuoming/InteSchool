@@ -818,8 +818,8 @@ export interface ExamClassRoomRule {
   defaultSubjects: string[];
   /** 每个科目允许使用的考场 ID。 */
   subjectRoomIds: Record<string, string[]>;
-  /** 显式固定的单一考场；未设置时按 subjectRoomIds 自动分配。 */
-  fixedSubjectRoomIds?: Record<string, string>;
+  /** 各科目固定允许使用的考场；空或未设置时自动分配。兼容旧方案的单考场字符串。 */
+  fixedSubjectRoomIds?: Record<string, string[] | string>;
 }
 
 export interface ExamStudentSubjectSelection {

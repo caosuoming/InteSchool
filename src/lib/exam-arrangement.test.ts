@@ -99,6 +99,35 @@ describe("generateExamAssignments", () => {
     expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["combined"]));
   });
 
+  it("allocates a class subject across multiple fixed rooms and accepts legacy single-room rules", () => {
+    const plan = input("subject");
+    plan.rooms = [
+      { id: "room-a", name: "第一考场", capacity: 1 },
+      { id: "room-b", name: "第二考场", capacity: 2 },
+    ];
+    plan.studentSubjects[1].subjects = ["物理"];
+    plan.classRules[0] = {
+      ...plan.classRules[0],
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a", "room-b"] },
+      fixedSubjectRoomIds: { 物理: ["room-a", "room-b"] },
+    };
+    plan.classRules[1] = {
+      ...plan.classRules[1],
+      fixedSubjectRoomIds: { 物理: "room-b" },
+    };
+
+    const assignments = generateExamAssignments(plan, context)
+      .filter((assignment) => assignment.subjectLabel === "物理");
+    expect(new Set(assignments.filter((assignment) => assignment.classId === "class-1")
+      .map((assignment) => assignment.roomId))).toEqual(new Set(["room-a", "room-b"]));
+    expect(assignments.find((assignment) => assignment.classId === "class-2")?.roomId).toBe("room-b");
+
+    plan.classRules[0].fixedSubjectRoomIds = { 物理: ["room-a", "room-a", "room-b"] };
+    expect(generateExamAssignments(plan, context)).toHaveLength(4);
+    plan.classRules[0].fixedSubjectRoomIds = { 物理: ["room-a", "missing-room"] };
+    expect(() => generateExamAssignments(plan, context)).toThrow(/固定考场规则引用了不存在的考场/);
+  });
+
   it("reports the first student that cannot fit into eligible rooms", () => {
     const constrained = input("combination");
     constrained.rooms = [{ id: "room-a", name: "单一考场", capacity: 1 }];
