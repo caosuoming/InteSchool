@@ -60,10 +60,11 @@ export function studentSubjectTrend(data: GradeQueryData | null, studentId: stri
     const subjectRank = record.subjectRanks?.[subject];
     const rankScope = record.subjectRankScopes?.[subject];
     const hasSubjectRank = validNumber(subjectRank) && subjectRank > 0;
-    const rank = hasSubjectRank ? subjectRank : record.gradeRank > 0 ? record.gradeRank : null;
+    const subjectRankProvided = Object.prototype.hasOwnProperty.call(record.subjectRanks || {}, subject);
+    const rank = hasSubjectRank ? subjectRank : !subjectRankProvided && record.gradeRank > 0 ? record.gradeRank : null;
     const rankLabel = hasSubjectRank
       ? rankScope === "class" ? "班内名次" : rankScope === "separate" ? "单独排名组名次" : "单科年级名次"
-      : "总分年级名次";
+      : subjectRankProvided ? "单科名次" : "总分年级名次";
     return [{ examId: exam.id, examName: exam.name, date: exam.examDate || exam.createdAt.slice(0, 10), value: score, rank, rankLabel, valueLabel: `${subject}成绩` }];
   });
   return { subject, points };

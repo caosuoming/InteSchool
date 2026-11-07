@@ -34,6 +34,12 @@ describe("student score trends", () => {
     ]);
   });
 
+  it("does not replace a missing subject rank with the unrelated total-score grade rank", () => {
+    const row = data.exams[0].records[0];
+    const missingRank = { ...data, exams: [{ ...data.exams[0], records: [{ ...row, subjectRanks: { 数学: null } }] }] };
+    expect(studentSubjectTrend(missingRank, "s1").points[0].rank).toBeNull();
+  });
+
   it("calculates competition ranking of classes using comparable subject averages", () => {
     const { subject, points } = classRankTrend(data, "c1");
     expect(subject).toBe("数学");
