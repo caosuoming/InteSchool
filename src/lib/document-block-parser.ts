@@ -8,6 +8,7 @@ import {
   isDocumentTableFragment,
   parseDocumentTable,
 } from "@/lib/document-table";
+import { defaultProjectTypeKeywords } from "@/lib/document-project-heading-keywords";
 
 export type DocumentBlockType =
   | "documentTitle"
@@ -37,6 +38,7 @@ export interface DocumentBlock {
 export interface DocumentParseConfig {
   subject?: string;
   headingKeywords: string[];
+  projectTypeKeywords?: string[];
   questionKeywords: string[];
   answerKeywords: string[];
   analysisKeywords: string[];
@@ -362,26 +364,12 @@ const builtInSummaryKeywords = [
   "【感悟】",
 ];
 
-const builtInProjectHeadingLabels = [
-  "课前引入",
-  "课时对点练",
-  "课后训练",
-  "课后训练巩固提升",
-  "知识梳理",
-  "练习",
-  "练习题",
-  "训练",
-  "拓展",
-  "拓展提升",
-  "提升练习",
-  "提升训练",
+const descriptiveProjectHeadingLabels = [
   "题型突破",
   "举题说法",
   "随堂内化",
   "配套精炼",
 ];
-
-const descriptiveProjectHeadingPattern = /^(?:题型突破|举题说法|随堂内化|配套精炼)(?:\s*[:：、]\s*|\s+)(?![。！？；;])[^。！？；;]{1,60}$/;
 
 function isCompactImageHeading(text: string): boolean {
   const match = /^!\[[^\]]*\]\(([^)]+)\)/.exec(text);
@@ -405,6 +393,7 @@ function isCompactImageHeading(text: string): boolean {
     && !/^(?:\d{1,3}\s*[.．、]|第\s*[一二三四五六七八九十百\d]+\s*题)/.test(rest);
 }
 
+
 function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const structuredFieldPattern = keywordPattern([
@@ -422,11 +411,21 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
 
   const normalized = normalizeStructuralText(text).trim();
   if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
-  if (builtInProjectHeadingLabels.includes(normalized)) return true;
-  if (descriptiveProjectHeadingPattern.test(normalized)) return true;
+  const keywords = (config.projectTypeKeywords ?? defaultProjectTypeKeywords)
+    .map((keyword) => normalizeStructuralText(keyword).trim())
+    .filter(Boolean);
+  if (keywords.includes(normalized)) return true;
+  const descriptiveLabels = keywords.filter((keyword) => descriptiveProjectHeadingLabels.includes(keyword));
+  if (descriptiveLabels.length && new RegExp(
+    "^(?:" + descriptiveLabels.map(flexibleLiteralSource).join("|") + ")(?:\\s*[:：、]\\s*|\\s+)(?![。！？；;])[^。！？；;]{1,60}$",
+  ).test(normalized)) return true;
   if (/^[A-Z]组(?:$|(?:\s+|[:：、]\s*)[^。！？；;]{1,60}$)/.test(normalized.toUpperCase())) return true;
   if (isCompactImageHeading(normalized)) return true;
-  return /^(?:热点|考向|题型|类型|视角|目标)\s*(?:第\s*)?(?:[\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\s|[、.．:：)）]|$)/.test(normalized);
+  const numberedLabels = keywords.filter((keyword) => ["热点", "考向", "题型", "类型", "视角", "目标"].includes(keyword));
+  if (!numberedLabels.length) return false;
+  return new RegExp(
+    "^(?:" + numberedLabels.map(flexibleLiteralSource).join("|") + ")\\s*(?:第\\s*)?(?:[\\d０-９]{1,3}|[零〇一二三四五六七八九十百两]{1,4})(?:\\s|[、.．:：)）]|$)",
+  ).test(normalized);
 }
 
 function questionKeywordPrefixes(config: DocumentParseConfig): string[] {

@@ -64,6 +64,7 @@ export function currentParseConfig(subject?: string): DocumentParseConfig {
   return {
     subject,
     headingKeywords: [...config.headingKeywords],
+    projectTypeKeywords: [...config.projectTypeKeywords],
     questionKeywords: [...config.questionKeywords],
     answerKeywords: [...config.answerKeywords],
     analysisKeywords: [...config.analysisKeywords],
