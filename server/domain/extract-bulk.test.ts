@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DatabaseStore } from "../database.js";
 import type { AppState } from "../types.js";
-import type { Lecture, Question } from "../../src/types/index.js";
+import type { ExamPaper, Lecture, Question } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { withSerializedState } from "../rpc.js";
 import { extractService } from "./extract.js";
@@ -62,6 +62,67 @@ function confirm(sourceBlocks: typeof importedQuestions = importedQuestions) {
 }
 
 describe("bulk extracted document confirmation", () => {
+  it.each(["lecture", "examPaper"] as const)("allows the owner to extract a %s uploaded at another school", async (resourceType) => {
+    const originalSchool = "school-1";
+    const currentSchool = "school-2";
+    const sourceId = `source-${resourceType}`;
+    const original = {
+      id: sourceId, teacherId: "teacher-1", schoolId: originalSchool,
+      title: "跨校文档", sections: [], questions: [], chapterIds: [], knowledgePointIds: [],
+      classIds: ["old-class"], studentIds: ["old-student"],
+      grade: "高一", schoolYear: "2026-2027", status: "draft",
+    };
+    const state = initialState();
+    state.lectures = resourceType === "lecture" ? [original as unknown as Lecture] : [];
+    state.examPapers = resourceType === "examPaper" ? [original as unknown as ExamPaper] : [];
+    const tx = transactionalStore(state);
+
+    const result = await tx.execute(() => extractService.confirmExtract(
+      "teacher-1", currentSchool,
+      {
+        questions: [{ id: "q1", type: "short", stem: "跨校拆解测试题目", answer: "答案", analysis: "解析", difficulty: 3, status: "new" }],
+        knowledgeBlocks: [{ id: "k1", title: "跨校知识块", content: "内容", status: "new" }],
+      },
+      [], [], "高一", "2026-2027", "上学期", sourceId,
+      "document-import", "practice", resourceType,
+      [{ id: "q1", type: "question", content: "跨校拆解测试题目" }, { id: "k1", type: "knowledge", title: "跨校知识块", content: "内容" }],
+    ));
+
+    const resources = (resourceType === "lecture" ? tx.state.lectures : tx.state.examPapers) as Array<Lecture | ExamPaper>;
+    const source = resources.find((item) => item.id === sourceId)!;
+    const copy = resources.find((item) => item.isExtractCopy)!;
+    expect(tx.saves).toBe(1);
+    expect(source.schoolId).toBe(originalSchool);
+    expect(source.extractStatus).toBe("done");
+    expect(copy).toMatchObject({
+      teacherId: "teacher-1", schoolId: currentSchool, sourceResourceId: sourceId,
+      classIds: [], studentIds: [],
+    });
+    expect(result.createdQuestions).toHaveLength(1);
+    expect(result.createdQuestions[0].schoolId).toBe(currentSchool);
+    expect(result.createdMaterials).toHaveLength(1);
+    expect(result.createdMaterials[0].schoolId).toBe(currentSchool);
+  });
+
+  it.each(["lecture", "examPaper"] as const)("rejects extracting another teacher's %s across schools", async (resourceType) => {
+    const source = {
+      id: "foreign-source", teacherId: "teacher-2", schoolId: "school-1",
+      title: "其他教师上传的文档", sections: [], questions: [],
+    };
+    const state = initialState();
+    state.lectures = resourceType === "lecture" ? [source as unknown as Lecture] : [];
+    state.examPapers = resourceType === "examPaper" ? [source as unknown as ExamPaper] : [];
+    const tx = transactionalStore(state);
+
+    await expect(tx.execute(() => extractService.confirmExtract(
+      "teacher-1", "school-2", { questions: [], knowledgeBlocks: [] },
+      [], [], "高一", "2026-2027", "上学期", "foreign-source",
+      undefined, undefined, resourceType, [],
+    ))).rejects.toThrow("源文档不存在或无权操作");
+    expect(tx.saves).toBe(0);
+    expect(tx.state).toEqual(state);
+  });
+
   it("persists a large reviewed batch and its linked document copy in one save", async () => {
     const tx = transactionalStore(initialState());
     const result = await tx.execute(() => confirm());
