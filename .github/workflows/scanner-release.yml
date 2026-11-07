@@ -1,0 +1,52 @@
+name: Publish Windows scanner installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Validate and package
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/scanner-installer.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Publish verified installer
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: scanner-download-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: inteschool-scanner-windows-installer
+          path: dist/scanner
+      - name: Publish and checksum installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist/scanner
+          test -s InteSchool-Scanner-Setup.exe
+          sha256sum InteSchool-Scanner-Setup.exe > SHA256SUMS.txt
+          if ! gh release view scanner-bridge-latest >/dev/null 2>&1; then
+            gh release create scanner-bridge-latest \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title 'InteSchool Windows 扫描桥接' \
+              --notes 'Windows x64 扫描桥接安装包。' \
+              --latest=false
+          fi
+          gh release upload scanner-bridge-latest \
+            InteSchool-Scanner-Setup.exe SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --clobber

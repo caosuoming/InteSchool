@@ -44,3 +44,7 @@ test: cover question metadata lifecycle
 ci: add automated validation workflow
 docs: add Chinese project documentation
 ```
+
+## CI 与发布
+
+完整的检查范围、合并门禁及版本发布流程见 [CI 文档](docs/ci.md)。所有 PR 必须通过 `Required checks`；修改扫描器或容器配置时还需要对应的实测检查通过。
