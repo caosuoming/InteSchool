@@ -1668,7 +1668,15 @@ export interface ExtractedDocumentBlock {
 }
 
 /** 试卷 */
+export interface QuestionAnnotationSummary {
+  totalQuestions: number;
+  missingChapterCount: number;
+  missingKnowledgePointCount: number;
+}
+
 export interface ExamPaper {
+  /** 仅资源列表接口提供的题目属性缺失统计。 */
+  annotationSummary?: QuestionAnnotationSummary;
   /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
   subject?: string;
   id: string;
@@ -2303,6 +2311,8 @@ export interface LectureColumnTemplate {
 export type LectureStatus = "draft" | "published";
 
 export interface Lecture {
+  /** 仅资源列表接口提供的题目属性缺失统计。 */
+  annotationSummary?: QuestionAnnotationSummary;
   /** 教师创建资源时所属学科；历史记录未设置时归入原任教学科。 */
   subject?: string;
   id: string;

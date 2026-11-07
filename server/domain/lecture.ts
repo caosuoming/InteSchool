@@ -17,6 +17,7 @@ import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeLecturePat
 import { assertResourceCapacity } from "./quota.js";
 import { moveLectureToExamPaper } from "./document-library-move.js";
 import { lectureKnowledgePointIds } from "./document-knowledge.js";
+import { withLectureAnnotationSummary } from "./document-annotation-summary.js";
 
 function collectQuestionIds(sections: LectureSection[]): string[] {
   const ids: string[] = [];
@@ -131,11 +132,11 @@ export interface LectureColumnTemplateInput {
 export const lectureService = {
   async listLectures(filter: LectureFilter = {}): Promise<Lecture[]> {
     await delay(300);
-    return db
+    return withLectureAnnotationSummary(db
       .read("lectures")
       .filter((l) => matchFilter(l, filter))
       .map(withDerivedKnowledgePoints)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
   },
 
   async getLecture(id: string): Promise<Lecture | null> {

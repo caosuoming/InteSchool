@@ -13,6 +13,7 @@ import { answerSheetInvalidationPatch, assertDocumentNotUsed, sanitizeExamPaperP
 import { assertResourceCapacity } from "./quota.js";
 import { moveExamPaperToLecture } from "./document-library-move.js";
 import { examPaperKnowledgePointIds } from "./document-knowledge.js";
+import { withPaperAnnotationSummary } from "./document-annotation-summary.js";
 import { subjectAwareDefaultQuestionScore } from "../../src/lib/question-default-score.js";
 
 function withDerivedKnowledgePoints(paper: ExamPaper): ExamPaper {
@@ -112,11 +113,11 @@ function newlyReferencedQuestionIds(
 export const examPaperService = {
   async listPapers(filter: ResourceFilter = {}): Promise<ExamPaper[]> {
     await delay(300);
-    return db
+    return withPaperAnnotationSummary(db
       .read("examPapers")
       .filter((p) => matchFilter(p, filter))
       .map(withDerivedKnowledgePoints)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
   },
 
   async getPaper(id: string): Promise<ExamPaper | null> {

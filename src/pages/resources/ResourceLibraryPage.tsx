@@ -16,6 +16,7 @@ import { knowledgeService } from "@/services/knowledge";
 import { questionService } from "@/services/question";
 import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { QuestionAnnotationSummary } from "@/components/resources/QuestionAnnotationSummary";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -523,6 +524,7 @@ export default function ResourceLibraryPage() {
                   key={item.id}
                   title={item.title}
                   description={item.description}
+                  annotationSummary={item.annotationSummary}
                   meta={[
                     { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
                     { label: "内容", value: `${item.sections.length} 节` },
@@ -540,6 +542,7 @@ export default function ResourceLibraryPage() {
                   key={item.id}
                   title={item.title}
                   description={item.description}
+                  annotationSummary={item.annotationSummary}
                   meta={[
                     { label: "年级", value: `${item.grade} · ${item.schoolYear}` },
                     { label: "题目", value: `${item.questions.length} 题` },
@@ -714,6 +717,7 @@ export default function ResourceLibraryPage() {
 interface ResourceCardProps {
   title: string;
   description?: string;
+  annotationSummary?: Lecture["annotationSummary"];
   meta: { label: string; value: string }[];
   content?: string;
   updatedAt: string;
@@ -727,6 +731,7 @@ interface ResourceCardProps {
 function ResourceCard({
   title,
   description,
+  annotationSummary,
   meta,
   content,
   updatedAt,
@@ -746,6 +751,7 @@ function ResourceCard({
           >
             {title}
           </div>
+          {annotationSummary && <div className="mb-2"><QuestionAnnotationSummary summary={annotationSummary} /></div>}
           {description && (
             <div className="text-xs text-ink-500 mb-2 line-clamp-1">{description}</div>
           )}
