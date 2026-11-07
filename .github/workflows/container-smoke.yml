@@ -1,0 +1,71 @@
+name: Container smoke test
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Build image and check runtime health
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Build Linux amd64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: inteschool:ci
+          cache-from: type=gha,scope=container-smoke
+          cache-to: type=gha,scope=container-smoke,mode=max
+      - name: Validate compose configuration
+        run: docker compose config --quiet
+      - name: Start container and verify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker logs inteschool-ci 2>&1 | tail -80 || true; docker logs inteschool-ci-db 2>&1 | tail -40 || true; docker rm -f inteschool-ci inteschool-ci-db >/dev/null 2>&1 || true; docker network rm inteschool-ci-network >/dev/null 2>&1 || true' EXIT
+          docker network create inteschool-ci-network
+          docker run -d --name inteschool-ci-db --network inteschool-ci-network \
+            -e POSTGRES_DB=inteschool -e POSTGRES_USER=inteschool \
+            -e POSTGRES_PASSWORD=ci-only-test-password postgres:17-alpine
+          for _ in {1..30}; do
+            if docker exec inteschool-ci-db pg_isready -U inteschool -d inteschool >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec inteschool-ci-db pg_isready -U inteschool -d inteschool
+          docker run -d --name inteschool-ci --network inteschool-ci-network \
+            -p 127.0.0.1::3000 \
+            -e INTESCHOOL_DATABASE_URL=postgresql://inteschool:ci-only-test-password@inteschool-ci-db:5432/inteschool \
+            inteschool:ci
+          port=$(docker port inteschool-ci 3000/tcp | awk -F: 'END {print $NF}')
+          test -n "$port"
+          for _ in {1..60}; do
+            if response=$(curl -fsS --connect-timeout 2 "http://127.0.0.1:$port/api/health" 2>/dev/null); then
+              echo "$response" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{if(JSON.parse(s).status!=="ok")process.exit(1)})'
+              test "$(docker exec inteschool-ci id -u)" = 1000
+              exit 0
+            fi
+            if [[ "$(docker inspect -f '{{.State.Running}}' inteschool-ci)" != true ]]; then
+              echo 'Container exited before becoming healthy' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo 'Container did not become ready' >&2
+          exit 1
