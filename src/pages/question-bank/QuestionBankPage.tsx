@@ -17,6 +17,7 @@ import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/r
 import { knowledgeService } from "@/services/knowledge";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
+import { studentInteractionService } from "@/services/studentInteraction";
 import { StudentPickerModal } from "@/components/student/StudentPickerModal";
 import { analyticsService, type DateRange, type KnowledgeMastery, type SchoolQuestionStat } from "@/services/analytics";
 import { lectureService } from "@/services/lecture";
@@ -238,8 +239,11 @@ export default function QuestionBankPage({
   const [students, setStudents] = useState<Student[]>([]);
   const [schoolClasses, setSchoolClasses] = useState<SchoolClass[]>([]);
   const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
+  const [followedStudentIds, setFollowedStudentIds] = useState<Set<string>>(new Set());
+  const [sameQuestionIds, setSameQuestionIds] = useState<Record<string, string[]>>({});
 
-  const mode: Mode = selectedStudentIds.length > 0 ? "use" : "manage";
+  const hasSelectedStudents = selectedStudentIds.length > 0;
+  const mode: Mode = hasSelectedStudents ? "use" : "manage";
 
   // 选中学学生的答题记录（题库使用模式下用于在题目上方显示答题情况）
   const [studentAnswerRecords, setStudentAnswerRecords] = useState<AnswerRecord[]>([]);
@@ -505,6 +509,31 @@ export default function QuestionBankPage({
     };
     load();
   }, [teacher]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!teacher?.id || !hasSelectedStudents) {
+      setFollowedStudentIds(new Set());
+      return;
+    }
+    studentInteractionService.listFollowedStudentIds()
+      .then((ids) => { if (!cancelled) setFollowedStudentIds(new Set(ids)); })
+      .catch(() => { if (!cancelled) setFollowedStudentIds(new Set()); });
+    return () => { cancelled = true; };
+  }, [teacher?.id, hasSelectedStudents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (mode !== "use" || questions.length === 0) {
+      setSameQuestionIds({});
+      return;
+    }
+    const visible = questions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    analyticsService.listSameQuestionIds(visible.map((item) => item.id))
+      .then((ids) => { if (!cancelled) setSameQuestionIds(ids); })
+      .catch(() => { if (!cancelled) setSameQuestionIds({}); });
+    return () => { cancelled = true; };
+  }, [mode, questions, currentPage, pageSize]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedKeyword(keyword), 180);
@@ -1321,6 +1350,9 @@ export default function QuestionBankPage({
                   methodMap={methodMap}
                   teacher={teacher}
                   students={students}
+                  classes={[...schoolClasses, ...personalClasses]}
+                  followedStudentIds={followedStudentIds}
+                  sameQuestionIds={sameQuestionIds[q.id] || []}
                   selectedStudentIds={selectedStudentIds}
                   studentAnswerRecords={studentAnswerRecords}
                   pendingQuestionKeys={pendingQuestionKeys}
@@ -1937,7 +1969,7 @@ function ToggleFilter({
 
 function QuestionRow({
   question, schoolStat, mode, chapterMap, knowledgeMap, methodMap, teacher,
-  students, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
+  students, classes, followedStudentIds, sameQuestionIds, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion, examPapersUsingQuestion,
   usageResourcesLoaded, usageResourcesLoading, onLoadUsageResources,
@@ -1965,6 +1997,9 @@ function QuestionRow({
   methodMap: Map<string, string>;
   teacher: any;
   students: Student[];
+  classes: Array<SchoolClass | PersonalClass>;
+  followedStudentIds: ReadonlySet<string>;
+  sameQuestionIds: string[];
   selectedStudentIds: string[];
   studentAnswerRecords: AnswerRecord[];
   pendingQuestionKeys: Set<string>;
@@ -2011,6 +2046,7 @@ function QuestionRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
+  const [expandedAnswerClassIds, setExpandedAnswerClassIds] = useState<Set<string>>(new Set());
   const chapterNames = question.chapterIds.map((id) => chapterMap.get(id)).filter(Boolean) as string[];
   const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
   const methodNames = (question.thoughtMethodIds || []).map((id) => methodMap.get(id)).filter(Boolean) as string[];
@@ -2023,19 +2059,129 @@ function QuestionRow({
     new Date(b.resource.updatedAt).getTime() - new Date(a.resource.updatedAt).getTime()
   )), [examPapersUsingQuestion, lecturesUsingQuestion]);
 
-  // 选中学生的答题情况：取该题对应的答题记录，按学生维度展示
   const questionStudentAnswers = useMemo(() => {
     if (mode !== "use" || selectedStudentIds.length === 0) return [];
+    const matchingIds = new Set([question.id, ...sameQuestionIds]);
+    const latest = new Map<string, AnswerRecord>();
+    for (const record of studentAnswerRecords) {
+      if (!matchingIds.has(record.questionId)) continue;
+      const existing = latest.get(record.studentId);
+      if (!existing || record.answeredAt > existing.answeredAt
+        || (record.answeredAt === existing.answeredAt && record.questionId === question.id)) {
+        latest.set(record.studentId, record);
+      }
+    }
     return selectedStudentIds.map((sid) => {
-      const student = students.find((s) => s.id === sid);
-      const record = studentAnswerRecords.find(
-        (r) => r.studentId === sid && r.questionId === question.id,
-      );
+      const student = students.find((item) => item.id === sid);
+      const record = latest.get(sid);
       const score = record ? inferScore(record) : null;
-      const pending = !record && pendingQuestionKeys.has(`${sid}:${question.id}`);
-      return { student, record, score, pending };
+      const pending = !record && pendingQuestionKeys.has(sid + ":" + question.id);
+      return { student, studentId: sid, record, score, pending };
     });
-  }, [mode, selectedStudentIds, students, studentAnswerRecords, pendingQuestionKeys, question.id]);
+  }, [mode, selectedStudentIds, students, studentAnswerRecords, pendingQuestionKeys, question.id, sameQuestionIds]);
+
+  const visibleStudentAnswers = useMemo(() => {
+    if (editingAnswers || questionStudentAnswers.length <= 5) return questionStudentAnswers;
+    return [...questionStudentAnswers]
+      .sort((a, b) => {
+        const priority = (item: typeof a) => item.score ? 0 : followedStudentIds.has(item.studentId) ? 1 : 2;
+        return priority(a) - priority(b);
+      })
+      .slice(0, 5);
+  }, [editingAnswers, questionStudentAnswers, followedStudentIds]);
+
+  const answerClassGroups = useMemo(() => {
+    const groups = new Map<string, { name: string; answers: typeof questionStudentAnswers }>();
+    for (const item of questionStudentAnswers) {
+      const schoolClass = classes.find((value) => value.type === "school" && value.id === item.student?.classId);
+      const personalClass = classes.find((value) => value.type === "personal" && value.studentIds.includes(item.studentId));
+      const classInfo = schoolClass || personalClass;
+      const id = classInfo?.id || "other";
+      if (!groups.has(id)) groups.set(id, { name: classInfo?.name || "其他学生", answers: [] });
+      groups.get(id)!.answers.push(item);
+    }
+    return [...groups.entries()].map(([id, value]) => ({ id, ...value }));
+  }, [classes, questionStudentAnswers]);
+
+  const renderStudentAnswer = ({ student, studentId: selectedId, score, pending }: typeof questionStudentAnswers[number]) => {
+    const name = student?.name || "未知学生";
+    const studentId = student?.id;
+    if (editingAnswers && onUpdateStudentAnswer && studentId) {
+      const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
+        { value: null, label: pending ? "待做" : "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
+        { value: "done", label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
+        { value: "correct", label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+        { value: "partial", label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+        { value: "wrong", label: "做错", cls: "bg-red-50 text-red-700 border-red-200" },
+      ];
+      return (
+        <div
+          key={studentId}
+          className="flex flex-col gap-1 p-1.5 rounded border border-ink-200 bg-paper"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-[10px] font-medium text-ink-700 px-1">{name}</span>
+          <div className="flex gap-0.5">
+            {options.map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => onUpdateStudentAnswer(studentId, question.id, opt.value)}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] border transition-colors",
+                  score === opt.value
+                    ? opt.cls + " font-semibold"
+                    : "bg-white text-ink-400 border-ink-100 hover:border-ink-300",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (!score) {
+      return (
+        <span
+          key={selectedId}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px]",
+            pending
+              ? "bg-sky-50 text-sky-700 border border-sky-200"
+              : "bg-ink-100 text-ink-500",
+          )}
+          title={pending ? "待做" : "未作答"}
+        >
+          <span className={cn(
+            "w-1.5 h-1.5 rounded-full",
+            pending ? "bg-sky-500" : "bg-ink-300",
+          )} />
+          {name}
+          <span className="opacity-70">{pending ? "待做" : "未做"}</span>
+        </span>
+      );
+    }
+    const config = {
+      done: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500", label: "已做" },
+      correct: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500", label: "全对" },
+      partial: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500", label: "半对" },
+      wrong: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500", label: "做错" },
+    }[score];
+    return (
+      <span
+        key={selectedId}
+        className={cn(
+          "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border",
+          config.bg, config.text, config.border,
+        )}
+        title={`${name}：${config.label}`}
+      >
+        <span className={cn("w-1.5 h-1.5 rounded-full", config.dot)} />
+        {name}
+        <span className="opacity-80">{config.label}</span>
+      </span>
+    );
+  };
 
   // 管理模式：只有点击题干/选项区域才展开，其他区域不触发
   const handleStemClick = (e: React.MouseEvent) => {
@@ -2095,6 +2241,7 @@ function QuestionRow({
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingAnswers(!editingAnswers);
+                      setExpandedAnswerClassIds(new Set());
                     }}
                     className="ml-auto text-[10px] text-gold-600 hover:text-gold-700 font-medium"
                   >
@@ -2103,85 +2250,40 @@ function QuestionRow({
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {questionStudentAnswers.map(({ student, score, pending }) => {
-                  const name = student?.name || "未知学生";
-                  const studentId = student?.id;
-                  if (editingAnswers && onUpdateStudentAnswer && studentId) {
-                    const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
-                      { value: null, label: pending ? "待做" : "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },
-                      { value: "done", label: "已做", cls: "bg-teal-50 text-teal-700 border-teal-200" },
-                      { value: "correct", label: "全对", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-                      { value: "partial", label: "半对", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-                      { value: "wrong", label: "做错", cls: "bg-red-50 text-red-700 border-red-200" },
-                    ];
-                    return (
-                      <div
-                        key={studentId}
-                        className="flex flex-col gap-1 p-1.5 rounded border border-ink-200 bg-paper"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <span className="text-[10px] font-medium text-ink-700 px-1">{name}</span>
-                        <div className="flex gap-0.5">
-                          {options.map((opt) => (
-                            <button
-                              key={opt.label}
-                              onClick={() => onUpdateStudentAnswer(studentId, question.id, opt.value)}
-                              className={cn(
-                                "px-1.5 py-0.5 rounded text-[10px] border transition-colors",
-                                score === opt.value
-                                  ? opt.cls + " font-semibold"
-                                  : "bg-white text-ink-400 border-ink-100 hover:border-ink-300",
-                              )}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (!score) {
-                    return (
-                      <span
-                        key={student?.id || name}
-                        className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px]",
-                          pending
-                            ? "bg-sky-50 text-sky-700 border border-sky-200"
-                            : "bg-ink-100 text-ink-500",
+                {editingAnswers && answerClassGroups.length > 1 ? (
+                  <div className="w-full space-y-1.5">
+                    {answerClassGroups.map((group) => (
+                      <div key={group.id} className="rounded border border-ink-200 bg-paper">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between px-2 py-1.5 text-xs text-ink-700"
+                          aria-expanded={expandedAnswerClassIds.has(group.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedAnswerClassIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(group.id)) next.delete(group.id);
+                              else next.add(group.id);
+                              return next;
+                            });
+                          }}
+                        >
+                          <span>{group.name}（{group.answers.length} 人）</span>
+                          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", expandedAnswerClassIds.has(group.id) && "rotate-180")} />
+                        </button>
+                        {expandedAnswerClassIds.has(group.id) && (
+                          <div className="flex flex-wrap gap-1.5 border-t border-ink-100 p-2">
+                            {group.answers.map(renderStudentAnswer)}
+                          </div>
                         )}
-                        title={pending ? "待做" : "未作答"}
-                      >
-                        <span className={cn(
-                          "w-1.5 h-1.5 rounded-full",
-                          pending ? "bg-sky-500" : "bg-ink-300",
-                        )} />
-                        {name}
-                        <span className="opacity-70">{pending ? "待做" : "未做"}</span>
-                      </span>
-                    );
-                  }
-                  const config = {
-                    done: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500", label: "已做" },
-                    correct: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500", label: "全对" },
-                    partial: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500", label: "半对" },
-                    wrong: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500", label: "做错" },
-                  }[score];
-                  return (
-                    <span
-                      key={student?.id || name}
-                      className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] border",
-                        config.bg, config.text, config.border,
-                      )}
-                      title={`${name}：${config.label}`}
-                    >
-                      <span className={cn("w-1.5 h-1.5 rounded-full", config.dot)} />
-                      {name}
-                      <span className="opacity-80">{config.label}</span>
-                    </span>
-                  );
-                })}
+                      </div>
+                    ))}
+                  </div>
+                ) : visibleStudentAnswers.map(renderStudentAnswer)}
+                {!editingAnswers && questionStudentAnswers.length > 5 && (
+                  <span className="px-1 py-0.5 text-[11px] text-ink-500">等</span>
+                )}
+
               </div>
             </div>
           )}

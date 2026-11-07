@@ -15,7 +15,7 @@ import type {
   TreeNode,
 } from "../../src/types/index.js";
 import type { TeacherRecord } from "../types.js";
-import { db } from "../runtime-db.js";
+import { db, computeDuplicateHash } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 
@@ -151,6 +151,38 @@ export const analyticsService = {
         .map((record) => record.lectureId),
     );
     return requestedIds.filter((id) => used.has(id));
+  },
+
+  /** 查询与当前题目内容完全相同的题目，用于合并学生的历史作答。 */
+  async listSameQuestionIds(questionIds: string[], teacher: TeacherRecord): Promise<Record<string, string[]>> {
+    if (questionIds.length === 0) return {};
+    const questions = db.read("questions") as Question[];
+    const requested = new Set(questionIds);
+    const visible = questions.filter((q) =>
+      requested.has(q.id) && (q.teacherId === teacher.id || q.isShared),
+    );
+    const keyOf = (q: Question) =>
+      q.duplicateHash || computeDuplicateHash(q.stem, q.answer, q.options);
+    const schoolIdsByHash = new Map<string, string[]>();
+    const sharedIdsByHash = new Map<string, string[]>();
+    for (const candidate of questions) {
+      const hash = keyOf(candidate);
+      const schoolKey = JSON.stringify([candidate.schoolId, hash]);
+      schoolIdsByHash.set(schoolKey, [...(schoolIdsByHash.get(schoolKey) || []), candidate.id]);
+      if (candidate.isShared) {
+        sharedIdsByHash.set(hash, [...(sharedIdsByHash.get(hash) || []), candidate.id]);
+      }
+    }
+    const result: Record<string, string[]> = {};
+    for (const question of visible) {
+      const hash = keyOf(question);
+      const schoolKey = JSON.stringify([question.schoolId, hash]);
+      result[question.id] = [...new Set([
+        ...(schoolIdsByHash.get(schoolKey) || []),
+        ...(sharedIdsByHash.get(hash) || []),
+      ])].filter((id) => id !== question.id);
+    }
+    return result;
   },
 
   /** 批量获取多个学生在所有题目上的答题记录 */
