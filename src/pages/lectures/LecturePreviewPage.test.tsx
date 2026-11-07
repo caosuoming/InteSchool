@@ -370,7 +370,7 @@ describe("LecturePreviewPage", () => {
     expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
     const previewControls = screen.getByTestId("lecture-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    const batchActions = screen.getByTestId("document-question-batch-actions");
+    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
     expect(batchActions).toHaveTextContent("批量操作");
     expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
     expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
@@ -381,15 +381,15 @@ describe("LecturePreviewPage", () => {
     expect(previewControls.previousElementSibling).toBeNull();
     expect(screen.queryByText("题目属性与使用情况")).not.toBeInTheDocument();
     expect(screen.queryByText("选择具体学生后可重新设置该题的答题情况")).not.toBeInTheDocument();
-    expect(within(previewControls).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(within(previewControls).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
     const displayToolbar = within(previewControls).getByRole("toolbar", { name: "题目侧栏显示控制" });
     expect(displayToolbar).toHaveClass("flex-col");
     const displayButtons = within(displayToolbar).getAllByRole("button");
     expect(displayButtons).toHaveLength(4);
     expect(displayButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
-    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
-    expect(batchActions.children[1]).toHaveClass("flex-col");
-    const batchButtons = within(batchActions).getAllByRole("button");
+    const sidebarBatchActions = within(previewControls).getByTestId("document-question-batch-actions");
+    expect(sidebarBatchActions.children[1]).toHaveClass("flex-col");
+    const batchButtons = within(sidebarBatchActions).getAllByRole("button");
     expect(batchButtons).toHaveLength(4);
     expect(batchButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
     const previewShell = paper.closest(".preview-sticky-shell");

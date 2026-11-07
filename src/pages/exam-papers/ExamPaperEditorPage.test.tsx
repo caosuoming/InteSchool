@@ -467,7 +467,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     const previewControls = screen.getByTestId("exam-paper-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    const batchActions = screen.getByTestId("document-question-batch-actions");
+    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
     expect(batchActions).toHaveTextContent("批量操作");
     expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
     expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
@@ -484,9 +484,9 @@ describe("ExamPaperEditorPage preview", () => {
     const displayButtons = within(displayToolbar).getAllByRole("button");
     expect(displayButtons).toHaveLength(4);
     expect(displayButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
-    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
-    expect(batchActions.children[1]).toHaveClass("flex-col");
-    const batchButtons = within(batchActions).getAllByRole("button");
+    const sidebarBatchActions = within(previewControls).getByTestId("document-question-batch-actions");
+    expect(sidebarBatchActions.children[1]).toHaveClass("flex-col");
+    const batchButtons = within(sidebarBatchActions).getAllByRole("button");
     expect(batchButtons).toHaveLength(4);
     expect(batchButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();

@@ -691,21 +691,6 @@ export default function LecturePreviewPage() {
         </select>
       </div>
 
-      <div className="no-print mb-3 rounded-lg border border-ink-200 bg-paper p-3">
-        <DocumentQuestionBatchActions
-          schoolId={schoolId}
-          questionIds={questionIds}
-          onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-          markAllButton={<DocumentQuestionCompletionBatch
-            documentId={lecture.id}
-            questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
-              .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
-            disabled={students.length === 0 || questionIds.length === 0}
-            onApplied={refreshCompletionRecords}
-          />}
-        />
-      </div>
-
       <div
         className={cn(
           "preview-sticky-shell",
@@ -723,12 +708,13 @@ export default function LecturePreviewPage() {
               questionIds={questionIds}
               disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
               onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-              markAllButton={(
-                <Button variant="outline" size="sm" className="w-full justify-start" onClick={markAllQuestionsUsed}
-                  loading={markingAllDone} disabled={students.length === 0 || questionIds.length === 0}>
-                  <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
-                </Button>
-              )}
+              markAllButton={<DocumentQuestionCompletionBatch
+                documentId={lecture.id}
+                questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
+                  .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
+                disabled={students.length === 0 || questionIds.length === 0}
+                onApplied={refreshCompletionRecords}
+              />}
             />
           </div>
         </aside>
