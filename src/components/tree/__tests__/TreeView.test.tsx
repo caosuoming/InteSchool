@@ -159,3 +159,28 @@ describe("TreeView", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
   });
 });
+
+
+describe("optional directory indicators", () => {
+  it("renders pending and basket counts independently of completed counts", () => {
+    const tree = {
+      id: "root", name: "全部", type: "chapter" as const, count: 4,
+      children: [{
+        id: "ch", name: "第一章", type: "chapter" as const, count: 4, directCount: 2,
+        pendingCount: 3, directPendingCount: 1,
+        basketCount: 2, directBasketCount: 1,
+        doneCount: 2, directDoneCount: 1, masteryRate: 0.5, directMasteryRate: 1,
+        children: [],
+      }],
+    };
+    const { rerender } = render(<TreeView data={tree} showCount={false} showPendingCount showBasketCount />);
+    expect(screen.queryByTitle("待做题 3")).not.toBeInTheDocument();
+    rerender(<TreeView data={tree} showCount showPendingCount showBasketCount />);
+    expect(screen.getByTitle("待做题 3")).toBeInTheDocument();
+    expect(screen.getByTitle("篮中题 2")).toBeInTheDocument();
+    expect(screen.queryByText(/50%/)).not.toBeInTheDocument();
+    rerender(<TreeView data={tree} showCount showPendingCount showBasketCount includeDescendantCounts={false} />);
+    expect(screen.getByTitle("待做题 1")).toBeInTheDocument();
+    expect(screen.getByTitle("篮中题 1")).toBeInTheDocument();
+  });
+});

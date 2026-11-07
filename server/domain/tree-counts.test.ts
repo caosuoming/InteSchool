@@ -224,6 +224,35 @@ describe("live directory counts", () => {
     });
   });
 
+  it("avoids counting questions when a directory is requested without statistics", async () => {
+    await runWithState(state(), async () => {
+      const base = await knowledgeService.getChapterTree("school-a", false);
+      expect(findNode(base, "ch-parent")).toMatchObject({ count: 0 });
+      expect(findNode(base, "ch-parent").directCount).toBeUndefined();
+    });
+  });
+
+  it("counts pending and basket questions per subtree without duplicates", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const base = await knowledgeService.getChapterTree("school-a", false);
+      const annotated = await analyticsService.annotateTreeWithStudentProgress(
+        base,
+        [],
+        "chapter",
+        undefined,
+        { includeDone: false, basketQuestionIds: ["q-parent", "q-child", "q-both", "q-both"] },
+      );
+      expect(findNode(annotated, "ch-parent")).toMatchObject({
+        count: 3, basketCount: 3, directBasketCount: 2,
+      });
+      expect(findNode(annotated, "ch-child")).toMatchObject({
+        count: 2, basketCount: 2, directBasketCount: 2,
+      });
+      expect(findNode(annotated, "ch-parent").doneCount).toBeUndefined();
+    });
+  });
+
   it("shows distinct completed-question counts and mastery for the selected students and date range", async () => {
     const appState = state();
     (appState.answerRecords as AnswerRecord[]).push(

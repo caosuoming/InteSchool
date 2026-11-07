@@ -22,6 +22,8 @@ interface TreeViewProps {
   showCount?: boolean;
   includeDescendantCounts?: boolean;
   showDoneCount?: boolean;
+  showPendingCount?: boolean;
+  showBasketCount?: boolean;
   className?: string;
   defaultExpandAll?: boolean;
   expandLevel?: number;
@@ -48,6 +50,8 @@ export function TreeView({
   showCount = true,
   includeDescendantCounts = true,
   showDoneCount = false,
+  showPendingCount = false,
+  showBasketCount = false,
   className,
   defaultExpandAll = false,
   expandLevel = 1,
@@ -196,6 +200,8 @@ export function TreeView({
     const count = showDirectCounts ? node.directCount : node.count;
     const doneCount = showDirectCounts ? node.directDoneCount : node.doneCount;
     const masteryRate = showDirectCounts ? node.directMasteryRate : node.masteryRate;
+    const pendingCount = showDirectCounts ? node.directPendingCount : node.pendingCount;
+    const basketCount = showDirectCounts ? node.directBasketCount : node.basketCount;
     const isHighlighted = highlightedIds.includes(node.id);
     const isDragging = draggedNode?.id === node.id;
     const isDropTarget = dropTargetId === node.id
@@ -324,7 +330,13 @@ export function TreeView({
                   /
                 </span>
               )}
-              <span className="text-ink-400">{count}</span>
+              {showPendingCount && pendingCount !== undefined && (
+                <span className="text-amber-700" title={`待做题 ${pendingCount}`}>待{pendingCount} /</span>
+              )}
+              {showBasketCount && basketCount !== undefined && (
+                <span className="text-teal-700" title={`篮中题 ${basketCount}`}>篮{basketCount} /</span>
+              )}
+              <span className="text-ink-400" title={`题目总数 ${count}`}>{count}</span>
             </span>
           )}
 

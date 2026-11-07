@@ -30,6 +30,8 @@ export function annotateTreeWithQuestionCounts(
   knowledgePoints: KnowledgePoint[] = [],
   doneQuestionIds?: ReadonlySet<string>,
   scoredProgressByQuestionId?: ReadonlyMap<string, { correct: number; total: number }>,
+  pendingQuestionIds?: ReadonlySet<string>,
+  basketQuestionIds?: ReadonlySet<string>,
 ): TreeNode {
   const aliasesById = type === "knowledge"
     ? buildKnowledgeAliasMap(knowledgePoints)
@@ -78,7 +80,13 @@ export function annotateTreeWithQuestionCounts(
       }
       if (total > 0) masteryRate = correct / total;
     }
-    return { doneCount, masteryRate };
+    const countMatching = (selected?: ReadonlySet<string>): number | undefined => {
+      if (!selected) return undefined;
+      let count = 0;
+      for (const id of ids) if (selected.has(id)) count++;
+      return count;
+    };
+    return { doneCount, masteryRate, pendingCount: countMatching(pendingQuestionIds), basketCount: countMatching(basketQuestionIds) };
   };
 
   const annotate = (node: TreeNode): { node: TreeNode; subtreeIds: Set<string> } => {
@@ -102,6 +110,10 @@ export function annotateTreeWithQuestionCounts(
         directCount: directQuestionIds.size,
         doneCount: subtreeProgress.doneCount,
         directDoneCount: directProgress.doneCount,
+        pendingCount: subtreeProgress.pendingCount,
+        directPendingCount: directProgress.pendingCount,
+        basketCount: subtreeProgress.basketCount,
+        directBasketCount: directProgress.basketCount,
         masteryRate: subtreeProgress.masteryRate,
         directMasteryRate: directProgress.masteryRate,
         children: annotatedChildren.map((child) => child.node),

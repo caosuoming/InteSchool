@@ -58,6 +58,10 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     onDataChange,
     cascadeCheck = true,
     includeDescendantCounts = true,
+    showCount = true,
+    showDoneCount = false,
+    showPendingCount = false,
+    showBasketCount = false,
     headerActions,
   }: {
     data: TreeNode;
@@ -65,6 +69,10 @@ vi.mock("@/components/tree/SearchableTree", () => ({
     onDataChange?: (data: TreeNode) => void;
     cascadeCheck?: boolean;
     includeDescendantCounts?: boolean;
+    showCount?: boolean;
+    showDoneCount?: boolean;
+    showPendingCount?: boolean;
+    showBasketCount?: boolean;
     headerActions?: import("react").ReactNode;
   }) => (
     <div
@@ -73,6 +81,10 @@ vi.mock("@/components/tree/SearchableTree", () => ({
       data-has-data-change={String(Boolean(onDataChange))}
       data-cascade-check={String(cascadeCheck)}
       data-include-descendant-counts={String(includeDescendantCounts)}
+      data-show-count={String(showCount)}
+      data-show-done={String(showDoneCount)}
+      data-show-pending={String(showPendingCount)}
+      data-show-basket={String(showBasketCount)}
     >
       目录
       {headerActions}
@@ -363,6 +375,87 @@ describe("QuestionBankPage personal resource scope", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "包含" }));
     expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-cascade-check", "false");
     expect(screen.getByTestId("searchable-tree-knowledge")).toHaveAttribute("data-include-descendant-counts", "false");
+  });
+
+  it("keeps the previous question rows mounted while tree filters refresh", async () => {
+    const question = {
+      id: "q-stable",
+      teacherId: "teacher-1",
+      schoolId: "school-2",
+      type: "short",
+      stem: "原有题目",
+      answer: "1",
+      analysis: "",
+      chapterIds: [],
+      knowledgePointIds: [],
+      difficulty: 3,
+      recommendation: 3,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      createdAt: "2026-11-01T00:00:00Z",
+      updatedAt: "2026-11-01T00:00:00Z",
+    } as Question;
+    vi.mocked(questionService.listQuestionPage).mockResolvedValueOnce({ items: [question], total: 1 });
+    let resolveReload!: (page: { items: Question[]; total: number }) => void;
+    vi.mocked(questionService.listQuestionPage).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveReload = resolve;
+    }));
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    expect(await screen.findByText("原有题目")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索题干、解析、总结、备注..."), { target: { value: "另一个" } });
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("原有题目")).toBeInTheDocument();
+    expect(screen.getByText("原有题目").closest('[aria-busy="true"]')).not.toBeNull();
+
+    await act(async () => resolveReload({ items: [], total: 0 }));
+    expect(screen.queryByText("原有题目")).not.toBeInTheDocument();
+  });
+
+  it("does not compute directory counts until one of the display options is enabled", async () => {
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    await waitFor(() => expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("teacher-1", false));
+    expect(screen.getByRole("checkbox", { name: "显示" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "篮中题" })).not.toBeChecked();
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-count", "false");
+    expect(analyticsService.annotateTreeWithStudentProgress).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示" }));
+    await waitFor(() => expect(analyticsService.annotateTreeWithStudentProgress).toHaveBeenCalled());
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-count", "true");
+    expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]).toMatchObject({
+      includeDone: false,
+      includePending: false,
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "显示" }));
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-count", "false");
+  });
+
+  it("enables done and pending indicators only when students are selected", async () => {
+    render(<MemoryRouter><QuestionBankPage studentIds={["student-1"]} /></MemoryRouter>);
+    expect(await screen.findByRole("checkbox", { name: "已做题" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "待做题" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "已做题" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "待做题" }));
+    await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]).toMatchObject({
+      includeDone: true, includePending: true,
+    }));
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-done", "true");
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-pending", "true");
+  });
+
+  it("counts questions from every basket without double counting duplicates", async () => {
+    vi.mocked(basketService.listBaskets).mockResolvedValue([
+      { id: "basket-a", questionIds: ["q-a", "q-b"] },
+      { id: "basket-b", questionIds: ["q-b", "q-c"] },
+    ] as never);
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("checkbox", { name: "篮中题" }));
+    await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]?.basketQuestionIds)
+      .toEqual(["q-a", "q-b", "q-c"]));
+    expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-basket", "true");
   });
 
   it("queries personal questions by teacher while keeping class context on the active school", async () => {

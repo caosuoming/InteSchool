@@ -23,7 +23,10 @@ export interface SearchableTreeProps {
   /** 勾选节点时是否同时勾选其所有子节点。 */
   cascadeCheck?: boolean;
   includeDescendantCounts?: boolean;
+  showCount?: boolean;
   showDoneCount?: boolean;
+  showPendingCount?: boolean;
+  showBasketCount?: boolean;
   expandLevel?: number;
   className?: string;
   /** 搜索框占位符 */
@@ -101,7 +104,10 @@ export function SearchableTree({
   onCheck,
   cascadeCheck = true,
   includeDescendantCounts = true,
+  showCount = true,
   showDoneCount = false,
+  showPendingCount = false,
+  showBasketCount = false,
   expandLevel = 1,
   className,
   searchPlaceholder = "搜索目录...",
@@ -418,7 +424,10 @@ export function SearchableTree({
               expandLevel={expandLevel}
               highlightedIds={matchingIds}
               highlightAccent={accent}
+              showCount={showCount}
               showDoneCount={showDoneCount}
+              showPendingCount={showPendingCount}
+              showBasketCount={showBasketCount}
               renderNodeActions={renderNodeActions}
               className="text-xs"
             />

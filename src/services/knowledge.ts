@@ -29,8 +29,8 @@ export const knowledgeService = {
     return rpcCall("knowledge", "listThoughtMethods", [schoolId]) as any;
   },
 
-  async getMethodTree(schoolId: string): Promise<TreeNode> {
-    return rpcCall("knowledge", "getMethodTree", [schoolId]) as any;
+  async getMethodTree(schoolId: string, includeCounts = true): Promise<TreeNode> {
+    return rpcCall("knowledge", "getMethodTree", [schoolId, includeCounts]) as any;
   },
 
   async addThoughtMethod(schoolId: string, parentId: string | null, name: string): Promise<ThoughtMethod> {
@@ -41,12 +41,12 @@ export const knowledgeService = {
     return rpcCall("knowledge", "getAliasIds", [knowledgePointId, schoolId]);
   },
 
-  async getChapterTree(schoolId: string): Promise<TreeNode> {
-    return rpcCall("knowledge", "getChapterTree", [schoolId]) as any;
+  async getChapterTree(schoolId: string, includeCounts = true): Promise<TreeNode> {
+    return rpcCall("knowledge", "getChapterTree", [schoolId, includeCounts]) as any;
   },
 
-  async getKnowledgeTree(schoolId: string): Promise<TreeNode> {
-    return rpcCall("knowledge", "getKnowledgeTree", [schoolId]) as any;
+  async getKnowledgeTree(schoolId: string, includeCounts = true): Promise<TreeNode> {
+    return rpcCall("knowledge", "getKnowledgeTree", [schoolId, includeCounts]) as any;
   },
 
   async listDirectoryCatalogs(teacherId: string, type: TreeNodeType): Promise<DirectoryCatalogSummary[]> {

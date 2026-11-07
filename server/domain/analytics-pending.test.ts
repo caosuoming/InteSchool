@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ExamPaper, Lecture, PersonalClass, Student } from "../../src/types/index.js";
+import type { ExamPaper, Lecture, PersonalClass, Question, Student, TreeNode } from "../../src/types/index.js";
 import type { AppState } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { analyticsService } from "./analytics.js";
@@ -175,6 +175,56 @@ describe("pending question assignments", () => {
       const assignments = await analyticsService.listPendingQuestionAssignments(["student-school"]);
       expect(asKeys(assignments)).toContain("student-school:q-from-lecture-block");
       expect(asKeys(assignments)).toContain("student-school:q-from-paper-block");
+    });
+  });
+
+  it("counts pending questions only for students who have not answered them", async () => {
+    const appState = state();
+    appState.questions = ["q-school", "q-shared"].map((id) => ({
+      id,
+      teacherId: "teacher-1",
+      schoolId: "school-1",
+      type: "single" as const,
+      stem: id,
+      options: ["A", "B"],
+      answer: "A",
+      analysis: "",
+      chapterIds: ["ch-1"],
+      knowledgePointIds: [],
+      difficulty: 2 as const,
+      recommendation: 3 as const,
+      usageCount: 0,
+      remark: "",
+      isShared: false,
+      createdAt: now,
+      updatedAt: now,
+    })) as Question[];
+    appState.answerRecords = [{
+      id: "a-1",
+      studentId: "student-school",
+      questionId: "q-school",
+      lectureId: "lecture-school",
+      isCorrect: true,
+      score: "correct",
+      answeredAt: now,
+    }];
+    const tree: TreeNode = {
+      id: "root", type: "chapter", name: "全部章节", count: 0,
+      children: [{ id: "ch-1", type: "chapter", name: "第一章", count: 0, children: [] }],
+    };
+
+    await runWithState(appState, async () => {
+      const annotated = await analyticsService.annotateTreeWithStudentProgress(
+        tree,
+        ["student-school"],
+        "chapter",
+        undefined,
+        { includeDone: false, includePending: true, basketQuestionIds: ["q-school", "q-shared"] },
+      );
+      expect(annotated.children[0]).toMatchObject({
+        count: 2, pendingCount: 1, directPendingCount: 1, basketCount: 2,
+      });
+      expect(annotated.children[0].doneCount).toBeUndefined();
     });
   });
 
