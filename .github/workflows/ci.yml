@@ -1,55 +1,172 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Detect affected components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      scanner: ${{ steps.filter.outputs.scanner }}
+      container: ${{ steps.filter.outputs.container }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Lint GitHub Actions workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/*.yml
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            scanner:
+              - 'scripts/scanner-*.mjs'
+              - 'scripts/scanner-*.ps1'
+              - 'packaging/windows/**'
+              - '.github/workflows/scanner-installer.yml'
+              - '.github/workflows/scanner-release.yml'
+              - '.github/workflows/ci.yml'
+            container:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker-compose.yml'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'scripts/check-mathtype-runtime.mjs'
+              - '.github/workflows/container-smoke.yml'
+              - '.github/workflows/release.yml'
+              - '.github/workflows/ci.yml'
+
   quality:
-    name: Code quality and tests
+    name: Lint and typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run check
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Type check
-        run: npm run check
-
-      - name: Run tests with coverage
-        run: npm run test:coverage
-
-      - name: Build application
-        run: npm run build
-
-      - name: Upload coverage report
+  tests:
+    name: Tests and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:coverage
+      - name: Save coverage report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          name: coverage-${{ github.run_id }}
           path: coverage/
           if-no-files-found: ignore
           retention-days: 7
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Verify build outputs
+        run: test -f dist/index.html && test -f build/server/server/index.js
+
+  dependencies:
+    name: Review dependency changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  scanner:
+    name: Windows scanner package
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.scanner == 'true'
+    uses: ./.github/workflows/scanner-installer.yml
+    permissions:
+      contents: read
+
+  container:
+    name: Container smoke test
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.container == 'true'
+    uses: ./.github/workflows/container-smoke.yml
+    permissions:
+      contents: read
+
+  gate:
+    name: Required checks
+    if: always()
+    needs: [changes, quality, tests, build, dependencies, scanner, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CHANGES: ${{ needs.changes.result }}
+      QUALITY: ${{ needs.quality.result }}
+      TESTS: ${{ needs.tests.result }}
+      BUILD: ${{ needs.build.result }}
+      DEPENDENCIES: ${{ needs.dependencies.result }}
+      SCANNER: ${{ needs.scanner.result }}
+      CONTAINER: ${{ needs.container.result }}
+    steps:
+      - name: Require all applicable checks
+        shell: bash
+        run: |
+          printf 'changes=%s quality=%s tests=%s build=%s dependencies=%s scanner=%s container=%s\n' \
+            "$CHANGES" "$QUALITY" "$TESTS" "$BUILD" "$DEPENDENCIES" "$SCANNER" "$CONTAINER"
+          test "$CHANGES" = success
+          test "$QUALITY" = success
+          test "$TESTS" = success
+          test "$BUILD" = success
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            test "$DEPENDENCIES" = success
+          else
+            test "$DEPENDENCIES" = skipped
+          fi
+          [[ "$SCANNER" == success || "$SCANNER" == skipped ]]
+          [[ "$CONTAINER" == success || "$CONTAINER" == skipped ]]

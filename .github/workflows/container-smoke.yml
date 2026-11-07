@@ -1,0 +1,57 @@
+name: Container smoke test
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Build image and check runtime health
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Build Linux amd64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: inteschool:ci
+          cache-from: type=gha,scope=container-smoke
+          cache-to: type=gha,scope=container-smoke,mode=max
+      - name: Validate compose configuration
+        run: docker compose config --quiet
+      - name: Start container and verify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker logs inteschool-ci 2>&1 | tail -80 || true; docker rm -f inteschool-ci >/dev/null 2>&1 || true' EXIT
+          docker run -d --name inteschool-ci -p 127.0.0.1::3000 inteschool:ci
+          port=$(docker port inteschool-ci 3000/tcp | awk -F: 'END {print $NF}')
+          test -n "$port"
+          for _ in {1..60}; do
+            if response=$(curl -fsS --connect-timeout 2 "http://127.0.0.1:$port/api/health" 2>/dev/null); then
+              echo "$response" | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{if(JSON.parse(s).status!=="ok")process.exit(1)})'
+              test "$(docker exec inteschool-ci id -u)" = 1000
+              exit 0
+            fi
+            if [[ "$(docker inspect -f '{{.State.Running}}' inteschool-ci)" != true ]]; then
+              echo 'Container exited before becoming healthy' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo 'Container did not become ready' >&2
+          exit 1
