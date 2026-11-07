@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { findMathQuestionNumberGaps, parseDocumentBlocks, type DocumentParseConfig } from "./document-block-parser";
+import {
+  findMathQuestionNumberGaps,
+  findMathQuestionNumberSequenceGaps,
+  findSuspectedMathQuestionNumbers,
+  parseDocumentBlocks,
+  reparseMathQuestionBlock,
+  type DocumentParseConfig,
+} from "./document-block-parser";
 import { normalizePlainMathText } from "./plain-math";
 
 const config: DocumentParseConfig = {
@@ -2584,7 +2591,7 @@ describe("math question number continuity", () => {
     const source = ["1. 第一题", "2? 第二题", "3. 第三题"].join("\n");
     const blocks = parseDocumentBlocks(source, mathConfig);
     expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
-    expect(findMathQuestionNumberGaps(blocks)).toEqual([{
+    expect(findMathQuestionNumberSequenceGaps(blocks)).toEqual([{
       previous: 1, next: 3, missing: [2],
     }]);
     const recovered = parseDocumentBlocks(source, {
@@ -2592,7 +2599,7 @@ describe("math question number continuity", () => {
       confirmedMathQuestionNumbers: [2],
     });
     expect(recovered.map((block) => block.content)).toEqual(source.split("\n"));
-    expect(findMathQuestionNumberGaps(recovered, [2])).toEqual([]);
+    expect(findMathQuestionNumberSequenceGaps(recovered, [2])).toEqual([]);
   });
 
   it("does not split expressions starting with multiplication dots or a minus sign", () => {
@@ -2614,12 +2621,93 @@ describe("math question number continuity", () => {
       "3. 计算另一个式子。",
     ].join("\n"), { ...mathConfig, confirmedMathQuestionNumbers: [2] });
     expect(blocks).toHaveLength(2);
-    expect(findMathQuestionNumberGaps(blocks, [2])[0]?.missing).toEqual([2]);
+    expect(findMathQuestionNumberSequenceGaps(blocks, [2])[0]?.missing).toEqual([2]);
   });
 
   it("does not change punctuation parsing for other subjects", () => {
     const blocks = parseDocumentBlocks("1. 第一题\n2，第二题\n3. 第三题", config);
     expect(blocks).toHaveLength(2);
     expect(blocks[0].content).toContain("2，第二题");
+  });
+});
+
+
+describe("math question numbering", () => {
+  const mathConfig = { ...config, subject: "数学" };
+
+  it("separates the next consecutive question from an unnumbered summary", () => {
+    const blocks = parseDocumentBlocks([
+      "12. 已知命题 p 与 q，判断真假。",
+      "解：分别讨论四种情况。",
+      "总结：",
+      "对于命题，学生要能判断它们的真假。",
+      "13.指出下列命题中的条件 p 和结论 q：",
+      "（1）若 ab=0，则 a=0。",
+      "（2）若 a<0，则 |a|>0。",
+    ].join("\n"), mathConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].summary).toBe("对于命题，学生要能判断它们的真假。");
+    expect(questions[1].content).toContain("13.指出下列命题中的条件");
+    expect(questions[1].content).toContain("（2）若 a<0");
+  });
+
+  it.each(["13·指出条件", "13。指出条件", "13—指出条件", "13 指出条件", "１３．指出条件"])(
+    "recovers a consecutive math number with an unusual delimiter (%s)", (next) => {
+      const blocks = parseDocumentBlocks([
+        "12. 判断命题 p 的真假。",
+        "总结：需要辨析命题和条件。",
+        next,
+        "14. 求函数的定义域。",
+      ].join("\n"), mathConfig);
+      expect(blocks.filter((block) => block.type === "question")).toHaveLength(3);
+      expect(blocks[1]).toMatchObject({ type: "question", content: next });
+    },
+  );
+
+  it("does not treat decimals or established numbered summary lists as new questions", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 判断下列命题。",
+      "总结：",
+      "1. 先辨析条件。",
+      "2. 再判断命题的真假。",
+      "补充：13.5 是小数，不是题号。",
+      "2. 求下列函数的值。",
+    ].join("\n"), mathConfig);
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+    expect(blocks[0].summary).toContain("2. 再判断");
+  });
+
+  it("reports missing math numbers and supports teacher-confirmed local repair", () => {
+    const blocks = parseDocumentBlocks([
+      "12. 已知命题 p，求证。",
+      "总结：先化简。",
+      "13指出下列命题的条件。",
+      "（1）若 ab=0，则 a=0。",
+    ].join("\n"), mathConfig);
+    expect(blocks).toHaveLength(1);
+    expect(findSuspectedMathQuestionNumbers(blocks, mathConfig)).toEqual([{
+      blockId: blocks[0].id,
+      number: 13,
+    }]);
+    const repaired = reparseMathQuestionBlock(blocks[0], mathConfig, [13]);
+    expect(repaired).toHaveLength(2);
+    expect(repaired![0].summary).toBe("先化简。");
+    expect(repaired![1].content).toContain("13指出下列命题");
+    expect(repaired![1].content).toContain("（1）若 ab=0");
+    expect(reparseMathQuestionBlock(blocks[0], mathConfig, [13, 14])).toBeNull();
+    expect(findMathQuestionNumberGaps(repaired!, mathConfig)).toEqual([]);
+  });
+
+  it("highlights gaps between recognized questions within a section", () => {
+    const blocks = parseDocumentBlocks([
+      "11. 解方程。",
+      "13. 判断命题。",
+    ].join("\n"), mathConfig);
+    expect(findMathQuestionNumberGaps(blocks, mathConfig)).toEqual([{
+      afterBlockId: blocks[0].id,
+      previousNumber: 11,
+      nextNumber: 13,
+    }]);
   });
 });

@@ -40,6 +40,7 @@ export interface DocumentBlock {
 
 export interface DocumentParseConfig {
   subject?: string;
+  confirmedMathQuestionNumbers?: number[];
   headingKeywords: string[];
   projectTypeKeywords?: string[];
   questionKeywords: string[];
@@ -588,6 +589,33 @@ function extractLeadingQuestionNumber(text: string): { number: string; rest: str
   return null;
 }
 
+function mathQuestionNumberCandidate(text: string): { number: number; separated: boolean } | null {
+  const normalized = normalizeStructuralText(text.trim());
+  const match = /^([0-9]{1,4})([、.:：)；;!?！？·•。—–-]|\s+|(?=[\u3400-\u9fff]))/.exec(normalized);
+  if (!match) return null;
+  const rest = normalized.slice(match[0].length);
+  // A decimal like "13.5" is not question 13.
+  if (match[2] === "." && /^\d/.test(rest)) return null;
+  return { number: Number(match[1]), separated: Boolean(match[2]) };
+}
+
+function isConfirmedMathQuestionStart(line: string, config: DocumentParseConfig): boolean {
+  if (config.subject?.trim() !== "数学" || !config.confirmedMathQuestionNumbers?.length) return false;
+  const candidate = mathQuestionNumberCandidate(line);
+  return Boolean(candidate && config.confirmedMathQuestionNumbers.includes(candidate.number));
+}
+
+function isSequentialMathQuestionStart(
+  line: string,
+  block: Partial<DocumentBlock>,
+  config: DocumentParseConfig,
+): boolean {
+  if (config.subject?.trim() !== "数学" || block.type !== "question") return false;
+  const candidate = mathQuestionNumberCandidate(line);
+  const currentNumber = extractQuestionNumber(block.content || "", config);
+  return Boolean(candidate?.separated && currentNumber && candidate.number === Number(currentNumber) + 1);
+}
+
 function shouldContinueNumberedSummary(
   line: string,
   block: Partial<DocumentBlock>,
@@ -610,10 +638,16 @@ function shouldContinueNumberedSummary(
   // exception is the expected next top-level question. Word/PDF extraction can
   // put its number (for example, "4.") on a line by itself.
   const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
+  if (config.subject?.trim() === "数学" && previous && candidateNumber === Number(previous.number) + 1) {
+    return true;
+  }
   if (
     currentQuestionNumber
     && candidateNumber === Number(currentQuestionNumber) + 1
     && (
+      (config.subject?.trim() === "数学"
+        && !(previous && candidateNumber === Number(previous.number) + 1))
+      ||
       (config.subject?.trim() === "地理" && candidate.rest.length >= 5)
       || looksLikeImplicitQuestion({ content: candidate.rest }, undefined, config)
       || (!candidate.rest && !previous)
@@ -1031,6 +1065,8 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
   if (config.subject?.trim() === "数学") {
     const mathNumber = mathQuestionNumber(text, config.confirmedMathQuestionNumbers);
     if (mathNumber) return mathNumber;
+    const candidate = mathQuestionNumberCandidate(text);
+    if (candidate) return String(candidate.number);
   }
 
   const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
@@ -1717,16 +1753,22 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
 
     line = stripQuestionScoreAnnotation(line, config);
 
+    const confirmedMathStart = isConfirmedMathQuestionStart(line, config);
+    const mathDecimal = config.subject?.trim() === "数学"
+      && /^[\d０-９]{1,4}\s*[.．][\d０-９]/.test(line);
     if (
       currentBlock.type === "question"
       && currentQuestionField === "summary"
-      && shouldContinueNumberedSummary(line, currentBlock, config)
+      && !confirmedMathStart
+      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config))
     ) {
       appendQuestionField(currentBlock, "summary", line);
       continue;
     }
 
-    if (isQuestionStart(line, config) && !continuesSharedStemExtendedInquiry(
+    if (!mathDecimal && (isQuestionStart(line, config)
+      || isSequentialMathQuestionStart(line, currentBlock, config)
+      || confirmedMathStart) && !continuesSharedStemExtendedInquiry(
       line, currentBlock, currentQuestionField, config,
     )) {
       submitCurrent();
@@ -2355,15 +2397,15 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
   return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
 }
 
-export interface MathQuestionNumberGap {
+export interface MathQuestionNumberSequenceGap {
   previous: number;
   next: number;
   missing: number[];
 }
 
 /** 仅检查已识别为顶层数学题的编号，忽略小问和示例题的局部编号。 */
-export function findMathQuestionNumberGaps(blocks: DocumentBlock[], confirmedNumbers: number[] = []): MathQuestionNumberGap[] {
-  const gaps: MathQuestionNumberGap[] = [];
+export function findMathQuestionNumberSequenceGaps(blocks: DocumentBlock[], confirmedNumbers: number[] = []): MathQuestionNumberSequenceGap[] {
+  const gaps: MathQuestionNumberSequenceGap[] = [];
   let previous: number | undefined;
   for (const block of blocks) {
     if (block.type !== "question") continue;
@@ -2381,4 +2423,120 @@ export function findMathQuestionNumberGaps(blocks: DocumentBlock[], confirmedNum
     previous = number;
   }
   return gaps;
+}
+
+
+export interface MathQuestionNumberGap {
+  afterBlockId: string;
+  previousNumber: number;
+  nextNumber: number;
+}
+
+export interface SuspectedMathQuestionNumber {
+  blockId: string;
+  number: number;
+}
+
+export function findMathQuestionNumberGaps(
+  blocks: DocumentBlock[],
+  config: DocumentParseConfig,
+): MathQuestionNumberGap[] {
+  if (config.subject?.trim() !== "数学") return [];
+  const gaps: MathQuestionNumberGap[] = [];
+  let previous: { id: string; number: number } | undefined;
+  for (const block of blocks) {
+    if (block.type === "groupTitle") {
+      previous = undefined;
+      continue;
+    }
+    if (block.type !== "question") continue;
+    const number = Number(extractQuestionNumber(block.content, config));
+    if (!Number.isInteger(number) || number < 1) continue;
+    if (previous && number > previous.number + 1 && number - previous.number <= 30) {
+      gaps.push({ afterBlockId: previous.id, previousNumber: previous.number, nextNumber: number });
+    }
+    previous = { id: block.id, number };
+  }
+  return gaps;
+}
+
+export function findSuspectedMathQuestionNumbers(
+  blocks: DocumentBlock[],
+  config: DocumentParseConfig,
+): SuspectedMathQuestionNumber[] {
+  if (config.subject?.trim() !== "数学") return [];
+  const warnings: SuspectedMathQuestionNumber[] = [];
+  for (const block of blocks) {
+    if (block.type !== "question") continue;
+    const number = Number(extractQuestionNumber(block.content, config));
+    if (!Number.isInteger(number) || number < 1) continue;
+    const fields: Array<keyof Pick<DocumentBlock, "content" | "answer" | "analysis" | "summary">> =
+      ["content", "answer", "analysis", "summary"];
+    const hasPossibleNext = fields.some((field) => (block[field] || "")
+      .split("\n")
+      .some((line, index) => {
+        if (field === "content" && index === 0) return false;
+        const candidate = mathQuestionNumberCandidate(line);
+        return candidate?.number === number + 1 && !candidate.separated;
+      }));
+    if (hasPossibleNext) warnings.push({ blockId: block.id, number: number + 1 });
+  }
+  return warnings;
+}
+
+// The teacher explicitly confirms these numbers. Only numbered lines in the
+// selected block are reparsed; all neighboring reviewed blocks remain intact.
+export function reparseMathQuestionBlock(
+  block: DocumentBlock,
+  config: DocumentParseConfig,
+  confirmedNumbers: number[],
+): DocumentBlock[] | null {
+  if (
+    config.subject?.trim() !== "数学" || block.type !== "question"
+    || confirmedNumbers.length === 0 || confirmedNumbers.length > 50
+    || confirmedNumbers.some((number) => !Number.isInteger(number) || number < 1 || number > 9999)
+  ) return null;
+
+  const fields = ["content", "answer", "analysis", "summary"] as const;
+  for (let fieldIndex = 0; fieldIndex < fields.length; fieldIndex += 1) {
+    const field = fields[fieldIndex];
+    const lines = (block[field] || "").split("\n");
+    for (let lineIndex = field === "content" ? 1 : 0; lineIndex < lines.length; lineIndex += 1) {
+      const candidate = mathQuestionNumberCandidate(lines[lineIndex]);
+      if (!candidate || !confirmedNumbers.includes(candidate.number)) continue;
+      // Already extracted option fields cannot be reliably attributed to two
+      // different questions when their stems were concatenated.
+      if (field === "content" && block.options?.length) return null;
+
+      const previousText = lines.slice(0, lineIndex).join("\n").trim();
+      const remainder = lines.slice(lineIndex).join("\n").trim();
+      const after = fields.slice(fieldIndex + 1).flatMap((nextField) => {
+        const value = block[nextField]?.trim();
+        if (!value) return [];
+        const labels = { answer: "答案：", analysis: "解析：", summary: "总结：" };
+        return [labels[nextField as keyof typeof labels] + value];
+      });
+      const parsed = parseDocumentBlocks([remainder, ...after].join("\n"), {
+        ...config,
+        confirmedMathQuestionNumbers: confirmedNumbers,
+      });
+      const parsedNumbers = parsed
+        .filter((item) => item.type === "question")
+        .map((item) => Number(extractQuestionNumber(item.content, {
+          ...config, confirmedMathQuestionNumbers: confirmedNumbers,
+        })));
+      if (
+        !parsed.length || parsed[0].type !== "question"
+        || !confirmedNumbers.every((number) => parsedNumbers.includes(number))
+      ) return null;
+
+      const original: DocumentBlock = { ...block, [field]: previousText, status: "edited" };
+      for (const nextField of fields.slice(fieldIndex + 1)) {
+        delete original[nextField];
+      }
+      if (!original.content.trim()) return null;
+      return [original, ...parsed];
+    }
+  }
+  return null;
 }

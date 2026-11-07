@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   getPaper: vi.fn(),
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
+  findMathQuestionNumberGaps: vi.fn(),
+  findSuspectedMathQuestionNumbers: vi.fn(),
+  reparseMathQuestionBlock: vi.fn(),
   findSimilarQuestionsBatch: vi.fn(),
   confirmExtract: vi.fn(),
   createLectureExtractCopy: vi.fn(),
@@ -96,6 +99,9 @@ vi.mock("@/services/api", () => ({
 vi.mock("@/lib/document-block-parser", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/document-block-parser")>()),
   parseDocumentBlocks: mocks.parseDocumentBlocks,
+  findMathQuestionNumberGaps: mocks.findMathQuestionNumberGaps,
+  findSuspectedMathQuestionNumbers: mocks.findSuspectedMathQuestionNumbers,
+  reparseMathQuestionBlock: mocks.reparseMathQuestionBlock,
 }));
 
 vi.mock("@/lib/math-html", () => ({
@@ -132,6 +138,9 @@ describe("ExtractReviewModal", () => {
     });
     mocks.createLectureExtractCopy.mockResolvedValue({ id: "lecture-copy" });
     mocks.createExamExtractCopy.mockResolvedValue({ id: "paper-copy" });
+    mocks.findMathQuestionNumberGaps.mockReturnValue([]);
+    mocks.findSuspectedMathQuestionNumbers.mockReturnValue([]);
+    mocks.reparseMathQuestionBlock.mockReturnValue(null);
     mocks.parseDocumentBlocks.mockReturnValue([
       {
         id: "block-question",
@@ -1090,4 +1099,56 @@ describe("ExtractReviewModal", () => {
     expect(screen.getByText("已确认原稿编号，允许继续入库。")).toBeInTheDocument();
   });
 
+});
+
+
+describe("math numbering review", () => {
+  const question = (id: string, content: string) => ({
+    id, type: "question" as const, content, order: 0, status: "new" as const,
+    questionType: "essay" as const, difficulty: 3,
+  });
+  const props = {
+    open: true, onClose: vi.fn(), resourceId: "lecture-1", resourceType: "lecture" as const,
+    resourceTitle: "数学试卷", chapterIds: [], knowledgePointIds: [],
+    grade: "高一", schoolYear: "2026-2027", semester: "上学期" as const,
+  };
+
+  it("requires confirmation before storing an observed question-number gap", async () => {
+    mocks.authState.teacher.subject = "数学";
+    mocks.findMathQuestionNumberGaps.mockReturnValue([{
+      afterBlockId: "question-11", previousNumber: 11, nextNumber: 13,
+    }]);
+    const user = userEvent.setup();
+    render(<ExtractReviewModal {...props} initialBlocks={[
+      question("question-11", "11. 已知函数，求解。"),
+      { ...question("question-13", "13. 判断命题。"), order: 1 },
+    ]} />);
+    expect(screen.getByText("数学试卷题号可能不连续，请确认原文")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "确认原文题号无需补拆" }));
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+  });
+
+  it("reparses only the selected math block after entering confirmed consecutive numbers", async () => {
+    mocks.authState.teacher.subject = "数学";
+    mocks.reparseMathQuestionBlock.mockReturnValue([
+      { ...question("question-12", "12. 判断命题。"), summary: "判断时应明确条件。", status: "edited" },
+      question("question-13", "13指出下列命题的条件。"),
+    ]);
+    const user = userEvent.setup();
+    render(<ExtractReviewModal {...props} initialBlocks={[
+      { ...question("question-12", "12. 判断命题。"), summary: "判断时应明确条件。\n13指出下列命题的条件。" },
+      { ...question("question-14", "14. 求函数定义域。"), order: 1 },
+    ]} />);
+    await user.click(screen.getAllByRole("button", { name: "按题号补拆" })[0]);
+    await user.type(screen.getByLabelText("需要补拆的连续题号"), "13");
+    await user.click(screen.getByRole("button", { name: "确认并局部重拆" }));
+    expect(mocks.reparseMathQuestionBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "question-12" }),
+      expect.objectContaining({ subject: "数学" }),
+      [13],
+    );
+    expect(screen.getByText("题目 3")).toBeInTheDocument();
+    expect(screen.getByText(/14. 求函数定义域/)).toBeInTheDocument();
+  });
 });
