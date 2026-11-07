@@ -341,6 +341,23 @@ QM: y-y_{2}=\sqrt{3}(x-x_{2}),
     expect(result.html).toContain("QM");
   });
 
+  it("recovers undelimited cases in DOCX extraction and preview", async () => {
+    const filePath = join(workDir, "undelimited-cases.docx");
+    await writeFile(filePath, "fake docx");
+    mammothMocks.extractRawText.mockResolvedValue({ value: "得方程组", messages: [] });
+    mammothMocks.convertToHtml.mockResolvedValue({ value: "<p>得方程组</p>", messages: [] });
+    structuredTextMocks.extractDocxStructuredText.mockResolvedValue(
+      String.raw`得\begin{cases}x-y-z=0 2x-z=0\end{cases}，因此成立。`,
+    );
+
+    const result = await extractDocument(filePath);
+
+    expect(result.text).toContain(String.raw`$\begin{cases}x-y-z=0\\2x-z=0\end{cases}$`);
+    expect(result.html).toContain('class="katex"');
+    expect(result.html).not.toContain("katex-error");
+    expect(result.html).toContain("x");
+  });
+
   it("normalizes decomposed not-equal signs in DOCX preview HTML", async () => {
     const filePath = join(workDir, "not-equal.docx");
     await writeFile(filePath, "fake docx");

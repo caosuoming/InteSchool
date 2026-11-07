@@ -55,6 +55,29 @@ n\cdot\overrightarrow{AB}=4\sqrt{3}x=0,
     expect(normalizeLegacyOmmlMathText(expected)).toBe(expected);
   });
 
+  it("wraps unmarked equation systems from historical math extraction", () => {
+    const source = String.raw`得\begin{cases}x-y-z=0 2x-z=0\end{cases}，取`;
+    expect(normalizeLegacyOmmlMathText(source)).toBe(
+      String.raw`得$\begin{cases}x-y-z=0\\2x-z=0\end{cases}$，取`,
+    );
+  });
+
+  it("recovers comma-separated equations without changing delimited math", () => {
+    const bare = String.raw`解得\begin{cases}x=4, y=3\end{cases} 或 \begin{cases}x=4, y=-3\end{cases}`;
+    expect(normalizeLegacyOmmlMathText(bare)).toBe(
+      String.raw`解得$\begin{cases}x=4\\y=3\end{cases}$ 或 $\begin{cases}x=4\\y=-3\end{cases}$`,
+    );
+    const alreadyMarked = String.raw`由 $\begin{cases}x=4, y=3\end{cases}$ 得证`;
+    expect(normalizeLegacyOmmlMathText(alreadyMarked)).toBe(alreadyMarked);
+  });
+
+  it("leaves unrelated LaTeX, incomplete systems and HTML tags untouched", () => {
+    const original = String.raw`价格 $5，公式 \frac{a}{b}，未完成 \begin{cases}x=1，<code>\begin{cases}y=2\end{cases}</code>`;
+    expect(normalizeLegacyOmmlMathText(original)).toBe(original);
+    const escaped = String.raw`\(\begin{cases}x=1\\y=2\end{cases}\)`;
+    expect(normalizeLegacyOmmlMathText(escaped)).toBe(escaped);
+  });
+
   it("preserves correctly delimited braces around equation arrays", () => {
     const input = String.raw`$\left\{\begin{aligned}x=1\\y=2\end{aligned}\right.$`;
     expect(normalizeLegacyOmmlMathText(input)).toBe(input);
