@@ -80,6 +80,44 @@ describe("AnswerSheetComposer", () => {
     expect(rows.map((row) => row.match(/(?:例1|[1-6])\./)?.[0])).toEqual(["5.", "例1.", "4.", "6.", "2.", "3."]);
   });
 
+  it("does not render an ungrouped heading when a project-layout paper has no projects", () => {
+    const { container } = renderComposer({ sourceLayoutMode: "flat", projects: [] });
+    expect(container.querySelector('[data-answer-sheet-flow-item="group-heading"]')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-answer-sheet-flow-item="question"]')).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(container.querySelector('[data-answer-sheet-flow-item="group-heading"]')).not.toBeInTheDocument();
+  });
+
+  it("aligns school and class labels and centers the student number title", () => {
+    renderComposer();
+    const school = screen.getByText("学校：").parentElement!;
+    const classroom = screen.getByText("班级：").parentElement!;
+    expect(school).toHaveClass("text-sm");
+    expect(classroom).toHaveClass("text-sm");
+    expect(screen.getByLabelText("学校填写区")).toBeInTheDocument();
+    expect(screen.getByText("学号")).toHaveClass("text-center");
+
+    fireEvent.change(screen.getByLabelText("纸张"), { target: { value: "8K" } });
+    expect(screen.getByText("学校：").parentElement).toHaveClass("text-xs");
+    expect(screen.getByText("班级：").parentElement).toHaveClass("text-xs");
+    expect(screen.getByText("学号")).toHaveClass("text-center");
+  });
+
+  it("hides the score cell for blank-mode fill areas but keeps essay scoring", () => {
+    renderComposer({ questions: [
+      { id: "fill", type: "short", stem: "填空", score: 5 },
+      { id: "concept", type: "conceptFill", stem: "概念填空", score: 5 },
+      { id: "essay", type: "essay", stem: "解答", score: 10 },
+    ] });
+    expect(screen.queryByLabelText("第1题评分框")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("第2题评分框")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("第3题评分框")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "预览答题卡" }));
+    expect(screen.queryByLabelText("第1题评分框")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("第2题评分框")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("第3题评分框")).toBeInTheDocument();
+  });
+
   it("preserves project sections and question order across inline and concentrated layouts", () => {
     const { container } = renderComposer({
       sourceLayoutMode: "flat",
@@ -200,7 +238,8 @@ describe("AnswerSheetComposer", () => {
     expect(identityArea).toHaveClass("flex");
     expect(identityFields).toHaveClass("border", "border-ink-900", "w-[38mm]");
     expect(identityFields).not.toHaveClass("h-[54mm]");
-    expect(identityFields).toHaveTextContent("学校：______________");
+    expect(identityFields).toHaveTextContent("学校：");
+    expect(identityFields).toContainElement(screen.getByLabelText("学校填写区"));
     expect(identityFields.nextElementSibling).toBe(studentNumberColumn);
     expect(studentNumberColumn.nextElementSibling).toBe(qrPosition);
     expect(studentNumberColumn).toHaveClass("border", "border-ink-900");
@@ -851,12 +890,13 @@ describe("AnswerSheetComposer", () => {
   });
 
   it("renders one resizable answer box with a score cell and lets the teacher choose dashed borders", () => {
-    renderComposer();
+    renderComposer({ questions: [...questions, { id: "essay", type: "essay", stem: "解答", score: 10 }] });
 
     const initialBoxes = screen.getAllByTestId("answer-box");
     expect(initialBoxes.length).toBeGreaterThan(0);
     expect(initialBoxes[0].style.resize).toBe("both");
-    expect(screen.getByLabelText("第3题评分框")).toBeInTheDocument();
+    expect(screen.queryByLabelText("第3题评分框")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("第4题评分框")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("答题框边线"), { target: { value: "dashed" } });
     expect(screen.getAllByTestId("answer-box")[0]).toHaveAttribute("data-answer-box-style", "dashed");
@@ -958,7 +998,8 @@ describe("AnswerSheetComposer", () => {
     const onSettingsChange = vi.fn();
     const { container } = renderComposer({ onSettingsChange });
 
-    const fillBox = screen.getByLabelText("第3题评分框").closest('[data-testid="answer-box"]')!;
+    const fillBox = screen.getByTestId("fill-answer-rule").closest('[data-testid="answer-box"]')!;
+    expect(fillBox.querySelector('[aria-label="第3题评分框"]')).not.toBeInTheDocument();
     expect(fillBox.querySelector('[data-testid="fill-answer-rule"]')).toBeInTheDocument();
     expect(container.querySelectorAll('[data-testid="fill-answer-rule"]')).toHaveLength(1);
     expect(fillBox.querySelector('[data-testid="fill-answer-rule"]')).toHaveClass("answer-sheet-fill-rule");
