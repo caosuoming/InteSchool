@@ -1,5 +1,5 @@
 ﻿# Windows PowerShell 5.1 ships with Windows 10/11; no additional runtime is required.
-param([switch]$Stop)
+param([switch]$Stop, [switch]$Restart)
 $ErrorActionPreference = 'Stop'
 $stateDir = Join-Path $env:LOCALAPPDATA 'InteSchool\Scanner'
 $logFile = Join-Path $stateDir 'tray.log'
@@ -16,6 +16,33 @@ $stopEvent = [System.Threading.EventWaitHandle]::new($false, [System.Threading.E
 if ($Stop) {
     $stopEvent.Set() | Out-Null
     $stopEvent.Dispose()
+    exit 0
+}
+if ($Restart) {
+    # An older installed tray holds the mutex and only polls the stop event
+    # every ten seconds. Wait until it exits before starting the updated UI.
+    $stopEvent.Set() | Out-Null
+    $oldTray = [System.Threading.Mutex]::new($false, 'Local\InteSchoolScannerTray')
+    $acquired = $false
+    try {
+        for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            try { $acquired = $oldTray.WaitOne(0) }
+            catch [System.Threading.AbandonedMutexException] { $acquired = $true }
+            if ($acquired) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($acquired) { $oldTray.ReleaseMutex() }
+    } finally {
+        $oldTray.Dispose()
+        $stopEvent.Reset() | Out-Null
+        $stopEvent.Dispose()
+    }
+    if (-not $acquired) {
+        Write-ScannerLog 'Could not restart the existing scanner tray; retry after closing it.'
+        exit 1
+    }
+    $wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    Start-Process -FilePath $wscript -ArgumentList ('"' + (Join-Path $PSScriptRoot 'scanner-launch.vbs') + '"') -WindowStyle Hidden | Out-Null
     exit 0
 }
 $mutex = [System.Threading.Mutex]::new($false, 'Local\InteSchoolScannerTray')
@@ -35,6 +62,7 @@ try {
     $statusItem = $menu.Items.Add('正在检查扫描服务……')
     $statusItem.Enabled = $false
     $menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator)) | Out-Null
+    $pairItem = $menu.Items.Add('授权网站')
     $openItem = $menu.Items.Add('打开扫描网页')
     $startItem = $menu.Items.Add('启动 / 修复扫描服务')
     $logItem = $menu.Items.Add('查看诊断日志')
@@ -113,6 +141,88 @@ try {
             }
         }
     }
+
+    function Test-ScannerSite([string]$origin) {
+        if ([string]::IsNullOrWhiteSpace($origin) -or $origin.Length -gt 300) { return $false }
+        $uri = $null
+        if (-not [Uri]::TryCreate($origin, [UriKind]::Absolute, [ref]$uri)) { return $false }
+        if ($uri.UserInfo -or $uri.GetLeftPart([UriPartial]::Authority) -cne $origin) { return $false }
+        if ($uri.Scheme -eq 'https') { return $true }
+        return $uri.Scheme -eq 'http' -and $uri.Host -in @('localhost', '127.0.0.1')
+    }
+
+    function Read-ScannerSite {
+        $dialog = New-Object System.Windows.Forms.Form
+        $dialog.Text = 'InteSchool 扫描网站授权'
+        $dialog.StartPosition = 'CenterScreen'
+        $dialog.FormBorderStyle = 'FixedDialog'
+        $dialog.MaximizeBox = $false
+        $dialog.MinimizeBox = $false
+        $dialog.ClientSize = New-Object System.Drawing.Size(500, 165)
+
+        $prompt = New-Object System.Windows.Forms.Label
+        $prompt.SetBounds(18, 15, 464, 48)
+        $prompt.Text = '从学校网站的「我要扫描」页面复制本站网址并粘贴在下方。' + [Environment]::NewLine + '仅授权您信任的学校网站（https:// 开头）。'
+        $dialog.Controls.Add($prompt)
+
+        $field = New-Object System.Windows.Forms.TextBox
+        $field.SetBounds(18, 70, 464, 25)
+        try {
+            $clipboard = [System.Windows.Forms.Clipboard]::GetText().Trim()
+            if (Test-ScannerSite $clipboard) { $field.Text = $clipboard }
+        } catch {}
+        $dialog.Controls.Add($field)
+
+        $confirm = New-Object System.Windows.Forms.Button
+        $confirm.Text = '下一步'
+        $confirm.SetBounds(302, 117, 84, 30)
+        $confirm.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dialog.Controls.Add($confirm)
+
+        $cancel = New-Object System.Windows.Forms.Button
+        $cancel.Text = '取消'
+        $cancel.SetBounds(397, 117, 84, 30)
+        $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dialog.Controls.Add($cancel)
+        $dialog.AcceptButton = $confirm
+        $dialog.CancelButton = $cancel
+
+        try {
+            if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                return $field.Text.Trim()
+            }
+            return $null
+        } finally {
+            $dialog.Dispose()
+        }
+    }
+
+    $pairItem.Add_Click({
+        $site = Read-ScannerSite
+        if ($null -eq $site) { return }
+        if (-not (Test-ScannerSite $site)) {
+            [System.Windows.Forms.MessageBox]::Show('请粘贴完整的 HTTPS 网站地址（不含 /scanner 等路径），例如 https://school.example.com。仅本机开发允许 HTTP。', '网站地址无效', 'OK', 'Warning') | Out-Null
+            return
+        }
+        $response = [System.Windows.Forms.MessageBox]::Show(
+            "是否允许以下网站访问本机扫描仪？" + [Environment]::NewLine + [Environment]::NewLine + $site,
+            '确认扫描授权', 'YesNo', 'Question', 'Button2')
+        if ($response -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        try {
+            $node = Join-Path $PSScriptRoot 'node.exe'
+            $launcher = Join-Path $PSScriptRoot 'scripts\scanner-launcher.mjs'
+            $uri = 'inteschool-scanner://connect?origin=' + [Uri]::EscapeDataString($site)
+            $arguments = '"' + $launcher + '" "' + $uri + '"'
+            $process = Start-Process -FilePath $node -ArgumentList $arguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "扫描授权程序返回错误代码 $($process.ExitCode)" }
+            Write-ScannerLog "Approved scanner website: $site"
+            Update-ScannerStatus
+            [System.Windows.Forms.MessageBox]::Show("已授权 $site。请返回网站点击「刷新设备」。", '授权成功', 'OK', 'Information') | Out-Null
+        } catch {
+            Write-ScannerLog "Scanner pairing failed: $($_.Exception.Message)"
+            [System.Windows.Forms.MessageBox]::Show("授权失败：$($_.Exception.Message)" + [Environment]::NewLine + "请查看托盘中的诊断日志。", '授权失败', 'OK', 'Error') | Out-Null
+        }
+    })
 
     $openItem.Add_Click({
         $origins = @(Get-ScannerOrigins)

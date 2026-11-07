@@ -82,9 +82,20 @@ jobs:
           if ((Test-Path $trayLog) -and (Get-Content -Raw $trayLog) -match 'Tray failed:') {
             throw "Tray exited with error: $(Get-Content -Tail 12 $trayLog)"
           }
+          # Exercise the manual-tray authorization path: it invokes the launcher
+          # with a validated custom-protocol URI after an explicit confirmation.
+          & (Join-Path $dir 'node.exe') (Join-Path $dir 'scripts\scanner-launcher.mjs') 'inteschool-scanner://connect?origin=https%3A%2F%2Fmanual.example'
+          if ($LASTEXITCODE -ne 0) { throw "Manual scanner pairing failed" }
+          $paired = @(Get-Content -Raw $env:INTESCHOOL_SCANNER_ORIGINS_FILE | ConvertFrom-Json)
+          if ($paired -notcontains 'https://manual.example') { throw "Manual scanner origin not persisted" }
+          & (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoProfile -NonInteractive -ExecutionPolicy Bypass -STA -File (Join-Path $dir 'scanner-tray.ps1') -Restart
+          if ($LASTEXITCODE -ne 0) { throw "Tray upgrade restart failed" }
+          Start-Sleep -Seconds 4
+          $trays = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'powershell.exe' -and $_.CommandLine -match 'scanner-tray[.]ps1' -and $_.CommandLine -notmatch ' -(Stop|Restart)' })
+          if ($trays.Count -ne 1) { throw "Expected one tray after upgrade restart, found $($trays.Count)" }
           $code = @'
           import http from 'node:http';
-          for (const [origin, expected] of [['https://test.inteschool.example', 200],['https://other.example',403]]) {
+          for (const [origin, expected] of [['https://test.inteschool.example', 200],['https://manual.example', 200],['https://other.example',403]]) {
             const status = await new Promise((resolve, reject) => {
               http.get('http://127.0.0.1:17380/health', {headers:{Origin:origin,'X-InteSchool-Scanner':'scanner-v1'}}, r => {r.resume();resolve(r.statusCode)}).on('error', reject);
             });
