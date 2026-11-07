@@ -37,8 +37,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          trap 'docker logs inteschool-ci 2>&1 | tail -80 || true; docker rm -f inteschool-ci >/dev/null 2>&1 || true' EXIT
-          docker run -d --name inteschool-ci -p 127.0.0.1::3000 inteschool:ci
+          trap 'docker logs inteschool-ci 2>&1 | tail -80 || true; docker logs inteschool-ci-db 2>&1 | tail -40 || true; docker rm -f inteschool-ci inteschool-ci-db >/dev/null 2>&1 || true; docker network rm inteschool-ci-network >/dev/null 2>&1 || true' EXIT
+          docker network create inteschool-ci-network
+          docker run -d --name inteschool-ci-db --network inteschool-ci-network \
+            -e POSTGRES_DB=inteschool -e POSTGRES_USER=inteschool \
+            -e POSTGRES_PASSWORD=ci-only-test-password postgres:17-alpine
+          for _ in {1..30}; do
+            if docker exec inteschool-ci-db pg_isready -U inteschool -d inteschool >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec inteschool-ci-db pg_isready -U inteschool -d inteschool
+          docker run -d --name inteschool-ci --network inteschool-ci-network \
+            -p 127.0.0.1::3000 \
+            -e INTESCHOOL_DATABASE_URL=postgresql://inteschool:ci-only-test-password@inteschool-ci-db:5432/inteschool \
+            inteschool:ci
           port=$(docker port inteschool-ci 3000/tcp | awk -F: 'END {print $NF}')
           test -n "$port"
           for _ in {1..60}; do

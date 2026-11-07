@@ -9,7 +9,7 @@
 - `Production build`：构建 Web 和 Node 服务，确认关键产物存在。
 - `Audit changed dependencies`：仅修改 npm 清单/锁文件的 PR 执行，通过 npm audit 检查生产依赖高危漏洞。
 - `Windows scanner package`：修改扫描桥接或 Windows 安装文件时执行，实际构建、安装和测试 Windows 程序。
-- `Container smoke test`：修改容器、依赖或构建配置时执行，构建镜像、启动服务并检查 `/api/health` 与非 root 运行。
+- `Container smoke test`：修改容器、依赖或构建配置时执行，构建镜像、启动临时 PostgreSQL 与应用服务，并检查 `/api/health` 与非 root 运行。
 - `Required checks`：单一稳定合并门禁，汇总所有必需及按需检查；失败或取消不能被跳过掩盖。
 
 主分支提交不会被后续提交取消。新的 PR 提交会取消同一 PR 上的旧检查。
