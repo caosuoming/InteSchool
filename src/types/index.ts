@@ -3489,3 +3489,22 @@ export interface SchoolResourceBackup {
   /** 最后更新时间（备课组长修改属性时更新） */
   updatedAt: string;
 }
+
+// ============ 工作台待办状态 ============
+export type DashboardTodoType = "correction" | "document" | "courseware" | "scan" | "lecture";
+export type DashboardTodoStatus = "completed" | "cancelled";
+
+export interface DashboardTodoInput {
+  type: DashboardTodoType;
+  resourceId: string;
+  title: string;
+  detail: string;
+  href: string;
+  status: DashboardTodoStatus;
+}
+
+export interface DashboardTodoRecord extends DashboardTodoInput {
+  id: string;
+  teacherId: string;
+  updatedAt: string;
+}
