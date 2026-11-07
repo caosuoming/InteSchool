@@ -9,7 +9,8 @@ export function localDate(date: Date): string {
 
 export function homeworkTitle(homework: ClassroomHomework): string {
   return homework.title?.trim() || homework.content.split("\n").find((line) => line.trim())?.trim().slice(0, 80)
-    || `附件作业（${homework.attachments?.length || 0} 个附件）`;
+    || (homework.examPaperIds?.length ? `试卷作业（${homework.examPaperIds.length} 份）`
+      : `附件作业（${homework.attachments?.length || 0} 个附件）`);
 }
 
 export function homeworkStatus(homework: ClassroomHomework, now = new Date()) {

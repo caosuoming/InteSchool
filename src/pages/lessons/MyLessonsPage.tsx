@@ -5,12 +5,13 @@ import {
   BookOpen, Plus, Trash2, Send,
   FileSpreadsheet, FileText, Edit3, Clock, Presentation, Users,
   BellRing, CalendarClock, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, MonitorPlay,
-  CheckCircle2, RotateCcw, CalendarDays,
+  CheckCircle2, RotateCcw, CalendarDays, Files,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { classroomHomeworkService } from "@/services/classroomHomework";
+import { examPaperService } from "@/services/examPaper";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { uploadFile } from "@/services/api";
 import { classService } from "@/services/class";
@@ -18,6 +19,7 @@ import type {
   ClassroomHomework,
   ClassroomHomeworkAttachment,
   ClassroomNotice,
+  ExamPaper,
   LessonCourseware,
   SchoolClass,
   TeacherLessonScheduleDay,
@@ -35,6 +37,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
+import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
 import { TeacherTimetable } from "@/components/lessons/TeacherTimetable";
 import { TeachingPlanPanel } from "@/components/lessons/TeachingPlanPanel";
 import { openCoursewareInWps } from "@/lib/wps";
@@ -183,6 +186,9 @@ export function MyLessonsPage() {
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [trashExpanded, setTrashExpanded] = useState(false);
   const [homeworks, setHomeworks] = useState<ClassroomHomework[]>([]);
+  const [availablePapers, setAvailablePapers] = useState<ExamPaper[]>([]);
+  const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([]);
+  const [paperSearch, setPaperSearch] = useState("");
   const [notices, setNotices] = useState<ClassroomNotice[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -311,7 +317,7 @@ export function MyLessonsPage() {
     if (!teacher?.schoolId) return;
     setHomeworkLoading(true);
     try {
-      const [classItems, homeworkItems, noticeItems] = await Promise.all([
+      const [classItems, homeworkItems, noticeItems, paperItems] = await Promise.all([
         classService.listSchoolClasses(teacher.schoolId),
         classroomHomeworkService.listHomeworks({
           schoolId: teacher.schoolId,
@@ -321,6 +327,7 @@ export function MyLessonsPage() {
           schoolId: teacher.schoolId,
           teacherId: teacher.id,
         }),
+        examPaperService.listPapers({ schoolId: teacher.schoolId }),
       ]);
       const affiliation = getCurrentAffiliation();
       const assignedClassIds = new Set([
@@ -332,6 +339,7 @@ export function MyLessonsPage() {
       );
       const preferred = activeClasses.map((item) => item.id);
       setClasses(activeClasses);
+      setAvailablePapers(paperItems.filter((paper) => paper.classIds?.some((id) => assignedClassIds.has(id))));
       setHomeworks(homeworkItems.filter((item) => item.managementCategory !== "exam"));
       setNotices(noticeItems);
       setSelectedClassIds((current) => {
@@ -491,6 +499,8 @@ export function MyLessonsPage() {
     setHomeworkTitle("");
     setHomeworkUploads([]);
     setHomeworkAttachments([]);
+    setSelectedPaperIds([]);
+    setPaperSearch("");
     setHomeworkDate(localDateValue());
     setHomeworkEndDate(localDateValue());
     setPublishMode("now");
@@ -515,6 +525,8 @@ export function MyLessonsPage() {
     setHomeworkTitle(homework.title || "");
     setHomeworkUploads([]);
     setHomeworkAttachments(homework.attachments || []);
+    setSelectedPaperIds(homework.examPaperIds || []);
+    setPaperSearch("");
     setHomeworkDate(homework.assignedDate);
     setHomeworkEndDate(getHomeworkEndDate(homework));
     setPublishMode(scheduled ? "scheduled" : "now");
@@ -583,12 +595,23 @@ export function MyLessonsPage() {
       toast.warning("附件仍在上传，请稍候");
       return;
     }
-    if (!homeworkContent.trim() && homeworkAttachments.length === 0) {
-      toast.warning("请输入作业内容或添加附件");
+    if (!homeworkContent.trim() && homeworkAttachments.length === 0 && selectedPaperIds.length === 0) {
+      toast.warning("请输入作业内容、添加附件或选择试卷");
       return;
     }
     if (selectedClassIds.length === 0) {
       toast.warning("请选择至少一个发布班级");
+      return;
+    }
+    if (selectedPaperIds.some((id) => !availablePapers.find((paper) =>
+      paper.id === id && paper.classIds?.some((classId) => selectedClassIds.includes(classId))))) {
+      toast.warning("所选试卷中有不适用于发布班级的试卷，请调整班级或试卷");
+      return;
+    }
+    if (!homeworkContent.trim() && homeworkAttachments.length === 0 && selectedClassIds.some((classId) =>
+      !selectedPaperIds.some((id) => availablePapers.some((paper) =>
+        paper.id === id && paper.classIds?.includes(classId))))) {
+      toast.warning("所选试卷未覆盖全部发布班级，请调整班级或补充试卷");
       return;
     }
     const existingHomework = editingHomeworkId
@@ -620,6 +643,7 @@ export function MyLessonsPage() {
         ...(homeworkTitle.trim() ? { title: homeworkTitle.trim() } : {}),
         content: homeworkContent,
         attachments: homeworkAttachments,
+        examPaperIds: selectedPaperIds,
         classIds: selectedClassIds,
         assignedDate: homeworkDate,
         assignedEndDate: homeworkEndDate,
@@ -956,7 +980,9 @@ export function MyLessonsPage() {
               {currentHomeworks.map((homework) => (
                 <div key={homework.id} className="rounded-lg border border-ink-100 bg-mist/40 p-3">
                   <div className="whitespace-pre-wrap text-sm leading-6 text-ink-800">
-                    {homework.content || `包含 ${homework.attachments?.length || 0} 个附件`}
+                    {homework.content || (homework.examPaperIds?.length
+                      ? `包含 ${homework.examPaperIds.length} 份试卷`
+                      : `包含 ${homework.attachments?.length || 0} 个附件`)}
                   </div>
                   <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-ink-100 pt-3">
                     <div className="text-xs text-ink-500">
@@ -1222,7 +1248,46 @@ export function MyLessonsPage() {
                 }}
               />
             </label>
-            <span className="text-xs text-ink-400">最多 8 个；选择后立即上传，上传完成即可点击预览</span>
+            <details className="group relative">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-lg border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-700 hover:border-gold-400">
+                <Files className="h-4 w-4" />选择试卷{selectedPaperIds.length > 0 && `（${selectedPaperIds.length}）`}
+                <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="absolute left-0 z-30 mt-1 w-[min(85vw,26rem)] rounded-lg border border-ink-200 bg-paper p-3 shadow-xl">
+                <input
+                  type="search"
+                  aria-label="搜索可选试卷"
+                  value={paperSearch}
+                  onChange={(event) => setPaperSearch(event.target.value)}
+                  placeholder="搜索试卷名称"
+                  className="mb-2 w-full rounded-lg border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-800"
+                />
+                <div className="max-h-64 space-y-1 overflow-y-auto">
+                  {availablePapers.filter((paper) => paper.title.toLowerCase().includes(paperSearch.trim().toLowerCase())).length === 0
+                    ? <p className="px-2 py-3 text-sm text-ink-500">暂无适用于任教班级的试卷</p>
+                    : availablePapers.filter((paper) => paper.title.toLowerCase().includes(paperSearch.trim().toLowerCase())).map((paper) => {
+                      const previousDates = [...new Set([
+                        ...homeworks.filter((item) => item.id !== editingHomeworkId && item.examPaperIds?.includes(paper.id)).map((item) => item.assignedDate),
+                        ...(paper.assignedDate ? [paper.assignedDate] : []),
+                      ])].sort().reverse();
+                      return (
+                        <label key={paper.id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-mist">
+                          <input type="checkbox" className="mt-1 accent-amber-500"
+                            checked={selectedPaperIds.includes(paper.id)} disabled={publishingHomework}
+                            onChange={() => setSelectedPaperIds((ids) => ids.includes(paper.id)
+                              ? ids.filter((id) => id !== paper.id) : [...ids, paper.id])} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block break-words text-sm text-ink-800">{paper.title}</span>
+                            <span className="block text-xs text-ink-500">{paper.classIds?.map((id) => classNames.get(id)).filter(Boolean).join("、")}</span>
+                            {previousDates.length > 0 && <span className="block text-xs text-amber-700">已于 {previousDates.join("、")} 布置过</span>}
+                          </span>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+            </details>
+            <span className="text-xs text-ink-400">附件最多 8 个；试卷可多选，与作业合并发布</span>
           </div>
           {homeworkUploads.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label="作业附件上传中">
@@ -1237,6 +1302,7 @@ export function MyLessonsPage() {
               ))}
             </div>
           )}
+          <HomeworkPaperLinks papers={availablePapers.filter((paper) => selectedPaperIds.includes(paper.id))} className="mt-3" />
           <HomeworkAttachments
             attachments={homeworkAttachments}
             className="mt-3"
@@ -1359,6 +1425,7 @@ export function MyLessonsPage() {
                         <div className="mt-2 whitespace-pre-wrap text-sm text-ink-800">{homework.content}</div>
                       )}
                       <HomeworkAttachments attachments={homework.attachments} className="mt-3" />
+                      <HomeworkPaperLinks papers={homework.linkedPapers} className="mt-2" />
                     </div>
                     <div className="flex flex-shrink-0 items-start gap-1">
                       <Button
@@ -1410,6 +1477,7 @@ export function MyLessonsPage() {
                           <div className="text-sm text-ink-800 whitespace-pre-wrap mt-2">{homework.content}</div>
                         )}
                         <HomeworkAttachments attachments={homework.attachments} className="mt-3" />
+                        <HomeworkPaperLinks papers={homework.linkedPapers} className="mt-2" />
                       </div>
                       <button
                         type="button"

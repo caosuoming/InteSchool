@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { BrandMark } from "@/components/brand/BrandMark";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
+import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
 import { Spinner } from "@/components/ui/Spinner";
 import { SUBJECT_OPTIONS } from "@/lib/education";
 import { cn } from "@/lib/utils";
@@ -180,6 +181,7 @@ function HomeworkRow({
                 fullscreenImages
                 className={cn(homework.content && "mt-4")}
               />
+              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" className="mt-3" />
             </div>
           ))}
         </div>
@@ -1178,6 +1180,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
                                 fullscreenImages
                                 className={cn(homework.content && "mt-3")}
                               />
+                              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" className="mt-2" />
                               <div className="mt-2 text-[10px] text-neutral-600">{homework.teacherName}</div>
                             </div>
                           </div>

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyLessonsPage from "@/pages/lessons/MyLessonsPage";
 import { classService } from "@/services/class";
 import { classroomHomeworkService } from "@/services/classroomHomework";
+import { examPaperService } from "@/services/examPaper";
 import { classroomNoticeService } from "@/services/classroomNotice";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { uploadFile } from "@/services/api";
@@ -26,6 +27,8 @@ vi.mock("@/services/classroomHomework", () => ({
     deleteHomework: vi.fn(),
   },
 }));
+
+vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn() } }));
 
 vi.mock("@/services/classroomNotice", () => ({
   classroomNoticeService: {
@@ -181,6 +184,30 @@ function courseware(
 }
 
 describe("MyLessonsPage classroom publishing", () => {
+  it("selects several eligible papers, shows prior dates and saves one combined homework", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      { id: "paper-1", title: "函数练习卷", teacherId: "teacher-1", schoolId: "school-1", classIds: ["class-1"] },
+      { id: "paper-2", title: "单元试卷", teacherId: "teacher-1", schoolId: "school-1", classIds: ["class-1"] },
+      { id: "paper-other", title: "其他班级试卷", teacherId: "teacher-1", schoolId: "school-1", classIds: ["class-2"] },
+    ] as any);
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([{
+      ...createdHomework, id: "historical", assignedDate: "2026-10-08", examPaperIds: ["paper-1"],
+    }]);
+    render(<MemoryRouter initialEntries={["/my-lessons?tab=homework"]}><MyLessonsPage /></MemoryRouter>);
+    expect(await screen.findByText("函数练习卷")).toBeInTheDocument();
+    expect(screen.getByText("已于 2026-10-08 布置过")).toBeInTheDocument();
+    expect(screen.queryByText("其他班级试卷")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /函数练习卷/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /单元试卷/ }));
+    fireEvent.click(screen.getByRole("button", { name: "发布作业" }));
+    await waitFor(() => expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
+      "teacher-1", "school-1", expect.objectContaining({
+        content: "", examPaperIds: ["paper-1", "paper-2"], classIds: ["class-1"],
+      }),
+    ));
+    expect(classroomHomeworkService.createHomework).toHaveBeenCalledTimes(1);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({ teacher, loading: false, error: null });
@@ -196,6 +223,7 @@ describe("MyLessonsPage classroom publishing", () => {
       createdAt: "2026-08-02T00:00:00.000Z",
     }]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.createHomework).mockResolvedValue(createdHomework);
     vi.mocked(classroomHomeworkService.updateHomework).mockResolvedValue(createdHomework);
     vi.mocked(classroomNoticeService.listNotices).mockResolvedValue([activeNotice]);
