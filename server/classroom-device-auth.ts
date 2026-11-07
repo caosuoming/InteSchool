@@ -18,7 +18,7 @@ interface ClassroomDeviceIdentity {
 
 export function classroomDeviceTokenFromRpc(input: ClassroomDeviceRpcInput): string | null {
   if (input.service !== "classroomDevice") return null;
-  if (["getDeviceSession", "getClassroomSnapshot", "reportHeartbeat"].includes(input.method)) {
+  if (["getDeviceSession", "getClassroomSnapshot", "reportHeartbeat", "recordClassroomQuestionProgress"].includes(input.method)) {
     return typeof input.args[0] === "string" ? input.args[0] : null;
   }
   if (input.method !== "bindDevice") return null;

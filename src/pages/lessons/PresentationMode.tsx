@@ -48,6 +48,8 @@ import { MathHtml } from "@/components/ui/MathHtml";
 import { uploadFile } from "@/services/api";
 import { HomeworkHistoryPanel } from "./HomeworkHistoryPanel";
 import { questionService } from "@/services/question";
+import { analyticsService } from "@/services/analytics";
+import { classroomDeviceService } from "@/services/classroomDevice";
 import { toast } from "@/stores/ui";
 import {
   getVisibleLessonSlideElements,
@@ -58,6 +60,9 @@ import {
 interface PresentationModeProps {
   slides: LessonSlide[];
   initialIndex: number;
+  coursewareId?: string;
+  classId?: string;
+  deviceToken?: string;
   students: { id: string; name: string }[];
   homeworkRecords?: HomeworkClassOverviewRecord[];
   followedStudentIds?: ReadonlySet<string>;
@@ -137,6 +142,7 @@ interface QuestionPanelInteraction {
 }
 
 const HIGHLIGHTER_ALPHA = 0.45;
+const CLASSROOM_QUESTION_DONE_MS = 2 * 60_000;
 const EMPTY_STUDENT_ID_SET: ReadonlySet<string> = new Set<string>();
 
 interface BoardWritingArea {
@@ -1025,6 +1031,9 @@ function toastRandom(name: string) {
 export function PresentationMode({
   slides,
   initialIndex,
+  coursewareId,
+  classId,
+  deviceToken,
   students,
   homeworkRecords = [],
   followedStudentIds = EMPTY_STUDENT_ID_SET,
@@ -1094,6 +1103,48 @@ export function PresentationMode({
   const presentationSlides = allowBlankPageCreation ? [...slides, ...appendedBlankSlides] : slides;
   const currentSlide = presentationSlides[currentIndex];
   const currentSlideStateKey = currentSlide?.id || "__empty-slide__";
+  const completedQuestionsRef = useRef(new Set<string>());
+  const recordQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const recordQuestionProgress = useCallback((questionId: string, studentId?: string, score?: StudentMastery) => {
+    if (!coursewareId || !classId) return;
+    const input = {
+      coursewareId, classId, questionId, ...(studentId ? { studentId } : {}),
+      ...(score ? { score: score === "incorrect" ? "wrong" as const : score } : {}),
+    };
+    recordQueueRef.current = recordQueueRef.current.catch(() => undefined).then(async () => {
+      if (deviceToken) await classroomDeviceService.recordClassroomQuestionProgress(deviceToken, input);
+      else await analyticsService.recordClassroomQuestionProgress(input);
+    });
+    return recordQueueRef.current;
+  }, [coursewareId, classId, deviceToken]);
+
+  useEffect(() => {
+    if (!coursewareId || !classId || currentSlide?.type !== "question" || !currentSlide.questionId) return;
+    const questionId = currentSlide.questionId;
+    const key = `${coursewareId}:${classId}:${questionId}`;
+    if (completedQuestionsRef.current.has(key)) return;
+    let timeout: number | undefined;
+    let active = true;
+    const schedule = () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      if (document.visibilityState === "hidden" || completedQuestionsRef.current.has(key)) return;
+      timeout = window.setTimeout(() => {
+        timeout = undefined;
+        void recordQuestionProgress(questionId)?.then(() => {
+          completedQuestionsRef.current.add(key);
+        }).catch((error: unknown) => {
+          if (active) toast.error("课堂例题记录失败", error instanceof Error ? error.message : undefined);
+        });
+      }, CLASSROOM_QUESTION_DONE_MS);
+    };
+    document.addEventListener("visibilitychange", schedule);
+    schedule();
+    return () => {
+      active = false;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", schedule);
+    };
+  }, [classId, coursewareId, currentSlide?.id, currentSlide?.questionId, currentSlide?.type, recordQuestionProgress]);
   const boards = boardsBySlide[currentSlideStateKey] || [];
   const activeBoardId = activeBoardIdsBySlide[currentSlideStateKey] || null;
   const currentAnnotationStrokes = annotationStrokesBySlide[currentSlideStateKey] || [];
@@ -1211,6 +1262,11 @@ export function PresentationMode({
   }, [askableStudents, clearStudentLotteryTimers, currentSlideStateKey, eligibleStudents, followedStudentIds]);
 
   const markStudentMastery = (studentId: string, mastery: StudentMastery) => {
+    if (currentSlide?.type === "question" && currentSlide.questionId) {
+      void recordQuestionProgress(currentSlide.questionId, studentId, mastery)?.catch((error: unknown) => {
+        toast.error("学生掌握情况保存失败", error instanceof Error ? error.message : undefined);
+      });
+    }
     setPickedStudentsBySlide((current) => ({
       ...current,
       [currentSlideStateKey]: (current[currentSlideStateKey] || []).map((student) => (

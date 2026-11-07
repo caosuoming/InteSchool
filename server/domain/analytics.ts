@@ -18,6 +18,7 @@ import type { TeacherRecord } from "../types.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
+import { recordClassroomQuestionProgress, type ClassroomQuestionProgressInput } from "./classroomQuestionProgress.js";
 
 /** 知识点掌握情况统计项 */
 export interface KnowledgeMastery {
@@ -121,6 +122,19 @@ function selectedAudienceStudentIds(
 }
 
 export const analyticsService = {
+  async recordClassroomQuestionProgress(input: ClassroomQuestionProgressInput, teacher: Teacher): Promise<AnswerRecord[]> {
+    const courseware = db.read("lessonCoursewares").find((item) => item.id === input?.coursewareId);
+    if (!teacher?.schoolId || courseware?.schoolId !== teacher.schoolId) throw new Error("无权访问该学校课件");
+    const currentAffiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId);
+    const assignedClasses = new Set([
+      ...(currentAffiliation?.teachingClassIds || teacher.teachingClassIds || []),
+      ...(currentAffiliation?.homeroomClassIds || teacher.homeroomClassIds || []),
+    ]);
+    if (courseware.teacherId !== teacher.id && !assignedClasses.has(input.classId)) {
+      throw new Error("无权记录该班级的课堂答题情况");
+    }
+    return recordClassroomQuestionProgress(input, teacher.schoolId);
+  },
   async listAnswerRecordsByQuestion(questionId: string, range?: DateRange): Promise<AnswerRecord[]> {
     await delay(200);
     const records = db.read("answerRecords").filter((a) => a.questionId === questionId);
