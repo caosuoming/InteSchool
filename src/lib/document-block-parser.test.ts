@@ -2218,6 +2218,18 @@ describe("geography paper extraction", () => {
     expect(blocks.filter((block) => block.type === "question").map((block) => block.answer)).toEqual(["C", "D"]);
   });
 
+  it("does not confuse an inline question answer with a new trailing answer section", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 题目一 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：1. B",
+      "2. 题目二 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：A",
+    ].join("\n"), config);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].answer).toBe("1. B");
+    expect(blocks[1].answer).toBe("A");
+  });
+
   it("accepts an answer-section heading with descriptive text after it", () => {
     const blocks = parseDocumentBlocks([
       "1. 第一小题 A. 甲 B. 乙 C. 丙 D. 丁",

@@ -970,7 +970,8 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
   const heading = /(?:参考)?答案(?:与|和|及)?解析|(?:参考)?答案/;
   const leading = new RegExp(`^(${heading.source})`).exec(compact);
   if (leading && (/^(?:[（(【［][^）)】］]{1,40}[）)】］])?$/.test(compact.slice(leading[0].length))
-    || /^[:：](?:第)?[\d０-９]{1,4}[、.．:：)）]\S/.test(compact.slice(leading[0].length)))) {
+    || (leading[0].startsWith("参考答案")
+      && /^[:：](?:第)?[\d０-９]{1,4}[、.．:：)）]\S/.test(compact.slice(leading[0].length))))) {
     return leading[0].includes("解析") ? "answerAnalysis" : "answer";
   }
   const trailing = new RegExp(`(${heading.source})$`).exec(normalized);
