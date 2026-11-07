@@ -67,6 +67,10 @@ export const analyticsService = {
     return rpcCall("analytics", "listUsedDocumentIds", [documentIds]) as any;
   },
 
+  async listSameQuestionIds(questionIds: string[]): Promise<Record<string, string[]>> {
+    return rpcCall("analytics", "listSameQuestionIds", [questionIds]) as any;
+  },
+
   async listAnswerRecordsByStudents(studentIds: string[], range?: DateRange): Promise<AnswerRecord[]> {
     return rpcCall("analytics", "listAnswerRecordsByStudents", [studentIds, range]) as any;
   },
