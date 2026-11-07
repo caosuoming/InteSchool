@@ -5,6 +5,7 @@ import { ExtractReviewModal } from "../ExtractReviewModal";
 
 const mocks = vi.hoisted(() => ({
   getLecture: vi.fn(),
+  getPaper: vi.fn(),
   extractStoredFile: vi.fn(),
   parseDocumentBlocks: vi.fn(),
   findSimilarQuestionsBatch: vi.fn(),
@@ -68,7 +69,7 @@ vi.mock("@/services/lecture", () => ({
 
 vi.mock("@/services/examPaper", () => ({
   examPaperService: {
-    getPaper: vi.fn(),
+    getPaper: mocks.getPaper,
     createExtractCopy: mocks.createExamExtractCopy,
   },
 }));
@@ -89,8 +90,17 @@ vi.mock("@/services/api", () => ({
   extractStoredFile: mocks.extractStoredFile,
 }));
 
-vi.mock("@/lib/document-block-parser", () => ({
+vi.mock("@/lib/document-block-parser", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/document-block-parser")>()),
   parseDocumentBlocks: mocks.parseDocumentBlocks,
+}));
+
+vi.mock("@/lib/math-html", () => ({
+  renderMathHtml: (text: string) => text,
+}));
+
+vi.mock("@/lib/extract-text-renderer", () => ({
+  renderExtractText: (text: string) => text,
 }));
 
 describe("ExtractReviewModal", () => {
@@ -98,6 +108,11 @@ describe("ExtractReviewModal", () => {
     vi.clearAllMocks();
     mocks.authState.teacher.subject = "物理";
     mocks.extractConfig.questionKeywords = ["题目"];
+    mocks.getPaper.mockResolvedValue({
+      id: "paper-1",
+      originalFileUrl: "/uploads/paper.docx",
+      originalFileName: "paper.docx",
+    });
     mocks.getLecture.mockResolvedValue({
       id: "lecture-1",
       originalFileUrl: "/uploads/lecture.docx",
@@ -924,4 +939,57 @@ describe("ExtractReviewModal", () => {
       },
     ]);
   });
+
+  it("asks for confirmation of missing math numbers and reparses them on request", async () => {
+    const user = userEvent.setup();
+    mocks.authState.teacher.subject = "数学";
+    const first = { id: "math-1", type: "question" as const, content: "1. 第一题\n2? 第二题", questionType: "essay" as const, status: "new" as const, order: 0 };
+    const third = { id: "math-3", type: "question" as const, content: "3. 第三题", questionType: "essay" as const, status: "new" as const, order: 1 };
+    mocks.extractStoredFile.mockResolvedValue({ text: "1. 第一题\n2? 第二题\n3. 第三题" });
+    mocks.parseDocumentBlocks.mockImplementation((_text, parseConfig) =>
+      parseConfig.confirmedMathQuestionNumbers?.includes(2)
+        ? [{ ...first, content: "1. 第一题" }, { ...first, id: "math-2", content: "2? 第二题", order: 1 }, { ...third, order: 2 }]
+        : [first, third]);
+    render(
+      <ExtractReviewModal
+        open onClose={vi.fn()} resourceId="paper-1" resourceType="examPaper"
+        resourceTitle="数学试卷" chapterIds={[]} knowledgePointIds={[]}
+        grade="高一" schoolYear="2026-2027" semester="上学期"
+        initialBlocks={[first, third]}
+      />,
+    );
+    expect(screen.getByText("数学试卷题号可能不连续，请确认")).toBeInTheDocument();
+    expect(screen.getByText("1 → 3（缺 2）")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "按确认题号重新拆解" }));
+    await waitFor(() => expect(mocks.parseDocumentBlocks).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ confirmedMathQuestionNumbers: [2], subject: "数学" }),
+    ));
+    await waitFor(() => expect(screen.queryByText("数学试卷题号可能不连续，请确认")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+    expect(mocks.getPaper).toHaveBeenCalledWith("paper-1");
+  });
+
+  it("allows explicit acceptance of a genuine gap without inventing a question", async () => {
+    const user = userEvent.setup();
+    mocks.authState.teacher.subject = "数学";
+    render(
+      <ExtractReviewModal
+        open onClose={vi.fn()} resourceId="paper-1" resourceType="examPaper"
+        resourceTitle="数学试卷" chapterIds={[]} knowledgePointIds={[]}
+        grade="高一" schoolYear="2026-2027" semester="上学期"
+        initialBlocks={[
+          { id: "math-1", type: "question", content: "1. 第一题", questionType: "essay", status: "new", order: 0 },
+          { id: "math-3", type: "question", content: "3. 第三题", questionType: "essay", status: "new", order: 1 },
+        ]}
+      />,
+    );
+    const confirm = screen.getByRole("button", { name: "确认入库" });
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "确认原稿确实跳号" }));
+    expect(confirm).toBeEnabled();
+    expect(screen.getByText("已确认原稿编号，允许继续入库。")).toBeInTheDocument();
+  });
+
 });

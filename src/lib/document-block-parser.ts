@@ -45,6 +45,8 @@ export interface DocumentParseConfig {
   multipleChoiceKeywords: string[];
   fillBlankKeywords: string[];
   essayKeywords: string[];
+  /** 用户确认存在的数学题号。仅用于重新识别非标准题号标记。 */
+  confirmedMathQuestionNumbers?: number[];
 }
 
 interface OptionMarker {
@@ -473,7 +475,28 @@ function isStandaloneQuestionScoreAnnotation(text: string): boolean {
   return new RegExp(`^\\s*(?:${questionScoreAnnotationSource}\\s*)+$`).test(text);
 }
 
+function mathQuestionNumber(text: string, confirmedNumbers: number[] = []): string | undefined {
+  const normalized = normalizeStructuralText(text).trim();
+  // 非标准标点只在数学科目中识别，避免其他学科的枚举列表被当成题目。
+  const marked = /^(\d{1,4})\s*([,，。｡:：;；·•—–])\s*(.*)$/.exec(normalized);
+  if (marked) {
+    const [, number, separator, remainder] = marked;
+    const rest = remainder.trim();
+    if (!/^\d/.test(rest)
+      && (!/[,·•—–]/.test(separator) || !rest || /^[\p{Script=Han}]/u.test(rest))) {
+      return number;
+    }
+  }
+
+  // 人工确认后才容许没有常规标点的行；必须有独立编号和正文。
+  const uncertain = /^(\d{1,4})(?:\s+|[\p{P}])\s*(\S.*)$/u.exec(normalized);
+  if (uncertain && confirmedNumbers.includes(Number(uncertain[1]))
+    && !/^\d/.test(uncertain[2])) return uncertain[1];
+  return undefined;
+}
+
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
+  if (config.subject?.trim() === "数学" && mathQuestionNumber(text, config.confirmedMathQuestionNumbers)) return true;
   if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
   if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)(?:\s*\S|\s*$)/.test(text)) return true;
 
@@ -981,6 +1004,10 @@ function isNestedTrailingAnswerLine(
 function extractQuestionNumber(text: string, config: DocumentParseConfig): string | undefined {
   const direct = extractLeadingQuestionNumber(text);
   if (direct) return direct.number;
+  if (config.subject?.trim() === "数学") {
+    const mathNumber = mathQuestionNumber(text, config.confirmedMathQuestionNumbers);
+    if (mathNumber) return mathNumber;
+  }
 
   const prefixes = questionKeywordPrefixes(config).map(escapeRegex);
   if (!prefixes.length) return undefined;
@@ -1909,4 +1936,32 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
   }
 
   return refineGeographyBlocks(normalizeFillBlankAreas(parseDocumentBlocksCore(content, config), config.subject), content, config);
+}
+
+export interface MathQuestionNumberGap {
+  previous: number;
+  next: number;
+  missing: number[];
+}
+
+/** 仅检查已识别为顶层数学题的编号，忽略小问和示例题的局部编号。 */
+export function findMathQuestionNumberGaps(blocks: DocumentBlock[], confirmedNumbers: number[] = []): MathQuestionNumberGap[] {
+  const gaps: MathQuestionNumberGap[] = [];
+  let previous: number | undefined;
+  for (const block of blocks) {
+    if (block.type !== "question") continue;
+    const firstLine = block.content.trim().split("\n", 1)[0];
+    const numberText = extractLeadingQuestionNumber(firstLine)?.number || mathQuestionNumber(firstLine, confirmedNumbers);
+    if (!numberText) continue;
+    const number = Number(numberText);
+    if (previous !== undefined && number > previous + 1) {
+      gaps.push({
+        previous,
+        next: number,
+        missing: Array.from({ length: Math.min(number - previous - 1, 100) }, (_, index) => previous! + index + 1),
+      });
+    }
+    previous = number;
+  }
+  return gaps;
 }
