@@ -47,6 +47,7 @@ import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerSta
 import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
 import { DocumentQuestionCompletionBatch } from "@/components/editor/DocumentQuestionCompletionBatch";
+import { QuestionAttributesModal } from "@/components/question/QuestionAttributesModal";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -285,6 +286,7 @@ export default function ExamPaperEditorPage() {
   const isStructureLocked = isExamPaperStructureLocked(paper);
   const isEditingLocked = isStructureLocked || isUsedDocument;
   const [questions, setQuestions] = useState<Record<string, Question>>({});
+  const [attributeQuestion, setAttributeQuestion] = useState<Question | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<ExamPaperSaveState | null>(null);
@@ -1004,10 +1006,6 @@ export default function ExamPaperEditorPage() {
     thoughtMethodIds?: string[],
     errorReasonIds?: string[],
   ) => {
-    if (isUsedDocument) {
-      toast.warning("文档已用，不能再编辑");
-      return;
-    }
     try {
       const updated = await questionService.updateQuestion(questionId, {
         chapterIds,
@@ -1021,7 +1019,7 @@ export default function ExamPaperEditorPage() {
       toast.error("更新失败", error instanceof Error ? error.message : "请稍后重试");
       throw error;
     }
-  }, [isUsedDocument]);
+  }, []);
 
   const saveDocumentMetadata = async (value: DocumentMetadataValue) => {
     if (!paper || isUsedDocument) return;
@@ -1140,12 +1138,11 @@ export default function ExamPaperEditorPage() {
 
   // 编辑模式：修改分值
   const handleUpdateScore = (pqId: string, score: number) => {
-    if (isUsedDocument) return;
     setPaperQuestions((prev) => prev.map((q) => q.id === pqId ? { ...q, score } : q));
   };
 
   const handlePreviewUpdateScore = async (pqId: string, score: number) => {
-    if (!paper || isUsedDocument || !Number.isFinite(score) || score < 0) return;
+    if (!paper || !Number.isFinite(score) || score < 0) return;
     const previousQuestions = paperQuestions;
     const nextQuestions = paperQuestions.map((question) =>
       question.id === pqId ? { ...question, score } : question,
@@ -1170,7 +1167,6 @@ export default function ExamPaperEditorPage() {
   };
 
   const handleUpdateHeadingScore = (headingId: string, score: number) => {
-    if (isUsedDocument) return;
     setPaperQuestions((previous) => setScoreUnderHeading(
       contentBlocks,
       previous,
@@ -1378,14 +1374,16 @@ export default function ExamPaperEditorPage() {
 
   // 保存
   const handleSave = async (silent = false) => {
-    if (!paper || saving || isUsedDocument) return;
+    if (!paper || saving) return;
     if (!title.trim()) {
       if (!silent) toast.error("请填写文档名");
       return;
     }
     setSaving(true);
     try {
-      const payload = buildPaperPatch();
+      const payload = isUsedDocument
+        ? { questions: paperQuestions, totalScore }
+        : buildPaperPatch();
       const updated = prepTaskId
         ? await prepService.updateLinkedResource(prepTaskId, payload, prepPassword || undefined) as ExamPaper
         : await examPaperService.updatePaper(paper.id, payload);
@@ -1404,7 +1402,7 @@ export default function ExamPaperEditorPage() {
   };
 
   useAutosave({
-    enabled: !isPreview && Boolean(paper) && !prepTaskId && !isUsedDocument && Boolean(title.trim()),
+    enabled: !isPreview && Boolean(paper) && !prepTaskId && Boolean(title.trim()),
     dirty: hasUnsavedChanges,
     saving,
     onSave: () => handleSave(true),
@@ -1638,6 +1636,7 @@ export default function ExamPaperEditorPage() {
       );
       if (pendingRecords.length > 0) {
         await analyticsService.batchSaveAnswerRecords(pendingRecords);
+        setIsUsedDocument(true);
       }
       const refreshedRecords = (await analyticsService.listAnswerRecordsByStudents(audienceStudentIds, dateRange))
         .filter((record) => record.lectureId === paper.id);
@@ -1679,6 +1678,7 @@ export default function ExamPaperEditorPage() {
         score,
         source: "manual",
       });
+      if (score) setIsUsedDocument(true);
       const refreshedRecords = (await analyticsService.listAnswerRecordsByStudents(audienceStudentIds, dateRange))
         .filter((record) => record.lectureId === paper.id);
       setAnswerRecords(refreshedRecords);
@@ -1688,6 +1688,12 @@ export default function ExamPaperEditorPage() {
       toast.error("更新答题情况失败", error instanceof Error ? error.message : undefined);
     }
   };
+
+  const questionAttributesModal = attributeQuestion && (
+    <QuestionAttributesModal key={attributeQuestion.id} question={attributeQuestion}
+      schoolId={teacher?.schoolId} onClose={() => setAttributeQuestion(null)}
+      onUpdated={(updated) => setQuestions((previous) => ({ ...previous, [updated.id]: updated }))} />
+  );
 
   const prepPasswordModal = (
     <Modal
@@ -1854,7 +1860,6 @@ export default function ExamPaperEditorPage() {
           <DocumentQuestionBatchActions
             schoolId={schoolId}
             questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
-            disabled={isUsedDocument}
             onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
             markAllButton={<DocumentQuestionCompletionBatch
               documentId={paper!.id}
@@ -1977,6 +1982,7 @@ export default function ExamPaperEditorPage() {
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
                           onQuestionUpdated={handlePreviewQuestionUpdated}
+                          onEditAttributes={paper?.teacherId === teacher?.id ? setAttributeQuestion : undefined}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -2049,6 +2055,7 @@ export default function ExamPaperEditorPage() {
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
                           onQuestionUpdated={handlePreviewQuestionUpdated}
+                          onEditAttributes={paper?.teacherId === teacher?.id ? setAttributeQuestion : undefined}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -2109,6 +2116,7 @@ export default function ExamPaperEditorPage() {
                           answerRecords={answerRecords}
                           onUpdateStudentAnswer={handleUpdateStudentAnswer}
                           onQuestionUpdated={handlePreviewQuestionUpdated}
+                          onEditAttributes={paper?.teacherId === teacher?.id ? setAttributeQuestion : undefined}
                           visibility={previewSidebarVisibility}
                           canEditScore={paper?.teacherId === teacher?.id}
                           onUpdateScore={handlePreviewUpdateScore}
@@ -2193,7 +2201,7 @@ export default function ExamPaperEditorPage() {
             <Button
               variant="outline"
               onClick={handleUndo}
-              disabled={!hasUnsavedChanges || saving || isUsedDocument}
+              disabled={!hasUnsavedChanges || saving}
               title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
             >
               <RotateCcw className="w-4 h-4" />
@@ -2203,7 +2211,7 @@ export default function ExamPaperEditorPage() {
               variant="gold"
               onClick={() => void handleSave()}
               loading={saving}
-              disabled={!hasUnsavedChanges || isUsedDocument}
+              disabled={!hasUnsavedChanges}
               title={hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改"}
             >
               <Save className="w-4 h-4" />
@@ -2222,7 +2230,7 @@ export default function ExamPaperEditorPage() {
       {isUsedDocument && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{paper?.answerSheetPublishedAt ? "答题卡已发布，请先撤回发布才能编辑。" : "该文档已录入学生答题记录，现已锁定，不能再编辑。"}</span>
+          <span>答题卡已发布，题目和顺序已锁定；仍可修改题目属性、分值和学生使用记录。</span>
         </div>
       )}
 
@@ -2390,8 +2398,7 @@ export default function ExamPaperEditorPage() {
             <DocumentQuestionBatchActions
                   schoolId={schoolId}
                   questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
-                  disabled={isUsedDocument}
-                  onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+                    onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
                 />
           </div>
           {/* 左侧：完整试卷 */}
@@ -2665,6 +2672,7 @@ export default function ExamPaperEditorPage() {
                             onKnowledgeTreeChange={setKnowledgeTree}
                             chapterNameMap={chapterNameMap}
                             knowledgeNameMap={knowledgeNameMap}
+                            onEditAttributes={setAttributeQuestion}
                             onUpdateCatalogs={handleUpdateQuestionCatalogs}
                             onReplace={(replacement) => replacePaperQuestionAt(paperQuestionIndex, replacement)}
                             onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
@@ -2798,6 +2806,7 @@ export default function ExamPaperEditorPage() {
                                   onKnowledgeTreeChange={setKnowledgeTree}
                                   chapterNameMap={chapterNameMap}
                                   knowledgeNameMap={knowledgeNameMap}
+                                  onEditAttributes={setAttributeQuestion}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
                                   onReplace={(replacement) => replacePaperQuestionAt(item.index, replacement)}
                                   onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
@@ -2926,6 +2935,7 @@ export default function ExamPaperEditorPage() {
                                   onKnowledgeTreeChange={setKnowledgeTree}
                                   chapterNameMap={chapterNameMap}
                                   knowledgeNameMap={knowledgeNameMap}
+                                  onEditAttributes={setAttributeQuestion}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
                                   onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
                                   onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
@@ -2967,7 +2977,7 @@ export default function ExamPaperEditorPage() {
               {isEditingLocked ? (
                 <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
                   <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                  <span>{isUsedDocument ? "当前文档已用，不能再编辑。" : "当前文档结构已锁定，题目属性仍可编辑。"}</span>
+                  <span>{isUsedDocument ? "当前文档已使用，仅允许修改题目属性和分值。" : "当前文档结构已锁定，题目属性和分值仍可编辑。"}</span>
                 </div>
               ) : (
                 <>
@@ -3539,6 +3549,7 @@ export default function ExamPaperEditorPage() {
         />
       )}
       {prepPasswordModal}
+      {questionAttributesModal}
     </div>
   );
 }
@@ -3572,6 +3583,7 @@ function EditQuestionCatalogPanel({
   chapterNameMap,
   knowledgeNameMap,
   onUpdateCatalogs,
+  onEditAttributes,
   onReplace,
   onUpdateScore,
   progress,
@@ -3590,6 +3602,7 @@ function EditQuestionCatalogPanel({
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
   onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[], thoughtMethodIds?: string[], errorReasonIds?: string[]) => Promise<void>;
+  onEditAttributes: (question: Question) => void;
   onReplace: (question: Question) => void;
   onUpdateScore: (score: number) => void;
   progress?: QuestionProgress;
@@ -3660,7 +3673,10 @@ function EditQuestionCatalogPanel({
             <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题相关题</div>
           ) : (
             <div className="min-w-0">
-              <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题属性</div>
+              <div className="flex items-center gap-2">
+                <div className="font-serif text-sm font-semibold text-ink-900">第 {index + 1} 题属性</div>
+                {question && <button type="button" className="text-xs text-gold-700" onClick={() => onEditAttributes(question)}>编辑题目属性</button>}
+              </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <Badge variant="ink">{typeLabel[question?.type || pq.type] || question?.type || pq.type}</Badge>
                 <Badge variant={difficultyVariant[difficulty] as "green" | "amber" | "red"}>
@@ -3839,6 +3855,7 @@ function PreviewQuestionDetails({
   answerRecords,
   onUpdateStudentAnswer,
   onQuestionUpdated,
+  onEditAttributes,
   visibility,
   canEditScore,
   onUpdateScore,
@@ -3860,6 +3877,7 @@ function PreviewQuestionDetails({
   answerRecords: AnswerRecord[];
   onUpdateStudentAnswer: (studentId: string, questionId: string, score: AnswerScore | null) => Promise<void>;
   onQuestionUpdated: (question: Question) => void;
+  onEditAttributes?: (question: Question) => void;
   visibility: PreviewSidebarVisibility;
   canEditScore: boolean;
   onUpdateScore: (pqId: string, score: number) => Promise<void>;
@@ -3950,6 +3968,12 @@ function PreviewQuestionDetails({
             <div data-testid={`exam-question-properties-${index + 1}`}>
               <div className="mb-2 flex flex-wrap items-center gap-1.5">
                 <span className="font-mono text-xs font-bold text-ink-500">第 {index + 1} 题</span>
+                {question && onEditAttributes && (
+                  <button type="button" onClick={() => onEditAttributes(question)}
+                    className="no-print rounded px-1.5 py-0.5 text-xs text-gold-700 hover:bg-gold-50">
+                    编辑题目属性
+                  </button>
+                )}
                 {scoreEditing ? (
                   <div className="no-print inline-flex items-center gap-1">
                     <Input

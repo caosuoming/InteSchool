@@ -32,6 +32,20 @@ describe("scanner device resource list", () => {
     });
   });
 
+  it("includes legacy sheets with student records even without an explicit publish flag", async () => {
+    const state = {
+      teachers: [{ id: "owner", schoolId: "school-1" }],
+      schools: [{ id: "school-1" }],
+      examPapers: [{ ...sheet("used", "school-1", false), teacherId: "owner", hasAnswerSheet: false }],
+      lectures: [],
+      answerRecords: [{ id: "record", studentId: "s1", questionId: "q1", lectureId: "used", score: "done", answeredAt: "2026-10-19T12:00:00Z" }],
+    } as unknown as AppState;
+    await runWithState(state, async () => {
+      const items = await scannerService.listPublishedAnswerSheets("school-1");
+      expect(items).toEqual([expect.objectContaining({ id: "used", type: "paper", publishedAt: "2026-10-19T12:00:00Z" })]);
+    });
+  });
+
   it("persists annotations and rejects cross-school and invalid paper associations", async () => {
     const owner = { id: "teacher-1", schoolId: "school-1" } as TeacherRecord;
     const other = { id: "teacher-2", schoolId: "school-2" } as TeacherRecord;
