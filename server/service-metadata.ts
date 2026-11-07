@@ -1449,6 +1449,15 @@ export const serviceParameters = {
       "patch",
       "duplicateDecision"
     ],
+    "markSameQuestion": [
+      "questionId",
+      "otherQuestionId",
+      "teacherId"
+    ],
+    "getSameQuestionKnowledgeSuggestions": [
+      "questionId",
+      "teacherId"
+    ],
     "deleteQuestion": [
       "id"
     ],
@@ -1592,9 +1601,14 @@ export const serviceParameters = {
       "backupReason",
       "targetStudentIds"
     ],
-    "saveAsOwnResource": [
+    "checkSaveQuestionDuplicates": [
       "backupId",
       "teacher"
+    ],
+    "saveAsOwnResource": [
+      "backupId",
+      "teacher",
+      "decision"
     ]
   },
   "settings": {
@@ -1787,10 +1801,16 @@ export const serviceParameters = {
     "listOutgoingShares": [
       "teacherId"
     ],
-    "acceptShare": [
+    "checkShareQuestionDuplicates": [
       "shareId",
       "toTeacherId",
       "toSchoolId"
+    ],
+    "acceptShare": [
+      "shareId",
+      "toTeacherId",
+      "toSchoolId",
+      "decision"
     ],
     "rejectShare": [
       "shareId"

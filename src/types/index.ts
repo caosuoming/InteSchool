@@ -1594,6 +1594,10 @@ export interface Question {
   /** 可叠加的题类，包括拆解时自动识别并经人工确认的题类。 */
   categories?: string[];
   isShared: boolean;
+  /** 人工确认的同一题身份组；题号和内容均保持独立。 */
+  sameQuestionGroupId?: string;
+  /** 与平台题目建立身份关联（不等同于从平台创建副本）。 */
+  sameQuestionDonationIds?: string[];
   /** 查重哈希：基于题干+选项+答案计算，用于入库查重 */
   duplicateHash?: string;
   /** 被哪些已发布的考试隐藏（考试到期前题库中不展示） */
@@ -1930,7 +1934,7 @@ export interface DonationRequest {
   resourceId: string;
   /** 从专辑发起捐赠时携带专辑 ID；服务端会校验并补全快照。 */
   albumId?: string;
-  duplicateAction?: "add" | "merge";
+  duplicateAction?: "add" | "same" | "merge";
   duplicateTargetDonationId?: string;
   mergeFields?: Partial<Record<DonationMergeField, DonationMergeChoice>>;
 }
@@ -2082,7 +2086,7 @@ export type DonationMergeFieldSource = "source" | "target" | "both";
 
 export interface DonationDecision {
   sourceResourceId: string;
-  action: "new" | "merge";
+  action: "new" | "same" | "merge";
   targetDonationId?: string;
   fields: {
     stem: DonationMergeFieldSource;
@@ -2143,7 +2147,7 @@ export interface PlatformSaveCheckResult {
 }
 
 export interface PlatformSaveDecision {
-  action: "new" | "merge";
+  action: "new" | "same" | "merge";
   targetResourceId?: string;
   fields: {
     stem: DonationMergeFieldSource;
@@ -2157,6 +2161,7 @@ export interface PlatformSaveResult {
   resourceType: ShareableResourceType;
   resourceId: string;
   merged: boolean;
+  linked?: boolean;
 }
 
 export interface PlatformSaveStatus {

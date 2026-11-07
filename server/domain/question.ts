@@ -19,6 +19,7 @@ import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { resourceSubject } from "../lib/resource-subject.js";
 import { knowledgeService } from "./knowledge.js";
 import { assertResourceCapacity } from "./quota.js";
+import { linkSameQuestions } from "./sameQuestion.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
   questionStemSimilarity,
@@ -495,6 +496,8 @@ export const questionService = {
         source.options,
       ),
       hiddenByExamIds: [],
+      sameQuestionGroupId: undefined,
+      sameQuestionDonationIds: undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -523,6 +526,8 @@ export const questionService = {
         if (q.id === id) {
           // 如果更新了知识点ID，扩展为所有同名分身
           const finalPatch = { ...patch };
+          delete finalPatch.sameQuestionGroupId;
+          delete finalPatch.sameQuestionDonationIds;
           if (finalPatch.knowledgePointIds) {
             finalPatch.knowledgePointIds = expandKnowledgePointAliases(
               finalPatch.knowledgePointIds,
@@ -549,6 +554,47 @@ export const questionService = {
     );
     if (!updated) throw new Error("题目不存在");
     return updated;
+  },
+
+  async markSameQuestion(questionId: string, otherQuestionId: string, teacherId: string): Promise<Question> {
+    const all = db.read("questions") as Question[];
+    const owned = all.find((q) => q.id === questionId && q.teacherId === teacherId);
+    if (!owned) throw new Error("无权标记此题目");
+    const other = all.find((q) => q.id === otherQuestionId &&
+      (q.schoolId === owned.schoolId || q.isShared));
+    if (!other || other.id === owned.id) throw new Error("要关联的题目不存在或无权访问");
+    if (questionStemSimilarity(owned.stem, other.stem) < HIGH_SIMILARITY_THRESHOLD) {
+      throw new Error("仅高度相似的题目可以标记为同一题");
+    }
+    linkSameQuestions(owned, other);
+    return (db.read("questions") as Question[]).find((q) => q.id === questionId)!;
+  },
+
+  async getSameQuestionKnowledgeSuggestions(questionId: string, teacherId: string): Promise<Array<{ id: string; name: string }>> {
+    const questions = db.read("questions") as Question[];
+    const question = questions.find((q) => q.id === questionId && q.teacherId === teacherId);
+    if (!question || !question.sameQuestionGroupId) return [];
+    const relatives = questions.filter((q) => q.id !== question.id
+      && q.sameQuestionGroupId === question.sameQuestionGroupId
+      && (q.schoolId === question.schoolId || q.isShared));
+    const donations = ((db.read("shareRecords") || []) as Array<{
+      resourceType: string; resourceSnapshot?: Question;
+      directorySnapshot?: { knowledgePoints: Array<{ name: string; selected: boolean }> };
+    }>).filter((record) => record.resourceType === "question" &&
+      record.resourceSnapshot?.sameQuestionGroupId === question.sameQuestionGroupId);
+    const donatedNames = new Set(donations.flatMap((record) =>
+      record.directorySnapshot?.knowledgePoints.filter((entry) => entry.selected).map((entry) => entry.name.trim()) || []));
+    const allPoints = [...(db.read("knowledgePoints") || []), ...(db.read("schoolKnowledgePoints") || [])] as Array<{
+      id: string; name: string; schoolId: string;
+    }>;
+    const names = new Set(allPoints.filter((point) =>
+      relatives.some((relative) => relative.knowledgePointIds.includes(point.id)))
+      .map((point) => point.name.trim()).filter(Boolean));
+    for (const name of donatedNames) names.add(name);
+    return allPoints.filter((point) =>
+      point.schoolId === question.schoolId && names.has(point.name.trim())
+      && !question.knowledgePointIds.includes(point.id))
+      .map(({ id, name }) => ({ id, name }));
   },
 
   async deleteQuestion(id: string): Promise<void> {

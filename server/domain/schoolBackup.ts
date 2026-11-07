@@ -13,6 +13,8 @@ import { db, computeDuplicateHash } from "../runtime-db.js";
 import { appendCopySuffix, delay, genId, maybeThrowError } from "../domain-shared.js";
 import { assertResourceCapacity } from "./quota.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
+import { linkSameQuestions } from "./sameQuestion.js";
+import { questionStemSimilarity, HIGH_SIMILARITY_THRESHOLD } from "../../src/lib/question-similarity.js";
 import {
   getSchoolResourceChapterTree,
   getSchoolResourceKnowledgeTree,
@@ -138,6 +140,8 @@ function duplicateComparableResource(
     "updatedAt",
     "platformSourceDonationIds",
     "schoolSourceBackupIds",
+    "sameQuestionDonationIds",
+    "sameQuestionGroupId",
   ]) {
     delete comparable[key];
   }
@@ -187,18 +191,9 @@ function findExistingPersonalResource(
 
   const snapshot = parseSnapshot<SchoolCopyResource>(backup);
   if (!snapshot) return undefined;
-  if (backup.resourceType === "question") {
-    const expectedHash = questionBackupHash(backup);
-    if (!expectedHash) return undefined;
-    return (owned as Question[]).find((question) =>
-      question.duplicateHash === expectedHash
-      || computeDuplicateHash(
-        stripCopySuffix(question.stem) as string,
-        question.answer,
-        question.options,
-      ) === expectedHash,
-    );
-  }
+  // For questions, matching content is not proof of previous saving:
+  // the teacher must decide whether to keep a new copy or link an existing question.
+  if (backup.resourceType === "question") return undefined;
   const expected = duplicateComparableResource(backup.resourceType, snapshot);
   return owned.find((resource) =>
     duplicateComparableResource(backup.resourceType, resource) === expected,
@@ -279,9 +274,7 @@ export const schoolBackupService = {
           item.schoolId === input.schoolId &&
           backupSubject(item) === subject &&
           item.resourceType === "question" &&
-          (item.sourceResourceId === input.sourceResourceId ||
-            (input.duplicateHash &&
-              questionBackupHash(item) === input.duplicateHash)),
+          item.sourceResourceId === input.sourceResourceId,
       );
       if (existing) {
         const merged: SchoolResourceBackup = {
@@ -575,9 +568,33 @@ export const schoolBackupService = {
    * 优先使用源资源进行完整复制；若源资源已被删除，则从 contentSnapshot 尽量还原
    * 返回新资源的类型与ID
    */
+  async checkSaveQuestionDuplicates(backupId: string, teacher: Teacher): Promise<Array<{
+    targetResourceId: string;
+    similarity: number;
+    sourceQuestion: Question;
+    targetQuestion: Question;
+  }>> {
+    const backup = (db.read("schoolBackups") as SchoolResourceBackup[]).find((item) => item.id === backupId);
+    if (!backup || backup.resourceType !== "question") return [];
+    if (!teacher.schoolId || teacher.schoolId !== backup.schoolId || backup.fromTeacherId === teacher.id) {
+      throw new Error("无权另存该校本资源");
+    }
+    const source = (db.read("questions") as Question[]).find((q) => q.id === backup.sourceResourceId)
+      || parseSnapshot<Question>(backup);
+    if (!source) return [];
+    return (db.read("questions") as Question[])
+      .filter((q) => q.teacherId === teacher.id && q.schoolId === teacher.schoolId)
+      .filter((q) => !q.schoolSourceBackupIds?.includes(backup.id))
+      .map((q) => ({ targetResourceId: q.id, targetQuestion: q, sourceQuestion: source,
+        similarity: questionStemSimilarity(stripCopySuffix(source.stem) as string, stripCopySuffix(q.stem) as string) }))
+      .filter((candidate) => candidate.similarity >= HIGH_SIMILARITY_THRESHOLD)
+      .sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+  },
+
   async saveAsOwnResource(
     backupId: string,
     teacher: Teacher,
+    decision?: { action: "new" | "same"; targetResourceId?: string },
   ): Promise<{
     newResourceId: string;
     resourceType: SchoolBackupResourceType;
@@ -600,12 +617,28 @@ export const schoolBackupService = {
     const schoolId = teacher.schoolId;
     const existing = findExistingPersonalResource(backup, teacherId, schoolId);
     if (existing) {
+      if (backup.resourceType === "question") {
+        const source = (db.read("questions") as Question[]).find((q) => q.id === backup.sourceResourceId)
+          || parseSnapshot<Question>(backup);
+        if (source) linkSameQuestions(source, existing as Question);
+      }
       addSchoolBackupSource(backup.resourceType, existing.id, backup.id);
       return {
         newResourceId: existing.id,
         resourceType: backup.resourceType,
         deduplicated: true,
       };
+    }
+    if (backup.resourceType === "question") {
+      const matches = await this.checkSaveQuestionDuplicates(backupId, teacher);
+      if (matches.length && !decision) throw new Error("发现高度相似题目，请选择新增或标记为同一题");
+      if (decision?.action === "same") {
+        const selected = matches.find((match) => match.targetResourceId === decision.targetResourceId);
+        if (!selected) throw new Error("目标题目不存在或不符合相似度要求");
+        linkSameQuestions(selected.sourceQuestion, selected.targetQuestion);
+        addSchoolBackupSource("question", selected.targetResourceId, backup.id);
+        return { newResourceId: selected.targetResourceId, resourceType: "question", deduplicated: true };
+      }
     }
     assertResourceCapacity(teacherId, backup.resourceType);
     const directory = syncPersonalResourceDirectories(
@@ -676,6 +709,7 @@ export const schoolBackupService = {
           updatedAt: now,
         };
         db.update("questions", (list) => [...list, copy]);
+        linkSameQuestions(original, copy);
         break;
       }
       case "examPaper": {
