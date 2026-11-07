@@ -163,6 +163,64 @@ export const examPaperService = {
     return withDerivedKnowledgePoints(updated);
   },
 
+  async markPaperDownloaded(id: string): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      updated = item.paperDownloadedAt ? item : { ...item, paperDownloadedAt: new Date().toISOString() };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async invalidatePaperDownload(id: string): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      updated = { ...item, paperDownloadedAt: undefined };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async markAnswerSheetExported(id: string, settings?: ExamPaper["answerSheetSettings"]): Promise<ExamPaper> {
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      if (!item.hasAnswerSheet) throw new Error("请先制作答题卡");
+      updated = {
+        ...item,
+        ...(settings ? { answerSheetSettings: settings } : {}),
+        answerSheetExportedAt: item.answerSheetExportedAt || new Date().toISOString(),
+      };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
+  async invalidateAnswerSheet(id: string): Promise<ExamPaper> {
+    assertDocumentNotUsed(id);
+    let updated: ExamPaper | undefined;
+    db.update("examPapers", (list) => list.map((item) => {
+      if (item.id !== id) return item;
+      if (item.answerSheetPublishedAt) throw new Error("请先撤回发布答题卡再作废");
+      updated = {
+        ...item,
+        hasAnswerSheet: undefined,
+        answerSheetCreatedAt: undefined,
+        answerSheetRevisionId: undefined,
+        answerSheetSettings: undefined,
+        answerSheetExportedAt: undefined,
+      };
+      return updated;
+    }));
+    if (!updated) throw new Error("试卷不存在");
+    return withDerivedKnowledgePoints(updated);
+  },
+
   async markAnswerSheetCreated(
     id: string,
     settings?: ExamPaper["answerSheetSettings"],
@@ -311,6 +369,8 @@ export const examPaperService = {
       isExtractCopy: undefined,
       sourceResourceId: undefined,
       extractStatus: undefined,
+      paperDownloadedAt: undefined,
+      answerSheetExportedAt: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
       answerSheetRevisionId: undefined,
@@ -448,6 +508,8 @@ export const examPaperService = {
       originalFileName: undefined,
       originalFileType: undefined,
       originalFileSize: undefined,
+      paperDownloadedAt: undefined,
+      answerSheetExportedAt: undefined,
       hasAnswerSheet: undefined,
       answerSheetCreatedAt: undefined,
       answerSheetRevisionId: undefined,

@@ -35,6 +35,10 @@ export function isPdfDocumentResource(
   return originalDocumentFileType(resource) === "pdf";
 }
 
+export function isExamPaperStructureLocked(paper: ExamPaper | null | undefined): boolean {
+  return isDocumentStructureLocked(paper) || Boolean(paper?.paperDownloadedAt || paper?.answerSheetExportedAt);
+}
+
 export function isDocumentStructureLocked(resource: DocumentResource | null | undefined): boolean {
   return Boolean(resource && (resource.originalFileUrl || resource.isExtractCopy));
 }

@@ -107,7 +107,7 @@ import {
 } from "@/lib/docx";
 import { treeNameMap } from "@/lib/basket-audience";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
-import { isDocumentStructureLocked } from "@/lib/document-resource";
+import { isExamPaperStructureLocked, isDocumentStructureLocked } from "@/lib/document-resource";
 import { getProjectSections } from "./project-sections";
 import { basketsForAudience, selectAssignmentQuestions } from "./assignment-selection";
 import type { KnowledgeMastery } from "@/services/analytics";
@@ -261,7 +261,7 @@ type ExamPaperSaveState = Pick<
 >;
 
 function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
-  const structureLocked = isDocumentStructureLocked(paper);
+  const structureLocked = isExamPaperStructureLocked(paper);
   return {
     title: paper.title,
     description: paper.description || "",
@@ -297,7 +297,7 @@ export default function ExamPaperEditorPage() {
   const [paper, setPaper] = useState<ExamPaper | null>(null);
   const [hasAnswerRecords, setIsUsedDocument] = useState(false);
   const isUsedDocument = hasAnswerRecords || Boolean(paper?.answerSheetPublishedAt);
-  const isStructureLocked = isDocumentStructureLocked(paper);
+  const isStructureLocked = isExamPaperStructureLocked(paper);
   const isEditingLocked = isStructureLocked || isUsedDocument;
   const [questions, setQuestions] = useState<Record<string, Question>>({});
   const [loading, setLoading] = useState(true);
@@ -1188,7 +1188,7 @@ export default function ExamPaperEditorPage() {
   // 添加题目确认
   const handleConfirmAdd = async () => {
     if (isEditingLocked) {
-      toast.warning(isUsedDocument ? "文档已用，不能再编辑" : "上传原稿和拆解稿不能增删或替换题目");
+      toast.warning(isUsedDocument ? "文档已用，不能再编辑" : "当前试卷编排已锁定，作废下载记录后可重新编辑");
       return;
     }
     if (!addSource || addSource === "choose" || selectedQuestionIds.length === 0) {
@@ -1479,6 +1479,12 @@ export default function ExamPaperEditorPage() {
     if (!paper) return;
     setDownloading(true);
     try {
+      if (hasUnsavedChanges) {
+        if (isUsedDocument) throw new Error("文档已用，无法保存未提交的修改");
+        const saved = await examPaperService.updatePaper(paper.id, buildPaperPatch());
+        setPaper(saved);
+        setSavedDraft(examPaperSaveStateFromPaper(saved));
+      }
       await downloadExamPaperDocxVariants({
         ...paper,
         title,
@@ -1493,6 +1499,9 @@ export default function ExamPaperEditorPage() {
         layoutMode,
         projects,
       }, questions, downloadModes);
+      const updated = await examPaperService.markPaperDownloaded(paper.id);
+      setPaper(updated);
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
       setDownloadModalOpen(false);
       toast.success(
         downloadModes.length > 1 ? `已下载 ${downloadModes.length} 个试卷版本` : "试卷已下载",
@@ -1502,6 +1511,30 @@ export default function ExamPaperEditorPage() {
       toast.error("下载失败", error instanceof Error ? error.message : "无法生成试卷文档");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleInvalidateDownload = async () => {
+    if (!paper || !window.confirm("作废本次试卷下载记录？作废后原下载文件应停止使用。")) return;
+    try {
+      const updated = await examPaperService.invalidatePaperDownload(paper.id);
+      setPaper(updated);
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
+      toast.success("试卷下载已作废");
+    } catch (error) {
+      toast.error("下载作废失败", error instanceof Error ? error.message : undefined);
+    }
+  };
+
+  const handleInvalidateAnswerSheet = async () => {
+    if (!paper || !window.confirm("作废当前答题卡？原答题卡和二维码将不再使用，需重新制作。")) return;
+    try {
+      const updated = await examPaperService.invalidateAnswerSheet(paper.id);
+      setPaper(updated);
+      setSavedDraft(examPaperSaveStateFromPaper(updated));
+      toast.success("答题卡已作废");
+    } catch (error) {
+      toast.error("答题卡作废失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -1790,6 +1823,16 @@ export default function ExamPaperEditorPage() {
             <Download className="w-4 h-4" />
             下载
           </Button>
+          {paper?.paperDownloadedAt && paper.teacherId === teacher?.id && !prepTaskId && (
+            <Button variant="outline" onClick={() => void handleInvalidateDownload()}>
+              下载作废
+            </Button>
+          )}
+          {paper?.answerSheetExportedAt && paper.teacherId === teacher?.id && !prepTaskId && (
+            <Button variant="outline" onClick={() => void handleInvalidateAnswerSheet()}>
+              答题卡作废
+            </Button>
+          )}
           <Button
             variant="gold"
             onClick={() => navigateWithDraft(`/exam-papers/${id}${prepTaskId ? `?prepTask=${prepTaskId}` : ""}`)}
@@ -2161,6 +2204,12 @@ export default function ExamPaperEditorPage() {
         }
       />
 
+      {isStructureLocked && !isUsedDocument && (paper?.paperDownloadedAt || paper?.answerSheetExportedAt) && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
+          <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span>试卷已下载或答题卡已导出，题目编排已锁定。可继续编辑题目属性，作废对应下载记录后可调整编排。</span>
+        </div>
+      )}
       {isUsedDocument && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
@@ -2398,7 +2447,9 @@ export default function ExamPaperEditorPage() {
             {isStructureLocked && (
               <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-2 text-xs text-amber-900">
                 <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                <span>上传原稿和拆解稿可修改文档属性与题目分值；题目内容、数量和顺序保持原稿结构。</span>
+                <span>{isDocumentStructureLocked(paper)
+                  ? "上传原稿和拆解稿可修改文档属性与题目分值；题目内容、数量和顺序保持原稿结构。"
+                  : "试卷已下载或答题卡已导出，不能切换编排、增删或替换题目；题目属性仍可编辑。"}</span>
               </div>
             )}
 
@@ -2907,7 +2958,7 @@ export default function ExamPaperEditorPage() {
               {isEditingLocked ? (
                 <div className="flex items-start gap-2 rounded-md bg-ink-50 px-2.5 py-2 text-[11px] leading-relaxed text-ink-500">
                   <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                  <span>{isUsedDocument ? "当前文档已用，不能再编辑。" : "当前文档结构已锁定，仅可调整题目分值。"}</span>
+                  <span>{isUsedDocument ? "当前文档已用，不能再编辑。" : "当前文档结构已锁定，题目属性仍可编辑。"}</span>
                 </div>
               ) : (
                 <>

@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   listPapers: vi.fn(),
   listLectures: vi.fn(),
   updatePaper: vi.fn(),
+  markPaperDownloaded: vi.fn(),
+  invalidatePaperDownload: vi.fn(),
+  invalidateAnswerSheet: vi.fn(),
   duplicatePaper: vi.fn(),
   listQuestions: vi.fn(),
   getQuestion: vi.fn(),
@@ -48,6 +51,9 @@ vi.mock("@/services/examPaper", () => ({
   examPaperService: {
     getPaper: mocks.getPaper,
     updatePaper: mocks.updatePaper,
+    markPaperDownloaded: mocks.markPaperDownloaded,
+    invalidatePaperDownload: mocks.invalidatePaperDownload,
+    invalidateAnswerSheet: mocks.invalidateAnswerSheet,
     duplicatePaper: mocks.duplicatePaper,
     listPapers: mocks.listPapers,
   },
@@ -289,6 +295,9 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listLectures.mockResolvedValue([]);
     mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...paper, ...patch }));
     mocks.duplicatePaper.mockResolvedValue({ ...paper, id: "paper-copy", isExtractCopy: false });
+    mocks.markPaperDownloaded.mockResolvedValue({ ...paper, paperDownloadedAt: "2026-11-07T00:00:00Z" });
+    mocks.invalidatePaperDownload.mockResolvedValue({ ...paper, paperDownloadedAt: undefined });
+    mocks.invalidateAnswerSheet.mockResolvedValue({ ...paper, answerSheetExportedAt: undefined, hasAnswerSheet: undefined });
     mocks.listQuestions.mockResolvedValue([question]);
     mocks.getQuestion.mockResolvedValue(question);
     mocks.updateQuestion.mockImplementation(async (_id, patch) => ({ ...question, ...patch }));
@@ -1327,6 +1336,35 @@ describe("ExamPaperEditorPage preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "下一步" }));
     expect(screen.getByLabelText("薄弱项题数")).toHaveValue(3);
     expect(screen.getByLabelText("未练类型题数（未练知识点）")).toHaveValue(3);
+  });
+
+  it("locks arrangement after downloading and allows explicit download invalidation", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, isExtractCopy: false, paperDownloadedAt: "2026-11-07T00:00:00Z" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      renderPage();
+      const button = await screen.findByRole("button", { name: "下载作废" });
+      fireEvent.click(button);
+      await waitFor(() => expect(mocks.invalidatePaperDownload).toHaveBeenCalledWith(paper.id));
+      await waitFor(() => expect(screen.queryByRole("button", { name: "下载作废" })).not.toBeInTheDocument());
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it("keeps paper attributes editable after export while blocking arrangement changes", async () => {
+    mocks.getPaper.mockResolvedValue({
+      ...paper,
+      isExtractCopy: false,
+      contentBlocks: [],
+      paperDownloadedAt: "2026-11-07T00:00:00Z",
+    });
+    renderEditorPage();
+    expect(await screen.findByText(/试卷已下载或答题卡已导出，题目编排已锁定/)).toBeInTheDocument();
+    expect(screen.getByLabelText("文档名")).not.toBeDisabled();
+    expect(screen.queryByRole("button", { name: "按题型" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "按项目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加题目" })).not.toBeInTheDocument();
   });
 
   it("locks an already-used paper against further editing", async () => {

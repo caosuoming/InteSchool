@@ -899,6 +899,9 @@ interface AnswerSheetComposerProps {
   published?: boolean;
   onPublicationChange?: (publish: boolean, settings: AnswerSheetSettings) => Promise<void>;
   onSettingsChange?: (settings: AnswerSheetSettings) => void;
+  onExport?: (settings: AnswerSheetSettings) => Promise<void>;
+  onInvalidate?: () => Promise<void>;
+  exported?: boolean;
   onBack: () => void;
 }
 
@@ -944,6 +947,9 @@ export function AnswerSheetComposer({
   published = false,
   onPublicationChange,
   onSettingsChange,
+  onExport,
+  onInvalidate,
+  exported = false,
   onBack,
 }: AnswerSheetComposerProps) {
   const [settings, setSettings] = useState<AnswerSheetSettings>(() => buildInitialSettings(initialSettings));
@@ -1017,11 +1023,23 @@ export function AnswerSheetComposer({
     setExporting(true);
     try {
       await downloadAnswerSheetPdf(pages, `${title}_答题卡`, settings.paperSize);
+      await onExport?.(settings);
       toast.success("答题卡 PDF 已下载");
     } catch (error) {
       toast.error("答题卡 PDF 下载失败", error instanceof Error ? error.message : undefined);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const printSheet = () => {
+    try {
+      printAnswerSheet(previewPages(), settings.paperSize);
+      void onExport?.(settings).catch((error) => {
+        toast.error("记录答题卡打印失败", error instanceof Error ? error.message : undefined);
+      });
+    } catch (error) {
+      toast.error("打印答题卡失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -1554,11 +1572,16 @@ export function AnswerSheetComposer({
                         {published ? "撤回发布" : "发布答题卡"}
                       </Button>
                     )}
+                    {exported && onInvalidate && (
+                      <Button variant="outline" onClick={() => void onInvalidate()}>
+                        答题卡作废
+                      </Button>
+                    )}
                     <Button variant="gold" loading={exporting} disabled={exporting} onClick={() => void downloadPdf()}>
                       <Download className="h-4 w-4" />
                       下载答题卡
                     </Button>
-                    <Button variant="outline" onClick={() => printAnswerSheet(previewPages(), settings.paperSize)}>
+                    <Button variant="outline" onClick={printSheet}>
                       <Printer className="h-4 w-4" />
                       打印答题卡
                     </Button>
