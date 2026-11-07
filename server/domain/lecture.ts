@@ -368,6 +368,7 @@ export const lectureService = {
       title: newTitle || `${source.title}（副本）`,
       status: "draft",
       version: 1,
+      excludedPendingQuestionIds: [],
       sections: editableSections,
       knowledgePointIds: [],
       contentBlocks: undefined,

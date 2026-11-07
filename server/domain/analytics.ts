@@ -90,8 +90,7 @@ function collectDocumentQuestionIds(document: Lecture | ExamPaper): Set<string> 
         .map((block) => [block.examPaperQuestionId!, block.questionId!]),
     );
     const ids = new Set(document.questions
-      .map((question) => question.questionId || linkedQuestionIds.get(question.id))
-      .filter((id): id is string => Boolean(id)));
+      .map((question) => question.questionId || linkedQuestionIds.get(question.id) || `exam-item:${document.id}:${question.id}`));
     if (ids.size) return ids;
   } else {
     const ids = collectLectureQuestionIds(document.sections || []);
@@ -210,7 +209,8 @@ export const analyticsService = {
       addDocumentAssignments(
         lecture.classIds,
         lecture.studentIds,
-        collectDocumentQuestionIds(lecture),
+        Array.from(collectDocumentQuestionIds(lecture))
+          .filter((questionId) => !lecture.excludedPendingQuestionIds?.includes(questionId)),
       );
     }
 
@@ -218,13 +218,82 @@ export const analyticsService = {
       addDocumentAssignments(
         paper.classIds,
         paper.studentIds,
-        collectDocumentQuestionIds(paper),
+        Array.from(collectDocumentQuestionIds(paper))
+          .filter((questionId) => !paper.excludedPendingQuestionIds?.includes(questionId)),
       );
     }
 
     return Array.from(pendingByStudent.entries()).flatMap(([studentId, questionIds]) =>
       Array.from(questionIds).map((questionId) => ({ studentId, questionId })),
     );
+  },
+
+  /** 更新文档的待做范围，以及所选题目对使用对象的完成状态。 */
+  async batchSetDocumentQuestionStatus(
+    documentId: string,
+    selectedQuestionIds: string[],
+    mode: "done" | "pending",
+  ): Promise<{ created: number; cleared: number; excluded: number }> {
+    await delay(200);
+    if (mode !== "done" && mode !== "pending") throw new Error("不支持的答题状态");
+    const lecture = (db.read("lectures") as Lecture[]).find((item) => item.id === documentId);
+    const paper = (db.read("examPapers") as ExamPaper[]).find((item) => item.id === documentId);
+    if (Boolean(lecture) === Boolean(paper)) throw new Error("文档不存在或编号冲突");
+    const document = (lecture || paper)!;
+    const available = collectDocumentQuestionIds(document);
+    const selected = new Set(selectedQuestionIds);
+    if (selected.size !== selectedQuestionIds.length || Array.from(selected).some((id) => !available.has(id))) {
+      throw new Error("所选题目不属于当前文档");
+    }
+
+    const students = (db.read("students") as Student[]).filter((student) => student.status === "active");
+    const personalClassIdsByStudent = new Map<string, Set<string>>();
+    for (const personalClass of (db.read("personalClasses") || []) as PersonalClass[]) {
+      for (const studentId of personalClass.studentIds) {
+        const ids = personalClassIdsByStudent.get(studentId) || new Set<string>();
+        ids.add(personalClass.id);
+        personalClassIdsByStudent.set(studentId, ids);
+      }
+    }
+    const audience = selectedAudienceStudentIds(document.classIds, document.studentIds, students, personalClassIdsByStudent);
+    if (audience.length === 0) throw new Error("请先设置文档使用对象");
+    const audienceIds = new Set(audience);
+    const now = new Date().toISOString();
+    const records = db.read("answerRecords") as AnswerRecord[];
+    const existing = new Set(records
+      .filter((record) => record.lectureId === documentId && audienceIds.has(record.studentId))
+      .map((record) => `${record.studentId}:${record.questionId}`));
+    const created: AnswerRecord[] = [];
+    for (const studentId of audience) {
+      for (const questionId of selected) {
+        if (mode !== "done" || existing.has(`${studentId}:${questionId}`)) continue;
+        created.push({
+          id: genId("ar"), studentId, questionId, lectureId: documentId,
+          isCorrect: false, score: "done", source: "manual", answeredAt: now,
+        });
+      }
+    }
+    const cleared = mode === "pending"
+      ? records.filter((record) => record.lectureId === documentId
+        && audienceIds.has(record.studentId) && selected.has(record.questionId)
+        && record.score === "done").length
+      : 0;
+    const remaining = mode === "pending"
+      ? records.filter((record) => !(record.lectureId === documentId
+        && audienceIds.has(record.studentId) && selected.has(record.questionId)
+        && record.score === "done"))
+      : records;
+    if (created.length || cleared) db.update("answerRecords", () => [...remaining, ...created]);
+    if (created.length) {
+      db.update("questions", (items) => items.map((question) => selected.has(question.id)
+        ? { ...question, lastUsedAt: now } : question));
+    }
+    const excludedPendingQuestionIds = Array.from(available).filter((id) => !selected.has(id));
+    if (lecture) db.update("lectures", (items) => items.map((item) => item.id === documentId
+      ? { ...item, excludedPendingQuestionIds, updatedAt: now } : item));
+    else db.update("examPapers", (items) => items.map((item) => item.id === documentId
+      ? { ...item, excludedPendingQuestionIds, updatedAt: now } : item));
+    return { created: created.length, cleared, excluded: excludedPendingQuestionIds.length };
   },
 
   /** 获取一道题的所有答题记录（含其他学生，供参考） */

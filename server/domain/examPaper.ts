@@ -299,6 +299,7 @@ export const examPaperService = {
       ...source,
       id: genId("exam"),
       title: newTitle || `${source.title}（副本）`,
+      excludedPendingQuestionIds: [],
       status: "draft",
       managementCategory: "homework",
       assignedDate: undefined,
