@@ -356,7 +356,7 @@ describe("StudentInteractionPage", () => {
     });
   });
 
-  it("shows the two most recent homework records and subject exam scores beside the student name", async () => {
+  it("shows the most recent homework records and a scrollable subject score timeline", async () => {
     vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([
       { id: "kp-1", schoolId: "school-1", teacherId: "teacher-1", parentId: null, name: "函数", order: 1, level: 0 },
       { id: "kp-2", schoolId: "school-1", teacherId: "teacher-1", parentId: null, name: "数列", order: 2, level: 0 },
@@ -391,8 +391,57 @@ describe("StudentInteractionPage", () => {
     expect(screen.queryByText("集合")).not.toBeInTheDocument();
     expect(screen.getByText("第三次月考")).toBeInTheDocument();
     expect(screen.getByText("第二次月考")).toBeInTheDocument();
-    expect(screen.queryByText("第一次月考")).not.toBeInTheDocument();
-    expect(screen.getByText("最近考试成绩 · 数学")).toBeInTheDocument();
+    expect(screen.getByText("第一次月考")).toBeInTheDocument();
+    expect(screen.getByText("历次单科成绩 · 数学")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /甲同学单科成绩与名次折线图/ })).toBeInTheDocument();
+    expect(screen.getByTestId("rank-trend-scroll")).toHaveClass("overflow-x-auto");
+  });
+
+
+  it("shows class ranking trends when selecting a class group and returns to student details", async () => {
+    const user = userEvent.setup();
+    const exam = (id: string, date: string, ownAverage: number, otherAverage: number) => ({
+      id, cohortKey: "2029", cohortLabel: "2029届高一", name: `${id}月考`, examDate: date,
+      subjects: ["数学"], subjectAverages: { 数学: 80 }, createdAt: `${date}T00:00:00.000Z`,
+      records: [],
+      classSummaries: [
+        { classId: "class-1", className: "高一（1）班", studentCount: 2, subjectAverages: { 数学: ownAverage }, rawTotalAverage: null, assignedTotalAverage: null },
+        { classId: "class-2", className: "高一（2）班", studentCount: 1, subjectAverages: { 数学: otherAverage }, rawTotalAverage: null, assignedTotalAverage: null },
+      ],
+    });
+    vi.mocked(gradeService.getQueryData).mockResolvedValue({ ...emptyGradeQueryData, exams: [
+      exam("二", "2026-09-01", 85, 80), exam("一", "2026-08-01", 75, 90),
+    ] });
+    render(<StudentInteractionPage embedded />);
+    const button = await screen.findByRole("button", { name: /高一（1）班/ });
+    await user.click(button);
+    expect(screen.getByText("高一（1）班 · 历次考试班级名次")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /高一（1）班班级考试名次折线图/ })).toBeInTheDocument();
+    expect(screen.getByText(/按数学班级均分/)).toBeInTheDocument();
+    expect(screen.getByText("第2名")).toBeInTheDocument();
+    expect(screen.getByText("第1名")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "甲同学" }));
+    expect(screen.getByText(/学号：001/)).toBeInTheDocument();
+    expect(screen.queryByText("高一（1）班 · 历次考试班级名次")).not.toBeInTheDocument();
+  });
+
+  it("allows homeroom teachers to open all-subject score histories without exposing them to ordinary teachers", async () => {
+    const user = userEvent.setup();
+    const exam = {
+      id: "exam-full", cohortKey: "2029", cohortLabel: "2029届高一", name: "期中考试", examDate: "2026-10-01",
+      subjects: ["数学", "语文"], subjectAverages: { 数学: 80, 语文: 85 }, classSummaries: [], createdAt: "2026-10-01T00:00:00.000Z",
+      records: [{ id: "record-full", studentId: "student-1", studentName: "甲同学", studentNo: "001", classId: "class-1", className: "高一（1）班", scores: { 数学: 94, 语文: 87 }, assignedScores: { 数学: 95, 语文: 90 }, rawTotal: 181, assignedTotal: 185, gradeRank: 2, classRank: 1, subjectRanks: { 数学: 3, 语文: 4 }, subjectRankScopes: { 数学: "cohort" as const, 语文: "cohort" as const } }],
+    };
+    vi.mocked(gradeService.getQueryData).mockResolvedValue({ ...emptyGradeQueryData, scope: "homeroom", homeroomClassIds: ["class-1"], fullClassIds: ["class-1"], exams: [exam] });
+    render(<StudentInteractionPage embedded />);
+    const more = await screen.findByRole("button", { name: "更多" });
+    await user.click(more);
+    expect(screen.getByText("甲同学 · 全科历次成绩")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "历次考试各学科成绩折线图" })).toBeInTheDocument();
+    expect(screen.getByText("语文")).toBeInTheDocument();
+    expect(screen.getByLabelText(/期中考试 数学 95分/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /高一（2）班/ }));
+    expect(screen.queryByText("甲同学 · 全科历次成绩")).not.toBeInTheDocument();
   });
 
   it("shows homework attitude and evaluation in the interaction timeline", async () => {
