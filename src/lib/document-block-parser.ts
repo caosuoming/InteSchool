@@ -1406,6 +1406,69 @@ function continuesSharedStemExtendedInquiry(
   return leadingNestedSubQuestionIndex(line) === (markers.at(-1)?.index || 0) + 1;
 }
 
+function recoverSequentialMathQuestionLines(lines: string[], config: DocumentParseConfig): string[] {
+  if (config.subject?.trim() !== "数学") return lines;
+
+  const sections: number[] = [];
+  const known = new Map<number, number>();
+  const candidates = new Map<number, { number: number; rest: string }>();
+  let section = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (isHeading(line, config) || isProjectHeading(line, config) || isKnowledgeBlockStart(line)) section += 1;
+    sections.push(section);
+    if (!line) continue;
+
+    const explicit = extractLeadingQuestionNumber(line);
+    if (explicit && isQuestionStart(line, config)) {
+      known.set(index, Number(explicit.number));
+      continue;
+    }
+
+    const match = /^([\d０-９]{1,4})(.*)$/.exec(line);
+    if (!match) continue;
+    const rest = match[2].replace(/^[\s\u3000。·•:：\-－—?？]+/, "").trim();
+    if (rest.length < 5 || !/^[（(【［\u3400-\u9fff]/.test(rest)) continue;
+    // A number embedded in a formula or measurement is not a question label.
+    if (!/^(?:[（(【［]|已知|设|若|求|计算|证明|判断|试|下列|选择|指出|写出|解答|阅读|根据|关于|如图|在|有)/.test(rest)) continue;
+    candidates.set(index, { number: Number(normalizeQuestionNumber(match[1])), rest });
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [index, candidate] of candidates) {
+      if (known.has(index) || candidate.number <= 0) continue;
+      let previous: number | undefined;
+      let next: number | undefined;
+      for (let cursor = index - 1; cursor >= 0 && sections[cursor] === sections[index]; cursor -= 1) {
+        if (known.has(cursor)) {
+          previous = known.get(cursor);
+          break;
+        }
+      }
+      for (let cursor = index + 1; cursor < lines.length && sections[cursor] === sections[index]; cursor += 1) {
+        if (known.has(cursor)) {
+          next = known.get(cursor);
+          break;
+        }
+      }
+      if (candidate.number === (previous ?? -1) + 1 || candidate.number + 1 === next) {
+        known.set(index, candidate.number);
+        changed = true;
+      }
+    }
+  }
+
+  return lines.map((line, index) => {
+    const candidate = candidates.get(index);
+    return candidate && known.get(index) === candidate.number
+      ? `${candidate.number}. ${candidate.rest}`
+      : line;
+  });
+}
+
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
@@ -1462,7 +1525,8 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     currentQuestionField = "content";
   };
 
-  const lines = expandIndependentSubQuestionLines(content, config);
+  const normalizedContent = recoverSequentialMathQuestionLines(content.replace(/\r\n?/g, "\n").split("\n"), config).join("\n");
+  const lines = expandIndependentSubQuestionLines(normalizedContent, config);
   const structuredFieldAhead = new Array<boolean>(lines.length).fill(false);
   let hasSeenStructuredField = false;
   for (let index = lines.length - 1; index >= 0; index -= 1) {

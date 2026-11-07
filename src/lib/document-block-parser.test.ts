@@ -105,6 +105,56 @@ describe("document block parser", () => {
     });
   });
 
+  it("recovers consecutive math questions when their number punctuation is missing", () => {
+    const blocks = parseDocumentBlocks([
+      "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：",
+      "（1）任意一个质数都是奇数；",
+      "（2）所有实数的绝对值都是正数。",
+      "本题考查全称量词与存在量词。",
+      "62（苏教版必修第一册）试判断下列命题的真假：",
+      "（1）∀x∈R，2x²-3x+4>0；",
+      "（2）∃x∈N，x²≤x。",
+      "63。已知集合 A={1,2}，求其子集个数。",
+      "64. 求方程 x²=1 的解。",
+    ].join("\n"), { ...config, subject: "数学" });
+
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.content)).toEqual([
+      "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：\n（1）任意一个质数都是奇数；\n（2）所有实数的绝对值都是正数。\n本题考查全称量词与存在量词。",
+      "62. （苏教版必修第一册）试判断下列命题的真假：\n（1）∀x∈R，2x²-3x+4>0；\n（2）∃x∈N，x²≤x。",
+      "63. 已知集合 A={1,2}，求其子集个数。",
+      "64. 求方程 x²=1 的解。",
+    ]);
+  });
+
+  it("recovers a missing first math question marker using the following numbered question", () => {
+    const blocks = parseDocumentBlocks([
+      "61: 已知 x+1=2，求 x。",
+      "62. 已知 y+1=3，求 y。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.content)).toEqual([
+      "61. 已知 x+1=2，求 x。",
+      "62. 已知 y+1=3，求 y。",
+    ]);
+  });
+
+  it("does not mistake math expressions, quantities, or unanchored numbers for consecutive questions", () => {
+    const text = [
+      "61. 已知 x 的取值范围，求 x。",
+      "62x+1=0 为另一个条件。",
+      "62 个数据组成一组样本。",
+      "63 已知另一个条件，求其值。",
+      "64. 求最后一个问题的解。",
+    ].join("\n");
+    const mathBlocks = parseDocumentBlocks(text, { ...config, subject: "数学" });
+    const otherBlocks = parseDocumentBlocks(text, { ...config, subject: "语文" });
+    expect(mathBlocks.filter((block) => block.type === "question").map((block) => block.content)).toEqual([
+      "61. 已知 x 的取值范围，求 x。\n62x+1=0 为另一个条件。\n62 个数据组成一组样本。",
+      "63. 已知另一个条件，求其值。",
+      "64. 求最后一个问题的解。",
+    ]);
+    expect(otherBlocks.filter((block) => block.type === "question")).toHaveLength(2);
+  });
+
   it("keeps an established numbered list inside a summary", () => {
     const blocks = parseDocumentBlocks(
       [
