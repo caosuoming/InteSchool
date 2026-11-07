@@ -25,9 +25,9 @@ export function PreviewSidebarControls({ value, onChange }: PreviewSidebarContro
     <div
       role="toolbar"
       aria-label="题目侧栏显示控制"
-      className="flex flex-wrap items-center gap-1.5"
+      className="flex flex-col items-stretch gap-1.5"
     >
-      <span className="mr-1 text-[11px] font-medium text-ink-400">显示内容</span>
+      <span className="mb-0.5 text-[11px] font-medium text-ink-400">显示内容</span>
       {items.map(({ key, label, icon: Icon }) => {
         const active = value[key];
         return (
@@ -37,7 +37,7 @@ export function PreviewSidebarControls({ value, onChange }: PreviewSidebarContro
             aria-pressed={active}
             onClick={() => onChange({ ...value, [key]: !active })}
             className={cn(
-              "no-print inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+              "no-print inline-flex w-full items-center justify-start gap-1.5 rounded-md border px-2.5 py-1.5 text-left text-xs font-medium transition-colors",
               active
                 ? "border-gold-200 bg-gold-50 text-gold-700"
                 : "border-ink-200 bg-paper text-ink-400 hover:border-ink-300 hover:text-ink-600",

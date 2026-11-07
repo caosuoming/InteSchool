@@ -713,19 +713,22 @@ export default function LecturePreviewPage() {
         )}
       >
         <aside className="preview-sticky-rail no-print">
-          <div className="preview-sidebar-intro">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-serif text-sm font-semibold text-ink-900">题目属性与使用情况</div>
-                <div className="mt-1 text-xs leading-5 text-ink-400">选择具体学生后可重新设置该题的答题情况</div>
-              </div>
-
-            </div>
-          </div>
-          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
+          <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="lecture-preview-details">
             <PreviewSidebarControls
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
+            />
+            <DocumentQuestionBatchActions
+              schoolId={schoolId}
+              questionIds={questionIds}
+              disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
+              onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+              markAllButton={(
+                <Button variant="outline" size="sm" className="w-full justify-start" onClick={markAllQuestionsUsed}
+                  loading={markingAllDone} disabled={students.length === 0 || questionIds.length === 0}>
+                  <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
+                </Button>
+              )}
             />
           </div>
         </aside>
