@@ -549,14 +549,16 @@ export default function QuestionBankPage({
     if (!teacher) return;
     let cancelled = false;
     (async () => {
-      const [baseChapterTree, baseKnowledgeTree] = await Promise.all([
+      const [baseChapterTree, baseKnowledgeTree, baseMethodTree] = await Promise.all([
         knowledgeService.getChapterTree(teacher.id),
         knowledgeService.getKnowledgeTree(teacher.id),
+        knowledgeService.getMethodTree(teacher.id),
       ]);
       if (cancelled) return;
       if (selectedStudentIds.length === 0) {
         setChapterTree(baseChapterTree);
         setKnowledgeTree(baseKnowledgeTree);
+        setMethodTree(baseMethodTree);
         return;
       }
       const [annotatedChapterTree, annotatedKnowledgeTree] = await Promise.all([
@@ -576,6 +578,7 @@ export default function QuestionBankPage({
       if (cancelled) return;
       setChapterTree(annotatedChapterTree);
       setKnowledgeTree(annotatedKnowledgeTree);
+      setMethodTree(baseMethodTree);
     })();
     return () => {
       cancelled = true;

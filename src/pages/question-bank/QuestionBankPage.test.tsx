@@ -339,6 +339,17 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(text.indexOf("思想方法：")).toBeLessThan(text.indexOf("数形结合"));
   });
 
+  it("refreshes method counts when the question list changes", async () => {
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [], total: 0 });
+    const view = render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); });
+    const previousCalls = vi.mocked(knowledgeService.getMethodTree).mock.calls.length;
+    view.rerender(<MemoryRouter><QuestionBankPage refreshToken={1} /></MemoryRouter>);
+    await waitFor(() => expect(vi.mocked(knowledgeService.getMethodTree).mock.calls.length)
+      .toBeGreaterThan(previousCalls));
+  });
+
   it("keeps the chapter and knowledge directory trees read-only", async () => {
     render(
       <MemoryRouter>

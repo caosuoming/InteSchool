@@ -17,6 +17,8 @@ import type {
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 import { delay, genId } from "../domain-shared.js";
+import type { AppState, TeacherRecord } from "../types.js";
+import { resourceSubject, selectedSubject } from "../lib/resource-subject.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 
 // 收集某节点及其所有子孙 ID
@@ -1003,9 +1005,16 @@ function getAliasIds(knowledgePointId: string, scopeId: string): string[] {
 }
 
 function directoryQuestions(scopeId: string): Question[] {
-  const isTeacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some((item) => item.id === scopeId);
-  return (db.read("questions") as Question[]).filter((question) =>
-    isTeacherScope ? question.teacherId === scopeId : question.schoolId === scopeId,
+  const teachers = (db.read("teachers") || []) as TeacherRecord[];
+  const teacher = teachers.find((item) => item.id === scopeId);
+  const questions = db.read("questions") as Question[];
+  if (!teacher) return questions.filter((question) => question.schoolId === scopeId);
+
+  const subject = selectedSubject(teacher);
+  const state = { teachers } as AppState;
+  return questions.filter((question) =>
+    question.teacherId === scopeId &&
+    (!subject || resourceSubject(state, question as unknown as Record<string, unknown>) === subject),
   );
 }
 
