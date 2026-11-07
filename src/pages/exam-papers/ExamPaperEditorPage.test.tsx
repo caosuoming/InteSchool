@@ -1053,6 +1053,51 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(essayRow as HTMLElement).getByText("3.")).toBeInTheDocument();
   });
 
+  it("persists the edited type order and uses it when downloading the paper", async () => {
+    const groupedPaper: ExamPaper = {
+      ...paper,
+      contentBlocks: [],
+      isExtractCopy: false,
+      layoutMode: "grouped",
+      questions: [
+        paper.questions[0],
+        {
+          ...paper.questions[0],
+          id: "paper-question-2",
+          questionId: secondQuestion.id,
+          type: secondQuestion.type,
+          stem: secondQuestion.stem,
+        },
+      ],
+    };
+    mocks.getPaper.mockResolvedValue(groupedPaper);
+    mocks.listQuestions.mockResolvedValue([question, secondQuestion]);
+    mocks.updatePaper.mockImplementation(async (_id, patch) => ({ ...groupedPaper, ...patch }));
+
+    renderEditorPage();
+    await screen.findByLabelText("文档名");
+    fireEvent.click(screen.getAllByTitle("题型上移")[1]);
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
+        questionTypeOrder: expect.arrayContaining(["essay", "single"]),
+      }));
+    });
+    const savedOrder = mocks.updatePaper.mock.calls.at(-1)![1].questionTypeOrder as string[];
+    expect(savedOrder.slice(0, 2)).toEqual(["essay", "single"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    await screen.findByTestId("exam-paper-preview");
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    fireEvent.click(screen.getByLabelText("学生用卷（无答案）"));
+    fireEvent.click(screen.getByRole("button", { name: "下载 2 个版本" }));
+    await waitFor(() => expect(mocks.downloadExamPaperDocxVariants).toHaveBeenCalledOnce());
+    expect(mocks.downloadExamPaperDocxVariants.mock.calls[0][0].questionTypeOrder.slice(0, 2))
+      .toEqual(["essay", "single"]);
+  });
+
   it("creates an empty project, assigns existing questions, and saves the project structure", async () => {
     const flatPaper = { ...paper, isExtractCopy: false, contentBlocks: [], layoutMode: "flat" as const, projects: [] };
     mocks.getPaper.mockResolvedValue(flatPaper);
