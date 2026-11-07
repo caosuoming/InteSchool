@@ -2,6 +2,7 @@ import { rpcCall } from "./api";
 
 import type {
   DonationContributor,
+  Question,
   DonationPreview,
   DonationPrivileges,
   PlatformResourceCorrection,
@@ -194,12 +195,22 @@ export const shareService = {
     return rpcCall("share", "listOutgoingShares", [teacherId]) as any;
   },
 
+  async checkShareQuestionDuplicates(shareId: string, toTeacherId: string, toSchoolId: string): Promise<Array<{
+    targetResourceId: string;
+    similarity: number;
+    sourceQuestion: Question;
+    targetQuestion: Question;
+  }>> {
+    return rpcCall("share", "checkShareQuestionDuplicates", [shareId, toTeacherId, toSchoolId]) as any;
+  },
+
   async acceptShare(
     shareId: string,
     toTeacherId: string,
     toSchoolId: string,
+    decision?: { action: "new" | "same"; targetResourceId?: string },
   ): Promise<{ newResourceId: string; resourceType: ShareableResourceType }> {
-    return rpcCall("share", "acceptShare", [shareId, toTeacherId, toSchoolId]) as any;
+    return rpcCall("share", "acceptShare", [shareId, toTeacherId, toSchoolId, decision]) as any;
   },
 
   async rejectShare(shareId: string): Promise<void> {

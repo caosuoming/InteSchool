@@ -4767,7 +4767,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         />
       )}
 
-      {/* 捐赠题目查重与合并 */}
+      {/* 捐赠题目查重与身份关联 */}
       <Modal
         open={!!donationCheck && donationCheck.conflicts.length > 0}
         onClose={() => {
@@ -4776,7 +4776,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           setDonationDecisions({});
         }}
         title="题目查重"
-        description="以下题目与平台现有题目的相似度超过 80%。题干只能二选一，答案、解析、总结可复选并保留为第二项。"
+        description="发现高度相似题目。可保留为独立新题，或标记为同一题；两题编号、题干、答案、解析及知识点均不合并。"
         size="full"
         footer={
           <div className="flex justify-end gap-2">
@@ -4817,7 +4817,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   <div className="flex rounded-md border border-ink-200 overflow-hidden">
                     {([
                       { value: "new", label: "作为新题新增" },
-                      { value: "merge", label: "合并到现有题" },
+                      { value: "same", label: "标记为同一题" },
                     ] as const).map((option) => (
                       <button
                         key={option.value}
@@ -4840,10 +4840,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 <DonationQuestionComparison
                   conflict={conflict}
                   decision={decision}
-                  onChange={(next) => updateDonationDecision(
-                    conflict.item.resourceId,
-                    () => next,
-                  )}
+                  onChange={(next) => updateDonationDecision(conflict.item.resourceId, () => next)}
                 />
               </Card>
             );

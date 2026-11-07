@@ -136,6 +136,15 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   const [points, setPoints] = useState<KnowledgePoint[]>([]);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
+  const [knowledgeSuggestions, setKnowledgeSuggestions] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    if (!teacher?.id || !question.sameQuestionGroupId) return;
+    let active = true;
+    void questionService.getSameQuestionKnowledgeSuggestions(question.id, teacher.id)
+      .then((items) => { if (active) setKnowledgeSuggestions(items); })
+      .catch(() => { if (active) setKnowledgeSuggestions([]); });
+    return () => { active = false; };
+  }, [question.id, question.sameQuestionGroupId, teacher?.id]);
   const [saving, setSaving] = useState(false);
   const [duplicateConflict, setDuplicateConflict] = useState<SimilarQuestionCandidate | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
@@ -627,6 +636,22 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           </div>
         )}
       </div>
+
+      {knowledgeSuggestions.some((item) => !form.knowledgePointIds.includes(item.id) && points.some((point) => point.id === item.id)) && (
+        <div className="rounded-md border border-teal-200 p-3 text-xs">
+          <div className="mb-2 font-medium text-teal-800">同一题知识点推荐（点击添加）</div>
+          <div className="flex flex-wrap gap-2">
+            {knowledgeSuggestions.filter((item) =>
+              !form.knowledgePointIds.includes(item.id) && points.some((point) => point.id === item.id),
+            ).map((item) => (
+              <button key={item.id} type="button" className="rounded border border-teal-200 px-2 py-1 hover:bg-teal-50"
+                onClick={() => update("knowledgePointIds", [...form.knowledgePointIds, item.id])}>
+                {item.name} +
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 已选章节与知识点快速预览 */}
       <div className="grid md:grid-cols-2 gap-3">

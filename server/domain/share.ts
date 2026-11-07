@@ -39,6 +39,7 @@ import type {
 import { examPaperKnowledgePointIds, lectureKnowledgePointIds } from "./document-knowledge.js";
 import { assertResourceCapacity, awardDonationCredits, recordDonationDownload } from "./quota.js";
 import { resourceFolderService } from "./resourceFolder.js";
+import { linkSameQuestions } from "./sameQuestion.js";
 
 type ShareableResource = Question | ExamPaper | Lecture | Courseware | Material;
 type DonationPatch = Partial<{
@@ -535,7 +536,8 @@ function savedResourceForDonation(
     .find((item) =>
       item.teacherId === teacherId
       && item.schoolId === schoolId
-      && item.platformSourceDonationIds?.includes(donation.id),
+      && (item.platformSourceDonationIds?.includes(donation.id)
+        || (donation.resourceType === "question" && (item as Question).sameQuestionDonationIds?.includes(donation.id))),
     );
 }
 
@@ -882,6 +884,7 @@ function copySnapshotToTeacher(
         teacherId: toTeacherId,
         schoolId: toSchoolId,
         platformSourceDonationIds: platformSourceDonationIds.length ? platformSourceDonationIds : undefined,
+        sameQuestionDonationIds: undefined,
         semester: original.semester || "上学期",
         chapterIds: directory.chapterIds,
         knowledgePointIds: directory.knowledgePointIds,
@@ -990,6 +993,7 @@ function copySnapshotToTeacher(
   }
 
   db.update(RESOURCE_COLLECTIONS[share.resourceType], (list) => [copy, ...list]);
+  if (share.resourceType === "question") linkSameQuestions(original as Question, copy as Question);
   return { newResourceId, resourceType: share.resourceType };
 }
 
@@ -1294,6 +1298,15 @@ export const shareService = {
         continue;
       }
 
+      let sameTarget: Question | undefined;
+      if (request.resourceType === "question" && request.duplicateAction === "same") {
+        const targetDonation = primaryDonations().find((item) =>
+          item.id === request.duplicateTargetDonationId && item.resourceType === "question" && item.resourceSnapshot,
+        );
+        if (!targetDonation || donationSubject(targetDonation) !== subject) throw new Error("要标记为同一题的平台题目不存在");
+        sameTarget = targetDonation.resourceSnapshot as Question;
+        if (questionSimilarity(resource as Question, sameTarget) <= 0.8) throw new Error("仅高度相似的题目可以标记为同一题");
+      }
       const snapshot = structuredClone(resource);
       const embeddedQuestionSnapshots = collectEmbeddedQuestionSnapshots(request.resourceType, resource);
       const record: ShareRecord = {
@@ -1316,6 +1329,11 @@ export const shareService = {
         createdAt: now,
       };
       db.update("shareRecords", (list) => [...list, record]);
+      if (sameTarget) {
+        linkSameQuestions(resource as Question, sameTarget);
+        record.resourceSnapshot = (db.read("shareRecords") as ShareRecord[])
+          .find((item) => item.id === record.id)?.resourceSnapshot;
+      }
       awardDonationCredits(teacherId, record.sourceResourceId || record.resourceId, record.resourceType);
       created.push(record);
       existingRecords.push(record);
@@ -1501,7 +1519,22 @@ export const shareService = {
     if (!check.canSave) throw new Error(check.reason || "该平台资源不能创建副本");
 
     if (check.conflict && !decision) {
-      throw new Error("发现相似题目，请先选择新增或合并");
+      throw new Error("发现相似题目，请先选择新增或标记为同一题");
+    }
+
+    if (decision?.action === "same") {
+      if (donation.resourceType !== "question" || !decision.targetResourceId) throw new Error("仅题目支持标记为同一题");
+      const target = (db.read("questions") as Question[]).find((q) =>
+        q.id === decision.targetResourceId && q.teacherId === teacherId && q.schoolId === schoolId);
+      if (!target) throw new Error("要关联的个人题目不存在");
+      const source = donation.resourceSnapshot as Question;
+      if (questionSimilarity(source, target) <= 0.8) throw new Error("仅高度相似的题目可以标记为同一题");
+      linkSameQuestions(source, target);
+      db.update("questions", (list: Question[]) => list.map((q) => q.id === target.id
+        ? { ...q, sameQuestionDonationIds: [...new Set([...(q.sameQuestionDonationIds || []), donation.id])] }
+        : q));
+      recordDonationDownload(donation.id, teacherId);
+      return { resourceType: "question", resourceId: target.id, merged: false, linked: true };
     }
 
     if (decision?.action === "merge") {
@@ -1915,10 +1948,34 @@ export const shareService = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
+  async checkShareQuestionDuplicates(
+    shareId: string,
+    toTeacherId: string,
+    toSchoolId: string,
+  ): Promise<Array<{ targetResourceId: string; similarity: number; sourceQuestion: Question; targetQuestion: Question }>> {
+    const share = (db.read("shareRecords") as ShareRecord[]).find((item) => item.id === shareId);
+    if (!share || share.kind === "donation" || share.resourceType !== "question") return [];
+    if (share.status !== "pending" || (share.expiresAt && new Date(share.expiresAt) <= new Date())) {
+      throw new Error("该分享已处理或已过期");
+    }
+    if (share.toTeacherId && share.toTeacherId !== toTeacherId) throw new Error("无权处理该分享");
+    if (share.toSchoolId && share.toSchoolId !== toSchoolId) throw new Error("无权处理该分享");
+    if (!share.toTeacherId && share.scope !== "public" && share.scope !== "school") throw new Error("无权处理该分享");
+    const questions = db.read("questions") as Question[];
+    const source = questions.find((q) => q.id === share.resourceId);
+    if (!source) throw new Error("分享题目不存在");
+    return questions.filter((q) => q.teacherId === toTeacherId && q.schoolId === toSchoolId)
+      .map((q) => ({ targetResourceId: q.id, targetQuestion: q, sourceQuestion: source,
+        similarity: questionSimilarity(source, q) }))
+      .filter((candidate) => candidate.similarity > 0.8)
+      .sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+  },
+
   async acceptShare(
     shareId: string,
     toTeacherId: string,
     toSchoolId: string,
+    decision?: { action: "new" | "same"; targetResourceId?: string },
   ): Promise<{ newResourceId: string; resourceType: ShareableResourceType }> {
     await delay(300);
     const share = (db.read("shareRecords") as ShareRecord[]).find((item) => item.id === shareId);
@@ -1939,12 +1996,28 @@ export const shareService = {
       const original = (db.read(RESOURCE_COLLECTIONS[share.resourceType]) as ShareableResource[])
         .find((item) => item.id === share.resourceId);
       if (!original) throw new Error("分享资源不存在");
-      const temporary: ShareRecord = {
-        ...share,
-        resourceSnapshot: structuredClone(original),
-        directorySnapshot: collectDirectorySnapshot(original),
-      };
-      result = copySnapshotToTeacher(temporary, toTeacherId, toSchoolId);
+      if (share.resourceType === "question") {
+        const matches = await this.checkShareQuestionDuplicates(shareId, toTeacherId, toSchoolId);
+        if (matches.length > 0 && !decision) throw new Error("发现高度相似题目，请选择新增或标记为同一题");
+        if (decision?.action === "same") {
+          const chosen = matches.find((match) => match.targetResourceId === decision.targetResourceId);
+          if (!chosen) throw new Error("要标记的题目不是可访问的高度相似题目");
+          linkSameQuestions(original as Question, chosen.targetQuestion);
+          result = { newResourceId: chosen.targetResourceId, resourceType: "question" };
+        } else {
+          const temporary: ShareRecord = {
+            ...share, resourceSnapshot: structuredClone(original),
+            directorySnapshot: collectDirectorySnapshot(original),
+          };
+          result = copySnapshotToTeacher(temporary, toTeacherId, toSchoolId);
+        }
+      } else {
+        const temporary: ShareRecord = {
+          ...share, resourceSnapshot: structuredClone(original),
+          directorySnapshot: collectDirectorySnapshot(original),
+        };
+        result = copySnapshotToTeacher(temporary, toTeacherId, toSchoolId);
+      }
     }
 
     const now = new Date().toISOString();

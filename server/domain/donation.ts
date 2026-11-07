@@ -231,7 +231,7 @@ export const donationService = {
           choice === "target" ? "existing" as const : choice;
         return {
           ...item,
-          duplicateAction: decision.action === "merge" ? "merge" as const : "add" as const,
+          duplicateAction: decision.action === "merge" ? "merge" as const : decision.action === "same" ? "same" as const : "add" as const,
           duplicateTargetDonationId: decision.targetDonationId,
           mergeFields: {
             stem: toRequestChoice(decision.fields.stem),

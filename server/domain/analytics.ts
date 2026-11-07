@@ -20,6 +20,7 @@ import { delay, genId } from "../domain-shared.js";
 import { publishAnswerSheetsForUsage } from "./document-resource-lock.js";
 import { annotateTreeWithQuestionCounts } from "./tree-counts.js";
 import { recordClassroomQuestionProgress, type ClassroomQuestionProgressInput } from "./classroomQuestionProgress.js";
+import { sameQuestionIds, sameQuestionKey } from "./sameQuestion.js";
 
 /** 知识点掌握情况统计项 */
 export interface KnowledgeMastery {
@@ -243,7 +244,7 @@ export const analyticsService = {
         personalClassIdsByStudent,
       );
       if (audienceStudentIds.length === 0) return;
-      const ids = Array.from(questionIds);
+      const ids = Array.from(sameQuestionIds(questionIds, db.read("questions") as Question[]));
       if (ids.length === 0) return;
       for (const studentId of audienceStudentIds) {
         const assigned = pendingByStudent.get(studentId) || new Set<string>();
@@ -480,7 +481,7 @@ export const analyticsService = {
     await delay(150);
     let records = db.read("answerRecords").filter((a) => studentIds.includes(a.studentId));
     records = filterByDateRange(records, range);
-    return new Set(records.map((r) => r.questionId));
+    return sameQuestionIds(records.map((r) => r.questionId), db.read("questions") as Question[]);
   },
 
   // 获取指定学生列表在每道题上的平均正确率（用于推荐排序）
@@ -490,8 +491,9 @@ export const analyticsService = {
     let records = db.read("answerRecords").filter((a) => studentIds.includes(a.studentId));
     records = filterByDateRange(records, range);
     const scoreMap = new Map<string, number>();
+    const identities = new Map((db.read("questions") as Question[]).map((item) => [item.id, sameQuestionKey(item)]));
     for (const q of questions) {
-      const qRecords = records.filter((r) => r.questionId === q.id);
+      const qRecords = records.filter((r) => (identities.get(r.questionId) || r.questionId) === sameQuestionKey(q));
       const scoredRecords = qRecords.filter((r) => r.score !== "done");
       if (scoredRecords.length === 0) {
         scoreMap.set(q.id, 0.5);

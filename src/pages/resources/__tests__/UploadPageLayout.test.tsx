@@ -65,6 +65,7 @@ vi.mock("@/services/knowledge", () => ({
 vi.mock("@/services/share", () => ({
   shareService: {
     listIncomingShares: vi.fn(async () => []),
+    checkShareQuestionDuplicates: vi.fn(async () => []),
   },
 }));
 

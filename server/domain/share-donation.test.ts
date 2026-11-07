@@ -779,7 +779,7 @@ describe("platform resource donations", () => {
       const check = await shareService.checkSaveAsOwnResource(donation.id, "teacher-c", "school-c");
       expect(check.conflict).toMatchObject({ targetResourceId: "q-c" });
       await expect(shareService.saveDonationAsOwnResource(donation.id, "teacher-c", "school-c"))
-        .rejects.toThrow("请先选择新增或合并");
+        .rejects.toThrow("请先选择新增或标记为同一题");
 
       const saved = await shareService.saveDonationAsOwnResource(donation.id, "teacher-c", "school-c", {
         action: "merge",
