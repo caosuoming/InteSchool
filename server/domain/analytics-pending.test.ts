@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ExamPaper, Lecture, PersonalClass, Student } from "../../src/types/index.js";
+import type { AnswerRecord, ExamPaper, Lecture, PersonalClass, Student } from "../../src/types/index.js";
 import type { AppState } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { analyticsService } from "./analytics.js";
@@ -127,6 +127,7 @@ function state(): AppState {
       paper("paper-personal", [personalClass.id], [], ["q-personal", "q-shared"]),
     ],
     answerRecords: [],
+    questions: [],
   };
 }
 
@@ -236,6 +237,54 @@ describe("document usage state", () => {
         "lecture-school",
         "paper-personal",
       ])).toEqual(["paper-personal", "lecture-school"]);
+    });
+  });
+});
+
+describe("document question completion batch", () => {
+  it("marks only selected questions as done and excludes unchecked questions from pending", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const result = await analyticsService.batchSetDocumentQuestionStatus("lecture-school", ["q-school"], "done");
+      expect(result).toEqual({ created: 1, cleared: 0, excluded: 1 });
+      expect((appState.lectures as Lecture[])[0].excludedPendingQuestionIds).toEqual(["q-shared"]);
+      expect(asKeys(await analyticsService.listPendingQuestionAssignments(["student-school"])))
+        .toEqual(["student-school:q-school"]);
+      expect((appState.answerRecords as AnswerRecord[] || []).map((record) => `${record.studentId}:${record.questionId}:${record.score}`))
+        .toEqual(["student-school:q-school:done"]);
+
+      const repeat = await analyticsService.batchSetDocumentQuestionStatus("lecture-school", ["q-school"], "done");
+      expect(repeat.created).toBe(0);
+    });
+  });
+
+  it("restores pending for selected questions without deleting scored answers", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      await analyticsService.batchSetDocumentQuestionStatus("lecture-school", ["q-school", "q-shared"], "done");
+      const scored = (appState.answerRecords as AnswerRecord[] || []).find((record) => record.questionId === "q-shared")!;
+      scored.score = "correct";
+      scored.isCorrect = true;
+      const result = await analyticsService.batchSetDocumentQuestionStatus("lecture-school", ["q-school", "q-shared"], "pending");
+      expect(result).toEqual({ created: 0, cleared: 1, excluded: 0 });
+      expect((appState.answerRecords as AnswerRecord[] || []).map((record) => record.questionId)).toEqual(["q-shared"]);
+      expect((appState.answerRecords as AnswerRecord[] || [])[0].score).toBe("correct");
+      expect(asKeys(await analyticsService.listPendingQuestionAssignments(["student-school"])))
+        .toEqual(["student-school:q-school", "student-school:q-shared"]);
+    });
+  });
+
+  it("supports document-only exam questions and rejects foreign question IDs", async () => {
+    const appState = state();
+    const doc = paper("exam-unlinked", ["class-1"], [], []);
+    doc.questions = [{ id: "local-1", stem: "题目", answer: "A", analysis: "", score: 5, type: "single" }];
+    (appState.examPapers as ExamPaper[]).push(doc);
+    await runWithState(appState, async () => {
+      await expect(analyticsService.batchSetDocumentQuestionStatus(doc.id, ["foreign"], "done"))
+        .rejects.toThrow("不属于当前文档");
+      expect(await analyticsService.batchSetDocumentQuestionStatus(doc.id, [`exam-item:${doc.id}:local-1`], "done"))
+        .toMatchObject({ created: 1 });
+      expect((appState.answerRecords as AnswerRecord[] || []).some((record) => record.questionId === `exam-item:${doc.id}:local-1`)).toBe(true);
     });
   });
 });

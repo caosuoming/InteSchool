@@ -2,7 +2,7 @@ import { openPage } from "@/lib/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  BookOpen, CheckSquare, Edit3, Eye, FileText, GraduationCap,
+  BookOpen, Edit3, Eye, FileText, GraduationCap,
   Copy, Download, Layout, Printer, Type, UserCheck, Users,
 } from "lucide-react";
 import { lectureService } from "@/services/lecture";
@@ -25,6 +25,7 @@ import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
+import { DocumentQuestionCompletionBatch } from "@/components/editor/DocumentQuestionCompletionBatch";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -125,7 +126,6 @@ export default function LecturePreviewPage() {
   const [audienceOpen, setAudienceOpen] = useState(false);
   const [audienceClassIds, setAudienceClassIds] = useState<string[]>([]);
   const [savingAudience, setSavingAudience] = useState(false);
-  const [markingAllDone, setMarkingAllDone] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
@@ -495,28 +495,9 @@ export default function LecturePreviewPage() {
     }
   };
 
-  const markAllQuestionsUsed = async () => {
-    if (!lecture || students.length === 0 || questionIds.length === 0) return;
-    setMarkingAllDone(true);
-    try {
-      const existing = new Set(answerRecords.map((record) => `${record.studentId}:${record.questionId}`));
-      const pending = students.flatMap((student) => questionIds
-        .filter((questionId) => !existing.has(`${student.id}:${questionId}`))
-        .map((questionId) => ({
-          studentId: student.id,
-          questionId,
-          lectureId: lecture.id,
-          score: "done" as const,
-          source: "manual" as const,
-        })));
-      if (pending.length > 0) await analyticsService.batchSaveAnswerRecords(pending);
-      setAnswerRecords(await analyticsService.listAnswerRecordsByLecture(lecture.id));
-      toast.success(pending.length > 0 ? `已补充 ${pending.length} 条使用记录` : "所有学生均已设置为使用全部题目");
-    } catch (error) {
-      toast.error("批量设置失败", error instanceof Error ? error.message : undefined);
-    } finally {
-      setMarkingAllDone(false);
-    }
+  const refreshCompletionRecords = async () => {
+    if (!lecture) return;
+    setAnswerRecords(await analyticsService.listAnswerRecordsByLecture(lecture.id));
   };
 
   if (loading) {
@@ -692,6 +673,22 @@ export default function LecturePreviewPage() {
         </select>
       </div>
 
+      <div className="no-print mb-3 rounded-lg border border-ink-200 bg-paper p-3">
+        <DocumentQuestionBatchActions
+          schoolId={schoolId}
+          questionIds={questionIds}
+          disabled={Boolean(lecture.answerSheetPublishedAt) || answerRecords.length > 0}
+          onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+          markAllButton={<DocumentQuestionCompletionBatch
+            documentId={lecture.id}
+            questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
+              .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
+            disabled={students.length === 0 || questionIds.length === 0}
+            onApplied={refreshCompletionRecords}
+          />}
+        />
+      </div>
+
       <div
         className={cn(
           "preview-sticky-shell",
@@ -708,22 +705,10 @@ export default function LecturePreviewPage() {
 
             </div>
           </div>
-          <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="lecture-preview-details">
+          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
             <PreviewSidebarControls
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
-            />
-            <DocumentQuestionBatchActions
-              schoolId={schoolId}
-              questionIds={questionIds}
-              disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
-              onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-              markAllButton={(
-                <Button variant="outline" size="sm" onClick={markAllQuestionsUsed}
-                  loading={markingAllDone} disabled={students.length === 0 || questionIds.length === 0}>
-                  <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
-                </Button>
-              )}
             />
           </div>
         </aside>

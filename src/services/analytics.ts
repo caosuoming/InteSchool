@@ -71,6 +71,14 @@ export const analyticsService = {
     return rpcCall("analytics", "listAnswerRecordsByStudents", [studentIds, range]) as any;
   },
 
+  async batchSetDocumentQuestionStatus(
+    documentId: string,
+    selectedQuestionIds: string[],
+    mode: "done" | "pending",
+  ): Promise<{ created: number; cleared: number; excluded: number }> {
+    return rpcCall("analytics", "batchSetDocumentQuestionStatus", [documentId, selectedQuestionIds, mode]) as any;
+  },
+
   async listPendingQuestionAssignments(studentIds: string[]): Promise<Array<{ studentId: string; questionId: string }>> {
     return rpcCall("analytics", "listPendingQuestionAssignments", [studentIds]) as any;
   },

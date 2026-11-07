@@ -46,6 +46,7 @@ import { ClassAudiencePicker } from "@/components/editor/ClassAudiencePicker";
 import { StudentAnswerStatusControl } from "@/components/editor/StudentAnswerStatusControl";
 import { QuestionRemarkControl } from "@/components/editor/QuestionRemarkControl";
 import { DocumentQuestionBatchActions } from "@/components/editor/DocumentQuestionBatchActions";
+import { DocumentQuestionCompletionBatch } from "@/components/editor/DocumentQuestionCompletionBatch";
 import {
   PreviewSidebarControls,
   type PreviewSidebarVisibility,
@@ -996,7 +997,9 @@ export default function ExamPaperEditorPage() {
   );
 
   const getCompletionQuestionId = (paperQuestion: ExamPaperQuestion) =>
-    paperQuestion.questionId || `exam-item:${paper?.id || id}:${paperQuestion.id}`;
+    paperQuestion.questionId || contentBlocks.find((block) =>
+      block.type === "question" && block.examPaperQuestionId === paperQuestion.id)?.questionId
+      || `exam-item:${paper?.id || id}:${paperQuestion.id}`;
 
   const refreshBaskets = useCallback(async () => {
     if (!teacher) return;
@@ -1626,6 +1629,15 @@ export default function ExamPaperEditorPage() {
     }
   };
 
+  const refreshCompletionRecords = async () => {
+    if (!paper) return;
+    const refreshedRecords = (await analyticsService.listAnswerRecordsByStudents(audienceStudentIds, dateRange))
+      .filter((record) => record.lectureId === paper.id);
+    setAnswerRecords(refreshedRecords);
+    setAnsweredQuestionIds(new Set(refreshedRecords.map((record) => record.questionId)));
+    setQuestionProgress(buildQuestionProgress(refreshedRecords, audienceStudentIds));
+  };
+
   const handleUpdateStudentAnswer = async (
     studentId: string,
     questionId: string,
@@ -1801,6 +1813,21 @@ export default function ExamPaperEditorPage() {
           </Button>
         </div>
 
+        <div className="no-print mb-3 rounded-lg border border-ink-200 bg-paper p-3">
+          <DocumentQuestionBatchActions
+            schoolId={schoolId}
+            questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
+            disabled={isUsedDocument}
+            onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+            markAllButton={<DocumentQuestionCompletionBatch
+              documentId={paper!.id}
+              questions={paperQuestions.map((item, index) => ({ id: getCompletionQuestionId(item), number: index + 1 }))}
+              disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
+              onApplied={refreshCompletionRecords}
+            />}
+          />
+        </div>
+
         <div className="preview-sticky-shell">
           <aside className="preview-sticky-rail no-print">
             <div className="preview-sidebar-intro">
@@ -1812,22 +1839,10 @@ export default function ExamPaperEditorPage() {
 
               </div>
             </div>
-            <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="exam-paper-preview-details">
+            <div className="preview-sticky-controls" data-testid="exam-paper-preview-details">
               <PreviewSidebarControls
                 value={previewSidebarVisibility}
                 onChange={setPreviewSidebarVisibility}
-              />
-              <DocumentQuestionBatchActions
-                schoolId={schoolId}
-                questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
-                disabled={isUsedDocument}
-                onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-                markAllButton={(
-                  <Button variant="outline" size="sm" onClick={handleMarkAllDone}
-                    loading={markingAllDone} disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}>
-                    <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
-                  </Button>
-                )}
               />
             </div>
           </aside>

@@ -60,6 +60,7 @@ vi.mock("@/services/analytics", () => ({
     listAnswerRecordsByLecture: vi.fn(),
     saveAnswerRecord: vi.fn(),
     batchSaveAnswerRecords: vi.fn(),
+    batchSetDocumentQuestionStatus: vi.fn(),
   },
 }));
 vi.mock("@/services/lessonCourseware", () => ({
@@ -294,6 +295,7 @@ describe("LecturePreviewPage", () => {
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
     vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
+    vi.mocked(analyticsService.batchSetDocumentQuestionStatus).mockResolvedValue({ created: 1, cleared: 0, excluded: 0 });
     vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
     vi.mocked(lectureService.duplicateLecture).mockResolvedValue({ ...lecture, id: "lecture-copy" });
     documentMocks.downloadLectureDocxVariants.mockResolvedValue(undefined);
@@ -364,18 +366,21 @@ describe("LecturePreviewPage", () => {
     expect(within(paper).getByText(/在给定区间内判断函数的增减/)).toBeInTheDocument();
     const previewControls = screen.getByTestId("lecture-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    expect(previewControls).toHaveTextContent("批量操作");
-    expect(within(previewControls).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
-    expect(within(previewControls).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
-    expect(within(previewControls).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
+    const batchActions = screen.getByTestId("document-question-batch-actions");
+    expect(batchActions).toHaveTextContent("批量操作");
+    expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
     expect(previewControls).not.toHaveTextContent("题目属性与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
     const previewIntro = previewControls.previousElementSibling as HTMLElement;
     expect(previewIntro).toHaveClass("preview-sidebar-intro");
     expect(previewIntro).toHaveTextContent("题目属性与使用情况");
-    expect(within(previewControls).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
-    expect(within(previewIntro).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
+    expect(previewControls).not.toHaveTextContent("批量操作");
+    expect(batchActions.parentElement?.nextElementSibling).toHaveClass("preview-sticky-shell");
+    expect(within(previewIntro).queryByRole("button", { name: "全部设为已做" })).not.toBeInTheDocument();
     const previewShell = paper.closest(".preview-sticky-shell");
     expect(previewShell).not.toBeNull();
     expect(paper.querySelector(".preview-sticky-spacer")).not.toBeNull();
@@ -395,6 +400,19 @@ describe("LecturePreviewPage", () => {
     await waitFor(() => {
       expect(container.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(4);
     });
+  });
+
+  it("opens a checked question picker and switches back to pending", async () => {
+    renderPage();
+    await screen.findByTestId("lecture-paper");
+    fireEvent.click(screen.getByRole("button", { name: "全部设为已做" }));
+    const group = screen.getByRole("group", { name: "题目编号" });
+    expect(within(group).getByRole("checkbox", { name: "第 1 题" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "全部设为待做" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认设为待做（1 题）" }));
+    await waitFor(() => expect(analyticsService.batchSetDocumentQuestionStatus)
+      .toHaveBeenCalledWith(lecture.id, [question.id], "pending"));
+    expect(analyticsService.listAnswerRecordsByLecture).toHaveBeenCalledTimes(2);
   });
 
   it("shows and hides all answers from the preview actions", async () => {
@@ -738,7 +756,7 @@ describe("LecturePreviewPage", () => {
 
     fireEvent.click(answerToggle);
     expect(screen.queryByLabelText("选择学生")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
 
     fireEvent.click(propertiesToggle);
     expect(screen.queryByTestId("lecture-question-properties-1")).not.toBeInTheDocument();

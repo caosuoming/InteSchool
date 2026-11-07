@@ -1707,6 +1707,8 @@ export interface ExamPaper {
   classIds?: string[];
   /** 旧数据兼容字段；新的文档级使用对象以 classIds 为准。 */
   studentIds?: string[];
+  /** 不再分配为待做的题目；不影响已有实际作答记录。 */
+  excludedPendingQuestionIds?: string[];
   /** 原稿文件信息（Word/PDF上传的原件） */
   originalFileUrl?: string;
   originalFileName?: string;
@@ -2318,6 +2320,8 @@ export interface Lecture {
   semester?: ResourceSemester;
   classIds: string[];
   studentIds: string[];
+  /** 不再分配为待做的题目；不影响已有实际作答记录。 */
+  excludedPendingQuestionIds?: string[];
   sections: LectureSection[];
   /** 文档拆解生成的有序正文结构，供正稿预览和上课课件生成使用。 */
   contentBlocks?: ExtractedDocumentBlock[];

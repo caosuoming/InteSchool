@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   listUsedDocumentIds: vi.fn(),
   saveAnswerRecord: vi.fn(),
   batchSaveAnswerRecords: vi.fn(),
+  batchSetDocumentQuestionStatus: vi.fn(),
 }));
 
 const teacher = {
@@ -111,6 +112,7 @@ vi.mock("@/services/analytics", () => ({
     listUsedDocumentIds: mocks.listUsedDocumentIds,
     saveAnswerRecord: mocks.saveAnswerRecord,
     batchSaveAnswerRecords: mocks.batchSaveAnswerRecords,
+    batchSetDocumentQuestionStatus: mocks.batchSetDocumentQuestionStatus,
   },
 }));
 vi.mock("@/lib/docx", () => ({
@@ -327,6 +329,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listUsedDocumentIds.mockResolvedValue([]);
     mocks.saveAnswerRecord.mockResolvedValue(null);
     mocks.batchSaveAnswerRecords.mockResolvedValue([]);
+    mocks.batchSetDocumentQuestionStatus.mockResolvedValue({ created: 1, cleared: 0, excluded: 0 });
   });
 
   it("edits and persists decomposed exam-paper document metadata from preview", async () => {
@@ -449,18 +452,21 @@ describe("ExamPaperEditorPage preview", () => {
 
     const previewControls = screen.getByTestId("exam-paper-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    expect(previewControls).toHaveTextContent("批量操作");
-    expect(within(previewControls).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
-    expect(within(previewControls).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
-    expect(within(previewControls).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
+    const batchActions = screen.getByTestId("document-question-batch-actions");
+    expect(batchActions).toHaveTextContent("批量操作");
+    expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
     expect(previewControls).not.toHaveTextContent("题目信息与使用情况");
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
     const previewIntro = previewControls.previousElementSibling as HTMLElement;
     expect(previewIntro).toHaveClass("preview-sidebar-intro");
     expect(previewIntro).toHaveTextContent("题目信息与使用情况");
-    expect(within(previewControls).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
-    expect(within(previewIntro).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
+    expect(previewControls).not.toHaveTextContent("批量操作");
+    expect(batchActions.parentElement?.nextElementSibling).toHaveClass("preview-sticky-shell");
+    expect(within(previewIntro).queryByRole("button", { name: "全部设为已做" })).not.toBeInTheDocument();
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();
     expect(preview.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("exam-question-details-1");
@@ -488,6 +494,25 @@ describe("ExamPaperEditorPage preview", () => {
       contentBlocks: paper.contentBlocks,
     });
     expect(mocks.downloadExamPaperDocxVariants.mock.calls[0][2]).toEqual(["teacher", "student"]);
+  });
+
+  it("applies only checked question numbers to the entire document audience", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
+    mocks.listStudentsByClass.mockResolvedValue([{
+      id: "student-1", classId: "class-1", status: "active", name: "测试学生",
+    }]);
+    renderPage();
+    await screen.findByTestId("exam-paper-preview");
+    const button = screen.getByRole("button", { name: "全部设为已做" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    const group = screen.getByRole("group", { name: "题目编号" });
+    expect(within(group).getAllByRole("checkbox")).toHaveLength(1);
+    expect(within(group).getByRole("checkbox", { name: "第 1 题" })).toBeChecked();
+    fireEvent.click(within(group).getByRole("checkbox", { name: "第 1 题" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认设为已做（0 题）" }));
+    await waitFor(() => expect(mocks.batchSetDocumentQuestionStatus)
+      .toHaveBeenCalledWith(paper.id, [], "done"));
   });
 
   it("creates an editable copy directly from preview", async () => {
@@ -543,7 +568,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     fireEvent.click(answerToggle);
     expect(screen.queryByTestId("exam-question-answer-status-1")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
 
     fireEvent.click(propertiesToggle);
     expect(screen.queryByTestId("exam-question-properties-1")).not.toBeInTheDocument();
