@@ -189,6 +189,28 @@ describe("grade class statistics", () => {
       .toEqual([2, 1, 1, 2]);
   });
 
+  it("excludes unchecked subjects from grade ranks while keeping their scores", () => {
+    const updated: GradeExam = {
+      ...current,
+      settings: {
+        ...current.settings,
+        classSubjects: [
+          { classId: "c1", examSubjects: ["语文", "化学"], statisticSubjects: ["语文"] },
+          { classId: "c2", examSubjects: ["语文", "化学"], statisticSubjects: ["语文", "化学"] },
+        ],
+      },
+    };
+    const report = buildGradeClassStatisticsReport(updated, [], {
+      ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+      showSubjectGradeRanks: true,
+    });
+    const first = report.classes[0].rows[0].values;
+    const secondClass = report.classes[1].rows[0].values;
+    expect(first["current:subject:化学"]).toBe(90);
+    expect(first["current:subjectGradeRank:化学"]).toBeNull();
+    expect(secondClass["current:subjectGradeRank:化学"]).toBe(1);
+  });
+
   it("adds selected previous exams side by side and leaves missing students blank", () => {
     const report = buildGradeClassStatisticsReport(current, [previous], {
       ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,

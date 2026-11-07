@@ -69,15 +69,12 @@ export function inferStatisticSubjectsFromSelections(
 export function defaultClassRankingSubjects(
   subjects: string[],
   subjectSelections: string[] = [],
-  observedSubjects?: string[],
 ): string[] {
   const selected = new Set(subjectSelections.flatMap((selection) =>
     inferStatisticSubjectsFromSelections(subjects, [selection]) || [],
   ));
   if (selected.size > 0) return unique(subjects).filter((subject) => selected.has(subject));
-  return observedSubjects
-    ? unique(subjects).filter((subject) => observedSubjects.includes(subject))
-    : unique(subjects);
+  return unique(subjects);
 }
 
 export function expectedGradeSubjectCount(subjects: string[], records: GradeScoreRecord[]): number {
@@ -93,6 +90,18 @@ export function expectedGradeSubjectCount(subjects: string[], records: GradeScor
 
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+/** Subjects included in this class's totals and ranking, including separate-ranking subjects. */
+export function rankedClassSubjects(
+  subjects: string[],
+  settings: GradeExamSettings,
+  classId: string,
+): string[] {
+  const classSetting = settings.classSubjects.find((item) => item.classId === classId);
+  if (!classSetting) return unique(subjects);
+  const ranked = new Set([...classSetting.statisticSubjects, ...(classSetting.separateRankSubjects || [])]);
+  return unique(subjects).filter((subject) => ranked.has(subject));
 }
 
 /** Classes with the same separately ranked subjects share one total-score ranking pool. */
@@ -153,7 +162,7 @@ export function buildDefaultGradeSettings(
   subjects: string[],
   classIds: string[],
   teachers: GradeTeacherOption[] = [],
-  classSubjectAvailability: GradeClassSubjectAvailability = {},
+  _classSubjectAvailability: GradeClassSubjectAvailability = {},
   classSubjectSelections: Record<string, string[]> = {},
 ): GradeExamSettings {
   const normalizedSubjects = unique(subjects);
@@ -203,11 +212,8 @@ export function buildDefaultGradeSettings(
     ]),
   );
   const classSubjects: GradeClassSubjectSetting[] = unique(classIds).map((classId) => {
-    const observedSubjects = Object.prototype.hasOwnProperty.call(classSubjectAvailability, classId)
-      ? classSubjectAvailability[classId]
-      : undefined;
     const defaultSubjects = defaultClassRankingSubjects(
-      normalizedSubjects, classSubjectSelections[classId], observedSubjects,
+      normalizedSubjects, classSubjectSelections[classId],
     );
     return {
       classId,

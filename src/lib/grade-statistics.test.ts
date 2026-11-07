@@ -90,8 +90,8 @@ describe("grade statistics", () => {
       },
       {
         classId: "class-2",
-        examSubjects: ["语文", "化学"],
-        statisticSubjects: ["语文", "化学"],
+        examSubjects: subjects,
+        statisticSubjects: subjects,
         separateRankSubjects: [],
       },
       {
@@ -122,7 +122,7 @@ describe("grade statistics", () => {
     });
   });
 
-  it("uses complete imported subjects as class ranking defaults", () => {
+  it("selects all imported subjects when a class has no election data", () => {
     const settings = buildDefaultGradeSettings(
       ["数学", "化学"],
       ["class-1", "class-2", "class-3"],
@@ -136,8 +136,8 @@ describe("grade statistics", () => {
     expect(settings.classSubjects).toEqual([
       {
         classId: "class-1",
-        examSubjects: ["数学"],
-        statisticSubjects: ["数学"],
+        examSubjects: ["数学", "化学"],
+        statisticSubjects: ["数学", "化学"],
         separateRankSubjects: [],
       },
       {
