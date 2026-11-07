@@ -2095,3 +2095,137 @@ describe("document block parser", () => {
     });
   });
 });
+
+describe("geography paper extraction", () => {
+  const geographyConfig = { ...config, subject: "地理" };
+
+  it("joins a passage across blank lines with numbered choice subquestions and maps end-of-paper answers", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单项选择题",
+      "下图表示某区域的气温分布。",
+      "图中甲地海拔较高，据此完成下面小题。",
+      "",
+      "1. 甲地气温较低的主要原因是 A. 纬度 B. 海拔 C. 洋流 D. 季风",
+      "",
+      "2. 乙地气温的影响因素是 A. 洋流 B. 地形 C. 光照 D. 植被",
+      "某校地理试卷参考答案",
+      "1. B",
+      "2. A",
+    ].join("\n"), geographyConfig);
+
+    expect(blocks.filter((block) => block.type === "knowledge")).toHaveLength(0);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({
+      questionType: "single",
+      answer: "（1）B\n（2）A",
+      categories: expect.arrayContaining(["单选题·2个小题"]),
+    });
+    expect(questions[0].content).toContain("下图表示某区域的气温分布。");
+    expect(questions[0].content).toContain("据此完成下面小题");
+    expect(questions[0].content).toContain("2. 乙地气温");
+  });
+
+  it("starts a new passage after a blank line rather than appending it to the preceding option", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单项选择题",
+      "1. 降水的主要来源是 A. 河流 B. 湖泊 C. 海洋 D. 土壤",
+      "",
+      "图2表示另一地区的气候，据此完成下面小题。",
+      "",
+      "2. 该区主要气候类型是 A. 热带 B. 温带 C. 寒带 D. 高山",
+      "3. 该区冬季降水较多的原因是 A. 西风 B. 季风 C. 台风 D. 寒流",
+    ].join("\n"), geographyConfig);
+
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].options).toEqual(["河流", "湖泊", "海洋", "土壤"]);
+    expect(questions[1].content).toContain("图2表示另一地区的气候");
+    expect(questions[1].content).toContain("3. 该区冬季降水");
+    expect(blocks.some((block) => block.type === "knowledge")).toBe(false);
+  });
+
+  it("recognizes a shared stem without an explicit choice-section heading", () => {
+    const blocks = parseDocumentBlocks([
+      "下图为某地聚落分布。据此完成下面小题。",
+      "",
+      "1. 聚落主要沿什么分布 A. 河流 B. 沙漠 C. 山脊 D. 冰川",
+      "2. 聚落用水来自哪里 A. 海洋 B. 河流 C. 冰川 D. 雨水",
+    ].join("\n"), geographyConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({
+      questionType: "single",
+      categories: expect.arrayContaining(["单选题·2个小题"]),
+    });
+    expect(questions[0].content).toContain("下图为某地聚落分布");
+    expect(blocks.some((block) => block.type === "knowledge")).toBe(false);
+  });
+
+  it("keeps separate reading passages in distinct geography groups", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单项选择题",
+      "材料甲为季风环流示意图，据此完成下面小题。",
+      "1. 甲季风盛行于 A. 春 B. 夏 C. 秋 D. 冬",
+      "2. 该季风形成原因是 A. 热力差异 B. 地转偏向 C. 洋流 D. 山地",
+      "",
+      "材料乙为洋流示意图，据此完成下面小题。",
+      "3. 乙洋流性质为 A. 暖流 B. 寒流 C. 潮汐 D. 河流",
+      "4. 乙洋流影响是 A. 降温 B. 增温 C. 增盐 D. 降盐",
+      "学校地理试卷参考答案",
+      "1. B",
+      "2. A",
+      "3. C",
+      "4. D",
+    ].join("\n"), geographyConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions.map((block) => block.answer)).toEqual(["（1）B\n（2）A", "（1）C\n（2）D"]);
+    expect(questions[0].content).toContain("材料甲");
+    expect(questions[0].content).not.toContain("材料乙");
+    expect(questions[1].content).toContain("材料乙");
+    expect(blocks.some((block) => block.type === "knowledge")).toBe(false);
+  });
+
+  it("groups numbered geography comprehensive subquestions under their common reading passage", () => {
+    const blocks = parseDocumentBlocks([
+      "二、综合题",
+      "阅读下列资料，据此回答下列问题。",
+      "",
+      "21. 描述该流域的气候特征。",
+      "22. 分析区域农业发展的条件。",
+      "参考答案",
+      "21. 夏季湿润，冬季干燥。",
+      "22. 光热充足，水源便利。",
+    ].join("\n"), geographyConfig);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].content).toContain("阅读下列资料");
+    expect(questions[0].content).toContain("22. 分析区域农业");
+    expect(questions[0]).toMatchObject({
+      questionType: "comprehensive",
+      categories: expect.arrayContaining(["综合题·2问"]),
+      answer: "（1）夏季湿润，冬季干燥。\n（2）光热充足，水源便利。",
+    });
+  });
+
+  it("reads compact numbered answers on the same line as the answer section label", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案：1. C  2. D",
+    ].join("\n"), geographyConfig);
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.answer)).toEqual(["C", "D"]);
+  });
+
+  it("accepts an answer-section heading with descriptive text after it", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二小题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案与解析（地理学科）",
+      "1. C",
+      "2. D",
+    ].join("\n"), geographyConfig);
+    expect(blocks.filter((block) => block.type === "question").map((block) => block.answer)).toEqual(["C", "D"]);
+  });
+});

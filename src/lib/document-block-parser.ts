@@ -961,12 +961,25 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
 }
 
 function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind | null {
-  const normalized = normalizeStructuralText(text)
+  const compact = normalizeStructuralText(text)
     .replace(/\s+/g, "")
-    .replace(/^[【［[(（]+/, "")
-    .replace(/[】］\])）:：]+$/, "");
+    .replace(/^[【［[(（]+/, "");
+  const normalized = compact.replace(/[】］\])）:：]+$/, "");
   if (/^(?:参考)?答案$/.test(normalized)) return "answer";
   if (/^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
+  const heading = /(?:参考)?答案(?:与|和|及)?解析|(?:参考)?答案/;
+  const leading = new RegExp(`^(${heading.source})`).exec(compact);
+  if (leading && (/^(?:[（(【［][^）)】］]{1,40}[）)】］])?$/.test(compact.slice(leading[0].length))
+    || /^[:：](?:第)?[\d０-９]{1,4}[、.．:：)）]\S/.test(compact.slice(leading[0].length)))) {
+    return leading[0].includes("解析") ? "answerAnalysis" : "answer";
+  }
+  const trailing = new RegExp(`(${heading.source})$`).exec(normalized);
+  if (trailing) {
+    const prefix = normalized.slice(0, trailing.index);
+    if (prefix.length > 0 && prefix.length <= 60 && !/[?？。！:：]/.test(prefix)) {
+      return trailing[0].includes("解析") ? "answerAnalysis" : "answer";
+    }
+  }
   return null;
 }
 
@@ -1426,6 +1439,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
   let independentSubQuestionNextIndex: number | undefined;
+  let separatedByBlank = false;
   let order = 0;
 
   const submitCurrent = () => {
@@ -1489,7 +1503,36 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const originalLine = lines[lineIndex];
     let line = originalLine.trim();
-    if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
+    if (!line) {
+      separatedByBlank = true;
+      continue;
+    }
+    const afterBlank = separatedByBlank;
+    separatedByBlank = false;
+    if (/^[-—–=*]{3,}$/.test(line)) continue;
+
+    // Blank lines in geography papers often separate a new reading passage
+    // from the previous question's final option.
+    if (
+      config.subject?.trim() === "地理"
+      && afterBlank
+      && currentBlock.type === "question"
+      && currentQuestionField === "content"
+      && (currentBlock.options?.length || 0) >= 2
+      && !isQuestionStart(line, config)
+      && !isImageLine(line)
+      && !isDocumentTableFragment(line)
+      && !extractOptionLine(line, currentBlock.options?.length || 0, true)
+    ) {
+      submitCurrent();
+      const isUnnumberedQuestion = /[?？]/.test(line)
+        && !/(?:据此|根据|阅读|读图|结合).{0,40}(?:完成|回答|作答)/.test(line);
+      currentBlock = {
+        type: isUnnumberedQuestion ? "question" : "knowledge",
+        content: originalLine,
+      };
+      continue;
+    }
 
     if (isKnowledgeBlockStart(line)) {
       submitCurrent();
@@ -1768,43 +1811,64 @@ function geographyDetailCategory(type: QuestionType, content: string): string | 
 }
 
 function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
-  // A geographic reading passage can introduce several consecutive, globally numbered
-  // choice questions. Blank lines delimit independent passages, not their sub-questions.
-  const paragraphs = source.replace(/\r\n?/g, "\n").split(/\n\s*\n+/);
-  const groups = paragraphs.flatMap((paragraph) => {
-    const lines = paragraph.split("\n");
-    const firstNumbered = lines.findIndex((line) => /^\s*\d{1,4}\s*[.．、]\s*\S/.test(line));
-    const introduction = lines.slice(0, firstNumbered < 0 ? undefined : firstNumbered)
-      .filter((line) => !isHeading(line.trim(), config))
-      .join("\n").trim();
-    if (!/(?:阅读|读.{0,8}[图表材料]|据.{0,12}(?:回答|完成)|根据.{0,30}(?:回答|完成)|回答下列|完成下列)/.test(introduction)) return [];
-    if (isHeading(introduction, config) || trailingSolutionHeadingKind(introduction)) return [];
-    if (firstNumbered < 0) {
-      const range = /(?:回答|完成|作答)\s*(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
-      if (!range) return [];
-      const start = Number(range[1]);
-      const end = Number(range[2]);
-      if (start < 1 || end <= start || end - start > 9) return [];
-      return [{ introduction, numbers: Array.from({ length: end - start + 1 }, (_, index) => String(start + index)) }];
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const sharedStemPattern = /(?:据.{0,24}(?:完成|回答|作答)|根据.{0,40}(?:完成|回答|作答)|(?:阅读|读|观察|结合).{0,40}(?:完成|回答|作答)|(?:完成|回答)下[列面])/;
+  const numberedPattern = /^\s*([\d０-９]{1,4})\s*[.．、]\s*\S/;
+  const optionPattern = /^\s*[A-Ha-h]\s*[.．、:：)）]/;
+  const groups: Array<{ introduction: string; numbers: string[] }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const cue = lines[index].trim();
+    if (!sharedStemPattern.test(cue) || isHeading(cue, config) || trailingSolutionHeadingKind(cue)) continue;
+
+    let start = index;
+    while (start > 0 && index - start < 12) {
+      const preceding = lines[start - 1].trim();
+      if (isHeading(preceding, config)
+        || isQuestionStart(preceding, config)
+        || optionPattern.test(preceding)
+        || trailingSolutionHeadingKind(preceding)
+        || /(?:试卷|测试卷|考试卷)$/.test(preceding)
+        || (preceding && sharedStemPattern.test(preceding))) break;
+      start -= 1;
     }
-    if (firstNumbered === 0) return [];
-    const numbers = lines.slice(firstNumbered)
-      .map((line) => /^\s*(\d{1,4})\s*[.．、]\s*\S/.exec(line)?.[1])
-      .filter((number): number is string => Boolean(number));
-    if (numbers.length < 2 || !numbers.every((number, index) => index === 0 || Number(number) === Number(numbers[index - 1]) + 1)) return [];
-    return [{ introduction, numbers }];
-  });
+    const introduction = lines.slice(start, index + 1).map((line) => line.trim()).filter(Boolean).join("\n");
+    const range = /(?:回答|完成|作答)\s*(?:第\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
+    const lastInRange = range && Number(range[2]) > Number(range[1])
+      && Number(range[2]) - Number(range[1]) <= 9 ? Number(range[2]) : undefined;
+    const numbers: string[] = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const candidate = lines[next].trim();
+      if (!candidate) continue;
+      if (isHeading(candidate, config) || trailingSolutionHeadingKind(candidate)
+        || sharedStemPattern.test(candidate)) break;
+      const match = numberedPattern.exec(candidate);
+      if (match) {
+        const number = normalizeQuestionNumber(match[1]);
+        if (numbers.length > 0 && Number(number) !== Number(numbers[numbers.length - 1]) + 1) break;
+        numbers.push(number);
+        if (lastInRange && Number(number) >= lastInRange) break;
+      } else if (numbers.length > 0 && !optionPattern.test(candidate)
+        && !isImageLine(candidate) && !isDocumentTableFragment(candidate)
+        && /^(?:图|表|材料|据|根据|阅读)/.test(candidate)) break;
+    }
+    if (numbers.length >= 2) groups.push({ introduction, numbers });
+  }
   if (groups.length === 0) return blocks;
 
   const result = [...blocks];
+  let searchFrom = 0;
   for (const group of groups) {
-    const first = result.findIndex((block) => block.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[0]);
+    const first = result.findIndex((block, index) => index >= searchFrom
+      && block.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[0]);
     if (first < 0) continue;
     const members = result.slice(first, first + group.numbers.length);
     if (!members.every((block, index) => block?.type === "question" && extractQuestionNumber(block.content, config) === group.numbers[index])) continue;
     const section = [...result.slice(0, first)].reverse().find((block) => block.type === "groupTitle");
-    const type = section ? detectSectionQuestionType(section.content) : undefined;
-    if (type !== "single" && type !== "multiple") continue;
+    const sectionType = section ? detectSectionQuestionType(section.content) : undefined;
+    const type = sectionType || (members.every((member) => (member.options?.length || 0) >= 2)
+      ? (members.some((member) => member.questionType === "multiple") ? "multiple" : "single")
+      : undefined);
+    if (type !== "single" && type !== "multiple" && type !== "comprehensive") continue;
 
     const field = (key: "answer" | "analysis" | "summary") => members
       .map((item, index) => item[key] ? `（${index + 1}）${item[key]}` : "")
@@ -1824,9 +1888,15 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
       summary: field("summary"),
     };
     result.splice(first, members.length, merged);
-    if (first > 0 && result[first - 1].type === "knowledge" && result[first - 1].content.trim() === group.introduction) {
-      result.splice(first - 1, 1);
+    let mergedIndex = first;
+    while (mergedIndex > 0) {
+      const preceding = result[mergedIndex - 1];
+      if (!["knowledge", "documentTitle", "documentInfo"].includes(preceding.type)) break;
+      if (!group.introduction.includes(preceding.content.trim())) break;
+      result.splice(mergedIndex - 1, 1);
+      mergedIndex -= 1;
     }
+    searchFrom = mergedIndex + 1;
   }
   return result;
 }
@@ -1834,6 +1904,19 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
 function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
   if (config.subject?.trim() !== "地理") return blocks;
   const grouped = groupGeographyChoiceQuestions(blocks, source, config);
+  for (let index = 0; index < grouped.length; index += 1) {
+    const block = grouped[index];
+    if (block.type !== "knowledge") continue;
+    const next = grouped[index + 1];
+    if (next?.type === "question") {
+      next.content = block.content.trim() + "\n" + next.content;
+      grouped.splice(index, 1);
+      index -= 1;
+    } else {
+      block.type = "documentInfo";
+      delete block.knowledgeTitle;
+    }
+  }
   let sectionType: QuestionType | undefined;
   grouped.forEach((block, index) => {
     block.order = index;
@@ -1859,7 +1942,12 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     .reverse();
 
   for (const { index: headingIndex, kind } of solutionHeadingIndexes) {
-    const solutions = parseTrailingSolutions(lines.slice(headingIndex + 1), config);
+    const headingLine = lines[headingIndex].trim();
+    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
+    const solutionLines = inlineAnswers !== headingLine
+      ? [inlineAnswers, ...lines.slice(headingIndex + 1)]
+      : lines.slice(headingIndex + 1);
+    const solutions = parseTrailingSolutions(solutionLines, config);
     if (solutions.length === 0) continue;
 
     const blocks = parseDocumentBlocksCore(lines.slice(0, headingIndex).join("\n"), config);
