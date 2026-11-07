@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { shareService } from "@/services/share";
+import { classService } from "@/services/class";
 import { schoolService } from "@/services/school";
 import { useAuthStore } from "@/stores/auth";
 import { useUIStore } from "@/stores/ui";
@@ -15,6 +16,14 @@ vi.mock("@/services/share", () => ({
       rank: null,
     }),
   },
+}));
+
+vi.mock("@/services/class", () => ({
+  classService: { listPersonalClasses: vi.fn().mockResolvedValue([]), listSchoolClasses: vi.fn().mockResolvedValue([]) },
+}));
+
+vi.mock("@/services/lessonCourseware", () => ({
+  lessonCoursewareService: { getLessonSchedule: vi.fn().mockResolvedValue(null) },
 }));
 
 vi.mock("@/services/school", () => ({
@@ -38,6 +47,7 @@ const affiliation: TeacherAffiliation = {
 
 describe("AppLayout", () => {
   beforeEach(() => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([]);
     vi.mocked(shareService.getDonationPrivileges).mockResolvedValue({
       donationCount: 0,
       rank: null,
@@ -104,6 +114,26 @@ describe("AppLayout", () => {
 
     expect(screen.getByRole("link", { name: "我的学生" })).toBeInTheDocument();
     expect(screen.queryByText("个人教学班")).not.toBeInTheDocument();
+  });
+
+  it("only displays individual tutoring for a teacher with personal classes", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValueOnce([]);
+    const { unmount } = render(<MemoryRouter><AppLayout>页面内容</AppLayout></MemoryRouter>);
+    await waitFor(() => expect(classService.listPersonalClasses).toHaveBeenCalledWith("teacher-1"));
+    expect(screen.queryByText("个别辅导")).not.toBeInTheDocument();
+    unmount();
+
+    vi.mocked(classService.listPersonalClasses).mockResolvedValueOnce([{
+      id: "personal-1", type: "personal", teacherId: "teacher-1",
+      name: "一对一辅导班", description: "", studentIds: [], createdAt: "2026-11-01",
+    }]);
+    render(<MemoryRouter><AppLayout>页面内容</AppLayout></MemoryRouter>);
+    const navButton = await screen.findByRole("button", { name: /个别辅导/ });
+    fireEvent.click(navButton.parentElement!.querySelector('button[title="展开"]')!);
+    const links = ["个人教学班管理", "根据学情编讲义", "讲义作业管理", "个别辅导课件"];
+    for (const label of links) {
+      expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
+    }
   });
 
   it("offers ordinary school teachers a grade-viewing link without management navigation", () => {
