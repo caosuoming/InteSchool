@@ -37,6 +37,7 @@ export default function ScannerPage() {
   const [duplex, setDuplex] = useState(true);
   const [deviceStatus, setDeviceStatus] = useState("");
   const [bridgeUnavailable, setBridgeUnavailable] = useState(false);
+  const [pairingHint, setPairingHint] = useState("");
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [selected, setSelected] = useState<PublishedScannerSheet | null>(null);
   const [scans, setScans] = useState<ScannedImage[]>([]);
@@ -107,6 +108,15 @@ export default function ScannerPage() {
       setBridgeUnavailable(true);
       setDeviceStatus(cause instanceof Error ? cause.message : "无法查询扫描仪");
     } finally { setLoadingDevices(false); }
+  };
+
+  const copyScannerOrigin = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.origin);
+      setPairingHint("已复制本站网址，请在 Windows 托盘图标的右键菜单中选择「授权网站」，粘贴后确认。");
+    } catch {
+      setPairingHint("无法自动复制，请手动复制下方网址，再在 Windows 托盘中授权。");
+    }
   };
 
   useEffect(() => { if (schoolId) void refreshDevices(); }, [schoolId]);
@@ -339,13 +349,22 @@ export default function ScannerPage() {
               {bridgeUnavailable && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm text-ink-800">
                   <p className="font-semibold">连接 Windows 扫描客户端</p>
-                  <p>首次使用：下载安装包 → 检查右下角通知区域的 InteSchool 图标（可能隐藏在「^」中）→ 点击“授权连接本站”并确认网址 → 刷新设备。安装包已包含运行环境，无需配置 Node.js。</p>
+                  <p>首次使用：下载安装包 → 点击“授权连接本站”，在浏览器和 Windows 弹窗中确认 → 刷新设备。安装包已包含运行环境，无需配置 Node.js。</p>
                   <div className="flex flex-wrap gap-3 items-center">
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href="https://github.com/caosuoming/InteSchool/releases/download/scanner-bridge-latest/InteSchool-Scanner-Setup.exe"><Download className="h-4 w-4" />下载 Windows 安装包</a>
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href={`inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`}>授权连接本站</a>
                     <a className="text-ink-600 underline" href="https://github.com/caosuoming/InteSchool/blob/main/docs/scanner-bridge.md" target="_blank" rel="noopener noreferrer">安装说明及故障排查</a>
                   </div>
-                  <p className="text-xs text-ink-600">双击托盘图标打开扫描页面，右键可查看运行状态和诊断日志。连接时仅对可信学校网址授权。扫描仪还需安装厂商驱动；TWAIN 设备可能需要 NAPS2。若已安装仍无法连接，请在浏览器网站权限中允许“本机设备/本地网络访问”。</p>
+                  <div className="space-y-2 rounded-md border border-amber-200 bg-white/70 p-3">
+                    <p className="font-medium">点击后没有弹窗？可直接从右下角托盘授权</p>
+                    <p>右键 InteSchool 扫描图标（可能在「^」中）→ 选择「授权网站」→ 粘贴本站网址并确认。菜单顶部灰色的服务状态仅用于显示，不是授权按钮。</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => void copyScannerOrigin()}>复制本站网址</Button>
+                      <code className="break-all text-xs text-ink-700">{window.location.origin}</code>
+                    </div>
+                    {pairingHint && <p role="status">{pairingHint}</p>}
+                  </div>
+                  <p className="text-xs text-ink-600">双击托盘图标打开扫描页面，右键还可查看运行状态和诊断日志。只对可信学校网址授权。扫描仪还需安装厂商驱动；TWAIN 设备可能需要 NAPS2。若已安装仍无法连接，请在浏览器网站权限中允许“本机设备/本地网络访问”。</p>
                   <p className="text-xs text-ink-600">无法安装桥接时，也可以用系统扫描软件先保存为 PNG/JPEG 图片，然后使用下方答题卡的“导入图片”功能，无须安装 InteSchool 客户端。</p>
                 </div>
               )}

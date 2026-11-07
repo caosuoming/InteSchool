@@ -1,5 +1,5 @@
 #define AppName "InteSchool 扫描桥接"
-#define AppVersion "1.1.0"
+#define AppVersion "1.1.1"
 
 [Setup]
 AppId={{B2A20F71-10F0-40CA-9057-4CF45CDE8634}
@@ -40,7 +40,7 @@ Name: "{group}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Paramete
 Name: "{userstartup}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""
 
 [Run]
-Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""; Description: "启动本机扫描服务"; Flags: nowait skipifsilent
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -STA -File ""{app}\scanner-tray.ps1"" -Restart"; Description: "启动本机扫描服务"; Flags: nowait skipifsilent
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scanner-tray.ps1"" -Stop"; Flags: runhidden
