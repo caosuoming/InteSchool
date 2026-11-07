@@ -1034,7 +1034,9 @@ export function AnswerSheetComposer({
   const printSheet = () => {
     try {
       printAnswerSheet(previewPages(), settings.paperSize);
-      void publishAfterExport();
+      void Promise.resolve(onExport?.(settings))
+        .then(() => publishAfterExport())
+        .catch((error) => toast.error("记录答题卡打印失败", error instanceof Error ? error.message : undefined));
     } catch (error) {
       toast.error("打印答题卡失败", error instanceof Error ? error.message : undefined);
     }
@@ -1053,17 +1055,6 @@ export function AnswerSheetComposer({
       toast.error("答题卡 PDF 下载失败", error instanceof Error ? error.message : undefined);
     } finally {
       setExporting(false);
-    }
-  };
-
-  const printSheet = () => {
-    try {
-      printAnswerSheet(previewPages(), settings.paperSize);
-      void onExport?.(settings).catch((error) => {
-        toast.error("记录答题卡打印失败", error instanceof Error ? error.message : undefined);
-      });
-    } catch (error) {
-      toast.error("打印答题卡失败", error instanceof Error ? error.message : undefined);
     }
   };
 

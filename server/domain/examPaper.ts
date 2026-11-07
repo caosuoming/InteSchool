@@ -212,7 +212,7 @@ export const examPaperService = {
   },
 
   async invalidateAnswerSheet(id: string): Promise<ExamPaper> {
-    assertDocumentNotUsed(id);
+    if (hasDocumentAnswerRecords(id)) throw new Error("文档已有答题记录，不能作废答题卡");
     let updated: ExamPaper | undefined;
     db.update("examPapers", (list) => list.map((item) => {
       if (item.id !== id) return item;
