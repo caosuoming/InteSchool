@@ -453,7 +453,7 @@ describe("QuestionBankPage personal resource scope", () => {
     await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalled());
     expect(analyticsService.annotateTreeWithStudentProgress).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "思想方法" }));
-    fireEvent.click(screen.getByLabelText("显示目录节点题目数量"));
+    fireEvent.click(screen.getByLabelText("显示"));
     await waitFor(() => expect(analyticsService.annotateTreeWithStudentProgress).toHaveBeenCalled());
     const previousCalls = vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.calls.length;
     view.rerender(<MemoryRouter><QuestionBankPage refreshToken={1} /></MemoryRouter>);
