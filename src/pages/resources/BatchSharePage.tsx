@@ -66,9 +66,16 @@ export default function BatchSharePage() {
     if (!teacher?.schoolId || availableRecords.length === 0) return;
     setAccepting(true);
     try {
-      const results = await Promise.allSettled(availableRecords.map((record) =>
-        shareService.acceptShare(record.id, teacher.id, teacher.schoolId!),
-      ));
+      const results = await Promise.allSettled(availableRecords.map(async (record) => {
+        const conflicts = await shareService.checkShareQuestionDuplicates(record.id, teacher.id, teacher.schoolId!);
+        const candidate = conflicts[0];
+        const decision = candidate
+          ? window.confirm(`发现高度相似题目（${(candidate.similarity * 100).toFixed(1)}%）：\n${candidate.targetQuestion.stem.slice(0, 160)}\n\n确定：标记为同一题；取消：新增独立题目副本。`)
+            ? { action: "same" as const, targetResourceId: candidate.targetResourceId }
+            : { action: "new" as const }
+          : undefined;
+        return shareService.acceptShare(record.id, teacher.id, teacher.schoolId!, decision);
+      }));
       const succeededCount = results.filter((result) => result.status === "fulfilled").length;
       const failedCount = results.length - succeededCount;
 

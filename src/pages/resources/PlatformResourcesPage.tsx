@@ -853,7 +853,7 @@ export default function PlatformResourcesPage() {
       const result = await donationService.saveAsOwnResource(item.shareId, teacher.id, schoolId, decision);
       setSavedIds((current) => new Set(current).add(item.shareId));
       setSaveConflict(null);
-      toast.success(result.merged ? "已合并到我的题目" : "副本已创建", item.title);
+      toast.success(result.linked ? "已标记为同一题" : result.merged ? "已合并到我的题目" : "副本已创建", item.title);
     } catch (error: any) {
       toast.error("创建副本失败", error?.message);
     } finally {
@@ -2076,7 +2076,7 @@ export default function PlatformResourcesPage() {
         open={Boolean(saveConflict && saveQuestionConflict)}
         onClose={() => setSaveConflict(null)}
         title="创建题目副本查重"
-        description="平台题目与我的题目相似度超过 80%。题干只能二选一，答案、解析、总结可复选并保留为第二项。"
+        description="平台题目与我的题目高度相似。可新增独立副本，或关联为同一题；两题内容与编号不会合并。"
         size="full"
         footer={saveConflict ? (
           <div className="flex justify-end gap-2">
@@ -2086,7 +2086,7 @@ export default function PlatformResourcesPage() {
               loading={addingIds.has(saveConflict.item.shareId)}
               onClick={() => saveToMyResources(saveConflict.item, saveConflict.decision)}
             >
-              确认创建副本
+              {saveConflict.decision.action === "same" ? "确认标记为同一题" : "确认创建副本"}
             </Button>
           </div>
         ) : null}
@@ -2103,7 +2103,7 @@ export default function PlatformResourcesPage() {
               <div className="flex rounded-md border border-ink-200 overflow-hidden">
                 {([
                   { value: "new", label: "作为新题新增" },
-                  { value: "merge", label: "合并到我的题目" },
+                  { value: "same", label: "标记为同一题" },
                 ] as const).map((option) => (
                   <button
                     key={option.value}
@@ -2132,56 +2132,12 @@ export default function PlatformResourcesPage() {
               ] as const).map((field) => (
                 <div key={field.key} className="contents">
                   <div className="font-medium text-ink-700 py-2">{field.label}</div>
-                  <button
-                    disabled={saveConflict.decision.action !== "merge"}
-                    onClick={() => updateSaveDecision((current) => ({
-                      ...current,
-                      fields: {
-                        ...current.fields,
-                        [field.key]: field.key === "stem"
-                          ? "source"
-                          : current.fields[field.key] === "both"
-                            ? "target"
-                            : current.fields[field.key] === "target"
-                              ? "both"
-                              : "source",
-                      },
-                    }))}
-                    className={cn(
-                      "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
-                      saveConflict.decision.action === "merge" && ["source", "both"].includes(saveConflict.decision.fields[field.key])
-                        ? "border-gold-400 bg-gold-50"
-                        : "border-ink-100 bg-mist/40",
-                      saveConflict.decision.action !== "merge" && "opacity-60 cursor-default",
-                    )}
-                  >
-                    {field.source}
-                  </button>
-                  <button
-                    disabled={saveConflict.decision.action !== "merge"}
-                    onClick={() => updateSaveDecision((current) => ({
-                      ...current,
-                      fields: {
-                        ...current.fields,
-                        [field.key]: field.key === "stem"
-                          ? "target"
-                          : current.fields[field.key] === "both"
-                            ? "source"
-                            : current.fields[field.key] === "source"
-                              ? "both"
-                              : "target",
-                      },
-                    }))}
-                    className={cn(
-                      "text-left p-2 rounded-md border whitespace-pre-wrap break-words",
-                      saveConflict.decision.action === "merge" && ["target", "both"].includes(saveConflict.decision.fields[field.key])
-                        ? "border-gold-400 bg-gold-50"
-                        : "border-ink-100 bg-mist/40",
-                      saveConflict.decision.action !== "merge" && "opacity-60 cursor-default",
-                    )}
-                  >
-                    {field.target}
-                  </button>
+                  <div className="rounded-md border border-ink-100 bg-mist/40 p-2 whitespace-pre-wrap break-words">
+                    {field.source || "（无）"}
+                  </div>
+                  <div className="rounded-md border border-ink-100 bg-mist/40 p-2 whitespace-pre-wrap break-words">
+                    {field.target || "（无）"}
+                  </div>
                 </div>
               ))}
             </div>

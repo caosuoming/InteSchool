@@ -624,7 +624,14 @@ export function UploadPage() {
   const handleAcceptShare = async (id: string) => {
     if (!teacher || !resourceScopeId) return;
     try {
-      await shareService.acceptShare(id, teacher.id, resourceScopeId);
+      const conflicts = await shareService.checkShareQuestionDuplicates(id, teacher.id, resourceScopeId);
+      const candidate = conflicts[0];
+      const decision = candidate
+        ? window.confirm(`发现高度相似题目（${(candidate.similarity * 100).toFixed(1)}%）：\n${candidate.targetQuestion.stem.slice(0, 160)}\n\n确定：标记为同一题并保留已有题目编号；取消：新增独立题目副本。`)
+          ? { action: "same" as const, targetResourceId: candidate.targetResourceId }
+          : { action: "new" as const }
+        : undefined;
+      await shareService.acceptShare(id, teacher.id, resourceScopeId, decision);
       setAcceptedIds((prev) => new Set(prev).add(id));
       setIncomingShares((prev) => prev.filter((item) => item.id !== id));
       toast.success("已保存到我的资源");
