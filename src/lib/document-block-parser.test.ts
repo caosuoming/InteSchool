@@ -15,6 +15,34 @@ const config: DocumentParseConfig = {
 };
 
 describe("document block parser", () => {
+  it("recognizes configured project headings without treating numbered exercises as headings", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "专题闯关",
+        "训练1 求 1+1。",
+        "考向2：函数性质",
+        "例2 求 2+2。",
+      ].join("\n"),
+      { ...config, projectTypeKeywords: ["专题闯关", "考向", "训练"] },
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual([
+      "groupTitle",
+      "question",
+      "groupTitle",
+      "question",
+    ]);
+  });
+
+  it("does not recognize removed project-type keywords", () => {
+    const blocks = parseDocumentBlocks("课时对点练\n例1 求 1+1。", {
+      ...config,
+      projectTypeKeywords: [],
+    });
+
+    expect(blocks.some((block) => block.type === "groupTitle")).toBe(false);
+  });
+
   it("keeps formulas and extracts inline options", () => {
     const blocks = parseDocumentBlocks(
       [

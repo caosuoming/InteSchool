@@ -19,12 +19,15 @@ const mocks = vi.hoisted(() => ({
     answerKeywords: ["答案"],
     analysisKeywords: ["解析"],
     summaryKeywords: [],
+    projectTypeKeywords: ["知识梳理"],
     singleChoiceKeywords: [],
     multipleChoiceKeywords: [],
     fillBlankKeywords: [],
     essayKeywords: [],
     resetToDefault: vi.fn(),
     addQuestionKeyword: vi.fn(),
+    addProjectTypeKeyword: vi.fn(),
+    removeProjectTypeKeyword: vi.fn(),
     removeQuestionKeyword: vi.fn(),
     addAnswerKeyword: vi.fn(),
     removeAnswerKeyword: vi.fn(),
@@ -257,6 +260,33 @@ describe("ExtractReviewModal", () => {
 
     expect(screen.getAllByRole("button", { name: /关键字与重新拆解/ })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: /与上一块合并/ })).toHaveLength(2);
+  });
+
+  it("adds and removes project-type keywords from the keyword settings", async () => {
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="lecture-1"
+        resourceType="lecture"
+        resourceTitle="测试讲义"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        questionCategory="practice"
+      />,
+    );
+
+    await screen.findByRole("button", { name: "关键字与重新拆解" });
+    await user.click(screen.getByRole("button", { name: "关键字与重新拆解" }));
+    await user.click(screen.getByRole("button", { name: "项目类型关键字" }));
+    await user.type(screen.getByPlaceholderText("新增项目类型关键字"), "专题闯关{enter}");
+    expect(mocks.extractConfig.addProjectTypeKeyword).toHaveBeenCalledWith("专题闯关");
+    await user.click(screen.getByRole("button", { name: "删除知识梳理" }));
+    expect(mocks.extractConfig.removeProjectTypeKeyword).toHaveBeenCalledWith(0);
   });
 
   it("reviews and saves the geography question subtype", async () => {

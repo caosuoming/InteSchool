@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { defaultProjectTypeKeywords } from "@/lib/document-project-heading-keywords";
 
 interface ExtractConfigState {
   questionKeywords: string[];
@@ -7,6 +8,7 @@ interface ExtractConfigState {
   analysisKeywords: string[];
   summaryKeywords: string[];
   headingKeywords: string[];
+  projectTypeKeywords: string[];
   
   // 题型识别关键字
   singleChoiceKeywords: string[];
@@ -33,6 +35,9 @@ interface ExtractConfigState {
   addHeadingKeyword: (keyword: string) => void;
   removeHeadingKeyword: (index: number) => void;
   updateHeadingKeyword: (index: number, keyword: string) => void;
+
+  addProjectTypeKeyword: (keyword: string) => void;
+  removeProjectTypeKeyword: (index: number) => void;
   
   addSingleChoiceKeyword: (keyword: string) => void;
   removeSingleChoiceKeyword: (index: number) => void;
@@ -187,6 +192,7 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
       analysisKeywords: defaultAnalysisKeywords,
       summaryKeywords: defaultSummaryKeywords,
       headingKeywords: defaultHeadingKeywords,
+      projectTypeKeywords: defaultProjectTypeKeywords,
       singleChoiceKeywords: defaultSingleChoiceKeywords,
       multipleChoiceKeywords: defaultMultipleChoiceKeywords,
       fillBlankKeywords: defaultFillBlankKeywords,
@@ -267,6 +273,15 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
           ),
         })),
 
+      addProjectTypeKeyword: (keyword) =>
+        set((state) => ({
+          projectTypeKeywords: uniqueKeywords([...state.projectTypeKeywords, keyword.trim()]),
+        })),
+      removeProjectTypeKeyword: (index) =>
+        set((state) => ({
+          projectTypeKeywords: state.projectTypeKeywords.filter((_, i) => i !== index),
+        })),
+
       // 题型识别关键字操作
       addSingleChoiceKeyword: (keyword) =>
         set((state) => ({
@@ -311,6 +326,7 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
           analysisKeywords: defaultAnalysisKeywords,
           summaryKeywords: defaultSummaryKeywords,
           headingKeywords: defaultHeadingKeywords,
+          projectTypeKeywords: defaultProjectTypeKeywords,
           singleChoiceKeywords: defaultSingleChoiceKeywords,
           multipleChoiceKeywords: defaultMultipleChoiceKeywords,
           fillBlankKeywords: defaultFillBlankKeywords,
@@ -319,11 +335,14 @@ export const useExtractConfigStore = create<ExtractConfigState>()(
     }),
     {
       name: "zhiti:extract-config",
-      version: 3,
+      version: 4,
       migrate: (persistedState) => {
         const state = persistedState as Partial<ExtractConfigState>;
         return {
           ...state,
+          projectTypeKeywords: Array.isArray(state.projectTypeKeywords)
+            ? state.projectTypeKeywords
+            : defaultProjectTypeKeywords,
           questionKeywords: uniqueKeywords([
             ...(state.questionKeywords || defaultQuestionKeywords),
             "跟踪训练",

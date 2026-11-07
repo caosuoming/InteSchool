@@ -32,6 +32,7 @@ vi.mock("@/stores/extractConfig", () => ({
   useExtractConfigStore: {
     getState: () => ({
       headingKeywords: ["一"],
+      projectTypeKeywords: ["知识梳理"],
       questionKeywords: ["题目"],
       answerKeywords: ["答案"],
       analysisKeywords: ["解析"],

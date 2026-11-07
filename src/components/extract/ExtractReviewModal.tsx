@@ -326,7 +326,7 @@ export function ExtractReviewModal({
   const [duplicateChecks, setDuplicateChecks] = useState<Record<string, DuplicateCheck>>({});
   const [showKeywordConfig, setShowKeywordConfig] = useState(false);
   const [newKeywordValue, setNewKeywordValue] = useState("");
-  const [activeKeywordTab, setActiveKeywordTab] = useState<"question" | "answerAnalysis" | "questionType">("question");
+  const [activeKeywordTab, setActiveKeywordTab] = useState<"question" | "answerAnalysis" | "questionType" | "projectType">("question");
   const [selectedKeywordType, setSelectedKeywordType] = useState<"answer" | "analysis" | "summary">("answer");
   const [selectedQuestionType, setSelectedQuestionType] = useState<"single" | "multiple" | "fillblank" | "essay">("single");
   // 拖动弹窗状态 - 初始位置居右，靠近切块列表
@@ -1370,7 +1370,7 @@ export function ExtractReviewModal({
         </Button>
       </div>
 
-      <div className="flex gap-1 p-1 bg-mist/50 rounded-lg">
+      <div className="grid grid-cols-2 gap-1 p-1 bg-mist/50 rounded-lg">
         <button
           type="button"
           onClick={() => setActiveKeywordTab("question")}
@@ -1406,6 +1406,18 @@ export function ExtractReviewModal({
           )}
         >
           题型识别关键字
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveKeywordTab("projectType")}
+          className={cn(
+            "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+            activeKeywordTab === "projectType"
+              ? "bg-paper text-ink-900 shadow-sm"
+              : "text-ink-500 hover:text-ink-700",
+          )}
+        >
+          项目类型关键字
         </button>
       </div>
 
@@ -1710,6 +1722,59 @@ export function ExtractReviewModal({
                 }
               }}
               className="h-7 px-2"
+            >
+              <Plus className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
+      )}
+      {activeKeywordTab === "projectType" && (
+        <div className="space-y-2">
+          <div className="text-xs text-ink-500">
+            用于识别文档中独立成行的项目标题，拆解为“题型或项目名”。新增关键字将自动保存，下次拆解仍可使用。
+          </div>
+          <div className="space-y-1">
+            {extractConfig.projectTypeKeywords.map((keyword, idx) => (
+              <div key={keyword} className="flex items-center gap-1">
+                <span className="text-xs text-ink-400 w-4">{idx + 1}.</span>
+                <span className="flex-1 text-sm text-ink-700 bg-mist/50 px-2 py-1 rounded">
+                  {keyword}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => extractConfig.removeProjectTypeKeyword(idx)}
+                  className="p-0.5 text-ink-400 hover:text-red-600"
+                  title={`删除${keyword}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <Input
+              value={newKeywordValue}
+              onChange={(e) => setNewKeywordValue(e.target.value)}
+              placeholder="新增项目类型关键字"
+              className="text-xs h-7"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newKeywordValue.trim()) {
+                  extractConfig.addProjectTypeKeyword(newKeywordValue);
+                  setNewKeywordValue("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (newKeywordValue.trim()) {
+                  extractConfig.addProjectTypeKeyword(newKeywordValue);
+                  setNewKeywordValue("");
+                }
+              }}
+              className="h-7 px-2"
+              title="添加项目类型关键字"
             >
               <Plus className="w-3 h-3" />
             </Button>
