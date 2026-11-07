@@ -58,7 +58,7 @@ import { treeNameMap } from "@/lib/basket-audience";
 
 type Mode = "manage" | "use";
 type SortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
-type LeftTab = "chapter" | "knowledge" | "method";
+type LeftTab = "chapter" | "knowledge" | "method" | "error";
 type TrainingStatusFilter = "all" | "trained" | "untrained";
 
 const difficultyOptions = [
@@ -199,12 +199,15 @@ export default function QuestionBankPage({
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
   const [checkedMethods, setCheckedMethods] = useState<string[]>([]);
+  const [checkedErrors, setCheckedErrors] = useState<string[]>([]);
   const [chapterLogic, setChapterLogic] = useState<FilterLogic>("or");
   const [knowledgeLogic, setKnowledgeLogic] = useState<FilterLogic>("or");
   const [methodLogic, setMethodLogic] = useState<FilterLogic>("or");
+  const [errorLogic, setErrorLogic] = useState<FilterLogic>("or");
   const [includeDescendants, setIncludeDescendants] = useState(true);
   const [noChapter, setNoChapter] = useState(false);
   const [noKnowledge, setNoKnowledge] = useState(false);
@@ -312,6 +315,7 @@ export default function QuestionBankPage({
     checkedChapters.length > 0 ||
     checkedKnowledge.length > 0 ||
     checkedMethods.length > 0 ||
+    checkedErrors.length > 0 ||
     selectedDifficulties.length > 0 ||
     selectedTypes.length > 0 ||
     selectedGrade ||
@@ -351,6 +355,8 @@ export default function QuestionBankPage({
       knowledgeLogic,
       thoughtMethodIds: checkedMethods,
       methodLogic,
+      errorReasonIds: checkedErrors,
+      errorReasonLogic: errorLogic,
       noChapter,
       noKnowledge,
       difficulty: selectedDifficulties,
@@ -468,7 +474,7 @@ export default function QuestionBankPage({
     setTotalQuestionCount(sorted.length);
     setLoading(false);
   }, [
-    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, chapterLogic, knowledgeLogic, methodLogic,
+    teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, checkedErrors, chapterLogic, knowledgeLogic, methodLogic, errorLogic,
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
@@ -484,10 +490,11 @@ export default function QuestionBankPage({
   useEffect(() => {
     if (!teacher) return;
     const load = async () => {
-      const [ch, kp, methods, bs, allClasses, stus] = await Promise.all([
+      const [ch, kp, methods, errors, bs, allClasses, stus] = await Promise.all([
         knowledgeService.getChapterTree(teacher.id),
         knowledgeService.getKnowledgeTree(teacher.id),
         knowledgeService.getMethodTree(teacher.id),
+        knowledgeService.getErrorReasonTree(teacher.id),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
@@ -495,6 +502,7 @@ export default function QuestionBankPage({
       setChapterTree(ch);
       setKnowledgeTree(kp);
       setMethodTree(methods);
+      setErrorTree(errors);
       setBaskets(bs.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })));
       setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
@@ -714,6 +722,7 @@ export default function QuestionBankPage({
     setCheckedChapters([]);
     setCheckedKnowledge([]);
     setCheckedMethods([]);
+    setCheckedErrors([]);
     setNoChapter(false);
     setNoKnowledge(false);
     setSelectedDifficulties([]);
@@ -880,9 +889,9 @@ export default function QuestionBankPage({
   };
 
   // 获取当前显示的树
-  const displayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : methodTree;
-  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : checkedMethods;
-  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : setCheckedMethods;
+  const displayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : leftTab === "method" ? methodTree : errorTree;
+  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : leftTab === "method" ? checkedMethods : checkedErrors;
+  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : leftTab === "method" ? setCheckedMethods : setCheckedErrors;
   const handleIncludeDescendantsChange = (next: boolean) => {
     setIncludeDescendants(next);
     setCheckedChapters((current) =>
@@ -893,6 +902,9 @@ export default function QuestionBankPage({
     );
     setCheckedMethods((current) =>
       adjustDirectorySelectionForDescendants(methodTree, current, next),
+    );
+    setCheckedErrors((current) =>
+      adjustDirectorySelectionForDescendants(errorTree, current, next),
     );
   };
 
@@ -1017,6 +1029,17 @@ export default function QuestionBankPage({
                       思想方法
                     </span>
                   </button>
+                  <button
+                    onClick={() => setLeftTab("error")}
+                    className={cn(
+                      "flex-1 px-2 py-2.5 text-sm font-medium transition-colors",
+                      leftTab === "error"
+                        ? "bg-teal-50 text-teal-800 border-b-2 border-teal-500"
+                        : "text-ink-500 hover:text-ink-700",
+                    )}
+                  >
+                    错因库
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -1042,16 +1065,18 @@ export default function QuestionBankPage({
                   includeDescendantCounts={includeDescendants}
                   showDoneCount={selectedStudentIds.length > 0}
                   expandLevel={1}
-                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : leftTab === "knowledge" ? "搜索知识点..." : "搜索思想方法..."}
+                  searchPlaceholder={leftTab === "chapter" ? "搜索章节..." : leftTab === "knowledge" ? "搜索知识点..." : leftTab === "method" ? "搜索思想方法..." : "搜索错因..."}
                   showLogicSelector
-                  logic={leftTab === "chapter" ? chapterLogic : leftTab === "knowledge" ? knowledgeLogic : methodLogic}
+                  logic={leftTab === "chapter" ? chapterLogic : leftTab === "knowledge" ? knowledgeLogic : leftTab === "method" ? methodLogic : errorLogic}
                   onLogicChange={(logic) => {
                     if (leftTab === "chapter") {
                       setChapterLogic(logic);
                     } else if (leftTab === "knowledge") {
                       setKnowledgeLogic(logic);
-                    } else {
+                    } else if (leftTab === "method") {
                       setMethodLogic(logic);
+                    } else {
+                      setErrorLogic(logic);
                     }
                   }}
                   headerActions={(

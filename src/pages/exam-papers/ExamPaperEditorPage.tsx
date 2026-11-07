@@ -1011,6 +1011,8 @@ export default function ExamPaperEditorPage() {
     questionId: string,
     chapterIds: string[],
     knowledgePointIds: string[],
+    thoughtMethodIds?: string[],
+    errorReasonIds?: string[],
   ) => {
     if (isUsedDocument) {
       toast.warning("文档已用，不能再编辑");
@@ -1020,6 +1022,8 @@ export default function ExamPaperEditorPage() {
       const updated = await questionService.updateQuestion(questionId, {
         chapterIds,
         knowledgePointIds,
+        ...(thoughtMethodIds !== undefined ? { thoughtMethodIds } : {}),
+        ...(errorReasonIds !== undefined ? { errorReasonIds } : {}),
       });
       setQuestions((previous) => ({ ...previous, [questionId]: updated }));
       toast.success("章节课和知识点已更新");
@@ -3529,7 +3533,7 @@ function EditQuestionCatalogPanel({
   onKnowledgeTreeChange: (tree: TreeNode) => void;
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
-  onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
+  onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[], thoughtMethodIds?: string[], errorReasonIds?: string[]) => Promise<void>;
   onReplace: (question: Question) => void;
   onUpdateScore: (score: number) => void;
   progress?: QuestionProgress;
@@ -3540,7 +3544,24 @@ function EditQuestionCatalogPanel({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
   const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
+  const [draftMethodIds, setDraftMethodIds] = useState<string[]>([]);
+  const [draftErrorIds, setDraftErrorIds] = useState<string[]>([]);
+  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [savingCatalogs, setSavingCatalogs] = useState(false);
+
+  const questionOwnerId = question?.teacherId;
+  useEffect(() => {
+    if (!catalogOpen || !questionOwnerId) return;
+    let cancelled = false;
+    Promise.all([
+      knowledgeService.getMethodTree(questionOwnerId),
+      knowledgeService.getErrorReasonTree(questionOwnerId),
+    ]).then(([methods, errors]) => {
+      if (!cancelled) { setMethodTree(methods); setErrorTree(errors); }
+    }).catch((error) => toast.error("加载题目目录失败", error instanceof Error ? error.message : undefined));
+    return () => { cancelled = true; };
+  }, [catalogOpen, questionOwnerId]);
   const [mode, setMode] = useState<"properties" | "related">("properties");
 
   const chapterNames = (question?.chapterIds || [])
@@ -3556,6 +3577,8 @@ function EditQuestionCatalogPanel({
     if (!question || readOnly) return;
     setDraftChapterIds(question.chapterIds);
     setDraftKnowledgePointIds(question.knowledgePointIds);
+    setDraftMethodIds(question.thoughtMethodIds || []);
+    setDraftErrorIds(question.errorReasonIds || []);
     setCatalogOpen(true);
   };
 
@@ -3563,7 +3586,7 @@ function EditQuestionCatalogPanel({
     if (!question || readOnly) return;
     setSavingCatalogs(true);
     try {
-      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds);
+      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds, draftMethodIds, draftErrorIds);
       setCatalogOpen(false);
     } finally {
       setSavingCatalogs(false);
@@ -3718,6 +3741,24 @@ function EditQuestionCatalogPanel({
               <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
             )}
           </div>
+          <div className="rounded-lg border border-teal-100 p-3">
+            <div className="mb-2 text-sm font-medium text-ink-800">思想方法</div>
+            {methodTree ? (
+              <SearchableTree editable data={methodTree} onDataChange={setMethodTree}
+                title="思想方法" accent="teal" checkable checkedIds={draftMethodIds}
+                onCheck={setDraftMethodIds} expandLevel={2} searchPlaceholder="搜索思想方法..."
+                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
+            ) : <div className="py-8 text-center text-xs text-ink-400">思想方法加载中...</div>}
+          </div>
+          <div className="rounded-lg border border-teal-100 p-3">
+            <div className="mb-2 text-sm font-medium text-ink-800">可能错因</div>
+            {errorTree ? (
+              <SearchableTree editable data={errorTree} onDataChange={setErrorTree}
+                title="可能错因" accent="teal" checkable checkedIds={draftErrorIds}
+                onCheck={setDraftErrorIds} expandLevel={2} searchPlaceholder="搜索错因..."
+                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
+            ) : <div className="py-8 text-center text-xs text-ink-400">错因字典加载中...</div>}
+          </div>
         </div>
       </Modal>
     </>
@@ -3756,7 +3797,7 @@ function PreviewQuestionDetails({
   onKnowledgeTreeChange: (tree: TreeNode) => void;
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
-  onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[]) => Promise<void>;
+  onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[], thoughtMethodIds?: string[], errorReasonIds?: string[]) => Promise<void>;
   onBasketChanged: () => Promise<void>;
   completionQuestionId: string;
   students: Student[];
@@ -3770,7 +3811,24 @@ function PreviewQuestionDetails({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
   const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
+  const [draftMethodIds, setDraftMethodIds] = useState<string[]>([]);
+  const [draftErrorIds, setDraftErrorIds] = useState<string[]>([]);
+  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
+  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
   const [savingCatalogs, setSavingCatalogs] = useState(false);
+
+  const questionOwnerId = question?.teacherId;
+  useEffect(() => {
+    if (!catalogOpen || !questionOwnerId) return;
+    let cancelled = false;
+    Promise.all([
+      knowledgeService.getMethodTree(questionOwnerId),
+      knowledgeService.getErrorReasonTree(questionOwnerId),
+    ]).then(([methods, errors]) => {
+      if (!cancelled) { setMethodTree(methods); setErrorTree(errors); }
+    }).catch((error) => toast.error("加载题目目录失败", error instanceof Error ? error.message : undefined));
+    return () => { cancelled = true; };
+  }, [catalogOpen, questionOwnerId]);
   const [scoreEditing, setScoreEditing] = useState(false);
   const [scoreDraft, setScoreDraft] = useState(String(pq.score));
   const [savingScore, setSavingScore] = useState(false);
@@ -3789,6 +3847,8 @@ function PreviewQuestionDetails({
     if (!question) return;
     setDraftChapterIds(question.chapterIds);
     setDraftKnowledgePointIds(question.knowledgePointIds);
+    setDraftMethodIds(question.thoughtMethodIds || []);
+    setDraftErrorIds(question.errorReasonIds || []);
     setCatalogOpen(true);
   };
 
@@ -3796,7 +3856,7 @@ function PreviewQuestionDetails({
     if (!question) return;
     setSavingCatalogs(true);
     try {
-      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds);
+      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds, draftMethodIds, draftErrorIds);
       setCatalogOpen(false);
     } finally {
       setSavingCatalogs(false);
@@ -4021,6 +4081,24 @@ function PreviewQuestionDetails({
             ) : (
               <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
             )}
+          </div>
+          <div className="rounded-lg border border-teal-100 p-3">
+            <div className="mb-2 text-sm font-medium text-ink-800">思想方法</div>
+            {methodTree ? (
+              <SearchableTree editable data={methodTree} onDataChange={setMethodTree}
+                title="思想方法" accent="teal" checkable checkedIds={draftMethodIds}
+                onCheck={setDraftMethodIds} expandLevel={2} searchPlaceholder="搜索思想方法..."
+                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
+            ) : <div className="py-8 text-center text-xs text-ink-400">思想方法加载中...</div>}
+          </div>
+          <div className="rounded-lg border border-teal-100 p-3">
+            <div className="mb-2 text-sm font-medium text-ink-800">可能错因</div>
+            {errorTree ? (
+              <SearchableTree editable data={errorTree} onDataChange={setErrorTree}
+                title="可能错因" accent="teal" checkable checkedIds={draftErrorIds}
+                onCheck={setDraftErrorIds} expandLevel={2} searchPlaceholder="搜索错因..."
+                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
+            ) : <div className="py-8 text-center text-xs text-ink-400">错因字典加载中...</div>}
           </div>
         </div>
       </Modal>

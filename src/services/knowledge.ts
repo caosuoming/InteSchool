@@ -12,6 +12,7 @@ import type {
   NodePrerequisite,
   PrerequisiteNodeType,
   ThoughtMethod,
+  ErrorReason,
   TreeNode,
   TreeNodeType,
 } from "@/types";
@@ -31,6 +32,18 @@ export const knowledgeService = {
 
   async getMethodTree(schoolId: string): Promise<TreeNode> {
     return rpcCall("knowledge", "getMethodTree", [schoolId]) as any;
+  },
+
+  async listErrorReasons(schoolId: string): Promise<ErrorReason[]> {
+    return rpcCall("knowledge", "listErrorReasons", [schoolId]) as any;
+  },
+
+  async getErrorReasonTree(schoolId: string): Promise<TreeNode> {
+    return rpcCall("knowledge", "getErrorReasonTree", [schoolId]) as any;
+  },
+
+  async addErrorReason(schoolId: string, parentId: string | null, name: string): Promise<ErrorReason> {
+    return rpcCall("knowledge", "addErrorReason", [schoolId, parentId, name]) as any;
   },
 
   async addThoughtMethod(schoolId: string, parentId: string | null, name: string): Promise<ThoughtMethod> {

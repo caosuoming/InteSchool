@@ -52,6 +52,8 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
+    getMethodTree: vi.fn(),
   },
 }));
 vi.mock("@/services/analytics", () => ({
@@ -290,6 +292,8 @@ describe("LecturePreviewPage", () => {
       updatedAt: "2026-08-01T00:00:00.000Z",
     });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({ id: "root", name: "全部思想方法", type: "method", count: 0, children: [] });
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(analyticsService.listAnswerRecordsByLecture).mockResolvedValue([]);
     vi.mocked(analyticsService.saveAnswerRecord).mockResolvedValue(null);
@@ -594,6 +598,8 @@ describe("LecturePreviewPage", () => {
         sourceType: "",
         chapterIds: ["chapter-1"],
         knowledgePointIds: ["knowledge-point-1"],
+        thoughtMethodIds: [],
+        errorReasonIds: [],
       });
     });
     const details = screen.getByTestId("lecture-question-details-1");

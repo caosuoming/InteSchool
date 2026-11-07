@@ -38,6 +38,12 @@ function matchFilter(m: Material, filter: ResourceFilter): boolean {
       if (!filter.thoughtMethodIds.every((id) => ids.includes(id))) return false;
     } else if (!filter.thoughtMethodIds.some((id) => ids.includes(id))) return false;
   }
+  if (filter.errorReasonIds?.length) {
+    const ids = m.errorReasonIds || [];
+    if ((filter.errorReasonLogic || "or") === "and") {
+      if (!filter.errorReasonIds.every((id) => ids.includes(id))) return false;
+    } else if (!filter.errorReasonIds.some((id) => ids.includes(id))) return false;
+  }
   if (filter.grade && m.grade !== filter.grade) return false;
   if (filter.schoolYear && m.schoolYear !== filter.schoolYear) return false;
   if (filter.semester && (m.semester || "上学期") !== filter.semester) return false;

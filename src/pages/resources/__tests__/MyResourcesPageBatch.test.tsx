@@ -184,6 +184,7 @@ vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
     getKnowledgeTree: vi.fn(),
+    getErrorReasonTree: vi.fn(),
     getMethodTree: vi.fn(),
   },
 }));
@@ -427,6 +428,8 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(donationService.checkDonation).mockResolvedValue({ alreadyDonated: [], conflicts: [] });
     vi.mocked(donationService.donateResources).mockResolvedValue({ created: [], skipped: [] });
     vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapterTree);
+    vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({ id: "root", name: "全部思想方法", type: "method", count: 0, children: [] });
     vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue(knowledgeTree);
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
       id: "root", name: "全部思想方法", type: "method", count: 0, children: [],

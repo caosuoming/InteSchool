@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   listSettings: vi.fn(),
   getChapterTree: vi.fn(),
   getKnowledgeTree: vi.fn(),
+  getMethodTree: vi.fn(),
+  getErrorReasonTree: vi.fn(),
   downloadExamPaperDocxVariants: vi.fn(),
   createLessonFromExamPaper: vi.fn(),
   getLessonCoursewareBySource: vi.fn(),
@@ -93,6 +95,8 @@ vi.mock("@/services/examPublish", () => ({
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getKnowledgeTree: mocks.getKnowledgeTree,
+    getMethodTree: mocks.getMethodTree,
+    getErrorReasonTree: mocks.getErrorReasonTree,
     getChapterTree: mocks.getChapterTree,
   },
 }));
@@ -319,6 +323,8 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listSettings.mockResolvedValue([]);
     mocks.getChapterTree.mockResolvedValue(chapterTree);
     mocks.getKnowledgeTree.mockResolvedValue(knowledgeTree);
+    mocks.getMethodTree.mockResolvedValue({ id: "root", name: "全部思想方法", type: "method", count: 0, children: [] });
+    mocks.getErrorReasonTree.mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [] });
     mocks.downloadExamPaperDocxVariants.mockResolvedValue(undefined);
     mocks.createLessonFromExamPaper.mockResolvedValue({ id: "lesson-courseware-1" });
     mocks.getLessonCoursewareBySource.mockResolvedValue(null);
@@ -522,6 +528,8 @@ describe("ExamPaperEditorPage preview", () => {
       expect(mocks.updateQuestion).toHaveBeenCalledWith(question.id, {
         chapterIds: ["chapter-1"],
         knowledgePointIds: [],
+        thoughtMethodIds: [],
+        errorReasonIds: [],
       });
     });
     expect(details).toHaveTextContent("函数与方程");

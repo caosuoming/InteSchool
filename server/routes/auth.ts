@@ -1729,7 +1729,7 @@ export async function registerAuthRoutes(
       }
       // Preserve the original subject of old, unlabelled directories before switching.
       const previousSubject = typeof target.subject === "string" ? target.subject : teacher.subject;
-      for (const collection of ["chapters", "knowledgePoints", "thoughtMethods", "directoryCatalogs"]) {
+      for (const collection of ["chapters", "knowledgePoints", "thoughtMethods", "errorReasons", "directoryCatalogs"]) {
         const records = (state[collection] || []) as Array<{ teacherId?: string; subject?: string }>;
         state[collection] = records.map((record) =>
           record.teacherId === teacher.id && !record.subject
