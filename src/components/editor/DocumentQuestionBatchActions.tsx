@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import { BookOpen, Lightbulb, ListChecks } from "lucide-react";
 import { knowledgeService } from "@/services/knowledge";
 import { questionService } from "@/services/question";
@@ -24,9 +25,10 @@ interface Props {
   onUpdated: (questions: Question[]) => void;
   disabled?: boolean;
   markAllButton?: ReactNode;
+  layout?: "vertical" | "horizontal";
 }
 
-export function DocumentQuestionBatchActions({ schoolId, questionIds, onUpdated, disabled, markAllButton }: Props) {
+export function DocumentQuestionBatchActions({ schoolId, questionIds, onUpdated, disabled, markAllButton, layout = "vertical" }: Props) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [tree, setTree] = useState<TreeNode | null>(null);
@@ -83,12 +85,12 @@ export function DocumentQuestionBatchActions({ schoolId, questionIds, onUpdated,
   };
 
   return (
-    <div className="space-y-2" data-testid="document-question-batch-actions">
+    <div className={cn(layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "space-y-2")} data-testid="document-question-batch-actions">
       <div className="text-[11px] font-medium text-ink-500">批量操作（{uniqueIds.length} 题）</div>
-      <div className="flex flex-col items-stretch gap-1.5">
+      <div className={cn(layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "flex flex-col items-stretch gap-1.5")}>
         {markAllButton}
         {modes.map(({ key, label, icon: Icon }) => (
-          <Button key={key} variant="outline" size="sm" className="w-full justify-start" onClick={() => void openPicker(key)}
+          <Button key={key} variant="outline" size="sm" className={cn(layout === "horizontal" ? "justify-start" : "w-full justify-start")} onClick={() => void openPicker(key)}
             disabled={disabled || !schoolId || uniqueIds.length === 0}>
             <Icon className="h-3.5 w-3.5" />{label}
           </Button>

@@ -16,7 +16,7 @@ interface PreviewSidebarControlsProps {
 const items = [
   { key: "properties" as const, label: "题目属性", icon: ListChecks },
   { key: "answerStatus" as const, label: "答题情况", icon: ClipboardCheck },
-  { key: "answeredList" as const, label: "显示已答题名单", icon: UserCheck },
+  { key: "answeredList" as const, label: "显示名单", icon: UserCheck },
   { key: "basket" as const, label: "添加资源篮", icon: ShoppingBasket },
 ];
 
@@ -25,9 +25,9 @@ export function PreviewSidebarControls({ value, onChange }: PreviewSidebarContro
     <div
       role="toolbar"
       aria-label="题目侧栏显示控制"
-      className="flex flex-col items-stretch gap-1.5"
+      className="grid grid-cols-2 gap-1.5"
     >
-      <span className="mb-0.5 text-[11px] font-medium text-ink-400">显示内容</span>
+      <span className="col-span-2 mb-0.5 text-[11px] font-medium text-ink-400">显示内容</span>
       {items.map(({ key, label, icon: Icon }) => {
         const active = value[key];
         return (

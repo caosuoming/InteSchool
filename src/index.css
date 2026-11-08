@@ -241,13 +241,6 @@
   background: #f5f7fa;
   pointer-events: auto;
 }
-/* Keep visibility toggles and document-wide actions in separate columns. */
-.preview-sticky-controls-split {
-  display: grid;
-  grid-template-columns: minmax(15rem, 1fr) minmax(16rem, 1fr);
-  align-items: start;
-  gap: 1rem;
-}
 .preview-sticky-spacer {
   min-height: 15rem;
 }
