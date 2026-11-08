@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   X, Save, BookOpen, Lightbulb, FileText,
   Plus, Trash2, Edit3, Clock,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
+import { isKnowledgeTreeEnabled, knowledgeTreeKinds } from "@/lib/knowledge-tree-visibility";
 import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { toast } from "@/stores/ui";
@@ -33,6 +34,9 @@ function formatTimestamp(iso: string): string {
 
 export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditModalProps) {
   const { teacher } = useAuthStore();
+  const enabledKinds = useMemo(() => knowledgeTreeKinds.map(({ kind }) => kind)
+    .filter((kind) => isKnowledgeTreeEnabled(teacher, kind)), [teacher]);
+  const isEnabled = useCallback((kind: DirectoryTab) => enabledKinds.includes(kind), [enabledKinds]);
   const [chapterIds, setChapterIds] = useState<string[]>([]);
   const [knowledgePointIds, setKnowledgePointIds] = useState<string[]>([]);
   const [thoughtMethodIds, setThoughtMethodIds] = useState<string[]>([]);
@@ -63,12 +67,16 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
   }, [open, question]);
 
   useEffect(() => {
+    if (open && !isEnabled(activeDirectoryTab)) setActiveDirectoryTab(enabledKinds[0] || "chapter");
+  }, [open, activeDirectoryTab, enabledKinds, isEnabled]);
+
+  useEffect(() => {
     if (!teacher || !open) return;
-    knowledgeService.getChapterTree(teacher.id).then(setChapterTree);
-    knowledgeService.getKnowledgeTree(teacher.id).then(setKnowledgeTree);
-    knowledgeService.getMethodTree(teacher.id).then(setMethodTree);
-    knowledgeService.getErrorReasonTree(teacher.id).then(setErrorTree);
-  }, [teacher, open]);
+    if (isEnabled("chapter")) void knowledgeService.getChapterTree(teacher.id).then(setChapterTree);
+    if (isEnabled("knowledge")) void knowledgeService.getKnowledgeTree(teacher.id).then(setKnowledgeTree);
+    if (isEnabled("method")) void knowledgeService.getMethodTree(teacher.id).then(setMethodTree);
+    if (isEnabled("error")) void knowledgeService.getErrorReasonTree(teacher.id).then(setErrorTree);
+  }, [teacher, open, isEnabled]);
 
   const handleSave = async () => {
     if (!question) return;
@@ -169,19 +177,19 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
             </MathHtml>
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-ink-200">
+          {enabledKinds.length > 0 && <div className="overflow-hidden rounded-lg border border-ink-200">
             <div
               role="tablist"
               aria-label="题目目录"
-              className="grid grid-cols-2 sm:grid-cols-4 border-b border-ink-200 bg-mist/30"
+              className="flex flex-wrap border-b border-ink-200 bg-mist/30"
             >
-              <button
+              {isEnabled("chapter") && <button
                 type="button"
                 role="tab"
                 aria-selected={activeDirectoryTab === "chapter"}
                 onClick={() => setActiveDirectoryTab("chapter")}
                 className={cn(
-                  "flex items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "chapter"
                     ? "bg-gold-50 text-gold-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-gold-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -195,14 +203,14 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 )}>
                   已选 {chapterIds.length}
                 </span>
-              </button>
-              <button
+              </button>}
+              {isEnabled("knowledge") && <button
                 type="button"
                 role="tab"
                 aria-selected={activeDirectoryTab === "knowledge"}
                 onClick={() => setActiveDirectoryTab("knowledge")}
                 className={cn(
-                  "flex items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "knowledge"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -216,14 +224,14 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 )}>
                   已选 {knowledgePointIds.length}
                 </span>
-              </button>
-              <button
+              </button>}
+              {isEnabled("method") && <button
                 type="button"
                 role="tab"
                 aria-selected={activeDirectoryTab === "method"}
                 onClick={() => setActiveDirectoryTab("method")}
                 className={cn(
-                  "flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "method"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -237,14 +245,14 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 )}>
                   已选 {thoughtMethodIds.length}
                 </span>
-              </button>
-              <button
+              </button>}
+              {isEnabled("error") && <button
                 type="button"
                 role="tab"
                 aria-selected={activeDirectoryTab === "error"}
                 onClick={() => setActiveDirectoryTab("error")}
                 className={cn(
-                  "flex items-center justify-center gap-2 px-3 py-3 text-sm font-medium transition-colors",
+                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 px-3 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "error"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -253,7 +261,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 <FileText className="h-4 w-4" />
                 <span>可能错因</span>
                 <span className="rounded-full bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-500">已选 {errorReasonIds.length}</span>
-              </button>
+              </button>}
             </div>
 
             <div
@@ -297,7 +305,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 <div className="flex h-[330px] items-center justify-center text-xs text-ink-400">加载中...</div>
               )}
             </div>
-          </div>
+          </div>}
 
           <div className="overflow-hidden rounded-lg border border-ink-200">
             <div className="flex items-center justify-between border-b border-ink-200 bg-mist/50 px-4 py-2.5">

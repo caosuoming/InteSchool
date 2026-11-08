@@ -341,7 +341,7 @@ export default function QuestionBankPage({
     selectedSemester ||
     selectedSources.length > 0 ||
     selectedCategories.length > 0 ||
-    trainingStatus !== "all" ||
+    (isTreeEnabled("knowledge") && trainingStatus !== "all") ||
     keyword ||
     searchFields.length > 0 ||
     selectedStudentIds.length > 0;
@@ -416,7 +416,7 @@ export default function QuestionBankPage({
     const data = await questionService.listQuestions(filter);
 
     let sorted = [...data];
-    if (mode === "use" && selectedStudentIds.length > 0 && trainingStatus !== "all") {
+    if (mode === "use" && selectedStudentIds.length > 0 && isTreeEnabled("knowledge") && trainingStatus !== "all") {
       const mastery = await analyticsService.getKnowledgeMastery(
         selectedStudentIds,
         teacher.schoolId!,
@@ -500,10 +500,10 @@ export default function QuestionBankPage({
   ]);
 
   useEffect(() => {
-    if (selectedStudentIds.length === 0 && trainingStatus !== "all") {
+    if ((selectedStudentIds.length === 0 || !isTreeEnabled("knowledge")) && trainingStatus !== "all") {
       setTrainingStatus("all");
     }
-  }, [selectedStudentIds.length, trainingStatus]);
+  }, [selectedStudentIds.length, trainingStatus, isTreeEnabled]);
 
   useEffect(() => {
     if (!isTreeEnabled(leftTab)) setLeftTab(enabledTreeKinds[0] || "chapter");
@@ -1323,6 +1323,7 @@ export default function QuestionBankPage({
                   />
                   <span className="text-ink-600">学生答题情况</span>
                 </label>
+                {isTreeEnabled("knowledge") && <>
                 <span className="ml-2 text-xs text-ink-500">训练状态：</span>
                 <button
                   type="button"
@@ -1352,6 +1353,7 @@ export default function QuestionBankPage({
                 >
                   未训练
                 </button>
+                </>}
               </div>
             )}
           </Card>

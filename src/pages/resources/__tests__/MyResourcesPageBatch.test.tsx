@@ -489,6 +489,7 @@ describe("MyResourcesPage batch actions", () => {
     expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
     expect(knowledgeService.getErrorReasonTree).not.toHaveBeenCalled();
     expect(knowledgeService.getMethodTree).toHaveBeenCalledWith("teacher-1");
+    expect(screen.queryByRole("button", { name: "仅看未分类" })).not.toBeInTheDocument();
   });
 
   it("filters materials by the existing material types and places the type filter before grade", async () => {

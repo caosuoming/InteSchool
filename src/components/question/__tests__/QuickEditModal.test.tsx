@@ -102,7 +102,7 @@ describe("QuickEditModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({
-      teacher: { id: "teacher-1", schoolId: "school-1" } as Teacher,
+      teacher: { id: "teacher-1", schoolId: "school-1", knowledgeTreeEnabled: { method: true, error: true } } as Teacher,
       loading: false,
       error: null,
     });
@@ -111,6 +111,34 @@ describe("QuickEditModal", () => {
     vi.mocked(knowledgeService.getErrorReasonTree).mockResolvedValue({ id: "root", name: "全部错因", type: "error", count: 0, children: [{ id: "reason-1", name: "概念混淆", type: "error", count: 1, children: [] }] });
     vi.mocked(knowledgeService.getMethodTree).mockResolvedValue(methodTree);
     vi.mocked(questionService.updateQuestion).mockResolvedValue(question);
+  });
+
+  it("hides disabled directory tabs while preserving existing associations on save", async () => {
+    useAuthStore.setState({ teacher: {
+      ...useAuthStore.getState().teacher!,
+      knowledgeTreeEnabled: { chapter: false, knowledge: false, method: false, error: false },
+    } });
+    render(<QuickEditModal open question={question} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.queryByRole("tablist", { name: "题目目录" })).not.toBeInTheDocument();
+    expect(knowledgeService.getChapterTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getMethodTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getErrorReasonTree).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", expect.objectContaining({
+      chapterIds: ["chapter-1"], knowledgePointIds: ["knowledge-1"], thoughtMethodIds: ["method-1"],
+    })));
+  });
+
+  it("selects the first enabled directory instead of an unavailable chapter", async () => {
+    useAuthStore.setState({ teacher: {
+      ...useAuthStore.getState().teacher!,
+      knowledgeTreeEnabled: { chapter: false, knowledge: true, method: false, error: false },
+    } });
+    render(<QuickEditModal open question={question} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(await screen.findByRole("tab", { name: /知识点目录/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("tab", { name: /章节课目录/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /思想方法目录/ })).not.toBeInTheDocument();
   });
 
   it("switches chapter, knowledge, and method directories with a taller selection area", async () => {

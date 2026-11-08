@@ -1701,6 +1701,12 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const noTreeSelection = checkedChapters.length === 0
     && (activeTab === "answerSheet" || (checkedKnowledge.length === 0 && checkedMethods.length === 0 && checkedErrors.length === 0));
+  const uncategorizedFilterAvailable = activeTab === "answerSheet"
+    ? isTreeEnabled("chapter")
+    : isTreeEnabled("chapter") || isTreeEnabled("knowledge");
+  useEffect(() => {
+    if (!uncategorizedFilterAvailable) setOnlyUncategorized(false);
+  }, [uncategorizedFilterAvailable]);
   const resetDirectorySelections = useCallback(() => {
     setCheckedChapters([]);
     setCheckedKnowledge([]);
@@ -1791,12 +1797,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   // 非试卷/讲义库保留“仅看未分类”；试卷/讲义的“仅看未做”在同源分组后处理。
   const displayedData = useMemo(() => {
     let result = sortedData;
-    if (onlyUncategorized && noTreeSelection && activeTab !== "examPaper" && activeTab !== "lecture") {
+    if (onlyUncategorized && uncategorizedFilterAvailable && noTreeSelection && activeTab !== "examPaper" && activeTab !== "lecture") {
       result = result.filter((item) => {
         const chapterIds = (item as { chapterIds?: string[] }).chapterIds ?? [];
         if (activeTab === "answerSheet") return chapterIds.length === 0;
         const knowledgePointIds = (item as { knowledgePointIds?: string[] }).knowledgePointIds ?? [];
-        return chapterIds.length === 0 && knowledgePointIds.length === 0;
+        return (!isTreeEnabled("chapter") || chapterIds.length === 0)
+          && (!isTreeEnabled("knowledge") || knowledgePointIds.length === 0);
       });
     }
     if (activeTab === "examPaper" && selectedExamPaperTypeId) {
@@ -1820,6 +1827,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     lectureTypes,
     noTreeSelection,
     onlyUncategorized,
+    uncategorizedFilterAvailable,
+    isTreeEnabled,
     selectedCoursewareType,
     selectedExamPaperTypeId,
     selectedLectureTypeId,
@@ -3355,7 +3364,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 </div>
                               )}
 
-                              {q.knowledgePointIds.length > 0 && (
+                              {isTreeEnabled("knowledge") && q.knowledgePointIds.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-ink-100/80">
                                   <div className="text-[11px] text-ink-400 mb-1.5">知识点掌握情况</div>
                                   <div className="flex flex-wrap gap-1.5">
@@ -3727,7 +3736,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 options={semesterOptions}
                 onChange={setSelectedSemester}
               />
-              {noTreeSelection && (
+              {noTreeSelection && ((activeTab === "examPaper" || activeTab === "lecture") || uncategorizedFilterAvailable) && (
                 <button
                   onClick={() => {
                     if (activeTab === "examPaper" || activeTab === "lecture") {
@@ -3748,7 +3757,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                     ? "仅显示已设置适用对象且尚未录入答题情况的文档"
                     : activeTab === "answerSheet"
                       ? "仅显示未关联任何章节课的答题卡"
-                      : "仅显示未关联任何章节/知识点的资源"}
+                      : `仅显示没有关联${[isTreeEnabled("chapter") ? "章节" : "", isTreeEnabled("knowledge") ? "知识点" : ""].filter(Boolean).join("/")}的资源`}
                 >
                   <Filter className="w-3 h-3" />
                   {activeTab === "examPaper" || activeTab === "lecture" ? "仅看未做" : "仅看未分类"}
