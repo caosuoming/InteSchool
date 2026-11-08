@@ -246,6 +246,8 @@ export function TreeView({
                 toggle(node.id);
               }}
               className="inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded hover:bg-ink-100 text-ink-400"
+              aria-label={`${expanded ? "收起" : "展开"}${node.name}`}
+              aria-expanded={expanded}
             >
               {expanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -264,6 +266,8 @@ export function TreeView({
                 handleCheck(node);
               }}
               className="flex-shrink-0"
+              aria-label={`${isChecked ? "取消勾选" : "勾选"}${node.name}`}
+              aria-pressed={isChecked}
             >
               {isChecked ? (
                 <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-gold-400 text-ink-900">

@@ -96,6 +96,10 @@ export const classService = {
     return rpcCall("class", "listPersonalClasses", [teacherId]) as any;
   },
 
+  async savePersonalClassChapterSelection(classId: string, chapterIds: string[]): Promise<PersonalClass> {
+    return rpcCall("class", "savePersonalClassChapterSelection", [classId, chapterIds, undefined]) as any;
+  },
+
   async listAllClasses(schoolId: string, teacherId: string): Promise<AnyClass[]> {
     return rpcCall("class", "listAllClasses", [schoolId, teacherId]) as any;
   },

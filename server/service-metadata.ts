@@ -575,6 +575,11 @@ export const serviceParameters = {
     "listPersonalClasses": [
       "teacherId"
     ],
+    "savePersonalClassChapterSelection": [
+      "classId",
+      "chapterIds",
+      "teacher"
+    ],
     "listAllClasses": [
       "schoolId",
       "teacherId"

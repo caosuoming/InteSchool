@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chapterScope, tutoringSuggestions } from "./individual-tutoring";
+import { chapterScope, flattenChapterTree, tutoringSuggestions } from "./individual-tutoring";
 import type { Chapter, KnowledgePoint, Question } from "@/types";
 import type { KnowledgeMastery } from "@/services/analytics";
 
@@ -33,6 +33,20 @@ describe("individual tutoring suggestions", () => {
     expect([...chapterScope(chapters, "root")].sort()).toEqual(["child", "root"]);
     expect(chapterScope(chapters, "missing")).toEqual(new Set(["missing"]));
     expect(chapterScope(chapters, "")).toEqual(new Set());
+  });
+
+  it("unions multiple selected chapters and their descendants without leaking siblings", () => {
+    expect([...chapterScope(chapters, ["child", "sibling"])].sort()).toEqual(["child", "sibling"]);
+    expect([...chapterScope(chapters, ["root", "sibling"])].sort()).toEqual(["child", "root", "sibling"]);
+    expect(chapterScope(chapters, [])).toEqual(new Set());
+  });
+
+  it("flattens the knowledge-tree chapter directory without including its synthetic root", () => {
+    expect(flattenChapterTree({ id: "root", name: "章节课", type: "chapter", count: 0,
+      children: [{ id: "a", name: "数列", type: "chapter", count: 0, children: [
+        { id: "b", name: "等比", type: "chapter", count: 0, children: [] },
+      ] }],
+    })).toEqual([{ id: "a", name: "数列", parentId: null }, { id: "b", name: "等比", parentId: "a" }]);
   });
 
   it("selects only weak or untrained knowledge points and prioritizes weak questions", () => {

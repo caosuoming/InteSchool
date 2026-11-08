@@ -1,4 +1,4 @@
-import type { Chapter, KnowledgePoint, Question } from "@/types";
+import type { Chapter, KnowledgePoint, Question, TreeNode } from "@/types";
 import type { KnowledgeMastery } from "@/services/analytics";
 
 export type TutoringTopic = {
@@ -8,15 +8,16 @@ export type TutoringTopic = {
   questionCount: number;
 };
 
-export function chapterScope(chapters: Chapter[], selectedId: string): Set<string> {
+export function chapterScope(chapters: Pick<Chapter, "id" | "parentId">[], selectedIds: string | string[]): Set<string> {
   const selected = new Set<string>();
-  if (!selectedId) return selected;
+  const ids = typeof selectedIds === "string" ? (selectedIds ? [selectedIds] : []) : selectedIds;
+  if (!ids.length) return selected;
   const children = new Map<string, string[]>();
   for (const chapter of chapters) {
     if (!chapter.parentId) continue;
     children.set(chapter.parentId, [...(children.get(chapter.parentId) || []), chapter.id]);
   }
-  const stack = [selectedId];
+  const stack = [...ids];
   while (stack.length) {
     const id = stack.pop()!;
     if (selected.has(id)) continue;
@@ -24,6 +25,17 @@ export function chapterScope(chapters: Chapter[], selectedId: string): Set<strin
     stack.push(...(children.get(id) || []));
   }
   return selected;
+}
+
+export function flattenChapterTree(tree: TreeNode | null): { id: string; name: string; parentId: string | null }[] {
+  if (!tree) return [];
+  const chapters: { id: string; name: string; parentId: string | null }[] = [];
+  const visit = (node: TreeNode, parentId: string | null) => {
+    chapters.push({ id: node.id, name: node.name, parentId });
+    node.children.forEach((child) => visit(child, node.id));
+  };
+  tree.children.forEach((child) => visit(child, null));
+  return chapters;
 }
 
 export function tutoringSuggestions(

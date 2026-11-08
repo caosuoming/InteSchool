@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { BookOpen, FilePlus2, Files, GraduationCap, Presentation, Users } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
+import { SearchableTree } from "@/components/tree/SearchableTree";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
@@ -18,9 +19,9 @@ import { examPaperService } from "@/services/examPaper";
 import { basketService } from "@/services/basket";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { gradeService } from "@/services/grade";
-import { chapterScope, tutoringSuggestions } from "@/lib/individual-tutoring";
+import { chapterScope, flattenChapterTree, tutoringSuggestions } from "@/lib/individual-tutoring";
 import { teacherResourceScopeId } from "@/lib/personal-resource-scope";
-import type { Basket, Chapter, ExamPaper, GradeQueryExam, KnowledgePoint, Lecture, LessonCourseware, PersonalClass, Question, Student } from "@/types";
+import type { Basket, ExamPaper, GradeQueryExam, KnowledgePoint, Lecture, LessonCourseware, PersonalClass, Question, Student, TreeNode } from "@/types";
 
 const tabs = [
   { key: "classes", title: "个人教学班管理", icon: Users },
@@ -45,14 +46,16 @@ export default function IndividualTutoringPage() {
   const [studentMastery, setStudentMastery] = useState<KnowledgeMastery[]>([]);
   const [answerDetails, setAnswerDetails] = useState<StudentAnswerDetail[]>([]);
   const [gradeExams, setGradeExams] = useState<GradeQueryExam[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
+  const [chapterLoadFailed, setChapterLoadFailed] = useState(false);
+  const [chapterSelections, setChapterSelections] = useState<Record<string, string[]>>({});
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const [points, setPoints] = useState<KnowledgePoint[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<LessonCourseware[]>([]);
   const [baskets, setBaskets] = useState<Basket[]>([]);
-  const [chapterId, setChapterId] = useState("");
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [basketId, setBasketId] = useState("");
   const [lectureTitle, setLectureTitle] = useState("");
@@ -90,8 +93,8 @@ export default function IndividualTutoringPage() {
     if (!teacherId || !classId) return;
     let active = true;
     void Promise.allSettled([
-      knowledgeService.listChapters(schoolId),
-      knowledgeService.listKnowledgePoints(schoolId),
+      knowledgeService.getChapterTree(teacherId, false),
+      knowledgeService.listKnowledgePoints(teacherId),
       questionService.listQuestions({ teacherId }),
       lectureService.listLectures({ teacherId }),
       examPaperService.listPapers({ teacherId }),
@@ -99,7 +102,8 @@ export default function IndividualTutoringPage() {
       basketService.listBaskets(teacherId),
     ]).then(([ch, kp, qs, ls, ps, cs, bs]) => {
       if (!active) return;
-      if (ch.status === "fulfilled") setChapters(ch.value);
+      if (ch.status === "fulfilled") { setChapterTree(ch.value); setChapterLoadFailed(false); }
+      else { setChapterTree(null); setChapterLoadFailed(true); }
       if (kp.status === "fulfilled") setPoints(kp.value);
       if (qs.status === "fulfilled") setQuestions(qs.value);
       if (ls.status === "fulfilled") setLectures(ls.value);
@@ -157,7 +161,13 @@ export default function IndividualTutoringPage() {
     return () => { active = false; };
   }, [studentId, schoolId]);
 
-  const scope = useMemo(() => chapterScope(chapters, chapterId), [chapters, chapterId]);
+  const chapters = useMemo(() => flattenChapterTree(chapterTree), [chapterTree]);
+  const chapterIdsAvailable = useMemo(() => new Set(chapters.map((chapter) => chapter.id)), [chapters]);
+  const chapterIds = useMemo(() =>
+    (chapterSelections[classId] ?? currentClass?.tutoringChapterIds ?? [])
+      .filter((id) => chapterIdsAvailable.has(id)),
+  [chapterSelections, classId, currentClass?.tutoringChapterIds, chapterIdsAvailable]);
+  const scope = useMemo(() => chapterScope(chapters, chapterIds), [chapters, chapterIds]);
   const suggestions = useMemo(() => tutoringSuggestions(questions, scope, points, mastery), [questions, scope, points, mastery]);
   const chosen = suggestions.questions.filter((question) => selectedQuestionIds.includes(question.id));
   const filteredLectures = lectures.filter((lecture) => lecture.classIds.includes(classId));
@@ -167,6 +177,22 @@ export default function IndividualTutoringPage() {
     && courseware.sourceId && personalLectureIds.has(courseware.sourceId) && courseware.classIds.includes(classId));
   const pushedLectureIds = new Set(filteredCoursewares.map((item) => item.sourceId));
   const pendingLectures = filteredLectures.filter((lecture) => !pushedLectureIds.has(lecture.id));
+
+  const updateChapterSelection = (ids: string[]) => {
+    if (!classId) return;
+    const next = [...new Set(ids)].filter((id) => chapterIdsAvailable.has(id));
+    setChapterSelections((previous) => ({ ...previous, [classId]: next }));
+    setSelectedQuestionIds([]);
+    const selectedClassId = classId;
+    saveQueue.current = saveQueue.current.then(async () => {
+      try {
+        const updated = await classService.savePersonalClassChapterSelection(selectedClassId, next);
+        setClasses((previous) => previous.map((item) => item.id === selectedClassId ? updated : item));
+      } catch (e) {
+        toast.error("章节课选择自动保存失败", errorMessage(e));
+      }
+    });
+  };
 
   const pushLecture = async (lecture: Lecture) => {
     if (!teacher || busy) return;
@@ -203,10 +229,11 @@ export default function IndividualTutoringPage() {
   };
 
   const createLecture = async () => {
-    if (!teacher || !currentClass || !chapterId || chosen.length === 0 || busy) return;
+    if (!teacher || !currentClass || chapterIds.length === 0 || chosen.length === 0 || busy) return;
     setBusy(true);
     try {
-      const name = lectureTitle.trim() || `${currentClass.name} · ${chapters.find((chapter) => chapter.id === chapterId)?.name || "个别辅导"}讲义`;
+      const chapterTitle = chapterIds.length === 1 ? chapters.find((chapter) => chapter.id === chapterIds[0])?.name : "多章节";
+      const name = lectureTitle.trim() || `${currentClass.name} · ${chapterTitle || "个别辅导"}讲义`;
       const year = new Date().getFullYear();
       const startYear = new Date().getMonth() >= 8 ? year : year - 1;
       const lecture = await lectureService.createLecture(teacher.id, schoolId, {
@@ -254,7 +281,7 @@ export default function IndividualTutoringPage() {
         ))}
       </div>
       <Card className="max-w-xl">
-        <Select label="个人教学班" value={classId} onChange={(e) => { setClassId(e.target.value); setChapterId(""); setSelectedQuestionIds([]); setStudentId(""); }}
+        <Select label="个人教学班" value={classId} onChange={(e) => { setClassId(e.target.value); setSelectedQuestionIds([]); setStudentId(""); }}
           options={classes.map((item) => ({ value: item.id, label: item.name }))} />
       </Card>
 
@@ -303,11 +330,17 @@ export default function IndividualTutoringPage() {
         <div className="space-y-4">
           <Card className="max-w-xl space-y-3">
             <h2 className="font-semibold text-ink-900">选择章节课范围</h2>
-            <Select label="章节课目录" value={chapterId} placeholder="请选择章节课" onChange={(e) => { setChapterId(e.target.value); setSelectedQuestionIds([]); }}
-              options={chapters.map((chapter) => ({ value: chapter.id, label: `${"　".repeat(Math.max(0, chapter.level - 1))}${chapter.name}` }))} />
-            <p className="text-xs text-ink-500">范围包含所选章节的全部子章节。依据班级学生的实际答题记录计算薄弱与未训练知识点。</p>
+            {chapterTree ? <SearchableTree key={classId} data={chapterTree} title="章节课目录"
+              checkable checkedIds={chapterIds} onCheck={updateChapterSelection}
+              cascadeCheck={false} showCount={false} expandLevel={2}
+              searchPlaceholder="搜索章节课目录..." className="rounded-lg border border-ink-200"
+            /> : chapterLoadFailed
+              ? <p role="alert" className="text-sm text-red-600">章节课目录加载失败，请刷新重试</p>
+              : <Spinner />}
+            <p className="text-xs text-ink-500">已选择 {chapterIds.length} 个节点，可复选并展开或折叠。范围包含所选节点的全部子章节，选择将自动保存至当前个人教学班，下次打开继续使用。</p>
+            {!chapterIds.length && chapterTree && <p className="text-xs text-ink-400">请从知识树章节课目录中勾选至少一个节点。</p>}
           </Card>
-          {chapterId && <>
+          {chapterIds.length > 0 && <>
             <Card className="space-y-3">
               <h2 className="font-semibold text-ink-900">班级薄弱与未训练知识点</h2>
               {loadingProgress ? <Spinner /> : suggestions.topics.length ? <div className="flex flex-wrap gap-2">

@@ -453,6 +453,8 @@ export interface PersonalClass {
   name: string;
   description: string;
   studentIds: string[];
+  /** 个别辅导编讲义时保存的章节课目录勾选；旧班级缺省为空。 */
+  tutoringChapterIds?: string[];
   createdAt: string;
 }
 
