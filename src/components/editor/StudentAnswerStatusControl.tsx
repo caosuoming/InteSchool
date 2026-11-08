@@ -76,7 +76,7 @@ export function StudentAnswerStatusControl({
       value={currentScore || "none"}
       onChange={(event) => void updateScore(event.target.value)}
       disabled={!activeStudentId || saving}
-      className="min-w-0 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 focus:border-gold-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      className="w-full min-w-0 rounded-md border border-ink-200 bg-paper px-2 py-1.5 text-xs text-ink-700 focus:border-gold-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
     >
       {scoreOptions.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
@@ -90,10 +90,10 @@ export function StudentAnswerStatusControl({
       {students.length === 0 ? (
         <div className="text-[11px] leading-5 text-ink-400">请先添加使用班级</div>
       ) : students.length === 1 ? (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]">
           <div
             aria-label="学生"
-            className="min-w-0 rounded-md border border-ink-100 bg-ink-50 px-2 py-1.5 text-xs text-ink-700"
+            className="min-w-0 truncate rounded-md border border-ink-100 bg-ink-50 px-2 py-1.5 text-xs text-ink-700"
           >
             {students[0].name}{students[0].studentNo ? ` · ${students[0].studentNo}` : ""}
           </div>
@@ -101,7 +101,7 @@ export function StudentAnswerStatusControl({
         </div>
       ) : (
         <>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]">
             <select
               aria-label="选择学生"
               value={selectedStudentId}
