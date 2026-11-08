@@ -139,6 +139,68 @@ describe("geography paper decomposition", () => {
     expect(parsed.at(-1)?.questionType).toBe("comprehensive");
   });
 
+  it("starts a new geography group at 就此完成下面小题 without a blank separator", () => {
+    const parsed = questions([
+      "一、单选题", "读图完成1—2题。",
+      "1. 甲地气候如何？ A. 温和 B. 寒冷 C. 炎热 D. 干燥",
+      "2. 乙地属于何区？ A. 山区 B. 平原 C. 盆地 D. 高原",
+      "材料二：下图展示了另一地区的植被分布。",
+      "就此完成下面小题。",
+      "3. 丙地的地形是？ A. 高山 B. 盆地 C. 丘陵 D. 平原",
+      "4. 丁地的植被是？ A. 针叶林 B. 雨林 C. 草原 D. 荒漠",
+      "参考答案", "1. A", "2. B", "3. C", "4. D",
+    ].join("\n"));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].categories).toContain("单选题·2个小题");
+    expect(parsed[1].categories).toContain("单选题·2个小题");
+    expect(parsed[0].content).not.toContain("材料二");
+    expect(parsed[0].content).not.toContain("就此完成下面小题");
+    expect(parsed[1].content).toContain("材料二：下图展示了另一地区的植被分布");
+    expect(parsed[1].content).toContain("就此完成下面小题");
+    expect(parsed.map((block) => block.answer)).toEqual(["（1）A\n（2）B", "（1）C\n（2）D"]);
+  });
+
+  it("attaches the next single question reading passage instead of the previous last option", () => {
+    const parsed = questions([
+      "一、单选题",
+      "1. 第一题的条件？", "A. 甲", "B. 乙", "C. 丙", "D. 丁",
+      "在另一城市的郊区，土地利用结构发生变化。",
+      "就此完成下面小题。",
+      "2. 第二题的条件？ A. 东 B. 西 C. 南 D. 北",
+    ].join("\n"));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].options?.at(-1)).toBe("丁");
+    expect(parsed[1].content).toContain("在另一城市的郊区");
+    expect(parsed[1].content).toContain("就此完成下面小题");
+    expect(parsed[0].content).not.toContain("土地利用结构");
+  });
+
+  it("keeps an inline answer and explanation on the previous question when the next reading passage follows", () => {
+    const parsed = questions([
+      "一、单选题",
+      "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "【答案】B", "【解析】依据地形判断。",
+      "另一地区植被分布存在显著差异。", "就此完成下面小题。",
+      "2. 第二题 A. 东 B. 西 C. 南 D. 北",
+    ].join("\n"));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].answer).toBe("B");
+    expect(parsed[0].analysis).toBe("依据地形判断。");
+    expect(parsed[1].content).toContain("另一地区植被分布");
+    expect(parsed[1].content).toContain("就此完成下面小题");
+  });
+
+  it("matches a partially populated reference-answer section by its original question number", () => {
+    const parsed = questions([
+      "一、单选题", "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案", "2. B",
+    ].join("\n"));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].answer).toBeUndefined();
+    expect(parsed[1].answer).toBe("B");
+  });
+
   it("does not group unrelated questions or apply geography categories to other subjects", () => {
     const source = ["一、单选题", "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁", "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁"].join("\n");
     expect(questions(source)).toHaveLength(2);

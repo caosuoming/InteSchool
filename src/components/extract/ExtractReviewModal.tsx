@@ -1,3 +1,4 @@
+import { renderGeographyChoiceGroups } from "@/lib/geography-question-markup";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "katex/dist/katex.min.css";
 import {
@@ -60,7 +61,8 @@ import type {
   ResourceSemester,
 } from "@/types";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
-import { normalizeQuestionTypeForSubject } from "@/lib/question-types";
+import { isChoiceQuestionType, normalizeQuestionTypeForSubject } from "@/lib/question-types";
+import { emphasizeEnglishQuestionHtml } from "@/lib/english-question-format";
 import {
   QuestionDuplicateReviewModal,
   type QuestionDuplicateResolution,
@@ -331,7 +333,7 @@ export function ExtractReviewModal({
   const sourceTextRef = useRef<string | null>(null);
   useOfficeMetafileImages(previewRootRef);
   const { teacher } = useAuthStore();
-  const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId);
+  const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId, teacher?.subject);
   const subject = teacher?.subject;
   const availableQuestionTypes = subject?.trim() === "数学"
     ? questionTypeOptions.filter((option) => option.value !== "comprehensive")
@@ -1198,7 +1200,11 @@ export function ExtractReviewModal({
                 <div className="space-y-2">
                   <div
                     className="whitespace-pre-wrap text-sm text-ink-800"
-                    dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
+                    dangerouslySetInnerHTML={{ __html: subject?.trim() === "地理"
+                      ? renderGeographyChoiceGroups(block.content, (part) => renderExtractText(part, allKeywords, true, true))
+                      : subject === "英语"
+                        ? emphasizeEnglishQuestionHtml(renderExtractText(block.content, allKeywords, true))
+                        : renderExtractText(block.content, allKeywords, true) }}
                   />
                   {block.options && block.options.length > 0 && (
                     <div className="grid grid-cols-1 gap-1.5 pl-1 sm:grid-cols-2">
@@ -1417,7 +1423,7 @@ export function ExtractReviewModal({
                   onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
                   rows={3}
                 />
-                {(block.questionType === "single" || block.questionType === "multiple") && (
+                {(isChoiceQuestionType(block.questionType || "")) && (
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
                       <label className="block text-sm font-medium text-ink-700">选项</label>

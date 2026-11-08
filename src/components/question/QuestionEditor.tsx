@@ -17,6 +17,7 @@ import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupp
 import { containsMathDelimiter } from "@/lib/math-html";
 import { includeCurrentOption, useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { includeCurrentQuestionType, useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { isChoiceQuestionType } from "@/lib/question-types";
 import {
   includeCurrentMetadataOption,
   useQuestionMetadataOptions,
@@ -103,7 +104,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   const chapterEnabled = isKnowledgeTreeEnabled(teacher, "chapter");
   const knowledgeEnabled = isKnowledgeTreeEnabled(teacher, "knowledge");
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
-  const { options: questionTypeOptions } = useQuestionTypeOptions(teacher?.schoolId);
+  const { options: questionTypeOptions } = useQuestionTypeOptions(teacher?.schoolId, question.subject || teacher?.subject);
   const {
     sourceOptions,
     categoryOptions,
@@ -387,7 +388,7 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
       </div>
 
       {/* 选项（仅选择题） */}
-      {(form.type === "single" || form.type === "multiple") && (
+      {(isChoiceQuestionType(form.type)) && (
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-sm font-medium text-ink-700">选项</label>

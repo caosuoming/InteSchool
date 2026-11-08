@@ -1,3 +1,4 @@
+import { emphasizeGeographyLabels } from "./geography-question-markup";
 import katex from "katex";
 import { normalizeLegacyOmmlMathText } from "./legacy-omml-formulas";
 import { renderMathHtml } from "./math-html";
@@ -128,6 +129,7 @@ export function renderExtractText(
   text: string,
   keywords: string[] = [],
   highlightEnabled = true,
+  geographyLabels = false,
 ): string {
   if (!text) return "";
 
@@ -162,7 +164,8 @@ export function renderExtractText(
     ? renderTextWithKeywords(protectedText, keywords)
     : escapeHtml(protectedText);
 
-  return renderedText.replace(PLACEHOLDER_PATTERN, (_match, index: string) => {
+  const html = renderedText.replace(PLACEHOLDER_PATTERN, (_match, index: string) => {
     return protectedHtml[Number(index)] || "";
   });
+  return geographyLabels ? emphasizeGeographyLabels(html) : html;
 }

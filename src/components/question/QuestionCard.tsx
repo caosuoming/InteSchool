@@ -1,8 +1,10 @@
+import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { type Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { Eye, Plus, FileText, MessageSquare } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
+import { useAuthStore } from "@/stores/auth";
 
 interface QuestionCardProps {
   question: Question;
@@ -25,7 +27,9 @@ export function QuestionCard({
   className,
   showActions = true,
 }: QuestionCardProps) {
-  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(question.schoolId);
+  const { teacher } = useAuthStore();
+  const english = (question.subject || teacher?.subject) === "英语";
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(question.schoolId, question.subject || teacher?.subject);
   const hasRemarks = (question.remarks && question.remarks.length > 0) || !!question.remark;
   const remarkCount = question.remarks?.length || (question.remark ? 1 : 0);
 
@@ -92,7 +96,7 @@ export function QuestionCard({
         )}
       </div>
 
-      <MathHtml className="text-sm text-ink-900 mb-2 leading-relaxed">
+<MathHtml emphasizeEnglishQuestions={english} geographyLabels={question.subject?.trim() === "地理"} className="text-sm text-ink-900 mb-2 leading-relaxed">
         {question.stem}
       </MathHtml>
 
@@ -100,7 +104,7 @@ export function QuestionCard({
         <div className="text-xs text-ink-600 space-y-0.5 mb-2">
           {question.options.slice(0, 2).map((opt, i) => (
             <div key={i} className="flex items-start gap-1 min-w-0">
-              <span className="font-mono font-semibold flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
+<span className={cn("font-mono font-semibold flex-shrink-0", english && ["text-blue-700", "text-emerald-700", "text-amber-700", "text-violet-700"][i % 4], question.subject?.trim() === "地理" && geographyOptionLabelClass(i) + " rounded px-1")}>{String.fromCharCode(65 + i)}.</span>
               <MathHtml className="min-w-0 truncate">{opt}</MathHtml>
             </div>
           ))}

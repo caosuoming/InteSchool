@@ -2533,7 +2533,7 @@ describe("inline answers in mathematics documents", () => {
     const question = blocks.find((block) => block.type === "question")!;
     expect(question).toMatchObject({ questionType: "single", answer: "B" });
     expect(question.content).not.toContain("（ B ）");
-    expect(question.content).toContain("（ ）");
+    expect(question.content).toContain("（    ）");
   });
 
   it("extracts multiple correct choice letters without treating normal formulas as answers", () => {
@@ -2549,6 +2549,25 @@ describe("inline answers in mathematics documents", () => {
     expect(question).toMatchObject({ questionType: "short", answer: "2；两个" });
     expect(question.content).not.toContain("<u>");
     expect(question.content.match(/_{4,}/g)).toHaveLength(2);
+  });
+
+  it("extracts Word underlined mathematical expressions as fill-in answers", () => {
+    const source = String.raw`二、填空题
+3. 算式的值为 <u>$\frac{1}{2}$</u>，根式为 <u>$\sqrt{5}$</u>，求和为 <u>$\sum_{k=1}^{3}k$</u>。`;
+    const question = parseDocumentBlocks(source, { ...config, subject: "数学" })
+      .find((block) => block.type === "question")!;
+    expect(question.answer).toBe(String.raw`$\frac{1}{2}$；$\sqrt{5}$；$\sum_{k=1}^{3}k$`);
+    expect(question.content.match(/____/g)).toHaveLength(3);
+  });
+
+  it("recovers a Word fraction printed between underline segments", () => {
+    const source = String.raw`二、填空题
+5. 摸到红球的概率是 ____ $\frac{7}{10}$ ____。`;
+    const question = parseDocumentBlocks(source, { ...config, subject: "数学" })
+      .find((block) => block.type === "question")!;
+    expect(question.answer).toBe(String.raw`$\frac{7}{10}$`);
+    expect(question.content).toContain("概率是 ____。");
+    expect(question.content).not.toContain("$\\frac");
   });
 
   it("preserves an explicit answer instead of overwriting it with an underlined run", () => {

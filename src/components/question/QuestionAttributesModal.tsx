@@ -49,7 +49,7 @@ export function QuestionAttributesModal({ question, schoolId, onClose, onUpdated
     void knowledgeService.getKnowledgeTree(schoolId).then((tree) => { if (active) setKnowledgeTree(tree); }).catch(() => {});
     return () => { active = false; };
   }, [schoolId]);
-  const { options: questionTypes } = useQuestionTypeOptions(schoolId);
+  const { options: questionTypes } = useQuestionTypeOptions(schoolId, question.subject);
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
   const { categoryOptions, sourceOptions } = useQuestionMetadataOptions(schoolId);
 

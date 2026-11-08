@@ -575,6 +575,11 @@ export const serviceParameters = {
     "listPersonalClasses": [
       "teacherId"
     ],
+    "savePersonalClassChapterSelection": [
+      "classId",
+      "chapterIds",
+      "teacher"
+    ],
     "listAllClasses": [
       "schoolId",
       "teacherId"
@@ -1160,7 +1165,8 @@ export const serviceParameters = {
       "teacherId",
       "schoolId",
       "sourceId",
-      "documentBlocks"
+      "documentBlocks",
+      "personalClassIds"
     ],
     "createFromLecture": [
       "teacherId",

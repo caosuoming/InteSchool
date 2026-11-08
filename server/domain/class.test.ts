@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppState } from "../types.js";
 import { runWithState } from "../runtime-db.js";
 import { classService } from "./class.js";
+import { knowledgeService } from "./knowledge.js";
 
 function createState(): AppState {
   return {
@@ -122,6 +123,36 @@ function getStudent(state: AppState, studentId: string) {
 }
 
 describe("class lifecycle service", () => {
+  it("saves personal-class chapter choices on the server and protects other teachers' classes", async () => {
+    const state = createState();
+    state.personalClasses = [
+      { id: "pc1", teacherId: "teacher-1", type: "personal", name: "一班", description: "", studentIds: [], createdAt: "2026-11-01" },
+      { id: "pc2", teacherId: "teacher-2", type: "personal", name: "二班", description: "", studentIds: [], createdAt: "2026-11-01" },
+    ];
+    const teacher = { id: "teacher-1" } as never;
+    const spy = vi.spyOn(knowledgeService, "getChapterTree").mockResolvedValue({
+      id: "root", name: "章节课", type: "chapter", count: 0, children: [
+        { id: "ch", name: "数列", type: "chapter", count: 0, children: [] },
+        { id: "geo", name: "几何", type: "chapter", count: 0, children: [] },
+      ],
+    });
+    try {
+      await runWithState(state, async () => {
+        await expect(classService.savePersonalClassChapterSelection("pc2", ["ch"], teacher)).rejects.toThrow("无权修改");
+        await expect(classService.savePersonalClassChapterSelection("pc1", ["missing"], teacher)).rejects.toThrow("不在当前知识树");
+        await expect(classService.savePersonalClassChapterSelection("pc1", ["root"], teacher)).rejects.toThrow("不在当前知识树");
+        await expect(classService.savePersonalClassChapterSelection("pc1", [null] as never, teacher)).rejects.toThrow("不合法");
+        expect((await classService.savePersonalClassChapterSelection("pc1", ["ch", "geo", "ch"], teacher)).tutoringChapterIds)
+          .toEqual(["ch", "geo"]);
+        expect((await classService.listPersonalClasses("teacher-1"))[0].tutoringChapterIds).toEqual(["ch", "geo"]);
+        await classService.savePersonalClassChapterSelection("pc1", [], teacher);
+        expect((await classService.listPersonalClasses("teacher-1"))[0].tutoringChapterIds).toEqual([]);
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("searches exact-name students from other schools without exposing private roster fields", async () => {
     const state = createState();
     state.schools = [

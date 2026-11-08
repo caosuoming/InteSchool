@@ -150,7 +150,7 @@ export default function LecturePreviewPage() {
   const [expandedPreviewQuestionIds, setExpandedPreviewQuestionIds] = useState<Set<string>>(() => new Set());
   const schoolId = teacher?.schoolId || lecture?.schoolId;
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(schoolId);
-  const { options: questionTypeOptions } = useQuestionTypeOptions(schoolId);
+  const { options: questionTypeOptions } = useQuestionTypeOptions(schoolId, teacher?.subject);
   const {
     sourceOptions,
     categoryOptions,

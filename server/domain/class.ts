@@ -10,6 +10,7 @@ import { getStudentArchiveStatus } from "../../src/lib/student-archive.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 import { studentTypeOf } from "../../src/lib/student-type.js";
 import { refreshStudentGradeParticipation } from "./grade.js";
+import { knowledgeService } from "./knowledge.js";
 
 export interface StudentInput {
   name: string;
@@ -191,6 +192,33 @@ export const classService = {
   async listPersonalClasses(teacherId: string): Promise<PersonalClass[]> {
     await delay(200);
     return db.read("personalClasses").filter((c) => c.teacherId === teacherId);
+  },
+
+  async savePersonalClassChapterSelection(
+    classId: string,
+    chapterIds: string[],
+    teacher: Teacher,
+  ): Promise<PersonalClass> {
+    const personalClass = db.read("personalClasses").find((item) => item.id === classId);
+    if (!personalClass || personalClass.teacherId !== teacher?.id) throw new Error("无权修改该个人教学班");
+    if (!Array.isArray(chapterIds) || chapterIds.length > 5000
+      || chapterIds.some((id) => typeof id !== "string")) {
+      throw new Error("章节课选择数据不合法");
+    }
+    const tree = await knowledgeService.getChapterTree(teacher.id, false);
+    const available = new Set<string>();
+    const visit = (node: typeof tree) => {
+      for (const child of node.children) {
+        available.add(child.id);
+        visit(child);
+      }
+    };
+    visit(tree);
+    const uniqueIds = [...new Set(chapterIds)];
+    if (uniqueIds.some((id) => !available.has(id))) throw new Error("所选章节课不在当前知识树目录中");
+    const updated = { ...personalClass, tutoringChapterIds: uniqueIds };
+    db.update("personalClasses", (list) => list.map((item) => item.id === classId ? updated : item));
+    return updated;
   },
 
   async listAllClasses(schoolId: string, teacherId: string): Promise<AnyClass[]> {

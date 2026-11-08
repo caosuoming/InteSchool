@@ -756,6 +756,37 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("assigns homework-derived tutoring decks only to owned, linked personal classes", async () => {
+    const state = createState();
+    const paper = sourceExamPaper();
+    paper.classIds = ["personal-1", "personal-2", "other-personal", "class-1"];
+    state.examPapers = [paper];
+    state.personalClasses = [
+      { id: "personal-1", type: "personal", teacherId: "teacher-1", name: "一班", description: "", studentIds: [], createdAt: now },
+      { id: "personal-2", type: "personal", teacherId: "teacher-1", name: "二班", description: "", studentIds: [], createdAt: now },
+      { id: "other-personal", type: "personal", teacherId: "teacher-2", name: "其他老师的班", description: "", studentIds: [], createdAt: now },
+    ];
+
+    await runWithState(state, async () => {
+      const generated = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1", "school-1", paper.id, [], ["personal-1", "personal-2", "personal-1"],
+      );
+      expect(generated.classIds).toEqual(["personal-1", "personal-2"]);
+      expect(generated.sourceType).toBe("examPaper");
+      expect(generated.sourceId).toBe(paper.id);
+
+      for (const invalid of [["class-1"], ["other-personal"], [], ["personal-1", "other-personal"]]) {
+        await expect(lessonCoursewareService.createFromExamPaper(
+          "teacher-1", "school-1", paper.id, [], invalid,
+        )).rejects.toThrow("只能将作业推送到本人所属的个人教学班");
+      }
+      paper.classIds = ["personal-1"];
+      await expect(lessonCoursewareService.createFromExamPaper(
+        "teacher-1", "school-1", paper.id, [], ["personal-2"],
+      )).rejects.toThrow("只能将作业推送到本人所属的个人教学班");
+    });
+  });
+
   it("only generates personal tutoring courseware for the teacher's own personal classes", async () => {
     const state = createState();
     const lecture = sourceLecture();

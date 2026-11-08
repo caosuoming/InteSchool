@@ -1,3 +1,4 @@
+import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
@@ -180,7 +181,7 @@ export default function QuestionBankPage({
   const isTreeEnabled = useCallback((kind: LeftTab) => enabledTreeKinds.includes(kind), [enabledTreeKinds]);
   const hasEnabledTree = enabledTreeKinds.length > 0;
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
-  const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
+  const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId, teacher?.subject);
   const {
     sourceOptions,
     categoryOptions,
@@ -2504,7 +2505,7 @@ function QuestionRow({
               "text-ink-900 leading-relaxed mb-2",
               wideLayout ? "text-base" : "text-sm",
             )}>
-              <MathHtml className="whitespace-pre-wrap">{question.stem}</MathHtml>
+              <MathHtml geographyLabels={question.subject?.trim() === "地理"} className="whitespace-pre-wrap">{question.stem}</MathHtml>
             </div>
 
             {/* 选项（网格布局，根据选项长度动态调整列数；答案高亮仅在展开时显示） */}
@@ -2524,7 +2525,7 @@ function QuestionRow({
                         expanded && question.answer.includes(String.fromCharCode(65 + i)) && "text-emerald-700 font-medium"
                       )}
                     >
-                      <span className="font-mono font-semibold flex-shrink-0">
+                      <span className={cn("font-mono font-semibold flex-shrink-0", question.subject?.trim() === "地理" && geographyOptionLabelClass(i) + " rounded px-1")}>
                         {String.fromCharCode(65 + i)}.
                       </span>
                       <MathHtml className="min-w-0 break-all">{opt}</MathHtml>

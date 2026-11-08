@@ -1718,14 +1718,17 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     // from the previous question's final option.
     if (
       config.subject?.trim() === "地理"
-      && afterBlank
       && currentBlock.type === "question"
-      && currentQuestionField === "content"
       && (currentBlock.options?.length || 0) >= 2
       && !isQuestionStart(line, config)
       && !isImageLine(line)
       && !isDocumentTableFragment(line)
       && !extractOptionLine(line, currentBlock.options?.length || 0, true)
+      && !answerPattern?.test(line)
+      && !analysisPattern?.test(line)
+      && !summaryPattern?.test(line)
+      && ((currentQuestionField === "content" && afterBlank)
+        || startsGeographyReadingPassage(lines, lineIndex, config))
     ) {
       submitCurrent();
       const isUnnumberedQuestion = /[?？]/.test(line)
@@ -2036,6 +2039,21 @@ function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): Doc
   return blocks;
 }
 
+const geographySharedStemPattern = /(?:据.{0,24}(?:完成|回答|作答)|根据.{0,40}(?:完成|回答|作答)|(?:阅读|读|观察|结合).{0,40}(?:完成|回答|作答)|(?:完成|回答)下[列面]|(?:据此|就此|由此).{0,12}(?:完成|回答|作答).{0,12}(?:小题|题))/;
+
+function startsGeographyReadingPassage(lines: string[], index: number, config: DocumentParseConfig): boolean {
+  const current = lines[index].trim();
+  if (geographySharedStemPattern.test(current)) return true;
+  for (let next = index + 1; next < Math.min(lines.length, index + 5); next += 1) {
+    const candidate = lines[next].trim();
+    if (!candidate) continue;
+    if (isQuestionStart(candidate, config) || isHeading(candidate, config)
+      || trailingSolutionHeadingKind(candidate) || extractOptionLine(candidate, 0, true)) break;
+    if (geographySharedStemPattern.test(candidate)) return true;
+  }
+  return false;
+}
+
 function geographySubQuestionCount(content: string): number {
   const markers = scanGroupedSubQuestionMarkers(content);
   let expected = 1;
@@ -2056,7 +2074,7 @@ function geographyDetailCategory(type: QuestionType, content: string): string | 
 
 function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const sharedStemPattern = /(?:据.{0,24}(?:完成|回答|作答)|根据.{0,40}(?:完成|回答|作答)|(?:阅读|读|观察|结合).{0,40}(?:完成|回答|作答)|(?:完成|回答)下[列面])/;
+  const sharedStemPattern = geographySharedStemPattern;
   const numberedPattern = /^\s*([\d０-９]{1,4})\s*[.．、]\s*\S/;
   const optionPattern = /^\s*[A-Ha-h]\s*[.．、:：)）]/;
   const groups: Array<{ introduction: string; numbers: string[] }> = [];
@@ -2182,15 +2200,64 @@ type EnglishPart = "听力" | "阅读理解" | "语言运用" | "写作";
 
 const englishPartPattern = /^第\s*[一二三四五六七八九十百\d]+\s*部分\s*(听力|阅读理解|语言运用|写作)(?:\b|\s|[（(：:]|$)/;
 const englishSectionPattern = /^第\s*[一二三四五六七八九十百\d]+\s*节(?:\s|[（(：:]|$)/;
+const englishTypeHeadingPattern = /^(?:(?:[一二三四五六七八九十百\d]+)\s*[、.．)]\s*|第\s*[一二三四五六七八九十百\d]+\s*节\s*)?(听力选择题|听力填空|单项选择(?:题)?|阅读理解|完形填空|语法填空|短文改错|改错|选词填空|翻译|完成句子|单词拼写|短文填空|书面表达|书信写作|应用文写作|读后续写)(?:题)?(?:\s|[（(：:]|$)/;
 const englishListeningSinglePattern = /每\s*段\s*录音\s*后\s*有\s*一个\s*小题/;
 const englishListeningGroupPattern = /每\s*段\s*录音\s*后\s*有\s*几\s*个\s*小题/;
 const englishListeningPassagePattern = /^听\s*下\s*面\s*(?:一|[\d一二三四五六七八九十]+)\s*段\s*(?:对话|独白|材料|录音)/;
 const englishGapPattern = /阅读\s*下\s*面\s*短文[，,。]?\s*从\s*短文\s*后\s*的\s*选项\s*中\s*选出/;
 const englishFieldPattern = /【\s*(答案|原文|导语|点睛|总结|详解|解析|解答|\d+题详解|第\d+题详解)\s*】/g;
 
+/** Detect the task format, never relying on the mere presence of blanks. */
+function englishSectionType(heading: string): QuestionType | undefined {
+  const text = normalizeStructuralText(heading).replace(/\s+/g, "");
+  if (/听力填空|听力(?:信息|表格|记录)填空/.test(text)) return "englishListeningFill";
+  if (/听力选择|听力理解|^听力$/.test(text)) return "englishListeningChoice";
+  if (/单项选择|单选/.test(text)) return "englishSingle";
+  if (/阅读理解|阅读表达|七选五/.test(text)) return "englishReading";
+  if (/完形填空|完型填空/.test(text)) return "englishCloze";
+  if (/语法填空|语法填词/.test(text)) return "englishGrammarFill";
+  if (/短文改错|改错|错误改正/.test(text)) return "englishCorrection";
+  if (/选词填空|词汇选填|方框选词/.test(text)) return "englishWordSelection";
+  if (/单词拼写|根据首字母|词汇拼写/.test(text)) return "englishSpelling";
+  if (/完成句子|补全句子|句子填空/.test(text)) return "englishSentenceCompletion";
+  if (/短文填空|语篇填空/.test(text)) return "englishPassageFill";
+  if (/翻译|英译汉|汉译英/.test(text)) return "englishTranslation";
+  if (/书信写作|应用文写作|写信|邮件写作|邀请信|建议信|感谢信|求职信/.test(text)) return "englishLetter";
+  if (/书面表达|读后续写|作文|写作/.test(text)) return "englishComposition";
+  return undefined;
+}
+
+/** Typical task instructions distinguish otherwise similar blank-based exercise formats. */
+function englishInstructionType(line: string): QuestionType | undefined {
+  const text = normalizeStructuralText(line).trim();
+  if (/^(?:根据所听|听录音|听短文|听对话).*?(?:填|补全|完成表格|记录信息)|^(?:Listen|Complete).*(?:recording|audio).*(?:blank|form)/i.test(text)) return "englishListeningFill";
+  if (/^(?:听下面|听录音|听对话|根据所听).*?(?:选择|选出|回答)|^Listen.*(?:choose|answer)/i.test(text)) return "englishListeningChoice";
+  if (/^(?:阅读|通读).*?(?:完形|从每题所给|从[A-D]个选项|最佳选项).*?(?:填|选择|选出)|^Read.*(?:fill|choose).*?(?:best|A.*B.*C.*D)/i.test(text)) return "englishCloze";
+  if (/^(?:从方框|从所给词|选用所给词|选择适当的词)|^(?:Choose|Select) (?:the )?words? from/i.test(text)) return "englishWordSelection";
+  if (/^(?:用所给词|用括号内所给|按语法要求).*?(?:适当形式|填空)|^Fill.*(?:correct form|grammar)/i.test(text)) return "englishGrammarFill";
+  if (/^(?:短文|根据短文|阅读短文).*?(?:首字母|填空|补全|填词)/.test(text)) return "englishPassageFill";
+  if (/^(?:根据汉语|根据首字母|根据提示).*?(?:拼写|写出单词|单词)/.test(text)) return "englishSpelling";
+  if (/^(?:根据汉语意思|按要求).*?(?:完成句子|补全句子)/.test(text)) return "englishSentenceCompletion";
+  if (/^(?:翻译下列|将下列|把下面).*?(?:译成|翻译|英语|汉语)|^Translate (?:the following|these)/i.test(text)) return "englishTranslation";
+  if (/^(?:找出|指出|改正|修改).*?(?:错误|错处)|^Correct (?:the|any|errors)/i.test(text)) return "englishCorrection";
+  if (/^(?:请|根据).*?(?:写一封|写封|电子邮件|邀请信|建议信|感谢信)|^Write (?:an? )?(?:letter|e-mail|email)/i.test(text)) return "englishLetter";
+  if (/^(?:请|根据).*?(?:写一篇|写短文|作文|书面表达)|^Write (?:an? )?(?:essay|composition|article)/i.test(text)) return "englishComposition";
+  if (/^(?:阅读下面|阅读下列|阅读短文).*?(?:回答|选择|问题)|^Read (?:the|this) passage.*(?:answer|question)/i.test(text)) return "englishReading";
+  if (/^(?:选择|选出).*?(?:唯一|最佳|正确).*?(?:答案|选项)|^Choose (?:the )?(?:best|correct) answer/i.test(text)) return "englishSingle";
+  return undefined;
+}
+
+function englishPartForType(type: QuestionType): EnglishPart {
+  if (type.startsWith("englishListening")) return "听力";
+  if (type === "englishReading") return "阅读理解";
+  if (type === "englishComposition" || type === "englishLetter") return "写作";
+  return "语言运用";
+}
+
 interface EnglishUnit {
   lines: string[];
   part: EnglishPart;
+  questionType?: QuestionType;
   grouped: boolean;
   gap: boolean;
 }
@@ -2238,16 +2305,22 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
   const sourceLines = content.replace(/\r\n?/g, "\n").split("\n");
   const structuralLines = sourceLines.map((line) => normalizeStructuralText(line).trim());
   const firstPart = structuralLines.find((line) => englishPartPattern.test(line));
-  const inferredPart: EnglishPart | undefined = structuralLines.some((line) => englishGapPattern.test(line))
+  const firstNamedSection = structuralLines.find((line) => englishTypeHeadingPattern.test(line));
+  const firstInstruction = structuralLines.find((line) => englishInstructionType(line));
+  const inferredPart: EnglishPart | undefined = firstNamedSection
+    ? englishPartForType(englishSectionType(firstNamedSection) || "englishSingle")
+    : firstInstruction ? englishPartForType(englishInstructionType(firstInstruction)!)
+    : structuralLines.some((line) => englishGapPattern.test(line))
     ? "阅读理解"
     : structuralLines.some((line) => englishListeningSinglePattern.test(line) || englishListeningGroupPattern.test(line))
       ? "听力" : undefined;
   if (!firstPart && !inferredPart) return null;
 
   const blocks: DocumentBlock[] = [];
-  let part: EnglishPart | undefined = firstPart ? undefined : inferredPart;
+  let part: EnglishPart | undefined = firstPart || firstNamedSection ? undefined : inferredPart;
   let listeningAtomic = false;
   let gap = false;
+  let sectionType: QuestionType | undefined = firstPart ? undefined : firstNamedSection ? englishSectionType(firstNamedSection) : firstInstruction ? englishInstructionType(firstInstruction) : undefined;
   let current: EnglishUnit | undefined;
   const addBlock = (type: DocumentBlockType, text: string, fields: Partial<DocumentBlock> = {}) => {
     if (!text.trim()) return;
@@ -2262,15 +2335,17 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
     const fields = englishFieldParts(unit.lines);
     if (!fields.content) return;
     const numbers = englishQuestionNumbers(fields.content);
-    const isQuestion = numbers.length > 0 || unit.gap;
+    const isQuestion = numbers.length > 0 || unit.gap
+      || (unit.part === "写作" && /请|写|write|suppose|假设|要求/i.test(fields.content));
     if (!isQuestion) {
       addBlock("knowledge", fields.content, { knowledgeTitle: fields.content.slice(0, 20) });
       return;
     }
     const grouped = unit.grouped || numbers.length > 1 || unit.gap;
+    const questionType = unit.questionType || (unit.part === "听力" ? "englishListeningChoice" : unit.part === "阅读理解" ? "englishReading" : unit.part === "写作" ? "englishComposition" : "englishGrammarFill");
     if (grouped) {
       addBlock("question", fields.content, {
-        questionType: "comprehensive", difficulty: 3,
+        questionType, difficulty: 3,
         answer: fields.answer, analysis: fields.analysis, summary: fields.summary,
       });
       return;
@@ -2283,13 +2358,13 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
     ).trim();
     addBlock("question", parsed?.content || fields.content, {
       options: parsed?.options || [],
-      questionType: unit.part === "写作" ? "essay"
-        : parsed?.questionType || (unit.part === "听力" ? "single" : "short"),
+      questionType: questionType === "englishComposition" && /(?:写信|邮件|letter|email|e-mail|邀请信|建议信|感谢信)/i.test(fields.content)
+        ? "englishLetter" : questionType,
       difficulty: 3, answer, analysis: fields.analysis, summary: fields.summary,
     });
   };
   const addLine = (line: string, grouped: boolean) => {
-    if (!current) current = { lines: [], part: part!, grouped, gap };
+    if (!current) current = { lines: [], part: part!, questionType: sectionType, grouped, gap };
     current.lines.push(line);
   };
 
@@ -2309,16 +2384,26 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
       part = major[1] as EnglishPart;
       listeningAtomic = false;
       gap = false;
+      sectionType = englishSectionType(major[1]);
       addBlock("groupTitle", raw);
       continue;
     }
-    if (!part) {
+    const namedSection = englishTypeHeadingPattern.exec(line);
+    if (!part && !namedSection) {
       beforePart.push(raw);
       continue;
     }
-    if (englishSectionPattern.test(line)) {
+    if (namedSection || englishSectionPattern.test(line)) {
       submitCurrent();
+      if (beforePart.length) {
+        addBlock("documentTitle", beforePart[0]);
+        if (beforePart.length > 1) addBlock("documentInfo", beforePart.slice(1).join("\n"));
+        beforePart = [];
+      }
       gap = false;
+      sectionType = englishSectionType(namedSection?.[1] || line) || sectionType;
+      if (namedSection) part = englishPartForType(sectionType!);
+      listeningAtomic = sectionType === "englishListeningChoice";
       addBlock("groupTitle", raw);
       continue;
     }
@@ -2334,7 +2419,7 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
       addLine(raw, true);
       continue;
     }
-    if (part === "阅读理解" && !gap && /^[A-D]$/.test(line)) {
+    if (part === "阅读理解" && !gap && /^(?:[A-D]|(?:Passage|Text)\s+[A-D\d]+|阅读材料\s*[A-D\d]+)$/i.test(line)) {
       submitCurrent();
       addBlock("groupTitle", raw);
       continue;
@@ -2344,16 +2429,24 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
       addLine(raw, true);
       continue;
     }
+    const instructionType = englishInstructionType(line);
+    if (instructionType && instructionType !== sectionType) {
+      submitCurrent();
+      sectionType = instructionType;
+      part = englishPartForType(instructionType);
+    }
     const numbered = extractLeadingQuestionNumber(line);
     if (numbered && (
-      (part === "听力" && listeningAtomic)
-      || part === "写作"
+      (part === "听力" && listeningAtomic && !current?.grouped)
+      || (part === "写作" && (!current || englishQuestionNumbers(current.lines.join("\n")).length > 0))
+      || ["englishSingle", "englishTranslation", "englishSentenceCompletion", "englishSpelling"].includes(sectionType || "")
     )) {
       submitCurrent();
       addLine(raw, false);
       continue;
     }
-    addLine(raw, part !== "听力" && part !== "写作" || !listeningAtomic);
+    addLine(raw, !["englishSingle", "englishTranslation", "englishSentenceCompletion", "englishSpelling"].includes(sectionType || "")
+      && (part !== "听力" && part !== "写作" || !listeningAtomic));
   }
   submitCurrent();
   if (beforePart.length) {
@@ -2373,7 +2466,7 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
     const answers = englishAnswerMap(block.answer);
     if (answers.size < 2) continue;
     for (const candidate of blocks.slice(sectionStart, index + 1)) {
-      if (candidate.type !== "question" || candidate.questionType === "comprehensive") continue;
+      if (candidate.type !== "question" || englishQuestionNumbers(candidate.content).length > 1) continue;
       const numbers = englishQuestionNumbers(candidate.content);
       if (numbers.length === 1 && answers.has(numbers[0])) candidate.answer = answers.get(numbers[0]);
     }
@@ -2411,11 +2504,19 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     const merged = mergeTrailingSolutions(blocks, solutions, config, {
       allowPositionalFallback: kind !== "answer",
     });
-    const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
+    const requiredMatches = kind === "answer" && config.subject?.trim() !== "地理"
+      ? Math.min(2, questions.length) : 1;
     if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config);
   }
 
-  return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
+  const fallback = refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
+  if (config.subject?.trim() !== "英语") return fallback;
+  let sectionType: QuestionType | undefined;
+  for (const block of fallback) {
+    if (block.type === "groupTitle") sectionType = englishSectionType(block.content);
+    if (block.type === "question" && sectionType) block.questionType = sectionType;
+  }
+  return fallback;
 }
 
 export interface MathQuestionNumberSequenceGap {
