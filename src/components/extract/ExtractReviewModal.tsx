@@ -1,3 +1,4 @@
+import { renderGeographyChoiceGroups } from "@/lib/geography-question-markup";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "katex/dist/katex.min.css";
 import {
@@ -1199,7 +1200,11 @@ export function ExtractReviewModal({
                 <div className="space-y-2">
                   <div
                     className="whitespace-pre-wrap text-sm text-ink-800"
-                    dangerouslySetInnerHTML={{ __html: (subject === "英语" ? emphasizeEnglishQuestionHtml(renderExtractText(block.content, allKeywords, true)) : renderExtractText(block.content, allKeywords, true)) }}
+                    dangerouslySetInnerHTML={{ __html: subject?.trim() === "地理"
+                      ? renderGeographyChoiceGroups(block.content, (part) => renderExtractText(part, allKeywords, true, true))
+                      : subject === "英语"
+                        ? emphasizeEnglishQuestionHtml(renderExtractText(block.content, allKeywords, true))
+                        : renderExtractText(block.content, allKeywords, true) }}
                   />
                   {block.options && block.options.length > 0 && (
                     <div className="grid grid-cols-1 gap-1.5 pl-1 sm:grid-cols-2">

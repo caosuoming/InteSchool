@@ -1,3 +1,4 @@
+import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
@@ -39,7 +40,7 @@ export function ExpandableQuestionContent({
             ? <ChevronDown className="h-4 w-4" />
             : <ChevronRight className="h-4 w-4" />}
         </span>
-        <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
+        <MathHtml geographyLabels={question.subject?.trim() === "地理"} className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
       </div>
 
       {question.options && question.options.length > 0 && (
@@ -52,7 +53,7 @@ export function ExpandableQuestionContent({
         >
           {question.options.map((option, index) => (
             <div key={index} className="flex items-start gap-1.5">
-              <span className="flex-shrink-0 font-mono font-semibold">
+              <span className={cn("flex-shrink-0 font-mono font-semibold", question.subject?.trim() === "地理" && geographyOptionLabelClass(index) + " rounded px-1")}>
                 {String.fromCharCode(65 + index)}.
               </span>
               <MathHtml className="min-w-0 flex-1 break-all whitespace-pre-wrap">{option}</MathHtml>
