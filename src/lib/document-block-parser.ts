@@ -1719,13 +1719,16 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     if (
       config.subject?.trim() === "地理"
       && currentBlock.type === "question"
-      && currentQuestionField === "content"
       && (currentBlock.options?.length || 0) >= 2
       && !isQuestionStart(line, config)
       && !isImageLine(line)
       && !isDocumentTableFragment(line)
       && !extractOptionLine(line, currentBlock.options?.length || 0, true)
-      && (afterBlank || startsGeographyReadingPassage(lines, lineIndex, config))
+      && !answerPattern?.test(line)
+      && !analysisPattern?.test(line)
+      && !summaryPattern?.test(line)
+      && ((currentQuestionField === "content" && afterBlank)
+        || startsGeographyReadingPassage(lines, lineIndex, config))
     ) {
       submitCurrent();
       const isUnnumberedQuestion = /[?？]/.test(line)

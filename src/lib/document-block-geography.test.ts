@@ -175,6 +175,21 @@ describe("geography paper decomposition", () => {
     expect(parsed[0].content).not.toContain("土地利用结构");
   });
 
+  it("keeps an inline answer and explanation on the previous question when the next reading passage follows", () => {
+    const parsed = questions([
+      "一、单选题",
+      "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "【答案】B", "【解析】依据地形判断。",
+      "另一地区植被分布存在显著差异。", "就此完成下面小题。",
+      "2. 第二题 A. 东 B. 西 C. 南 D. 北",
+    ].join("\n"));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].answer).toBe("B");
+    expect(parsed[0].analysis).toBe("依据地形判断。");
+    expect(parsed[1].content).toContain("另一地区植被分布");
+    expect(parsed[1].content).toContain("就此完成下面小题");
+  });
+
   it("matches a partially populated reference-answer section by its original question number", () => {
     const parsed = questions([
       "一、单选题", "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
