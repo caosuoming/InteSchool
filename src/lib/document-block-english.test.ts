@@ -56,7 +56,7 @@ describe("English exam document extraction", () => {
       "【答案】8. C 9. B", "【原文】W: We went to the zoo.",
     ]).filter((block) => block.type === "question");
     expect(questions).toHaveLength(2);
-    expect(questions[0]).toMatchObject({ questionType: "comprehensive", answer: "6. B 7. A" });
+    expect(questions[0]).toMatchObject({ questionType: "englishListeningChoice", answer: "6. B 7. A" });
     expect(questions[0].content).toContain("7. What does he like?");
     expect(questions[0].content).toContain("C. Art");
     expect(questions[1].content).toContain("8. Where did she go?");
@@ -93,7 +93,7 @@ describe("English exam document extraction", () => {
     ]);
     const questions = blocks.filter((block) => block.type === "question");
     expect(questions).toHaveLength(1);
-    expect(questions[0].questionType).toBe("comprehensive");
+    expect(questions[0].questionType).toBe("englishReading");
     expect(questions[0].content).toContain("__36__");
     expect(questions[0].content).toContain("G. We run.");
     expect(questions[0].answer).toBe("36. D 37. B");
@@ -126,10 +126,10 @@ describe("English exam document extraction", () => {
     ]);
     const questions = blocks.filter((block) => block.type === "question");
     expect(questions).toHaveLength(2);
-    expect(questions[0]).toMatchObject({ questionType: "essay", answer: "Dear Tom, please come.", analysis: "注意格式。" });
+    expect(questions[0]).toMatchObject({ questionType: "englishLetter", answer: "Dear Tom, please come.", analysis: "注意格式。" });
     expect(questions[0].summary).toContain("应用文。");
     expect(questions[0].summary).toContain("邀请语气要得体。");
-    expect(questions[1]).toMatchObject({ questionType: "essay", answer: "Once upon a time...", analysis: "故事需要连贯。" });
+    expect(questions[1]).toMatchObject({ questionType: "englishComposition", answer: "Once upon a time...", analysis: "故事需要连贯。" });
   });
 
   it("does not override the common parser for non-English subjects or ordinary English exercises", () => {
@@ -138,5 +138,75 @@ describe("English exam document extraction", () => {
     const math = parseDocumentBlocks(lines.join("\n"), { ...config, subject: "数学" });
     expect(english.map((block) => block.type)).toEqual(math.map((block) => block.type));
     expect(english[1].answer).toBe("B");
+  });
+
+  it.each([
+    ["听力选择题", "englishListeningChoice", "1. Where is Alice?", "A. Home B. School C. Shop"],
+    ["听力填空", "englishListeningFill", "1. The train leaves at ____.", ""],
+    ["单项选择", "englishSingle", "1. She ____ a teacher.", "A. is B. are C. be"],
+    ["阅读理解", "englishReading", "1. What does the article explain?", "A. Rain B. Sun C. Snow"],
+    ["完形填空", "englishCloze", "1. A. went B. goes C. go", ""],
+    ["语法填空", "englishGrammarFill", "1. She ____ (go) to school.", ""],
+    ["改错", "englishCorrection", "1. He go to school every day.", ""],
+    ["选词填空", "englishWordSelection", "1. The ____ is beautiful.", ""],
+    ["翻译", "englishTranslation", "1. Translate: Good morning.", ""],
+    ["完成句子", "englishSentenceCompletion", "1. I ____ (已经完成) the work.", ""],
+    ["单词拼写", "englishSpelling", "1. The sun is b____.", ""],
+    ["短文填空", "englishPassageFill", "1. Yesterday I ____ to school.", ""],
+    ["书面表达", "englishComposition", "1. Write a short essay about nature.", ""],
+    ["书信写作", "englishLetter", "1. Write a letter to your friend.", ""],
+  ])("recognizes the %s heading as %s", (heading, expected, question, options) => {
+    const blocks = parse(["初中英语练习卷", `一、${heading}`, question, options].filter(Boolean));
+    expect(blocks[0]).toMatchObject({ type: "documentTitle", content: "初中英语练习卷" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].questionType).toBe(expected);
+  });
+
+  it("groups multiple questions under each reading passage and separates the next passage", () => {
+    const blocks = parse([
+      "一、阅读理解", "Passage A", "The sun gives us light.",
+      "21. What does the sun give? A. Light B. Water C. Food",
+      "22. What is the passage about? A. Sun B. Moon C. Rain",
+      "Passage B", "The sea contains fish.",
+      "23. Where are the fish? A. Sea B. Sky C. Tree",
+    ]);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions.map((question) => question.questionType)).toEqual(["englishReading", "englishReading"]);
+    expect(questions[0].content).toContain("21. What");
+    expect(questions[0].content).toContain("22. What");
+    expect(questions[0].content).not.toContain("23. Where");
+    expect(questions[1].content).toContain("23. Where");
+  });
+
+  it("does not combine separate listening questions when there is no common recording", () => {
+    const questions = parse([
+      "一、听力选择题", "1. Who is speaking? A. Jane B. Helen",
+      "2. Where are they? A. Home B. School",
+    ]).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions.map((block) => block.questionType)).toEqual(["englishListeningChoice", "englishListeningChoice"]);
+  });
+
+  it.each([
+    ["根据所听内容填写表格中的信息。", "englishListeningFill"],
+    ["从方框中选择适当的词填空。", "englishWordSelection"],
+    ["用所给词的适当形式填空。", "englishGrammarFill"],
+    ["根据汉语意思完成句子。", "englishSentenceCompletion"],
+    ["将下列句子翻译成英语。", "englishTranslation"],
+    ["找出下列句子中的错误并改正。", "englishCorrection"],
+    ["根据首字母提示写出单词。", "englishSpelling"],
+    ["Write a letter to your friend.", "englishLetter"],
+  ])("identifies exercise format from instructions: %s", (instruction, type) => {
+    const questions = parse([instruction, "1. The first question."]).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].questionType).toBe(type);
+  });
+
+  it("keeps an unnumbered writing prompt as a question", () => {
+    const questions = parse(["一、书信写作", "请给你的朋友写一封邀请信，介绍活动安排。"]).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].questionType).toBe("englishLetter");
   });
 });

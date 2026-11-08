@@ -24,7 +24,8 @@ interface QuestionDetailProps {
 
 export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
   const { teacher } = useAuthStore();
-  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
+  const english = (question.subject || teacher?.subject) === "英语";
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId, question.subject || teacher?.subject);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [points, setPoints] = useState<KnowledgePoint[]>([]);
   const [remarks, setRemarks] = useState<QuestionRemark[]>([]);
@@ -132,7 +133,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">题干</div>
         <div className="p-3 rounded-md bg-mist border border-ink-100 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
-          <MathHtml>{question.stem}</MathHtml>
+          <MathHtml emphasizeEnglishQuestions={english}>{question.stem}</MathHtml>
         </div>
       </div>
 
@@ -151,7 +152,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
                     : "border-ink-100 bg-paper",
                 )}
               >
-                <span className="font-mono font-semibold text-ink-700 flex-shrink-0">
+                <span className={`font-mono font-semibold flex-shrink-0 ${english ? ["text-blue-700", "text-emerald-700", "text-amber-700", "text-violet-700"][i % 4] : "text-ink-700"}`}>
                   {String.fromCharCode(65 + i)}.
                 </span>
                 <MathHtml className="min-w-0 text-ink-900">{opt}</MathHtml>

@@ -2,17 +2,20 @@ import { useMemo } from "react";
 import "katex/dist/katex.min.css";
 import { renderMathHtml } from "@/lib/math-html";
 import { cn } from "@/lib/utils";
+import { emphasizeEnglishQuestionHtml } from "@/lib/english-question-format";
 
 interface MathHtmlProps {
   children: string;
   className?: string;
   revealedAnswerStep?: number;
+  emphasizeEnglishQuestions?: boolean;
 }
 
 /** Renders rich HTML that may also contain $...$ or $$...$$ LaTeX formulas. */
-export function MathHtml({ children, className, revealedAnswerStep }: MathHtmlProps) {
+export function MathHtml({ children, className, revealedAnswerStep, emphasizeEnglishQuestions = false }: MathHtmlProps) {
   const html = useMemo(() => {
-    const rendered = renderMathHtml(children);
+    const rendered = emphasizeEnglishQuestions
+      ? emphasizeEnglishQuestionHtml(renderMathHtml(children)) : renderMathHtml(children);
     if (revealedAnswerStep === undefined || !rendered.includes("lesson-inline-answer")) return rendered;
     const template = document.createElement("template");
     template.innerHTML = rendered;
@@ -23,7 +26,7 @@ export function MathHtml({ children, className, revealedAnswerStep }: MathHtmlPr
         }
       });
     return template.innerHTML;
-  }, [children, revealedAnswerStep]);
+  }, [children, revealedAnswerStep, emphasizeEnglishQuestions]);
 
   return (
     <div
