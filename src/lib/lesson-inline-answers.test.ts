@@ -19,6 +19,14 @@ describe("inline answer extraction and animation", () => {
     expect(extracted.content).toBe("解为 ____，根式为 ____，求和为 ____。");
   });
 
+  it("extracts formulas placed between two empty Word underline runs", () => {
+    const extracted = extractUnderlinedAnswers(
+      String.raw`摸到红球的概率是 ____ $\frac{7}{10}$ ____，另一个值为 ___ $\sqrt{5}$ __。`,
+    );
+    expect(extracted.answers).toEqual([String.raw`$\frac{7}{10}$`, String.raw`$\sqrt{5}$`]);
+    expect(extracted.content).toBe("摸到红球的概率是 ____，另一个值为 ____。");
+  });
+
   it("preserves math comparisons inside underlined expressions", () => {
     const extracted = extractUnderlinedAnswers("取 <u>$x<2$</u>，另外 <u>____</u>");
     expect(extracted.answers).toEqual(["$x<2$"]);

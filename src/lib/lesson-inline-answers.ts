@@ -1,5 +1,7 @@
 /** Underlined DOCX text is an answer; empty underline runs are just blanks. */
 const UNDERLINED_RUNS = /<u\b[^>]*>[\s\S]*?<\/u>(?:<u\b[^>]*>[\s\S]*?<\/u>)*/gi;
+const MATH_BETWEEN_BLANKS = /[_＿]{2,}[ \t]*(?:<u\b[^>]*>)?\$\$?[^$\r\n]+\$\$?(?:<\/u>)?[ \t]*[_＿]{2,}/gi;
+const INLINE_ANSWER_RUNS = new RegExp(`${MATH_BETWEEN_BLANKS.source}|${UNDERLINED_RUNS.source}`, "gi");
 const KNOWLEDGE_BLANK = /<span class="knowledge-answer-blank" data-answer-index="(\d+)">_{4,}<\/span>/g;
 
 export function extractUnderlinedAnswers(content: string, knowledge = false): {
@@ -7,7 +9,16 @@ export function extractUnderlinedAnswers(content: string, knowledge = false): {
   answers: string[];
 } {
   const answers: string[] = [];
-  const cleaned = content.replace(UNDERLINED_RUNS, (match) => {
+  const cleaned = content.replace(INLINE_ANSWER_RUNS, (match) => {
+    if (!match.startsWith("<")) {
+      const formula = match.match(/\$\$?[^$\r\n]+\$\$?/);
+      if (formula) {
+        answers.push(formula[0]);
+        return knowledge
+          ? `<span class="knowledge-answer-blank" data-answer-index="${answers.length}">____</span>`
+          : "____";
+      }
+    }
     const text = match.replace(/<\/?u\b[^>]*>/gi, "");
     const plain = text.replace(/<\/?[A-Za-z][^>]*>/g, "").trim();
     if (!plain || /^[_＿\s]+$/.test(plain)) return match.replace(/<\/?u\b[^>]*>/gi, "");

@@ -2560,6 +2560,16 @@ describe("inline answers in mathematics documents", () => {
     expect(question.content.match(/____/g)).toHaveLength(3);
   });
 
+  it("recovers a Word fraction printed between underline segments", () => {
+    const source = String.raw`二、填空题
+5. 摸到红球的概率是 ____ $\frac{7}{10}$ ____。`;
+    const question = parseDocumentBlocks(source, { ...config, subject: "数学" })
+      .find((block) => block.type === "question")!;
+    expect(question.answer).toBe(String.raw`$\frac{7}{10}$`);
+    expect(question.content).toContain("概率是 ____。");
+    expect(question.content).not.toContain("$\\frac");
+  });
+
   it("preserves an explicit answer instead of overwriting it with an underlined run", () => {
     const blocks = parseDocumentBlocks("二、填空题\n2. 求值：<u>2</u>\n答案：3", config);
     const question = blocks.find((block) => block.type === "question")!;

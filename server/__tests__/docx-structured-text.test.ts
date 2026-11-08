@@ -682,6 +682,20 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("keeps separated underlines surrounding an inserted Word fraction", async () => {
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>概率是 </w:t></w:r>
+        <w:r><w:rPr><w:u/></w:rPr><w:t xml:space="preserve">    </w:t></w:r>
+        <m:oMath><m:f>
+          <m:num><m:r><m:t>7</m:t></m:r></m:num>
+          <m:den><m:r><m:t>10</m:t></m:r></m:den>
+        </m:f></m:oMath>
+        <w:r><w:rPr><w:u/></w:rPr><w:t xml:space="preserve">    </w:t></w:r>
+      </w:p>
+    `);
+    expect(await extractDocxStructuredText(data)).toBe(String.raw`概率是 ____$\frac{7}{10}$____`);
+  });
+
   it("does not extract only partially underlined equations as answers", async () => {
     const data = await makeDocx(`
       <w:p><m:oMath><m:f>
