@@ -11,10 +11,11 @@ interface Props {
   documentId: string;
   questions: Array<{ id: string; number: number }>;
   disabled?: boolean;
+  buttonClassName?: string;
   onApplied: () => Promise<void>;
 }
 
-export function DocumentQuestionCompletionBatch({ documentId, questions, disabled, onApplied }: Props) {
+export function DocumentQuestionCompletionBatch({ documentId, questions, disabled, buttonClassName = "w-full justify-start", onApplied }: Props) {
   const [open, setOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<Mode>("done");
@@ -49,7 +50,7 @@ export function DocumentQuestionCompletionBatch({ documentId, questions, disable
 
   return (
     <>
-      <Button variant="outline" size="sm" className="w-full justify-start" onClick={openPicker}
+      <Button variant="outline" size="sm" className={buttonClassName} onClick={openPicker}
         disabled={disabled || uniqueQuestions.length === 0}>
         <CheckSquare className="w-3.5 h-3.5" /> 全部设为已做
       </Button>

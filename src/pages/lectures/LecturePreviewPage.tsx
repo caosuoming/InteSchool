@@ -691,6 +691,24 @@ export default function LecturePreviewPage() {
         </select>
       </div>
 
+      <div className="no-print mb-4 rounded-lg border border-ink-200 bg-paper p-3">
+        <DocumentQuestionBatchActions
+          layout="horizontal"
+          schoolId={schoolId}
+          questionIds={questionIds}
+          disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
+          onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
+          markAllButton={<DocumentQuestionCompletionBatch
+            documentId={lecture.id}
+            questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
+              .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
+            disabled={students.length === 0 || questionIds.length === 0}
+            buttonClassName="justify-start"
+            onApplied={refreshCompletionRecords}
+          />}
+        />
+      </div>
+
       <div
         className={cn(
           "preview-sticky-shell",
@@ -698,23 +716,10 @@ export default function LecturePreviewPage() {
         )}
       >
         <aside className="preview-sticky-rail no-print">
-          <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="lecture-preview-details">
+          <div className="preview-sticky-controls" data-testid="lecture-preview-details">
             <PreviewSidebarControls
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
-            />
-            <DocumentQuestionBatchActions
-              schoolId={schoolId}
-              questionIds={questionIds}
-              disabled={Boolean(lecture?.answerSheetPublishedAt) || answerRecords.length > 0}
-              onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-              markAllButton={<DocumentQuestionCompletionBatch
-                documentId={lecture.id}
-                questions={previewRows.filter((row) => row.section.type === "question" && row.section.questionId)
-                  .map((row) => ({ id: row.section.questionId!, number: row.questionNumber! }))}
-                disabled={students.length === 0 || questionIds.length === 0}
-                onApplied={refreshCompletionRecords}
-              />}
             />
           </div>
         </aside>

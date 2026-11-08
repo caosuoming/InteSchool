@@ -467,28 +467,31 @@ describe("ExamPaperEditorPage preview", () => {
 
     const previewControls = screen.getByTestId("exam-paper-preview-details");
     expect(previewControls).toHaveTextContent("显示内容");
-    const batchActions = within(previewControls).getByTestId("document-question-batch-actions");
-    expect(batchActions).toHaveTextContent("批量操作");
-    expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
-    expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
-    expect(within(batchActions).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
-    expect(previewControls).not.toHaveTextContent("题目信息与使用情况");
+    expect(within(previewControls).queryByTestId("document-question-batch-actions")).not.toBeInTheDocument();
     expect(previewControls).toHaveClass("preview-sticky-controls");
     expect(previewControls.parentElement).toHaveClass("preview-sticky-rail");
     expect(previewControls.previousElementSibling).toBeNull();
-    expect(screen.queryByText("题目信息与使用情况")).not.toBeInTheDocument();
     expect(screen.queryByText("选择具体学生后可重新设置该题的答题情况")).not.toBeInTheDocument();
-    expect(within(previewControls).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
     const displayToolbar = within(previewControls).getByRole("toolbar", { name: "题目侧栏显示控制" });
-    expect(displayToolbar).toHaveClass("flex-col");
+    expect(displayToolbar).toHaveClass("grid", "grid-cols-2");
     const displayButtons = within(displayToolbar).getAllByRole("button");
     expect(displayButtons).toHaveLength(4);
     expect(displayButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
-    const sidebarBatchActions = within(previewControls).getByTestId("document-question-batch-actions");
-    expect(sidebarBatchActions.children[1]).toHaveClass("flex-col");
-    const batchButtons = within(sidebarBatchActions).getAllByRole("button");
-    expect(batchButtons).toHaveLength(4);
-    expect(batchButtons.every((button) => button.classList.contains("w-full"))).toBe(true);
+    expect(within(displayToolbar).getByRole("button", { name: "显示名单" })).toBeInTheDocument();
+
+    const batchActions = screen.getByTestId("document-question-batch-actions");
+    expect(batchActions).toHaveTextContent("批量操作");
+    expect(batchActions).toHaveClass("flex", "flex-wrap");
+    expect(batchActions.closest(".preview-sticky-rail")).toBeNull();
+    expect(within(batchActions).getByRole("button", { name: "修改章节课" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "新增知识点" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "新增思想方法" })).toBeInTheDocument();
+    expect(batchActions.children[1]).toHaveClass("flex", "flex-wrap");
+    const batchButtons = within(batchActions).getAllByRole("button");
+    expect(batchButtons.every((button) => !button.classList.contains("w-full"))).toBe(true);
+    expect(within(batchActions).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
+    expect(within(batchActions).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
+    expect(batchButtons).toHaveLength(5);
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();
     expect(preview.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("exam-question-details-1");
@@ -583,7 +586,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     const propertiesToggle = screen.getByRole("button", { name: "题目属性" });
     const answerToggle = screen.getByRole("button", { name: "答题情况" });
-    const answeredListToggle = screen.getByRole("button", { name: "显示已答题名单" });
+    const answeredListToggle = screen.getByRole("button", { name: "显示名单" });
     const basketToggle = screen.getByRole("button", { name: "添加资源篮" });
     expect(propertiesToggle).toHaveAttribute("aria-pressed", "true");
     expect(answerToggle).toHaveAttribute("aria-pressed", "true");
@@ -1005,7 +1008,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.getByLabelText("选择学生")).toHaveValue(firstStudent.id);
     expect(screen.getByLabelText("答题情况")).toHaveValue("correct");
 
-    fireEvent.click(screen.getByRole("button", { name: "显示已答题名单" }));
+    fireEvent.click(screen.getByRole("button", { name: "显示名单" }));
     expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
   });
 

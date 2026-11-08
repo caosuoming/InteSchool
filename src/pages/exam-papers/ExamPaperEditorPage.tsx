@@ -1879,36 +1879,33 @@ export default function ExamPaperEditorPage() {
 
         <div className="no-print mb-3 rounded-lg border border-ink-200 bg-paper p-3">
           <DocumentQuestionBatchActions
+            layout="horizontal"
             schoolId={schoolId}
             questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
+            disabled={isUsedDocument}
             onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-            markAllButton={<DocumentQuestionCompletionBatch
-              documentId={paper!.id}
-              questions={paperQuestions.map((item, index) => ({ id: getCompletionQuestionId(item), number: index + 1 }))}
-              disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
-              onApplied={refreshCompletionRecords}
-            />}
+            markAllButton={<>
+              <DocumentQuestionCompletionBatch
+                documentId={paper!.id}
+                questions={paperQuestions.map((item, index) => ({ id: getCompletionQuestionId(item), number: index + 1 }))}
+                disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}
+                buttonClassName="justify-start"
+                onApplied={refreshCompletionRecords}
+              />
+              <Button variant="outline" size="sm" className="justify-start" onClick={handleMarkAllDone}
+                loading={markingAllDone} disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}>
+                <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
+              </Button>
+            </>}
           />
         </div>
 
         <div className="preview-sticky-shell">
           <aside className="preview-sticky-rail no-print">
-            <div className="preview-sticky-controls preview-sticky-controls-split" data-testid="exam-paper-preview-details">
+            <div className="preview-sticky-controls" data-testid="exam-paper-preview-details">
               <PreviewSidebarControls
                 value={previewSidebarVisibility}
                 onChange={setPreviewSidebarVisibility}
-              />
-              <DocumentQuestionBatchActions
-                schoolId={schoolId}
-                questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
-                disabled={isUsedDocument}
-                onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
-                markAllButton={(
-                  <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleMarkAllDone}
-                    loading={markingAllDone} disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}>
-                    <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
-                  </Button>
-                )}
               />
             </div>
           </aside>
