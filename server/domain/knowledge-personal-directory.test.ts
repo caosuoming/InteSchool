@@ -168,4 +168,50 @@ describe("personal chapter and knowledge directories", () => {
       )).toBe(true);
     });
   });
+
+  it("restores a saved personal catalog when its materialized nodes are missing", async () => {
+    const appState = state();
+    appState.chapters = [];
+    appState.directoryCatalogs = [{
+      id: "saved-personal-chapter",
+      schoolId: "personal-directory:teacher-1",
+      teacherId: "teacher-1",
+      subject: "数学",
+      type: "chapter",
+      name: "已有的个人章节目录",
+      nodes: [{ id: "saved-node", parentId: null, name: "找回的章节", order: 1, level: 0 }],
+      isActive: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }] satisfies DirectoryCatalog[];
+    await runWithState(appState, async () => {
+      const tree = await knowledgeService.getChapterTree("teacher-1");
+      expect(tree.children.map((node) => node.name)).toEqual(["找回的章节"]);
+      expect((appState.chapters as Chapter[]).filter((item) => item.teacherId === "teacher-1"))
+        .toHaveLength(1);
+      expect((await knowledgeService.listDirectoryCatalogs("teacher-1", "chapter"))[0].nodeCount).toBe(1);
+    });
+  });
+
+  it("restores legacy catalog snapshots even when original school nodes are absent", async () => {
+    const appState = state();
+    appState.chapters = [];
+    appState.directoryCatalogs = [{
+      id: "legacy-catalog",
+      schoolId: "school-a",
+      type: "chapter",
+      name: "学校旧目录",
+      nodes: [{ id: "missing-node", parentId: null, name: "旧备份的章节", order: 1, level: 0 }],
+      isActive: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }] satisfies DirectoryCatalog[];
+    await runWithState(appState, async () => {
+      expect((await knowledgeService.getChapterTree("teacher-1")).children.map((node) => node.name))
+        .toEqual(["旧备份的章节"]);
+      const catalogs = await knowledgeService.listDirectoryCatalogs("teacher-1", "chapter");
+      expect(catalogs.find((item) => item.isActive)?.nodeCount).toBe(1);
+    });
+  });
+
 });

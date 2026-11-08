@@ -37,6 +37,7 @@ import type {
   DirectoryNodeAssociation,
 } from "@/types";
 import { cn } from "@/lib/utils";
+import { isKnowledgeTreeEnabled, knowledgeTreeKinds } from "@/lib/knowledge-tree-visibility";
 
 type TreeKind = "chapter" | "knowledge" | "method" | "error";
 
@@ -74,7 +75,8 @@ function findTreeNode(root: TreeNode, id: string): TreeNode | null {
 }
 
 export default function KnowledgeTreePage() {
-  const { teacher } = useAuthStore();
+  const { teacher, updateProfile } = useAuthStore();
+  const [visibilitySaving, setVisibilitySaving] = useState<TreeKind | null>(null);
   const [kind, setKind] = useState<TreeKind>("chapter");
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,6 +111,16 @@ export default function KnowledgeTreePage() {
   const [prerequisiteType, setPrerequisiteType] = useState<PrerequisiteNodeType>("chapter");
   const [prerequisiteSearch, setPrerequisiteSearch] = useState("");
   const [prerequisiteSaving, setPrerequisiteSaving] = useState(false);
+
+  const toggleKindEnabled = async (target: TreeKind) => {
+    if (!teacher || visibilitySaving) return;
+    setVisibilitySaving(target);
+    const ok = await updateProfile({
+      knowledgeTreeEnabled: { [target]: !isKnowledgeTreeEnabled(teacher, target) },
+    });
+    if (!ok) toast.error("知识树启用状态保存失败");
+    setVisibilitySaving(null);
+  };
 
   const handleKindChange = (nextKind: TreeKind) => {
     if (nextKind === kind) return;
@@ -763,6 +775,24 @@ export default function KnowledgeTreePage() {
       />
 
       <Card className="mb-5">
+        <div className="mb-4 border-b border-ink-100 pb-4">
+          <div className="mb-2 text-sm font-medium text-ink-800">我的资源中启用的知识树</div>
+          <div role="group" aria-label="知识树启用设置" className="flex flex-wrap gap-x-6 gap-y-2">
+            {knowledgeTreeKinds.map(({ kind: option, label }) => (
+              <label key={option} className="inline-flex items-center gap-2 text-sm text-ink-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  aria-label={`启用${label}`}
+                  checked={isKnowledgeTreeEnabled(teacher, option)}
+                  disabled={!teacher || visibilitySaving !== null}
+                  onChange={() => void toggleKindEnabled(option)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-ink-500">关闭后仅隐藏“我的资源”中对应的目录筛选和批量操作，不会删除任何目录或资源关联。仍可在此维护目录。</p>
+        </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1.5">

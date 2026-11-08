@@ -3,6 +3,7 @@ import {
   Save, BookOpen, Lightbulb, X, Plus, Edit3, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
+import { isKnowledgeTreeEnabled } from "@/lib/knowledge-tree-visibility";
 import { questionService } from "@/services/question";
 import { knowledgeService } from "@/services/knowledge";
 import { toast } from "@/stores/ui";
@@ -100,6 +101,8 @@ function CollapsibleEditorSection({
 
 export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorProps) {
   const { teacher } = useAuthStore();
+  const chapterEnabled = isKnowledgeTreeEnabled(teacher, "chapter");
+  const knowledgeEnabled = isKnowledgeTreeEnabled(teacher, "knowledge");
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const { options: questionTypeOptions } = useQuestionTypeOptions(teacher?.schoolId, question.subject || teacher?.subject);
   const {
@@ -139,13 +142,13 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [knowledgeSuggestions, setKnowledgeSuggestions] = useState<Array<{ id: string; name: string }>>([]);
   useEffect(() => {
-    if (!teacher?.id || !question.sameQuestionGroupId) return;
+    if (!teacher?.id || !question.sameQuestionGroupId || !knowledgeEnabled) return;
     let active = true;
     void questionService.getSameQuestionKnowledgeSuggestions(question.id, teacher.id)
       .then((items) => { if (active) setKnowledgeSuggestions(items); })
       .catch(() => { if (active) setKnowledgeSuggestions([]); });
     return () => { active = false; };
-  }, [question.id, question.sameQuestionGroupId, teacher?.id]);
+  }, [question.id, question.sameQuestionGroupId, teacher?.id, knowledgeEnabled]);
   const [saving, setSaving] = useState(false);
   const [duplicateConflict, setDuplicateConflict] = useState<SimilarQuestionCandidate | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<CollapsibleSectionKey, boolean>>({
@@ -171,17 +174,17 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
   useEffect(() => {
     if (!teacher) return;
     Promise.all([
-      knowledgeService.listChapters(teacher.id),
-      knowledgeService.listKnowledgePoints(teacher.id),
-      knowledgeService.getChapterTree(teacher.id),
-      knowledgeService.getKnowledgeTree(teacher.id),
+      chapterEnabled ? knowledgeService.listChapters(teacher.id) : Promise.resolve([]),
+      knowledgeEnabled ? knowledgeService.listKnowledgePoints(teacher.id) : Promise.resolve([]),
+      chapterEnabled ? knowledgeService.getChapterTree(teacher.id) : Promise.resolve(null),
+      knowledgeEnabled ? knowledgeService.getKnowledgeTree(teacher.id) : Promise.resolve(null),
     ]).then(([chs, kps, cTree, kTree]) => {
       setChapters(chs);
       setPoints(kps);
       setChapterTree(cTree);
       setKnowledgeTree(kTree);
     });
-  }, [teacher]);
+  }, [teacher, chapterEnabled, knowledgeEnabled]);
 
   const update = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -554,8 +557,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
       </div>
 
       {/* 章节与知识点选择 */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {chapterTree ? (
+      {(chapterEnabled || knowledgeEnabled) && <div className="grid gap-4 md:grid-cols-2">
+        {chapterEnabled && (chapterTree ? (
           <SearchableTree
             editable
             data={chapterTree}
@@ -594,9 +597,9 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           <div className="rounded-lg border border-gold-200 py-12 text-center text-xs text-ink-400">
             加载中...
           </div>
-        )}
+        ))}
 
-        {knowledgeTree ? (
+        {knowledgeEnabled && (knowledgeTree ? (
           <SearchableTree
             editable
             data={knowledgeTree}
@@ -635,10 +638,10 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           <div className="rounded-lg border border-teal-200 py-12 text-center text-xs text-ink-400">
             加载中...
           </div>
-        )}
-      </div>
+        ))}
+      </div>}
 
-      {knowledgeSuggestions.some((item) => !form.knowledgePointIds.includes(item.id) && points.some((point) => point.id === item.id)) && (
+      {knowledgeEnabled && knowledgeSuggestions.some((item) => !form.knowledgePointIds.includes(item.id) && points.some((point) => point.id === item.id)) && (
         <div className="rounded-md border border-teal-200 p-3 text-xs">
           <div className="mb-2 font-medium text-teal-800">同一题知识点推荐（点击添加）</div>
           <div className="flex flex-wrap gap-2">
@@ -655,8 +658,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
       )}
 
       {/* 已选章节与知识点快速预览 */}
-      <div className="grid md:grid-cols-2 gap-3">
-        <div className="p-3 rounded-md bg-mist border border-ink-100">
+      {(chapterEnabled || knowledgeEnabled) && <div className="grid md:grid-cols-2 gap-3">
+        {chapterEnabled && <div className="p-3 rounded-md bg-mist border border-ink-100">
           <div className="text-xs font-medium text-ink-500 mb-1.5">已关联章节</div>
           {chapterNames.length ? (
             <div className="flex flex-wrap gap-1">
@@ -667,8 +670,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           ) : (
             <span className="text-xs text-ink-400 italic">未关联任何章节</span>
           )}
-        </div>
-        <div className="p-3 rounded-md bg-mist border border-ink-100">
+        </div>}
+        {knowledgeEnabled && <div className="p-3 rounded-md bg-mist border border-ink-100">
           <div className="text-xs font-medium text-ink-500 mb-1.5">已关联知识点</div>
           {pointNames.length ? (
             <div className="flex flex-wrap gap-1">
@@ -679,8 +682,8 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
           ) : (
             <span className="text-xs text-ink-400 italic">未关联任何知识点</span>
           )}
-        </div>
-      </div>
+        </div>}
+      </div>}
 
       {/* 备注 */}
       <div>

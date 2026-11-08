@@ -130,6 +130,12 @@ const profileSchema = z.object({
   subject: z.string().trim().min(1).max(50).optional(),
   teachingGrades: z.array(z.string().trim().min(1).max(30)).max(20).optional(),
   teachingClassIds: z.array(z.string().min(1).max(100)).max(100).optional(),
+  knowledgeTreeEnabled: z.object({
+    chapter: z.boolean().optional(),
+    knowledge: z.boolean().optional(),
+    method: z.boolean().optional(),
+    error: z.boolean().optional(),
+  }).strict().optional(),
 }).refine((input) => Object.values(input).some((value) => value !== undefined), {
   message: "至少需要修改一项资料",
 });
@@ -1063,6 +1069,15 @@ export async function registerAuthRoutes(
         );
       }
       if (input.nickname !== undefined) teacher = { ...teacher, nickname: input.nickname };
+      if (input.knowledgeTreeEnabled !== undefined) {
+        teacher = {
+          ...teacher,
+          knowledgeTreeEnabled: {
+            ...(teacher.knowledgeTreeEnabled as Record<string, boolean> | undefined),
+            ...input.knowledgeTreeEnabled,
+          },
+        };
+      }
       state.teachers[index] = teacher;
       return publicTeacher(teacher);
     });

@@ -188,6 +188,18 @@ describe("QuestionEditor", () => {
     expect(screen.queryByPlaceholderText(/请输入答案/)).not.toBeInTheDocument();
   });
 
+  it("hides disabled trees in full edit while preserving their stored ids", async () => {
+    useAuthStore.setState({ teacher: {
+      ...useAuthStore.getState().teacher!,
+      knowledgeTreeEnabled: { chapter: false, knowledge: false },
+    } });
+    render(<QuestionEditor question={question} onSaved={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByPlaceholderText("搜索章节目录...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("搜索知识点目录...")).not.toBeInTheDocument();
+    expect(knowledgeService.getChapterTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
+  });
+
   it("searches chapter and knowledge directories with highlighted paths", async () => {
     render(<QuestionEditor question={question} onSaved={vi.fn()} onCancel={vi.fn()} />);
 

@@ -475,6 +475,23 @@ describe("MyResourcesPage batch actions", () => {
     expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
   });
 
+  it("shows only the enabled tree in my resources and skips hidden directory loading", async () => {
+    useAuthStore.setState({ teacher: {
+      ...useAuthStore.getState().teacher!,
+      knowledgeTreeEnabled: { chapter: false, knowledge: false, method: true, error: false },
+    } });
+    renderPage("material");
+    expect(await screen.findByRole("button", { name: "思想方法" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "章节课" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "知识点" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "错因库" })).not.toBeInTheDocument();
+    expect(knowledgeService.getChapterTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getKnowledgeTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getErrorReasonTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getMethodTree).toHaveBeenCalledWith("teacher-1");
+    expect(screen.queryByRole("button", { name: "仅看未分类" })).not.toBeInTheDocument();
+  });
+
   it("filters materials by the existing material types and places the type filter before grade", async () => {
     vi.mocked(materialService.listMaterials).mockResolvedValue([material, videoMaterial]);
 
@@ -565,6 +582,7 @@ describe("MyResourcesPage batch actions", () => {
   });
 
   it("appends a shared method to selected questions without overwriting the existing methods", async () => {
+    useAuthStore.setState({ teacher: { ...useAuthStore.getState().teacher!, knowledgeTreeEnabled: { method: true } } });
     vi.mocked(questionService.getQuestion).mockResolvedValue({
       ...batchQuestion,
       thoughtMethodIds: ["method-existing"],
