@@ -169,6 +169,7 @@ export const authService = {
     nickname?: string;
     subject?: string;
     teachingGrades?: string[];
+    knowledgeTreeEnabled?: Partial<Record<"chapter" | "knowledge" | "method" | "error", boolean>>;
   }): Promise<Teacher> {
     const teacher = await apiRequest<Teacher>("/api/auth/profile", {
       method: "PATCH",

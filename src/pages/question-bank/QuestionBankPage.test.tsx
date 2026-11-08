@@ -407,7 +407,18 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(prepService.checkDuplicateQuestion).not.toHaveBeenCalled();
   });
 
+  it("hides disabled methods by default and does not fetch the method tree", async () => {
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [], total: 0 });
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "思想方法" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "错因库" })).not.toBeInTheDocument();
+    expect(knowledgeService.getMethodTree).not.toHaveBeenCalled();
+    expect(knowledgeService.getErrorReasonTree).not.toHaveBeenCalled();
+  });
+
   it("shows each question’s thought methods after the knowledge points", async () => {
+    useAuthStore.setState({ teacher: { ...useAuthStore.getState().teacher!, knowledgeTreeEnabled: { method: true } } });
     const question: Question = {
       id: "question-method",
       teacherId: "teacher-1",
@@ -448,6 +459,7 @@ describe("QuestionBankPage personal resource scope", () => {
   });
 
   it("refreshes method counts when the question list changes", async () => {
+    useAuthStore.setState({ teacher: { ...useAuthStore.getState().teacher!, knowledgeTreeEnabled: { method: true } } });
     vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [], total: 0 });
     const view = render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
     await waitFor(() => expect(knowledgeService.getMethodTree).toHaveBeenCalled());

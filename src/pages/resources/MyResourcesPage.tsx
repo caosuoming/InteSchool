@@ -26,6 +26,7 @@ import { lectureService } from "@/services/lecture";
 import { shareService } from "@/services/share";
 import { donationService } from "@/services/donation";
 import { knowledgeService } from "@/services/knowledge";
+import { isKnowledgeTreeEnabled, knowledgeTreeKinds } from "@/lib/knowledge-tree-visibility";
 import { reflectionService } from "@/services/reflection";
 import { basketService } from "@/services/basket";
 import { resourceFolderService } from "@/services/resourceFolder";
@@ -577,6 +578,10 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const { search } = useLocation();
   const shortcutStarted = useRef(false);
   const { teacher } = useAuthStore();
+  const enabledTreeKinds = useMemo(() => knowledgeTreeKinds
+    .map(({ kind }) => kind)
+    .filter((kind) => isKnowledgeTreeEnabled(teacher, kind)), [teacher]);
+  const isTreeEnabled = useCallback((kind: LeftTab) => enabledTreeKinds.includes(kind), [enabledTreeKinds]);
   const [activeTab, setActiveTab] = useState<MyResourceTab>(initialTab);
   const [loading, setLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
@@ -963,13 +968,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     setLoading(true);
     const baseFilter = {
       keyword: debouncedKeyword,
-      chapterIds: checkedChapters,
+      chapterIds: isTreeEnabled("chapter") ? checkedChapters : [],
       chapterLogic,
-      knowledgePointIds: activeTab === "answerSheet" ? [] : checkedKnowledge,
+      knowledgePointIds: activeTab === "answerSheet" || !isTreeEnabled("knowledge") ? [] : checkedKnowledge,
       knowledgeLogic,
-      thoughtMethodIds: activeTab === "answerSheet" ? [] : checkedMethods,
+      thoughtMethodIds: activeTab === "answerSheet" || !isTreeEnabled("method") ? [] : checkedMethods,
       methodLogic,
-      errorReasonIds: activeTab === "answerSheet" ? [] : checkedErrors,
+      errorReasonIds: activeTab === "answerSheet" || !isTreeEnabled("error") ? [] : checkedErrors,
       errorReasonLogic: errorLogic,
       grade: selectedGrade || undefined,
       schoolYear: selectedYear || undefined,
@@ -1134,17 +1139,27 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     selectedYear,
     selectedSemester,
     teacher,
+    isTreeEnabled,
   ]);
 
   useEffect(() => {
-    if (activeTab === "question") return;
-    knowledgeService.getChapterTree(teacher?.id || schoolId).then(setChapterTree);
+    const scope = teacher?.id || schoolId;
+    if (activeTab === "question" || activeTab === "basket") return;
+    if (isTreeEnabled("chapter")) void knowledgeService.getChapterTree(scope).then(setChapterTree);
     if (activeTab !== "answerSheet") {
-      knowledgeService.getKnowledgeTree(teacher?.id || schoolId).then(setKnowledgeTree);
-      knowledgeService.getMethodTree(teacher?.id || schoolId).then(setMethodTree);
-      knowledgeService.getErrorReasonTree(teacher?.id || schoolId).then(setErrorTree);
+      if (isTreeEnabled("knowledge")) void knowledgeService.getKnowledgeTree(scope).then(setKnowledgeTree);
+      if (isTreeEnabled("method")) void knowledgeService.getMethodTree(scope).then(setMethodTree);
+      if (isTreeEnabled("error")) void knowledgeService.getErrorReasonTree(scope).then(setErrorTree);
     }
-  }, [activeTab, schoolId, teacher?.id, teacher?.subject]);
+  }, [activeTab, schoolId, teacher?.id, teacher?.subject, isTreeEnabled]);
+
+  useEffect(() => {
+    if (!isTreeEnabled(leftTab)) setLeftTab(enabledTreeKinds[0] || "chapter");
+    if (!isTreeEnabled("chapter")) setCheckedChapters((current) => current.length ? [] : current);
+    if (!isTreeEnabled("knowledge")) setCheckedKnowledge((current) => current.length ? [] : current);
+    if (!isTreeEnabled("method")) setCheckedMethods((current) => current.length ? [] : current);
+    if (!isTreeEnabled("error")) setCheckedErrors((current) => current.length ? [] : current);
+  }, [teacher?.id, leftTab, isTreeEnabled, enabledTreeKinds]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
@@ -1850,7 +1865,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [directoryCountResources, errorTree]);
 
   const currentTab = tabConfig.find((t) => t.key === activeTab)!;
-  const directoryLeftTab: LeftTab = activeTab === "answerSheet" ? "chapter" : leftTab;
+  const directoryLeftTab: LeftTab = activeTab === "answerSheet" && isTreeEnabled("chapter")
+    ? "chapter"
+    : isTreeEnabled(leftTab) && activeTab !== "answerSheet"
+      ? leftTab
+      : (activeTab === "answerSheet" ? "chapter" : enabledTreeKinds[0] || "chapter");
   const activeResourceQuota = activeTab === "basket" || activeTab === "answerSheet"
     ? null
     : quota?.resources[activeTab] || null;
@@ -2567,6 +2586,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   };
 
   const openBatchDirectoryPicker = (mode: LeftTab) => {
+    if (!isTreeEnabled(mode)) return;
     setBatchDirectoryIds([]);
     setBatchDirectoryMode(mode);
 
@@ -3445,7 +3465,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               "flex gap-1 mb-3 p-1 bg-mist rounded-md",
               activeTab === "answerSheet" && "hidden",
             )}>
-              <button
+              {isTreeEnabled("chapter") && <button
                 onClick={() => setLeftTab("chapter")}
                 aria-label="章节课"
                 className={cn(
@@ -3465,8 +3485,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   )}
                 </span>
                 章节课
-              </button>
-              <button
+              </button>}
+              {isTreeEnabled("knowledge") && activeTab !== "answerSheet" && <button
                 onClick={() => setLeftTab("knowledge")}
                 aria-label="知识点"
                 className={cn(
@@ -3486,8 +3506,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   )}
                 </span>
                 知识点
-              </button>
-              <button
+              </button>}
+              {isTreeEnabled("method") && activeTab !== "answerSheet" && <button
                 onClick={() => setLeftTab("method")}
                 aria-label="思想方法"
                 className={cn(
@@ -3497,8 +3517,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
               >
                 <Lightbulb className="w-3.5 h-3.5" />
                 思想方法
-              </button>
-              <button
+              </button>}
+              {isTreeEnabled("error") && activeTab !== "answerSheet" && <button
                 onClick={() => setLeftTab("error")}
                 aria-label="错因库"
                 className={cn(
@@ -3507,9 +3527,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                 )}
               >
                 错因库
-              </button>
+              </button>}
             </div>
-            {(directoryLeftTab === "chapter" ? displayedChapterTree : directoryLeftTab === "knowledge" ? displayedKnowledgeTree : directoryLeftTab === "method" ? displayedMethodTree : displayedErrorTree) ? (
+            {(activeTab === "answerSheet" && !isTreeEnabled("chapter")) || enabledTreeKinds.length === 0 ? null : (directoryLeftTab === "chapter" ? displayedChapterTree : directoryLeftTab === "knowledge" ? displayedKnowledgeTree : directoryLeftTab === "method" ? displayedMethodTree : displayedErrorTree) ? (
               directoryLeftTab === "chapter" ? (
                 <SearchableTree
                   data={displayedChapterTree!}
@@ -3571,6 +3591,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   onReset={resetDirectorySelections}
                 />
               )
+            ) : (activeTab === "answerSheet" && !isTreeEnabled("chapter")) || enabledTreeKinds.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-500">当前未启用可用的目录筛选</p>
             ) : (
               <div className="flex items-center justify-center py-10">
                 <Spinner size={20} />
@@ -4456,9 +4478,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
             <option value="delete">批量删除</option>
             <option value="donate">捐赠到平台</option>
             {resourceSelections.size >= 2 && <option value="folder">创建专辑</option>}
-            <option value="chapter">统一修改章节课</option>
-            <option value="knowledge">新增统一知识点</option>
-            <option value="method">新增统一的思想方法</option>
+            {isTreeEnabled("chapter") && <option value="chapter">统一修改章节课</option>}
+            {isTreeEnabled("knowledge") && <option value="knowledge">新增统一知识点</option>}
+            {isTreeEnabled("method") && <option value="method">新增统一的思想方法</option>}
           </select>
         </div>
       )}
@@ -4523,7 +4545,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       </Modal>
 
       <Modal
-        open={!!batchDirectoryMode}
+        open={!!batchDirectoryMode && isTreeEnabled(batchDirectoryMode)}
         onClose={() => {
           if (batchWorking) return;
           setBatchDirectoryMode(null);

@@ -15,6 +15,7 @@ import { useAuthStore } from "@/stores/auth";
 import { questionService, type QuestionPage } from "@/services/question";
 import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
 import { knowledgeService } from "@/services/knowledge";
+import { isKnowledgeTreeEnabled, knowledgeTreeKinds } from "@/lib/knowledge-tree-visibility";
 import { basketService } from "@/services/basket";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
@@ -173,6 +174,11 @@ export default function QuestionBankPage({
   hideStudentPicker = false,
 }: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
+  const enabledTreeKinds = useMemo(() => knowledgeTreeKinds
+    .map(({ kind }) => kind)
+    .filter((kind) => isKnowledgeTreeEnabled(teacher, kind)), [teacher]);
+  const isTreeEnabled = useCallback((kind: LeftTab) => enabledTreeKinds.includes(kind), [enabledTreeKinds]);
+  const hasEnabledTree = enabledTreeKinds.length > 0;
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
   const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
   const {
@@ -185,6 +191,7 @@ export default function QuestionBankPage({
   } = useQuestionMetadataOptions(teacher?.schoolId);
   const tagPrefs = useTagPrefsStore((state) => state.prefs);
   const [leftTab, setLeftTab] = useState<LeftTab>("chapter");
+  const visibleLeftTab = isTreeEnabled(leftTab) ? leftTab : enabledTreeKinds[0] || "chapter";
   const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
 
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -323,10 +330,10 @@ export default function QuestionBankPage({
   const navigate = useNavigate();
 
   const hasFilter =
-    checkedChapters.length > 0 ||
-    checkedKnowledge.length > 0 ||
-    checkedMethods.length > 0 ||
-    checkedErrors.length > 0 ||
+    (isTreeEnabled("chapter") && checkedChapters.length > 0) ||
+    (isTreeEnabled("knowledge") && checkedKnowledge.length > 0) ||
+    (isTreeEnabled("method") && checkedMethods.length > 0) ||
+    (isTreeEnabled("error") && checkedErrors.length > 0) ||
     selectedDifficulties.length > 0 ||
     selectedTypes.length > 0 ||
     selectedGrade ||
@@ -360,16 +367,16 @@ export default function QuestionBankPage({
       teacherId: teacher.id,
       keyword: debouncedKeyword,
       searchFields,
-      chapterIds: checkedChapters,
+      chapterIds: isTreeEnabled("chapter") ? checkedChapters : [],
       chapterLogic,
-      knowledgePointIds: checkedKnowledge,
+      knowledgePointIds: isTreeEnabled("knowledge") ? checkedKnowledge : [],
       knowledgeLogic,
-      thoughtMethodIds: checkedMethods,
+      thoughtMethodIds: isTreeEnabled("method") ? checkedMethods : [],
       methodLogic,
-      errorReasonIds: checkedErrors,
+      errorReasonIds: isTreeEnabled("error") ? checkedErrors : [],
       errorReasonLogic: errorLogic,
-      noChapter,
-      noKnowledge,
+      noChapter: isTreeEnabled("chapter") && noChapter,
+      noKnowledge: isTreeEnabled("knowledge") && noKnowledge,
       difficulty: selectedDifficulties,
       type: selectedTypes as any,
       grade: selectedGrade || undefined,
@@ -489,7 +496,7 @@ export default function QuestionBankPage({
     noChapter, noKnowledge,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
-    currentPage, pageSize,
+    currentPage, pageSize, isTreeEnabled,
   ]);
 
   useEffect(() => {
@@ -499,14 +506,22 @@ export default function QuestionBankPage({
   }, [selectedStudentIds.length, trainingStatus]);
 
   useEffect(() => {
+    if (!isTreeEnabled(leftTab)) setLeftTab(enabledTreeKinds[0] || "chapter");
+    if (!isTreeEnabled("chapter")) { setCheckedChapters((current) => current.length ? [] : current); setNoChapter(false); }
+    if (!isTreeEnabled("knowledge")) { setCheckedKnowledge((current) => current.length ? [] : current); setNoKnowledge(false); }
+    if (!isTreeEnabled("method")) setCheckedMethods((current) => current.length ? [] : current);
+    if (!isTreeEnabled("error")) setCheckedErrors((current) => current.length ? [] : current);
+  }, [teacher?.id, isTreeEnabled, enabledTreeKinds, leftTab]);
+
+  useEffect(() => {
     if (!teacher) return;
     let cancelled = false;
     const load = async () => {
       const results = await Promise.allSettled([
-        knowledgeService.getChapterTree(teacher.id, false),
-        knowledgeService.getKnowledgeTree(teacher.id, false),
-        knowledgeService.getMethodTree(teacher.id, false),
-        knowledgeService.getErrorReasonTree(teacher.id, false),
+        isTreeEnabled("chapter") ? knowledgeService.getChapterTree(teacher.id, false) : Promise.resolve(null),
+        isTreeEnabled("knowledge") ? knowledgeService.getKnowledgeTree(teacher.id, false) : Promise.resolve(null),
+        isTreeEnabled("method") ? knowledgeService.getMethodTree(teacher.id, false) : Promise.resolve(null),
+        isTreeEnabled("error") ? knowledgeService.getErrorReasonTree(teacher.id, false) : Promise.resolve(null),
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
@@ -524,13 +539,13 @@ export default function QuestionBankPage({
       setSchoolClasses(classes.filter((item): item is SchoolClass => item.type === "school"));
       setPersonalClasses(classes.filter((item): item is PersonalClass => item.type === "personal"));
       setStudents(stus.status === "fulfilled" ? stus.value : []);
-      setChapterMap(ch.status === "fulfilled" ? treeNameMap(ch.value) : new Map());
-      setKnowledgeMap(kp.status === "fulfilled" ? treeNameMap(kp.value) : new Map());
-      setMethodMap(methods.status === "fulfilled" ? treeNameMap(methods.value) : new Map());
+      setChapterMap(ch.status === "fulfilled" && ch.value ? treeNameMap(ch.value) : new Map());
+      setKnowledgeMap(kp.status === "fulfilled" && kp.value ? treeNameMap(kp.value) : new Map());
+      setMethodMap(methods.status === "fulfilled" && methods.value ? treeNameMap(methods.value) : new Map());
     };
     void load();
     return () => { cancelled = true; };
-  }, [teacher, directoryReloadToken]);
+  }, [teacher, directoryReloadToken, isTreeEnabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -605,7 +620,7 @@ export default function QuestionBankPage({
     [baskets],
   );
   useEffect(() => {
-    const base = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : methodTree;
+    const base = visibleLeftTab === "chapter" ? chapterTree : visibleLeftTab === "knowledge" ? knowledgeTree : visibleLeftTab === "method" ? methodTree : errorTree;
     setAnnotatedDirectory(null);
     if (!base || !needsDirectoryCounts) return;
 
@@ -613,7 +628,7 @@ export default function QuestionBankPage({
     analyticsService.annotateTreeWithStudentProgress(
       base,
       directoryDoneEnabled || directoryPendingEnabled ? selectedStudentIds : [],
-      leftTab,
+      visibleLeftTab,
       directoryDoneEnabled ? dateRange : undefined,
       {
         includeDone: directoryDoneEnabled,
@@ -621,13 +636,13 @@ export default function QuestionBankPage({
         basketQuestionIds: showDirectoryBasket ? basketQuestionIds : undefined,
       },
     ).then((tree) => {
-      if (!cancelled) setAnnotatedDirectory({ type: leftTab, tree });
+      if (!cancelled) setAnnotatedDirectory({ type: visibleLeftTab, tree });
     }).catch(() => {
       if (!cancelled) setAnnotatedDirectory(null);
     });
     return () => { cancelled = true; };
   }, [
-    leftTab, chapterTree, knowledgeTree, methodTree, errorTree, needsDirectoryCounts,
+    visibleLeftTab, chapterTree, knowledgeTree, methodTree, errorTree, needsDirectoryCounts,
     directoryDoneEnabled, directoryPendingEnabled, selectedStudentIds, dateRange,
     showDirectoryBasket, basketQuestionIds, questions, studentAnswerRecords,
     pendingQuestionAssignments,
@@ -932,11 +947,11 @@ export default function QuestionBankPage({
   };
 
   // 获取当前显示的树
-  const baseDisplayTree = leftTab === "chapter" ? chapterTree : leftTab === "knowledge" ? knowledgeTree : leftTab === "method" ? methodTree : errorTree;
-  const countsReady = needsDirectoryCounts && annotatedDirectory?.type === leftTab;
+  const baseDisplayTree = visibleLeftTab === "chapter" ? chapterTree : visibleLeftTab === "knowledge" ? knowledgeTree : visibleLeftTab === "method" ? methodTree : errorTree;
+  const countsReady = needsDirectoryCounts && annotatedDirectory?.type === visibleLeftTab;
   const displayTree = countsReady ? annotatedDirectory.tree : baseDisplayTree;
-  const displayCheckedIds = leftTab === "chapter" ? checkedChapters : leftTab === "knowledge" ? checkedKnowledge : leftTab === "method" ? checkedMethods : checkedErrors;
-  const setDisplayCheckedIds = leftTab === "chapter" ? setCheckedChapters : leftTab === "knowledge" ? setCheckedKnowledge : leftTab === "method" ? setCheckedMethods : setCheckedErrors;
+  const displayCheckedIds = visibleLeftTab === "chapter" ? checkedChapters : visibleLeftTab === "knowledge" ? checkedKnowledge : visibleLeftTab === "method" ? checkedMethods : checkedErrors;
+  const setDisplayCheckedIds = visibleLeftTab === "chapter" ? setCheckedChapters : visibleLeftTab === "knowledge" ? setCheckedKnowledge : visibleLeftTab === "method" ? setCheckedMethods : setCheckedErrors;
   const handleIncludeDescendantsChange = (next: boolean) => {
     setIncludeDescendants(next);
     setCheckedChapters((current) =>
@@ -1042,14 +1057,14 @@ export default function QuestionBankPage({
       <ResizableSidebarLayout
         storageKey="inteschool.question-bank.directory-width"
         defaultWidth={360}
-        collapsed={directoryCollapsed}
+        collapsed={directoryCollapsed || !hasEnabledTree}
         separatorLabel="调整题库章节课、知识点与思想方法目录宽度"
         sidebar={(
           <Card className="p-0 overflow-hidden sticky top-4 h-fit">
               {/* Tab 头 */}
               <div className="flex border-b border-ink-100">
                 <div className="flex flex-1 min-w-0">
-                  <button
+                  {isTreeEnabled("chapter") && <button
                     onClick={() => setLeftTab("chapter")}
                     className={cn(
                       "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
@@ -1062,8 +1077,8 @@ export default function QuestionBankPage({
                       <BookOpen className="w-3.5 h-3.5" />
                       章节课
                     </span>
-                  </button>
-                  <button
+                  </button>}
+                  {isTreeEnabled("knowledge") && <button
                     onClick={() => setLeftTab("knowledge")}
                     className={cn(
                       "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
@@ -1076,8 +1091,8 @@ export default function QuestionBankPage({
                       <Lightbulb className="w-3.5 h-3.5" />
                       知识点
                     </span>
-                  </button>
-                  <button
+                  </button>}
+                  {isTreeEnabled("method") && <button
                     onClick={() => setLeftTab("method")}
                     className={cn(
                       "flex-1 px-2 py-2.5 text-sm font-medium transition-colors",
@@ -1090,8 +1105,8 @@ export default function QuestionBankPage({
                       <Lightbulb className="w-3.5 h-3.5" />
                       思想方法
                     </span>
-                  </button>
-                  <button
+                  </button>}
+                  {isTreeEnabled("error") && <button
                     onClick={() => setLeftTab("error")}
                     className={cn(
                       "flex-1 px-2 py-2.5 text-sm font-medium transition-colors",
@@ -1101,7 +1116,7 @@ export default function QuestionBankPage({
                     )}
                   >
                     错因库
-                  </button>
+                  </button>}
                 </div>
                 <button
                   type="button"
@@ -1180,7 +1195,7 @@ export default function QuestionBankPage({
       >
         {/* 右侧：筛选 + 题目列表 */}
         <div>
-          {directoryCollapsed && (
+          {directoryCollapsed && hasEnabledTree && (
             <div className="mb-3">
               <Button
                 variant="outline"
@@ -1238,8 +1253,8 @@ export default function QuestionBankPage({
               <MultiFilter label="难度" values={selectedDifficulties.map(String)} options={difficultyOptions.map((d) => ({ value: String(d.value), label: d.label }))} onToggle={(v) => toggleDifficulty(Number(v))} icon={<Layers className="w-3.5 h-3.5" />} />
               <MultiFilter label="来源" values={selectedSources} options={sourceOptions} onToggle={toggleSource} icon={<ListFilter className="w-3.5 h-3.5" />} />
               <MultiFilter label="题类" values={selectedCategories} options={categoryOptions} onToggle={toggleCategory} icon={<Tag className="w-3.5 h-3.5" />} />
-              <ToggleFilter label="无章节" checked={noChapter} onChange={setNoChapter} icon={<BookOpen className="w-3.5 h-3.5" />} />
-              <ToggleFilter label="无知识点" checked={noKnowledge} onChange={setNoKnowledge} icon={<Lightbulb className="w-3.5 h-3.5" />} />
+              {isTreeEnabled("chapter") && <ToggleFilter label="无章节" checked={noChapter} onChange={setNoChapter} icon={<BookOpen className="w-3.5 h-3.5" />} />}
+              {isTreeEnabled("knowledge") && <ToggleFilter label="无知识点" checked={noKnowledge} onChange={setNoKnowledge} icon={<Lightbulb className="w-3.5 h-3.5" />} />}
 
               {hasFilter && (
                 <Button variant="ghost" size="sm" onClick={clearAllFilters}>
@@ -1272,7 +1287,7 @@ export default function QuestionBankPage({
             {mode === "use" && (
               <div className="mt-3 pt-3 border-t border-ink-100 flex items-center gap-3 flex-wrap">
                 <span className="text-xs text-ink-500">显示选项：</span>
-                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                {isTreeEnabled("chapter") && <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input
                     type="checkbox"
                     checked={showChapter}
@@ -1280,8 +1295,8 @@ export default function QuestionBankPage({
                     className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
                   />
                   <span className="text-ink-600">章节</span>
-                </label>
-                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                </label>}
+                {isTreeEnabled("knowledge") && <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input
                     type="checkbox"
                     checked={showKnowledge}
@@ -1289,7 +1304,7 @@ export default function QuestionBankPage({
                     className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
                   />
                   <span className="text-ink-600">知识点</span>
-                </label>
+                </label>}
                 <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <input
                     type="checkbox"
@@ -1435,8 +1450,9 @@ export default function QuestionBankPage({
                   studentAnswerRecords={studentAnswerRecords}
                   pendingQuestionKeys={pendingQuestionKeys}
                   defaultBasket={defaultBasket}
-                  showChapter={mode === "use" ? showChapter : undefined}
-                  showKnowledge={mode === "use" ? showKnowledge : undefined}
+                  showChapter={isTreeEnabled("chapter") && (mode !== "use" || showChapter)}
+                  showKnowledge={isTreeEnabled("knowledge") && (mode !== "use" || showKnowledge)}
+                  showMethod={isTreeEnabled("method")}
                   showRemark={mode === "use" ? showRemark : undefined}
                   showStudentAnswers={mode === "use" ? showStudentAnswers : showStudentAnswers}
                   isUsedBySelectedStudents={isQuestionUsedBySelectedStudents(q.id)}
@@ -2048,7 +2064,7 @@ function ToggleFilter({
 function QuestionRow({
   question, schoolStat, mode, chapterMap, knowledgeMap, methodMap, teacher,
   students, classes, followedStudentIds, sameQuestionIds, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
-  defaultBasket, showChapter, showKnowledge, showRemark, showStudentAnswers,
+  defaultBasket, showChapter, showKnowledge, showMethod = true, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion, examPapersUsingQuestion,
   usageResourcesLoaded, usageResourcesLoading, onLoadUsageResources,
   onView, onEdit, onAddToBasket, onQuickAddToDefault, onRemoveFromDefault, isInDefaultBasket,
@@ -2084,6 +2100,7 @@ function QuestionRow({
   defaultBasket?: { id: string; name: string; isDefault?: boolean; questionIds?: string[] } | undefined;
   showChapter?: boolean;
   showKnowledge?: boolean;
+  showMethod?: boolean;
   showRemark?: boolean;
   showStudentAnswers?: boolean;
   isUsedBySelectedStudents: boolean;
@@ -2522,7 +2539,7 @@ function QuestionRow({
           )}
 
           {/* 章节与知识点（可点击，使用模式下可隐藏） */}
-          {(showChapter !== false || showKnowledge !== false) && (
+          {(showChapter !== false || showKnowledge !== false || showMethod) && (
             <div className="flex items-start gap-3 mb-2 flex-wrap">
               {showChapter !== false && (
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -2586,7 +2603,7 @@ function QuestionRow({
                   )}
                 </div>
               )}
-              {showKnowledge !== false && (
+              {showMethod && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Lightbulb className="w-3 h-3 text-teal-500 flex-shrink-0 mt-0.5" />
                   <span className="text-xs text-ink-500">思想方法：</span>

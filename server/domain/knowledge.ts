@@ -317,10 +317,17 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
   const teacher = directoryTeacher(teacherId);
   const collection = directoryCollection(type);
   const records = (db.read(collection) || []) as DirectoryRecord[];
-  const hasPersonalCatalog = directoryCatalogs().some(
+  const personalRecords = records.some((item) => item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId));
+  const personalCatalogs = directoryCatalogs().filter(
     (item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId),
   );
-  if (records.some((item) => item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId)) || hasPersonalCatalog) {
+  if (personalRecords || personalCatalogs.length > 0) {
+    // 部分旧版本迁移了目录快照却未生成活动节点，导致知识树看起来被清空。
+    // 只对已有快照恢复；正常删除会同步快照，不会复活已删除节点。
+    if (!personalRecords) {
+      const catalog = personalCatalogs.find((item) => item.isActive) || personalCatalogs[0];
+      if (catalog?.nodes.length) materializeDirectoryNodes(teacherId, type, catalog.nodes);
+    }
     ensurePersonalDirectoryCatalogs(teacherId, type);
     return;
   }
@@ -334,6 +341,11 @@ function ensurePersonalDirectory(teacherId: string, type: TreeNodeType): void {
     );
   if (legacy.length === 0) {
     ensurePersonalDirectoryCatalogs(teacherId, type);
+    const personalCatalogs = directoryCatalogs().filter(
+      (item) => item.teacherId === teacherId && item.type === type && belongsToCurrentSubject(item, teacherId),
+    );
+    const catalog = personalCatalogs.find((item) => item.isActive) || personalCatalogs[0];
+    if (catalog?.nodes.length) materializeDirectoryNodes(teacherId, type, catalog.nodes);
     return;
   }
 
@@ -413,11 +425,8 @@ function directoryRecords(
   );
 }
 
-function snapshotDirectoryNodes(
-  scopeId: string,
-  type: TreeNodeType,
-): DirectoryCatalogNode[] {
-  return directoryRecords(scopeId, type)
+function snapshotNodesFromRecords(records: DirectoryRecord[], type: TreeNodeType): DirectoryCatalogNode[] {
+  return records
     .sort((left, right) => left.level - right.level || left.order - right.order)
     .map((item) => ({
       id: item.id,
@@ -430,6 +439,21 @@ function snapshotDirectoryNodes(
         ? { description: (item as KnowledgePoint).description }
         : {}),
     }));
+}
+
+function snapshotDirectoryNodes(scopeId: string, type: TreeNodeType): DirectoryCatalogNode[] {
+  return snapshotNodesFromRecords(directoryRecords(scopeId, type), type);
+}
+
+function syncDeletedDirectorySnapshot(teacherId: string, type: TreeNodeType): void {
+  const records = ((db.read(directoryCollection(type)) || []) as DirectoryRecord[])
+    .filter((item) => item.teacherId === teacherId && belongsToCurrentSubject(item, teacherId));
+  const nodes = snapshotNodesFromRecords(records, type);
+  db.update("directoryCatalogs", (items: DirectoryCatalog[] = []) => items.map((item) =>
+    item.teacherId === teacherId && item.type === type && item.isActive && belongsToCurrentSubject(item, teacherId)
+      ? { ...item, nodes, updatedAt: new Date().toISOString() }
+      : item,
+  ));
 }
 
 function materializeDirectoryNodes(
@@ -1706,10 +1730,12 @@ export const knowledgeService = {
   // 删除节点（级联删除所有子孙节点）
   async deleteNode(id: string, type: TreeNodeType): Promise<void> {
     await delay(200);
+    let ownerToSync: string | undefined;
     if (type === "chapter") {
       const list = db.read("chapters");
       const target = list.find((item) => item.id === id);
       if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, "chapter");
+      ownerToSync = target?.teacherId;
       const toDelete = collectSubtree(list, id);
       if (target?.teacherId) {
         removeDirectoryNodeAssociations(target.teacherId, "chapter", toDelete);
@@ -1727,6 +1753,7 @@ export const knowledgeService = {
       const list = (db.read(directoryCollection(type)) || []) as ThoughtMethod[];
       const target = list.find((item) => item.id === id);
       if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, type);
+      ownerToSync = target?.teacherId;
       const toDelete = collectSubtree(list, id);
       if (target?.teacherId) removeDirectoryNodeAssociations(target.teacherId, type, toDelete);
       db.update(directoryCollection(type), (items: ThoughtMethod[] = []) => items.filter((item) => !toDelete.has(item.id)));
@@ -1736,6 +1763,7 @@ export const knowledgeService = {
       const list = db.read("knowledgePoints");
       const target = list.find((item) => item.id === id);
       if (target?.teacherId) ensureDefaultDirectoryCatalog(target.teacherId, "knowledge");
+      ownerToSync = target?.teacherId;
       const toDelete = collectSubtree(list, id);
       if (target?.teacherId) {
         removeDirectoryNodeAssociations(target.teacherId, "knowledge", toDelete);
@@ -1786,6 +1814,7 @@ export const knowledgeService = {
         }),
       );
     }
+    if (ownerToSync) syncDeletedDirectorySnapshot(ownerToSync, type);
   },
 
   // 将一个节点合并到同级目标节点；保留目标节点并迁移子节点和所有资源关联

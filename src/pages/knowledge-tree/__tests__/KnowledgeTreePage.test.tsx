@@ -237,6 +237,32 @@ describe("KnowledgeTreePage", () => {
     });
   });
 
+  it("starts with two knowledge-tree categories enabled and saves each user's switch", async () => {
+    const updateProfile = vi.fn(async (patch: { knowledgeTreeEnabled?: Record<string, boolean> }) => {
+      const old = useAuthStore.getState().teacher!;
+      useAuthStore.setState({ teacher: {
+        ...old,
+        knowledgeTreeEnabled: { ...old.knowledgeTreeEnabled, ...patch.knowledgeTreeEnabled },
+      } });
+      return true;
+    });
+    useAuthStore.setState({ updateProfile });
+    render(<MemoryRouter><KnowledgeTreePage /></MemoryRouter>);
+
+    expect(screen.getByRole("checkbox", { name: "启用章节目录" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "启用知识点" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "启用思想方法" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "启用错因字典" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "启用思想方法" }));
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledWith({ knowledgeTreeEnabled: { method: true } }));
+    expect(screen.getByRole("checkbox", { name: "启用思想方法" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "启用章节目录" }));
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledWith({ knowledgeTreeEnabled: { chapter: false } }));
+    expect(screen.getByRole("checkbox", { name: "启用章节目录" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "启用知识点" })).toBeChecked();
+  });
+
   it("uses the knowledge-tree root after switching from a selected chapter", async () => {
     render(
       <MemoryRouter>
