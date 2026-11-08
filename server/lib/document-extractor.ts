@@ -135,7 +135,7 @@ function renderMathAwareHtml(text: string): string {
   const renderLine = (line: string): string => {
     const structuredRuns: string[] = [];
     const protectedLine = line.replace(
-      /<(sup|sub)>(.*?)<\/\1>|<i\s+class=["'](math-(?:variable|vector))["']>(.*?)<\/i>/gi,
+      /<(sup|sub|u)>(.*?)<\/\1>|<i\s+class=["'](math-(?:variable|vector))["']>(.*?)<\/i>/gi,
       (_match, tag: string | undefined, scriptContent: string | undefined, mathClass: string | undefined, variableContent: string | undefined) => {
         const markup = tag
           ? `<${tag.toLowerCase()}>${renderLine(scriptContent || "")}</${tag.toLowerCase()}>`

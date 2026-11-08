@@ -390,7 +390,11 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
     ["oMath", "oMathPara"].includes(element.localName)
   ) {
     const latex = ommlToLatex(element).trim();
-    return latex ? `$${latex}$` : "";
+    if (!latex) return "";
+    const mathRuns = Array.from(element.getElementsByTagNameNS(MATH_NS, "r"))
+      .filter((run) => run.getElementsByTagNameNS(MATH_NS, "t").length > 0);
+    const underlined = mathRuns.length > 0 && mathRuns.every(wordRunIsUnderlined);
+    return underlined ? `<u>$${latex}$</u>` : `$${latex}$`;
   }
   if (
     imageUrl &&

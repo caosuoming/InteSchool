@@ -9,7 +9,7 @@ export function extractUnderlinedAnswers(content: string, knowledge = false): {
   const answers: string[] = [];
   const cleaned = content.replace(UNDERLINED_RUNS, (match) => {
     const text = match.replace(/<\/?u\b[^>]*>/gi, "");
-    const plain = text.replace(/<[^>]+>/g, "").trim();
+    const plain = text.replace(/<\/?[A-Za-z][^>]*>/g, "").trim();
     if (!plain || /^[_＿\s]+$/.test(plain)) return match.replace(/<\/?u\b[^>]*>/gi, "");
     answers.push(text.trim());
     return knowledge
@@ -23,7 +23,7 @@ export function extractParenthesizedChoiceAnswer(stem: string, type: "single" | 
   stem: string;
   answer?: string;
 } {
-  const pattern = /([（(])\s*([A-Da-d]{1,4})\s*([）)])/g;
+  const pattern = /([（(])\s*(?:<u\b[^>]*>\s*)?([A-Da-d]{1,4})(?:\s*<\/u>)?\s*([）)])/g;
   const matches = [...stem.matchAll(pattern)];
   for (const match of matches.reverse()) {
     const letters = match[2].toUpperCase();
@@ -31,7 +31,7 @@ export function extractParenthesizedChoiceAnswer(stem: string, type: "single" | 
     if (type === "single" && letters.length !== 1) continue;
     if (!/^[\s\u3000.,。．!?！？]*$/.test(stem.slice(match.index! + match[0].length))) continue;
     return {
-      stem: `${stem.slice(0, match.index!)}${match[1]} ${match[3]}${stem.slice(match.index! + match[0].length)}`,
+      stem: `${stem.slice(0, match.index!)}${match[1]}    ${match[3]}${stem.slice(match.index! + match[0].length)}`,
       answer: letters,
     };
   }
