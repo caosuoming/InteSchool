@@ -1718,14 +1718,17 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     // from the previous question's final option.
     if (
       config.subject?.trim() === "地理"
-      && afterBlank
       && currentBlock.type === "question"
-      && currentQuestionField === "content"
       && (currentBlock.options?.length || 0) >= 2
       && !isQuestionStart(line, config)
       && !isImageLine(line)
       && !isDocumentTableFragment(line)
       && !extractOptionLine(line, currentBlock.options?.length || 0, true)
+      && !answerPattern?.test(line)
+      && !analysisPattern?.test(line)
+      && !summaryPattern?.test(line)
+      && ((currentQuestionField === "content" && afterBlank)
+        || startsGeographyReadingPassage(lines, lineIndex, config))
     ) {
       submitCurrent();
       const isUnnumberedQuestion = /[?？]/.test(line)
@@ -2036,6 +2039,21 @@ function normalizeFillBlankAreas(blocks: DocumentBlock[], subject?: string): Doc
   return blocks;
 }
 
+const geographySharedStemPattern = /(?:据.{0,24}(?:完成|回答|作答)|根据.{0,40}(?:完成|回答|作答)|(?:阅读|读|观察|结合).{0,40}(?:完成|回答|作答)|(?:完成|回答)下[列面]|(?:据此|就此|由此).{0,12}(?:完成|回答|作答).{0,12}(?:小题|题))/;
+
+function startsGeographyReadingPassage(lines: string[], index: number, config: DocumentParseConfig): boolean {
+  const current = lines[index].trim();
+  if (geographySharedStemPattern.test(current)) return true;
+  for (let next = index + 1; next < Math.min(lines.length, index + 5); next += 1) {
+    const candidate = lines[next].trim();
+    if (!candidate) continue;
+    if (isQuestionStart(candidate, config) || isHeading(candidate, config)
+      || trailingSolutionHeadingKind(candidate) || extractOptionLine(candidate, 0, true)) break;
+    if (geographySharedStemPattern.test(candidate)) return true;
+  }
+  return false;
+}
+
 function geographySubQuestionCount(content: string): number {
   const markers = scanGroupedSubQuestionMarkers(content);
   let expected = 1;
@@ -2056,7 +2074,7 @@ function geographyDetailCategory(type: QuestionType, content: string): string | 
 
 function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const sharedStemPattern = /(?:据.{0,24}(?:完成|回答|作答)|根据.{0,40}(?:完成|回答|作答)|(?:阅读|读|观察|结合).{0,40}(?:完成|回答|作答)|(?:完成|回答)下[列面])/;
+  const sharedStemPattern = geographySharedStemPattern;
   const numberedPattern = /^\s*([\d０-９]{1,4})\s*[.．、]\s*\S/;
   const optionPattern = /^\s*[A-Ha-h]\s*[.．、:：)）]/;
   const groups: Array<{ introduction: string; numbers: string[] }> = [];
@@ -2486,7 +2504,8 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     const merged = mergeTrailingSolutions(blocks, solutions, config, {
       allowPositionalFallback: kind !== "answer",
     });
-    const requiredMatches = kind === "answer" ? Math.min(2, questions.length) : 1;
+    const requiredMatches = kind === "answer" && config.subject?.trim() !== "地理"
+      ? Math.min(2, questions.length) : 1;
     if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config);
   }
 

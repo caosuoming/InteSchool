@@ -271,3 +271,22 @@ QM: y-y_{2}=\sqrt{3}(x-x_{2}),
     expect(visibleMath).not.toContain("\\begin{matrix}");
   });
 });
+
+describe("geography marker emphasis", () => {
+  it("highlights every numbered question and marks A–D differently while preserving formulas", () => {
+    const html = renderExtractText(
+      "读图完成下面小题。\n1. 根据 $x^2$ 判断。\nA. 甲  B. 乙  C. 丙  D. 丁\n2. 下列哪项正确？",
+      [], true, true,
+    );
+    const container = asElement(html);
+    expect([...container.querySelectorAll(".geography-label")].map((item) => item.textContent))
+      .toEqual(["1.", "A.", "B.", "C.", "D.", "2."]);
+    expect(new Set([...container.querySelectorAll(".geography-label")].slice(1, 5)
+      .map((item) => item.className.split(" ").at(-1))).size).toBe(4);
+    expect(container.querySelectorAll(".katex")).toHaveLength(1);
+  });
+
+  it("leaves markup untouched unless geography highlighting is requested", () => {
+    expect(asElement(renderExtractText("1. 甲 A. 东", [], true)).querySelector(".geography-label")).toBeNull();
+  });
+});

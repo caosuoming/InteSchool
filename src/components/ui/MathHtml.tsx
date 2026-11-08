@@ -1,3 +1,4 @@
+import { emphasizeGeographyLabels, renderGeographyChoiceGroups } from "@/lib/geography-question-markup";
 import { useMemo } from "react";
 import "katex/dist/katex.min.css";
 import { renderMathHtml } from "@/lib/math-html";
@@ -9,13 +10,17 @@ interface MathHtmlProps {
   className?: string;
   revealedAnswerStep?: number;
   emphasizeEnglishQuestions?: boolean;
+  geographyLabels?: boolean;
 }
 
 /** Renders rich HTML that may also contain $...$ or $$...$$ LaTeX formulas. */
-export function MathHtml({ children, className, revealedAnswerStep, emphasizeEnglishQuestions = false }: MathHtmlProps) {
+export function MathHtml({ children, className, revealedAnswerStep, emphasizeEnglishQuestions = false, geographyLabels = false }: MathHtmlProps) {
   const html = useMemo(() => {
-    const rendered = emphasizeEnglishQuestions
-      ? emphasizeEnglishQuestionHtml(renderMathHtml(children)) : renderMathHtml(children);
+    const raw = geographyLabels
+      ? renderGeographyChoiceGroups(children, renderMathHtml)
+      : renderMathHtml(children);
+    const rendered = geographyLabels ? emphasizeGeographyLabels(raw)
+      : emphasizeEnglishQuestions ? emphasizeEnglishQuestionHtml(raw) : raw;
     if (revealedAnswerStep === undefined || !rendered.includes("lesson-inline-answer")) return rendered;
     const template = document.createElement("template");
     template.innerHTML = rendered;
@@ -26,7 +31,7 @@ export function MathHtml({ children, className, revealedAnswerStep, emphasizeEng
         }
       });
     return template.innerHTML;
-  }, [children, revealedAnswerStep, emphasizeEnglishQuestions]);
+  }, [children, revealedAnswerStep, emphasizeEnglishQuestions, geographyLabels]);
 
   return (
     <div
