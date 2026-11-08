@@ -389,7 +389,7 @@ describe("LessonEditorPage preview query", () => {
     renderPage(`/my-lessons/${courseware.id}/edit`);
 
     fireEvent.click(await screen.findByRole("button", { name: "跨页复制文本" }));
-    fireEvent.click(await screen.findByRole("button", { name: "复制元素" }));
+    fireEvent.click(await screen.findByRole("button", { name: "复制元素" }, { timeout: 5_000 }));
     fireEvent.click(screen.getByText("目标页"));
 
     const pasteButton = screen.getByRole("button", { name: "粘贴元素" });

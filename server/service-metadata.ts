@@ -1165,7 +1165,8 @@ export const serviceParameters = {
       "teacherId",
       "schoolId",
       "sourceId",
-      "documentBlocks"
+      "documentBlocks",
+      "personalClassIds"
     ],
     "createFromLecture": [
       "teacherId",

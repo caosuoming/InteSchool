@@ -223,12 +223,14 @@ export const lessonCoursewareService = {
     schoolId: string,
     examPaperId: string,
     documentBlocks: LessonDocumentBlock[] = [],
+    personalClassIds?: string[],
   ): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createFromExamPaper", [
       teacherId,
       schoolId,
       examPaperId,
       documentBlocks,
+      personalClassIds,
     ]) as any;
   },
 

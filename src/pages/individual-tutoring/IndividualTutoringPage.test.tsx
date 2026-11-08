@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import IndividualTutoringPage from "./IndividualTutoringPage";
@@ -12,7 +12,7 @@ import { examPaperService } from "@/services/examPaper";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { basketService } from "@/services/basket";
 import { gradeService } from "@/services/grade";
-import type { Lecture, PersonalClass, Teacher } from "@/types";
+import type { ExamPaper, Lecture, PersonalClass, Teacher } from "@/types";
 
 vi.mock("@/services/class", () => ({ classService: { listPersonalClasses: vi.fn(), listStudentsByClass: vi.fn(), savePersonalClassChapterSelection: vi.fn() } }));
 vi.mock("@/services/knowledge", () => ({ knowledgeService: { getChapterTree: vi.fn(), listKnowledgePoints: vi.fn() } }));
@@ -20,7 +20,7 @@ vi.mock("@/services/question", () => ({ questionService: { listQuestions: vi.fn(
 vi.mock("@/services/analytics", () => ({ analyticsService: { getKnowledgeMastery: vi.fn(), getStudentAnswerDetails: vi.fn() } }));
 vi.mock("@/services/lecture", () => ({ lectureService: { listLectures: vi.fn(), createLecture: vi.fn() } }));
 vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn() } }));
-vi.mock("@/services/lessonCourseware", () => ({ lessonCoursewareService: { listCoursewares: vi.fn(), createFromLecture: vi.fn(), updateCourseware: vi.fn() } }));
+vi.mock("@/services/lessonCourseware", () => ({ lessonCoursewareService: { listCoursewares: vi.fn(), createFromLecture: vi.fn(), createFromExamPaper: vi.fn(), updateCourseware: vi.fn() } }));
 vi.mock("@/services/basket", () => ({ basketService: { listBaskets: vi.fn(), addQuestion: vi.fn() } }));
 vi.mock("@/services/grade", () => ({ gradeService: { getQueryData: vi.fn() } }));
 vi.mock("@/stores/ui", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -29,6 +29,14 @@ const personalClass: PersonalClass = {
   id: "pc-1", type: "personal", teacherId: "t-1", name: "个别辅导一班",
   description: "", studentIds: ["st-1"], createdAt: "2026-11-01",
 };
+const secondClass: PersonalClass = {
+  id: "pc-2", type: "personal", teacherId: "t-1", name: "个别辅导二班",
+  description: "", studentIds: [], createdAt: "2026-11-02",
+};
+const homework = {
+  id: "paper-1", teacherId: "t-1", schoolId: "sch-1", title: "个人辅导作业",
+  classIds: ["pc-1"], managementCategory: "homework", updatedAt: "2026-11-06",
+} as ExamPaper;
 const lecture = {
   id: "lec-1", teacherId: "t-1", schoolId: "sch-1", title: "数列专题",
   classIds: ["pc-1"], sections: [{ id: "sec", title: "数列", type: "chapter", content: "", children: [] }],
@@ -139,11 +147,64 @@ describe("IndividualTutoringPage", () => {
     expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("t-1", false);
   });
 
+  it("lists all personal-class homework by default and filters by class", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([personalClass, secondClass]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      homework,
+      { ...homework, id: "paper-2", title: "二班作业", classIds: ["pc-2"] },
+      { ...homework, id: "paper-school", title: "普通班作业", classIds: ["school-1"] },
+      { ...homework, id: "paper-exam", title: "二班考试", classIds: ["pc-2"], managementCategory: "exam" },
+    ]);
+    renderPage("materials");
+    expect(await screen.findByText("二班作业")).toBeInTheDocument();
+    expect(screen.getByText("个人辅导作业")).toBeInTheDocument();
+    expect(screen.getByText("数列专题")).toBeInTheDocument();
+    expect(screen.queryByText("普通班作业")).not.toBeInTheDocument();
+    expect(screen.queryByText("二班考试")).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "操作" })).toBeInTheDocument();
+    expect(screen.getByLabelText("筛选班级")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("筛选班级"), { target: { value: "pc-2" } });
+    expect(screen.getByText("二班作业")).toBeInTheDocument();
+    expect(screen.queryByText("个人辅导作业")).not.toBeInTheDocument();
+    expect(screen.queryByText("数列专题")).not.toBeInTheDocument();
+  });
+
+  it("pushes homework only to personal classes not yet covered by a lesson deck", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([personalClass, secondClass]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([{ ...homework, classIds: ["pc-1", "pc-2"] }]);
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([{
+      id: "lc-existing", sourceType: "examPaper", sourceId: homework.id, classIds: ["pc-1"],
+      title: "已有的一班作业课件", slides: [], status: "draft",
+    } as never]);
+    vi.mocked(lessonCoursewareService.createFromExamPaper).mockResolvedValue({
+      id: "lc-new", sourceType: "examPaper", sourceId: homework.id, classIds: ["pc-2"],
+      title: "二班作业课件", slides: [], status: "draft",
+    } as never);
+    renderPage("materials");
+    const row = (await screen.findByText("个人辅导作业")).closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(within(row!).getByRole("button", { name: "推送到个别辅导课件" }));
+    await waitFor(() => expect(lessonCoursewareService.createFromExamPaper).toHaveBeenCalledWith(
+      "t-1", "sch-1", homework.id, [], ["pc-2"],
+    ));
+    expect(await screen.findByText("二班作业课件")).toBeInTheDocument();
+  });
+
+  it("marks homework as pushed when every associated personal class is covered", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([homework]);
+    vi.mocked(lessonCoursewareService.listCoursewares).mockResolvedValue([{
+      id: "lc-1", sourceType: "examPaper", sourceId: homework.id, classIds: ["pc-1"],
+      title: "个人辅导作业（上课课件）", slides: [], status: "draft",
+    } as never]);
+    renderPage("materials");
+    const row = (await screen.findByText("个人辅导作业")).closest("tr");
+    expect(within(row!).getByRole("button", { name: "已推送" })).toBeDisabled();
+  });
+
   it("pushes a personal class lecture as an editable lesson deck", async () => {
-    vi.mocked(lessonCoursewareService.createFromLecture).mockResolvedValue({ id: "lc-1", classIds: [], sourceType: "lecture", sourceId: "lec-1" } as never);
     vi.mocked(lessonCoursewareService.createFromLecture).mockResolvedValue({ id: "lc-1", classIds: ["pc-1"], sourceType: "lecture", sourceId: "lec-1", title: "数列专题课件", slides: [], status: "draft" } as never);
     renderPage("materials");
-    fireEvent.click(await screen.findByRole("button", { name: "推送课件" }));
+    fireEvent.click(await screen.findByRole("button", { name: "推送到个别辅导课件" }));
     await waitFor(() => expect(lessonCoursewareService.createFromLecture).toHaveBeenCalledWith("t-1", "sch-1", "lec-1", [], ["pc-1"]));
     expect(await screen.findByText("数列专题课件")).toBeInTheDocument();
   });

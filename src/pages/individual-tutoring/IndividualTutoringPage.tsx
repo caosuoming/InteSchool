@@ -30,6 +30,9 @@ const tabs = [
   { key: "coursewares", title: "个别辅导课件", icon: Presentation },
 ] as const;
 const errorMessage = (e: unknown) => e instanceof Error ? e.message : String(e);
+type TutoringMaterial =
+  | { type: "lecture"; item: Lecture; personalClassIds: string[] }
+  | { type: "examPaper"; item: ExamPaper; personalClassIds: string[] };
 
 export default function IndividualTutoringPage() {
   const { section } = useParams();
@@ -40,6 +43,7 @@ export default function IndividualTutoringPage() {
   const schoolId = teacherResourceScopeId({ id: teacherId, schoolId: getCurrentAffiliation()?.schoolId || teacher?.schoolId });
   const [classes, setClasses] = useState<PersonalClass[]>([]);
   const [classId, setClassId] = useState("");
+  const [materialsClassId, setMaterialsClassId] = useState("");
   const [studentsByClass, setStudentsByClass] = useState<Record<string, Student[]>>({});
   const [studentId, setStudentId] = useState("");
   const [mastery, setMastery] = useState<KnowledgeMastery[]>([]);
@@ -89,8 +93,9 @@ export default function IndividualTutoringPage() {
     return () => { active = false; };
   }, [classId, teacherId]);
 
+  const hasSelectedClass = Boolean(classId);
   useEffect(() => {
-    if (!teacherId || !classId) return;
+    if (!teacherId || !hasSelectedClass) return;
     let active = true;
     void Promise.allSettled([
       knowledgeService.getChapterTree(teacherId, false),
@@ -118,7 +123,7 @@ export default function IndividualTutoringPage() {
       }
     });
     return () => { active = false; };
-  }, [teacherId, schoolId, classId]);
+  }, [teacherId, schoolId, hasSelectedClass]);
 
   const currentClass = classes.find((c) => c.id === classId);
   const students = studentsByClass[classId] || [];
@@ -170,13 +175,28 @@ export default function IndividualTutoringPage() {
   const scope = useMemo(() => chapterScope(chapters, chapterIds), [chapters, chapterIds]);
   const suggestions = useMemo(() => tutoringSuggestions(questions, scope, points, mastery), [questions, scope, points, mastery]);
   const chosen = suggestions.questions.filter((question) => selectedQuestionIds.includes(question.id));
-  const filteredLectures = lectures.filter((lecture) => lecture.classIds.includes(classId));
-  const filteredPapers = papers.filter((paper) => paper.classIds?.includes(classId) && paper.managementCategory !== "exam");
-  const personalLectureIds = new Set(filteredLectures.map((lecture) => lecture.id));
-  const filteredCoursewares = coursewares.filter((courseware) => courseware.sourceType === "lecture"
-    && courseware.sourceId && personalLectureIds.has(courseware.sourceId) && courseware.classIds.includes(classId));
-  const pushedLectureIds = new Set(filteredCoursewares.map((item) => item.sourceId));
-  const pendingLectures = filteredLectures.filter((lecture) => !pushedLectureIds.has(lecture.id));
+  const classIds = new Set(classes.map((cls) => cls.id));
+  const personalLectures = lectures.filter((lecture) => lecture.classIds.some((id) => classIds.has(id)));
+  const personalPapers = papers.filter((paper) => paper.managementCategory !== "exam"
+    && paper.classIds?.some((id) => classIds.has(id)));
+  const materials: TutoringMaterial[] = [
+    ...personalLectures.map((item) => ({
+      type: "lecture" as const, item, personalClassIds: item.classIds.filter((id) => classIds.has(id)),
+    })),
+    ...personalPapers.map((item) => ({
+      type: "examPaper" as const, item, personalClassIds: (item.classIds || []).filter((id) => classIds.has(id)),
+    })),
+  ];
+  const visibleMaterials = materials.filter((material) => !materialsClassId || material.personalClassIds.includes(materialsClassId))
+    .sort((a, b) => new Date(b.item.updatedAt).getTime() - new Date(a.item.updatedAt).getTime());
+  const isPushed = (material: TutoringMaterial, targetClassIds = material.personalClassIds) =>
+    targetClassIds.every((id) => coursewares.some((courseware) => courseware.sourceType === material.type
+      && courseware.sourceId === material.item.id && courseware.classIds.includes(id)));
+  const filteredCoursewares = coursewares.filter((courseware) => courseware.classIds.includes(classId)
+    && materials.some((material) => material.type === courseware.sourceType && material.item.id === courseware.sourceId
+      && material.personalClassIds.includes(classId)));
+  const pendingMaterials = materials.filter((material) => material.personalClassIds.includes(classId)
+    && !isPushed(material, [classId]));
 
   const updateChapterSelection = (ids: string[]) => {
     if (!classId) return;
@@ -194,17 +214,17 @@ export default function IndividualTutoringPage() {
     });
   };
 
-  const pushLecture = async (lecture: Lecture) => {
+  const pushMaterial = async (material: TutoringMaterial) => {
     if (!teacher || busy) return;
+    const pendingClassIds = material.personalClassIds.filter((id) => !isPushed(material, [id]));
+    if (!pendingClassIds.length) return;
     setBusy(true);
     try {
-      const personalClassIds = lecture.classIds.filter((id) => classes.some((cls) => cls.id === id));
-      const existing = coursewares.find((item) => item.sourceType === "lecture"
-        && item.sourceId === lecture.id && item.classIds.includes(classId));
-      const updated = existing || await lessonCoursewareService.createFromLecture(
-        teacher.id, lecture.schoolId, lecture.id, [], personalClassIds,
-      );
-      setCoursewares((previous) => [updated, ...previous.filter((item) => item.id !== updated.id)]);
+      const updated = material.type === "lecture"
+        ? await lessonCoursewareService.createFromLecture(teacher.id, material.item.schoolId, material.item.id, [], pendingClassIds)
+        : await lessonCoursewareService.createFromExamPaper(teacher.id, material.item.schoolId, material.item.id, [], pendingClassIds);
+      setCoursewares((previous) => [updated, ...previous]);
+      setClassId(pendingClassIds[0]);
       toast.success("已推送到个别辅导课件");
       navigate("/individual-tutoring/coursewares");
     } catch (e) {
@@ -280,10 +300,10 @@ export default function IndividualTutoringPage() {
           </Link>
         ))}
       </div>
-      <Card className="max-w-xl">
+      {currentSection !== "materials" && <Card className="max-w-xl">
         <Select label="个人教学班" value={classId} onChange={(e) => { setClassId(e.target.value); setSelectedQuestionIds([]); setStudentId(""); }}
           options={classes.map((item) => ({ value: item.id, label: item.name }))} />
-      </Card>
+      </Card>}
 
       {currentSection === "classes" && (
         <div className="space-y-4">
@@ -386,25 +406,41 @@ export default function IndividualTutoringPage() {
       )}
 
       {currentSection === "materials" && (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Card className="space-y-3">
-            <h2 className="font-semibold text-ink-900">适用于本班的讲义（{filteredLectures.length}）</h2>
-            {filteredLectures.map((lecture) => <div key={lecture.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-3">
-              <div className="min-w-0"><div className="font-medium text-sm text-ink-800 truncate">{lecture.title}</div><div className="text-xs text-ink-400">{lecture.sections.length} 个栏目</div></div>
-              <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => navigate(`/lectures/${lecture.id}/edit`)}>查看/编辑</Button>
-                <Button size="sm" disabled={busy || pushedLectureIds.has(lecture.id)} onClick={() => void pushLecture(lecture)}>{pushedLectureIds.has(lecture.id) ? "已推送" : "推送课件"}</Button></div>
-            </div>)}
-            {!filteredLectures.length && <p className="text-sm text-ink-400">暂无关联讲义。可先根据学情生成讲义。</p>}
-          </Card>
-          <Card className="space-y-3">
-            <h2 className="font-semibold text-ink-900">适用于本班的作业（{filteredPapers.length}）</h2>
-            {filteredPapers.map((paper) => <div key={paper.id} className="flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
-              <span className="font-medium text-sm truncate">{paper.title}</span>
-              <Button size="sm" variant="outline" onClick={() => navigate(`/exam-papers/${paper.id}`)}>查看作业</Button>
-            </div>)}
-            {!filteredPapers.length && <p className="text-sm text-ink-400">暂无关联作业</p>}
-          </Card>
-        </div>
+        <Card className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="font-semibold text-ink-900">个人教学班讲义与作业（{visibleMaterials.length}）</h2>
+              <p className="text-sm text-ink-500 mt-1">汇总所有个人教学班的讲义和作业，可按班级筛选并推送为上课课件。</p>
+            </div>
+            <div className="w-full max-w-64">
+              <Select label="筛选班级" value={materialsClassId} onChange={(e) => setMaterialsClassId(e.target.value)}
+                options={[{ value: "", label: "全部个人教学班" }, ...classes.map((item) => ({ value: item.id, label: item.name }))]} />
+            </div>
+          </div>
+          {visibleMaterials.length ? <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="border-b border-ink-200 text-ink-500">
+                <tr><th className="py-3 pr-4 font-medium">文件名称</th><th className="py-3 pr-4 font-medium">类型</th><th className="py-3 pr-4 font-medium">适用班级</th><th className="py-3 font-medium">操作</th></tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100">
+                {visibleMaterials.map((material) => <tr key={`${material.type}-${material.item.id}`}>
+                  <td className="py-3 pr-4 font-medium text-ink-800">{material.item.title}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">{material.type === "lecture" ? "讲义" : "作业"}</td>
+                  <td className="py-3 pr-4 text-ink-600">{material.personalClassIds.map((id) => classes.find((cls) => cls.id === id)?.name).filter(Boolean).join("、")}</td>
+                  <td className="py-3 whitespace-nowrap">
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => navigate(material.type === "lecture"
+                        ? `/lectures/${material.item.id}/edit` : `/exam-papers/${material.item.id}`)}>查看/编辑</Button>
+                      <Button size="sm" disabled={busy || isPushed(material)} onClick={() => void pushMaterial(material)}>
+                        {isPushed(material) ? "已推送" : "推送到个别辅导课件"}
+                      </Button>
+                    </div>
+                  </td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div> : <p className="text-sm text-ink-400">暂无关联的讲义或作业。可先根据学情生成讲义，或为个人教学班布置作业。</p>}
+        </Card>
       )}
 
       {currentSection === "coursewares" && (
@@ -419,12 +455,12 @@ export default function IndividualTutoringPage() {
             {!filteredCoursewares.length && <p className="text-sm text-ink-400">暂无已推送课件</p>}
           </Card>
           <Card className="space-y-3">
-            <h2 className="font-semibold text-ink-900">未推送的讲义（{pendingLectures.length}）</h2>
-            {pendingLectures.map((lecture) => <div key={lecture.id} className="flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
-              <span className="font-medium text-sm truncate">{lecture.title}</span>
-              <Button size="sm" disabled={busy} onClick={() => void pushLecture(lecture)}>生成上课课件</Button>
+            <h2 className="font-semibold text-ink-900">未推送的讲义与作业（{pendingMaterials.length}）</h2>
+            {pendingMaterials.map((material) => <div key={`${material.type}-${material.item.id}`} className="flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
+              <span className="font-medium text-sm truncate">{material.item.title}</span>
+              <Button size="sm" disabled={busy} onClick={() => void pushMaterial(material)}>生成上课课件</Button>
             </div>)}
-            {!pendingLectures.length && <p className="text-sm text-ink-400">没有待推送的讲义</p>}
+            {!pendingMaterials.length && <p className="text-sm text-ink-400">没有待推送的讲义或作业</p>}
           </Card>
         </div>
       )}

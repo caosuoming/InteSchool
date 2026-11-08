@@ -1378,11 +1378,20 @@ export const lessonCoursewareService = {
     schoolId: string,
     source: string | Pick<ExamPaper, "id">,
     documentBlocks: LessonDocumentBlock[] = [],
+    personalClassIds?: string[],
   ): Promise<LessonCourseware> {
     const sourceId = typeof source === "string" ? source : source.id;
     const examPaper = db.read("examPapers").find((item) =>
       item.id === sourceId && item.teacherId === teacherId);
     if (!examPaper) throw new Error("试卷不存在或无权访问");
+    if (personalClassIds !== undefined) {
+      const owned = new Set(db.read("personalClasses")
+        .filter((item) => item.teacherId === teacherId && examPaper.classIds?.includes(item.id))
+        .map((item) => item.id));
+      if (!personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
+        throw new Error("只能将作业推送到本人所属的个人教学班");
+      }
+    }
 
     const bodySlides = examPaperSlides(examPaper, db.read("questions"));
     const coverTitle = reviewedDocumentTitle(examPaper.contentBlocks)
@@ -1406,7 +1415,7 @@ export const lessonCoursewareService = {
       sourceTitle: examPaper.title,
       libraryCoursewareId,
       slides,
-      classIds: [],
+      classIds: personalClassIds ? [...new Set(personalClassIds)] : [],
     });
     saveGeneratedCoursewareToLibrary(
       lesson,
