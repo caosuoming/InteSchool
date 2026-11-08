@@ -201,6 +201,8 @@ export default function QuestionBankPage({
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
   const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
+  const [directoryLoadErrors, setDirectoryLoadErrors] = useState<string[]>([]);
+  const [directoryReloadToken, setDirectoryReloadToken] = useState(0);
   const [checkedChapters, setCheckedChapters] = useState<string[]>([]);
   const [checkedKnowledge, setCheckedKnowledge] = useState<string[]>([]);
   const [checkedMethods, setCheckedMethods] = useState<string[]>([]);
@@ -498,8 +500,9 @@ export default function QuestionBankPage({
 
   useEffect(() => {
     if (!teacher) return;
+    let cancelled = false;
     const load = async () => {
-      const [ch, kp, methods, errors, bs, allClasses, stus] = await Promise.all([
+      const results = await Promise.allSettled([
         knowledgeService.getChapterTree(teacher.id, false),
         knowledgeService.getKnowledgeTree(teacher.id, false),
         knowledgeService.getMethodTree(teacher.id, false),
@@ -507,21 +510,27 @@ export default function QuestionBankPage({
         basketService.listBaskets(teacher.id),
         classService.listMyClasses(teacher.schoolId, teacher.id),
         classService.listMyStudents(teacher.schoolId, teacher.id),
-      ]);
-      setChapterTree(ch);
-      setKnowledgeTree(kp);
-      setMethodTree(methods);
-      setErrorTree(errors);
-      setBaskets(bs.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })));
-      setSchoolClasses(allClasses.filter((item): item is SchoolClass => item.type === "school"));
-      setPersonalClasses(allClasses.filter((item): item is PersonalClass => item.type === "personal"));
-      setStudents(stus);
-      setChapterMap(treeNameMap(ch));
-      setKnowledgeMap(treeNameMap(kp));
-      setMethodMap(treeNameMap(methods));
+      ] as const);
+      if (cancelled) return;
+      const [ch, kp, methods, errors, bs, allClasses, stus] = results;
+      const labels = ["章节课", "知识点", "思想方法", "错因库", "资源篮", "班级", "学生"];
+      setDirectoryLoadErrors(results.flatMap((result, index) => result.status === "rejected" ? [labels[index]] : []));
+      setChapterTree(ch.status === "fulfilled" ? ch.value : null);
+      setKnowledgeTree(kp.status === "fulfilled" ? kp.value : null);
+      setMethodTree(methods.status === "fulfilled" ? methods.value : null);
+      setErrorTree(errors.status === "fulfilled" ? errors.value : null);
+      setBaskets(bs.status === "fulfilled" ? bs.value.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })) : []);
+      const classes = allClasses.status === "fulfilled" ? allClasses.value : [];
+      setSchoolClasses(classes.filter((item): item is SchoolClass => item.type === "school"));
+      setPersonalClasses(classes.filter((item): item is PersonalClass => item.type === "personal"));
+      setStudents(stus.status === "fulfilled" ? stus.value : []);
+      setChapterMap(ch.status === "fulfilled" ? treeNameMap(ch.value) : new Map());
+      setKnowledgeMap(kp.status === "fulfilled" ? treeNameMap(kp.value) : new Map());
+      setMethodMap(methods.status === "fulfilled" ? treeNameMap(methods.value) : new Map());
     };
-    load();
-  }, [teacher]);
+    void load();
+    return () => { cancelled = true; };
+  }, [teacher, directoryReloadToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1107,6 +1116,12 @@ export default function QuestionBankPage({
 
               {/* 搜索 + 树 */}
               <div className="p-3">
+                {directoryLoadErrors.length > 0 && (
+                  <div role="alert" className="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                    {directoryLoadErrors.join("、")}加载失败。
+                    <button type="button" className="ml-2 underline" onClick={() => setDirectoryReloadToken((value) => value + 1)}>重试</button>
+                  </div>
+                )}
                 <SearchableTree
                   title=""
                   accent={leftTab === "chapter" ? "gold" : "teal"}
@@ -2110,11 +2125,11 @@ function QuestionRow({
   const [expanded, setExpanded] = useState(false);
   const [editingAnswers, setEditingAnswers] = useState(false);
   const [expandedAnswerClassIds, setExpandedAnswerClassIds] = useState<Set<string>>(new Set());
-  const chapterNames = question.chapterIds.map((id) => chapterMap.get(id)).filter(Boolean) as string[];
-  const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id)).filter(Boolean) as string[];
-  const methodNames = (question.thoughtMethodIds || []).map((id) => methodMap.get(id)).filter(Boolean) as string[];
-  const hasChapter = chapterNames.length > 0;
-  const hasPoint = pointNames.length > 0;
+  const chapterNames = question.chapterIds.map((id) => chapterMap.get(id) || "已关联章节（名称暂不可用）");
+  const pointNames = question.knowledgePointIds.map((id) => knowledgeMap.get(id) || "已关联知识点（名称暂不可用）");
+  const methodNames = (question.thoughtMethodIds || []).map((id) => methodMap.get(id) || "已关联思想方法（名称暂不可用）");
+  const hasChapter = question.chapterIds.length > 0;
+  const hasPoint = question.knowledgePointIds.length > 0;
   const usageResources = useMemo(() => [
     ...lecturesUsingQuestion.map((resource) => ({ type: "讲义" as const, resource })),
     ...examPapersUsingQuestion.map((resource) => ({ type: "试卷" as const, resource })),
@@ -2513,12 +2528,12 @@ function QuestionRow({
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <BookOpen className="w-3 h-3 text-gold-500 flex-shrink-0 mt-0.5" />
                   {hasChapter ? (
-                    chapterNames.map((n) => (
+                    chapterNames.map((n, index) => (
                       <button
-                        key={n}
+                        key={question.chapterIds[index]}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onShowRelated("chapter", question.chapterIds.find((id) => chapterMap.get(id) === n) || "", `章节：${n}`, `查看同章节「${n}」下的所有题目`);
+                          onShowRelated("chapter", question.chapterIds[index], `章节：${n}`, `查看同章节「${n}」下的所有题目`);
                         }}
                         className="tag-gold text-xs py-0.5 cursor-pointer hover:bg-gold-200 transition-colors"
                         title="点击查看同章节题目"
@@ -2544,12 +2559,12 @@ function QuestionRow({
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Lightbulb className="w-3 h-3 text-teal-500 flex-shrink-0 mt-0.5" />
                   {hasPoint ? (
-                    pointNames.map((n) => (
+                    pointNames.map((n, index) => (
                       <button
-                        key={n}
+                        key={question.knowledgePointIds[index]}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onShowRelated("knowledge", question.knowledgePointIds.find((id) => knowledgeMap.get(id) === n) || "", `知识点：${n}`, `查看同知识点「${n}」下的所有题目`);
+                          onShowRelated("knowledge", question.knowledgePointIds[index], `知识点：${n}`, `查看同知识点「${n}」下的所有题目`);
                         }}
                         className="tag-teal text-xs py-0.5 cursor-pointer hover:bg-teal-200 transition-colors"
                         title="点击查看同知识点题目"
@@ -2576,8 +2591,8 @@ function QuestionRow({
                   <Lightbulb className="w-3 h-3 text-teal-500 flex-shrink-0 mt-0.5" />
                   <span className="text-xs text-ink-500">思想方法：</span>
                   {methodNames.length > 0 ? (
-                    methodNames.map((name) => (
-                      <span key={name} className="tag-teal text-xs py-0.5">{name}</span>
+                    methodNames.map((name, index) => (
+                      <span key={question.thoughtMethodIds![index]} className="tag-teal text-xs py-0.5">{name}</span>
                     ))
                   ) : (
                     <button
