@@ -809,6 +809,54 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(openPage).toHaveBeenCalledWith("/lectures/lecture-old-school/preview");
   });
 
+  it("keeps directories, question attributes and basket counts available when student loading fails", async () => {
+    const question = {
+      id: "question-with-directories", teacherId: "teacher-1", schoolId: "school-2",
+      type: "short", stem: "目录异常回归题", answer: "1", analysis: "",
+      chapterIds: ["ch-1"], knowledgePointIds: ["kp-1"],
+      difficulty: 3, recommendation: 3, usageCount: 0, remark: "", isShared: false,
+      createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z",
+    } as Question;
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [question], total: 1 });
+    vi.mocked(knowledgeService.getChapterTree).mockResolvedValue({
+      ...chapterTree, children: [{ id: "ch-1", name: "函数章节", type: "chapter", count: 1, children: [] }],
+    });
+    vi.mocked(knowledgeService.getKnowledgeTree).mockResolvedValue({
+      ...knowledgeTree, children: [{ id: "kp-1", name: "函数概念", type: "knowledge", count: 1, children: [] }],
+    });
+    vi.mocked(classService.listMyStudents).mockRejectedValue(new Error("student request failed"));
+    vi.mocked(basketService.listBaskets).mockResolvedValue([{ id: "basket-1", questionIds: [question.id] }] as never);
+
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    const row = (await screen.findByText("目录异常回归题")).closest(".card-base") as HTMLElement;
+    expect(await within(row).findByText("函数章节")).toBeInTheDocument();
+    expect(within(row).getByText("函数概念")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("学生加载失败");
+    expect(screen.getByRole("checkbox", { name: "篮中题" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "篮中题" }));
+    await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]?.basketQuestionIds)
+      .toEqual([question.id]));
+  });
+
+  it("preserves existing question associations when a directory request fails", async () => {
+    const question = {
+      id: "question-with-missing-directory", teacherId: "teacher-1", schoolId: "school-2",
+      type: "short", stem: "保留关联的题目", answer: "1", analysis: "",
+      chapterIds: [], knowledgePointIds: ["kp-unavailable"],
+      difficulty: 3, recommendation: 3, usageCount: 0, remark: "", isShared: false,
+      createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z",
+    } as Question;
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({ items: [question], total: 1 });
+    vi.mocked(knowledgeService.getKnowledgeTree).mockRejectedValue(new Error("knowledge request failed"));
+
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    const row = (await screen.findByText("保留关联的题目")).closest(".card-base") as HTMLElement;
+    expect(await within(row).findByText("已关联知识点（名称暂不可用）")).toBeInTheDocument();
+    expect(within(row).queryByText("未关联知识点")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("知识点加载失败");
+    expect(screen.getByTestId("searchable-tree-chapter")).toBeInTheDocument();
+  });
+
   it("shows active-school score rate, refreshes it after a school switch, and hides it with difficulty", async () => {
     const question: Question = {
       id: "question-shared-history",
