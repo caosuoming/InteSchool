@@ -174,7 +174,7 @@ export default function QuestionBankPage({
 }: QuestionBankPageProps = {}) {
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
-  const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
+  const { options: questionTypeOptions, getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId, teacher?.subject);
   const {
     sourceOptions,
     categoryOptions,

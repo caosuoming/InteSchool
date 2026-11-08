@@ -843,7 +843,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     getExamPaperTypeLabel,
     getLectureTypeLabel,
   } = useDocumentTypeOptions(resourceOptionsSchoolId);
-  const questionTypeConfig = useQuestionTypeOptions(resourceOptionsSchoolId);
+  const questionTypeConfig = useQuestionTypeOptions(resourceOptionsSchoolId, teacher?.subject);
   const getQuestionTypeLabel = questionTypeConfig.getLabel;
   const questionTypeOptions = questionTypeConfig.options ?? [];
   const selectedBasket = useMemo(
@@ -5051,7 +5051,7 @@ interface QuestionListItemProps {
 
 export function QuestionListItem({ question, expanded, onToggle, onShare, onDelete }: QuestionListItemProps) {
   const { teacher } = useAuthStore();
-  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId);
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(teacher?.schoolId, teacher?.subject);
   const difficultyVariant =
     question.difficulty <= 2
       ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
@@ -5092,7 +5092,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             onClick={onToggle}
             role="button"
           >
-            <MathHtml className="whitespace-pre-wrap">{question.stem}</MathHtml>
+            <MathHtml emphasizeEnglishQuestions={question.subject === "英语" || teacher?.subject === "英语"} className="whitespace-pre-wrap">{question.stem}</MathHtml>
           </div>
 
           {question.options && question.options.length > 0 && expanded && (
@@ -5105,7 +5105,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             >
               {question.options.map((opt, i) => (
                 <div key={i} className="flex min-w-0 items-start gap-1">
-                  <span className="font-mono font-semibold flex-shrink-0">{String.fromCharCode(65 + i)}.</span>
+                  <span className={`font-mono font-semibold flex-shrink-0 ${question.subject === "英语" || teacher?.subject === "英语" ? ["text-blue-700", "text-emerald-700", "text-amber-700", "text-violet-700"][i % 4] : ""}`}>{String.fromCharCode(65 + i)}.</span>
                   <MathHtml className="min-w-0 flex-1 break-all whitespace-pre-wrap">{opt}</MathHtml>
                 </div>
               ))}

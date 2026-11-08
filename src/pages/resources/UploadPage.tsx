@@ -151,7 +151,7 @@ export function UploadPage() {
   const [searchParams] = useSearchParams();
   const { teacher } = useAuthStore();
   const resourceScopeId = teacher ? teacherResourceScopeId(teacher) : undefined;
-  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(resourceScopeId);
+  const { getLabel: getQuestionTypeLabel } = useQuestionTypeOptions(resourceScopeId, teacher?.subject);
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester } = useSchoolResourceOptions(resourceScopeId);
   const {
     examPaperTypeOptions,

@@ -278,7 +278,7 @@ export default function ExamPaperEditorPage() {
   const prepTaskId = searchParams.get("prepTask");
   const { teacher } = useAuthStore();
   const { gradeOptions, schoolYearOptions, semesterOptions } = useSchoolResourceOptions(teacher?.schoolId);
-  const { options: autoQuestionTypes } = useQuestionTypeOptions(teacher?.schoolId);
+  const { options: autoQuestionTypes } = useQuestionTypeOptions(teacher?.schoolId, teacher?.subject);
 
   const [paper, setPaper] = useState<ExamPaper | null>(null);
   const [hasAnswerRecords, setIsUsedDocument] = useState(false);
