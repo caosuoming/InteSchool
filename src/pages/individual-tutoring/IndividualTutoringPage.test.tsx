@@ -14,8 +14,8 @@ import { basketService } from "@/services/basket";
 import { gradeService } from "@/services/grade";
 import type { Lecture, PersonalClass, Teacher } from "@/types";
 
-vi.mock("@/services/class", () => ({ classService: { listPersonalClasses: vi.fn(), listStudentsByClass: vi.fn() } }));
-vi.mock("@/services/knowledge", () => ({ knowledgeService: { listChapters: vi.fn(), listKnowledgePoints: vi.fn() } }));
+vi.mock("@/services/class", () => ({ classService: { listPersonalClasses: vi.fn(), listStudentsByClass: vi.fn(), savePersonalClassChapterSelection: vi.fn() } }));
+vi.mock("@/services/knowledge", () => ({ knowledgeService: { getChapterTree: vi.fn(), listKnowledgePoints: vi.fn() } }));
 vi.mock("@/services/question", () => ({ questionService: { listQuestions: vi.fn() } }));
 vi.mock("@/services/analytics", () => ({ analyticsService: { getKnowledgeMastery: vi.fn(), getStudentAnswerDetails: vi.fn() } }));
 vi.mock("@/services/lecture", () => ({ lectureService: { listLectures: vi.fn(), createLecture: vi.fn() } }));
@@ -49,7 +49,17 @@ beforeEach(() => {
     getCurrentAffiliation: () => null });
   vi.mocked(classService.listPersonalClasses).mockResolvedValue([personalClass]);
   vi.mocked(classService.listStudentsByClass).mockResolvedValue([{ id: "st-1", name: "小王", grade: "高一" } as never]);
-  vi.mocked(knowledgeService.listChapters).mockResolvedValue([{ id: "ch", schoolId: "sch-1", parentId: null, name: "数列", level: 1, order: 0 }]);
+  vi.mocked(knowledgeService.getChapterTree).mockResolvedValue({
+    id: "root", name: "全部章节课", type: "chapter", count: 0, children: [
+      { id: "ch", name: "数列", type: "chapter", count: 0, children: [
+        { id: "child", name: "等比数列", type: "chapter", count: 0, children: [] },
+      ] },
+      { id: "geometry", name: "几何", type: "chapter", count: 0, children: [] },
+    ],
+  });
+  vi.mocked(classService.savePersonalClassChapterSelection).mockImplementation(async (id, ids) => ({
+    ...personalClass, id, tutoringChapterIds: ids,
+  }));
   vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([{ id: "kp", schoolId: "sch-1", parentId: null, name: "等差数列", level: 1, order: 0 }]);
   vi.mocked(questionService.listQuestions).mockResolvedValue([{
     id: "q1", teacherId: "t-1", schoolId: "sch-1", chapterIds: ["ch"], knowledgePointIds: ["kp"], stem: "求通项公式",
@@ -83,8 +93,8 @@ describe("IndividualTutoringPage", () => {
 
   it("creates a lecture using only the checked suggested questions", async () => {
     renderPage("prepare");
-    await screen.findByRole("option", { name: "数列" });
-    fireEvent.change(screen.getByLabelText("章节课目录"), { target: { value: "ch" } });
+    fireEvent.click(await screen.findByRole("button", { name: "勾选数列" }));
+    await waitFor(() => expect(classService.savePersonalClassChapterSelection).toHaveBeenCalledWith("pc-1", ["ch"]));
     expect(await screen.findByText(/求通项公式/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "生成讲义" }));
@@ -93,6 +103,40 @@ describe("IndividualTutoringPage", () => {
       sections: expect.arrayContaining([expect.objectContaining({ questionId: "q1" })]),
     })));
     expect(await screen.findByText("讲义编辑器")).toBeInTheDocument();
+  });
+
+  it("restores saved chapter nodes and keeps selections separate for each personal class", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([
+      { ...personalClass, tutoringChapterIds: ["ch"] },
+      { ...personalClass, id: "pc-2", name: "个别辅导二班", tutoringChapterIds: ["geometry"] },
+    ]);
+    renderPage("prepare");
+    expect(await screen.findByRole("button", { name: "取消勾选数列" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起数列" }));
+    expect(screen.queryByText("等比数列")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开数列" }));
+    expect(screen.getByText("等比数列")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("个人教学班"), { target: { value: "pc-2" } });
+    expect(await screen.findByRole("button", { name: "取消勾选几何" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "勾选数列" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("个人教学班"), { target: { value: "pc-1" } });
+    expect(screen.getByRole("button", { name: "取消勾选数列" })).toBeInTheDocument();
+    expect(classService.savePersonalClassChapterSelection).not.toHaveBeenCalled();
+  });
+
+  it("supports multiple chapter branches and saves each change in sequence", async () => {
+    vi.mocked(questionService.listQuestions).mockResolvedValue([
+      { id: "q1", teacherId: "t-1", chapterIds: ["child"], knowledgePointIds: ["kp"], stem: "数列题", recommendation: 5 },
+      { id: "q2", teacherId: "t-1", chapterIds: ["geometry"], knowledgePointIds: ["kp"], stem: "几何题", recommendation: 4 },
+    ] as never);
+    renderPage("prepare");
+    fireEvent.click(await screen.findByRole("button", { name: "勾选数列" }));
+    expect(await screen.findByText("数列题")).toBeInTheDocument();
+    expect(screen.queryByText("几何题")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "勾选几何" }));
+    expect(await screen.findByText("几何题")).toBeInTheDocument();
+    await waitFor(() => expect(classService.savePersonalClassChapterSelection).toHaveBeenLastCalledWith("pc-1", ["ch", "geometry"]));
+    expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("t-1", false);
   });
 
   it("pushes a personal class lecture as an editable lesson deck", async () => {
