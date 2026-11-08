@@ -660,6 +660,52 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("preserves underline annotations on complete Word math formulas", async () => {
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>填空：</w:t></w:r>
+        <m:oMath><m:f>
+          <m:num><m:r><w:rPr><w:u w:val="single"/></w:rPr><m:t>1</m:t></m:r></m:num>
+          <m:den><m:r><w:rPr><w:u w:val="single"/></w:rPr><m:t>2</m:t></m:r></m:den>
+        </m:f></m:oMath>
+        <w:r><w:t>；</w:t></w:r>
+        <m:oMath><m:rad><m:e><m:r><w:rPr><w:u/></w:rPr><m:t>5</m:t></m:r></m:e></m:rad></m:oMath>
+        <w:r><w:t>；</w:t></w:r>
+        <m:oMath><m:nary><m:naryPr><m:chr m:val="∑"/></m:naryPr>
+          <m:sub><m:r><w:rPr><w:u/></w:rPr><m:t>i=1</m:t></m:r></m:sub>
+          <m:sup><m:r><w:rPr><w:u/></w:rPr><m:t>n</m:t></m:r></m:sup>
+          <m:e><m:r><w:rPr><w:u/></w:rPr><m:t>i</m:t></m:r></m:e>
+        </m:nary></m:oMath>
+      </w:p>
+    `);
+    expect(await extractDocxStructuredText(data)).toBe(
+      String.raw`填空：<u>$\frac{1}{2}$</u>；<u>$\sqrt{5}$</u>；<u>$\sum\limits_{i=1}^{n} i$</u>`,
+    );
+  });
+
+  it("keeps separated underlines surrounding an inserted Word fraction", async () => {
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>概率是 </w:t></w:r>
+        <w:r><w:rPr><w:u/></w:rPr><w:t xml:space="preserve">    </w:t></w:r>
+        <m:oMath><m:f>
+          <m:num><m:r><m:t>7</m:t></m:r></m:num>
+          <m:den><m:r><m:t>10</m:t></m:r></m:den>
+        </m:f></m:oMath>
+        <w:r><w:rPr><w:u/></w:rPr><w:t xml:space="preserve">    </w:t></w:r>
+      </w:p>
+    `);
+    expect(await extractDocxStructuredText(data)).toBe(String.raw`概率是 ____$\frac{7}{10}$____`);
+  });
+
+  it("does not extract only partially underlined equations as answers", async () => {
+    const data = await makeDocx(`
+      <w:p><m:oMath><m:f>
+        <m:num><m:r><w:rPr><w:u/></w:rPr><m:t>1</m:t></m:r></m:num>
+        <m:den><m:r><m:t>2</m:t></m:r></m:den>
+      </m:f></m:oMath></w:p>
+    `);
+    await expect(extractDocxStructuredText(data)).resolves.toBe(String.raw`$\frac{1}{2}$`);
+  });
+
   it("returns an empty string when document.xml is absent", async () => {
     const data = await new JSZip().generateAsync({ type: "nodebuffer" });
     await expect(extractDocxStructuredText(data)).resolves.toBe("");
