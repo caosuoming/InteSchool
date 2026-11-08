@@ -3,6 +3,8 @@ import { settingsService } from "@/services/settings";
 import type { QuestionType } from "@/types";
 import {
   DEFAULT_QUESTION_TYPE_OPTIONS,
+  ENGLISH_QUESTION_TYPE_OPTIONS,
+  questionTypeOptionsForSubject,
   getDefaultQuestionTypeLabel,
   type QuestionTypeOption,
 } from "@/lib/question-types";
@@ -36,7 +38,7 @@ export function includeCurrentQuestionType(
   return [{ value: currentValue, label: getDefaultQuestionTypeLabel(currentValue) }, ...options];
 }
 
-export function useQuestionTypeOptions(schoolId?: string | null) {
+export function useQuestionTypeOptions(schoolId?: string | null, subject?: string) {
   const [options, setOptions] = useState<QuestionTypeOption[]>(DEFAULT_QUESTION_TYPE_OPTIONS);
   const [ready, setReady] = useState(false);
 
@@ -69,9 +71,15 @@ export function useQuestionTypeOptions(schoolId?: string | null) {
     };
   }, [schoolId]);
 
+  const visibleOptions = useMemo(
+    () => questionTypeOptionsForSubject(subject, options),
+    [subject, options],
+  );
+
   const labels = useMemo(() => {
     const entries = [
       ...DEFAULT_QUESTION_TYPE_OPTIONS,
+      ...ENGLISH_QUESTION_TYPE_OPTIONS,
       ...options,
     ].map((option) => [option.value, option.label] as const);
     return new Map<QuestionType, string>(entries);
@@ -83,9 +91,9 @@ export function useQuestionTypeOptions(schoolId?: string | null) {
   );
 
   return useMemo(() => ({
-    options,
+    options: visibleOptions,
     getLabel,
-    defaultType: options[0]?.value || "single",
+    defaultType: visibleOptions[0]?.value || "single",
     ready,
-  }), [options, getLabel, ready]);
+  }), [visibleOptions, getLabel, ready]);
 }
