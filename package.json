@@ -25,7 +25,7 @@
     "@dnd-kit/sortable": "^8.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@fastify/compress": "^9.1.0",
-    "@fastify/cookie": "^11.1.2",
+    "@fastify/cookie": "^11.1.5",
     "@fastify/helmet": "^13.1.0",
     "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^11.1.0",
