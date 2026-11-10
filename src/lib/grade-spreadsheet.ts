@@ -1,3 +1,4 @@
+import { buildGradeReportNotes } from "./grade-report-notes.js";
 import type {
   GradeExam,
   GradeExamSettings,
@@ -402,6 +403,7 @@ export async function exportGradeExam(exam: GradeExam): Promise<void> {
         titleRow(`${exam.name}${template.name}`, report.headers.length, exam.examDate),
         report.headers.map(header),
         ...report.rows.map((row) => row.map(valueCell)),
+        ...gradeNoteRows(buildGradeReportNotes(exam), report.headers.length),
       ],
       stickyRowsCount: 2,
       columns: report.headers.map((_, columnIndex) => ({
@@ -417,9 +419,10 @@ export async function exportGradeExam(exam: GradeExam): Promise<void> {
 export async function exportGradeClassAverageReport(
   report: GradeClassAverageReport,
   examName?: string,
+  notes: string[] = [],
 ): Promise<void> {
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
-  const sheet = classAverageWorkbookSheet(report, new Set<string>(), "班级平均分统计表");
+  const sheet = appendGradeNotes(classAverageWorkbookSheet(report, new Set<string>(), "班级平均分统计表"), notes);
   await writeXlsxFile(sheet.data, {
     columns: sheet.columns,
     stickyRowsCount: sheet.stickyRowsCount,
@@ -429,9 +432,10 @@ export async function exportGradeClassAverageReport(
 export async function exportGradeTotalScoreSegmentReport(
   report: GradeTotalScoreSegmentReport,
   examName?: string,
+  notes: string[] = [],
 ): Promise<void> {
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
-  const sheet = totalScoreSegmentWorkbookSheet(report, new Set<string>(), "总分分数段汇总表");
+  const sheet = appendGradeNotes(totalScoreSegmentWorkbookSheet(report, new Set<string>(), "总分分数段汇总表"), notes);
   await writeXlsxFile(sheet.data, {
     columns: sheet.columns,
     stickyRowsCount: sheet.stickyRowsCount,
@@ -441,9 +445,10 @@ export async function exportGradeTotalScoreSegmentReport(
 export async function exportGradeTotalScoreRankingReport(
   report: GradeTotalScoreRankingReport,
   examName?: string,
+  notes: string[] = [],
 ): Promise<void> {
   if (report.tables.length === 0) throw new Error("暂无可导出的总分排名");
-  const sheets = totalScoreRankingWorkbookSheets(report, new Set<string>(), "");
+  const sheets = totalScoreRankingWorkbookSheets(report, new Set<string>(), "").map((sheet) => appendGradeNotes(sheet, notes));
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const fallbackTitle = `${report.tables[0].title}${report.tables.length > 1 ? "等" : ""}`;
   await writeXlsxFile(sheets).toFile(gradeReportFileName(
@@ -456,9 +461,10 @@ export async function exportGradeTotalScoreRankingReport(
 export async function exportGradeSubjectScoreSegmentReport(
   report: GradeSubjectScoreSegmentReport,
   examName?: string,
+  notes: string[] = [],
 ): Promise<void> {
   if (report.subjects.length === 0) throw new Error("暂无可导出的单科分数段");
-  const sheets = subjectScoreSegmentWorkbookSheets(report, new Set<string>(), "");
+  const sheets = subjectScoreSegmentWorkbookSheets(report, new Set<string>(), "").map((sheet) => appendGradeNotes(sheet, notes));
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const fallbackTitle = report.subjects[0].title.replace(report.subjects[0].subject, "各单科");
   await writeXlsxFile(sheets).toFile(gradeReportFileName(
@@ -471,9 +477,10 @@ export async function exportGradeSubjectScoreSegmentReport(
 export async function exportGradeElectiveScoreSegmentReport(
   report: GradeElectiveScoreSegmentReport,
   examName?: string,
+  notes: string[] = [],
 ): Promise<void> {
   if (report.subjects.length === 0) throw new Error("暂无可导出的选修分数段");
-  const sheets = electiveScoreSegmentWorkbookSheets(report, new Set<string>(), "");
+  const sheets = electiveScoreSegmentWorkbookSheets(report, new Set<string>(), "").map((sheet) => appendGradeNotes(sheet, notes));
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   const fallbackTitle = report.subjects[0].title.replace(report.subjects[0].subject, "选修");
   await writeXlsxFile(sheets).toFile(gradeReportFileName(
@@ -515,6 +522,24 @@ interface CombinedWorkbookSheet {
   data: CombinedWorkbookRow[];
   columns: Array<{ width: number }>;
   stickyRowsCount?: number;
+}
+
+function gradeNoteRows(notes: string[], width: number): CombinedWorkbookRow[] {
+  if (width < 1) return [];
+  return notes.map((note) => [
+    combinedWorkbookCell(note, {
+      columnSpan: width,
+      align: "left",
+      wrap: true,
+      height: Math.max(26, Math.min(110, 24 + Math.ceil(note.length / Math.max(20, width * 8)) * 14)),
+    }),
+    ...Array.from({ length: width - 1 }, () => null),
+  ]);
+}
+
+function appendGradeNotes(sheet: CombinedWorkbookSheet, notes: string[]): CombinedWorkbookSheet {
+  if (notes.length) sheet.data.push(...gradeNoteRows(notes, sheet.columns.length));
+  return sheet;
 }
 
 function uniqueWorkbookSheetName(name: string, usedNames: Set<string>): string {
@@ -1002,6 +1027,7 @@ export async function exportGradeTablesOneToFive(params: {
     ...electiveScoreSegmentWorkbookSheets(electiveScoreSegmentReport, usedNames),
     ...totalScoreRankingWorkbookSheets(totalScoreRankingReport, usedNames),
   ];
+  sheets.forEach((sheet) => appendGradeNotes(sheet, buildGradeReportNotes(exam, settings)));
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   await writeXlsxFile(sheets).toFile(gradeReportFileName(exam.name, "表一至表五", `${exam.name}表一至表五`));
 }
@@ -1009,6 +1035,7 @@ export async function exportGradeTablesOneToFive(params: {
 export async function exportGradeClassStatisticsReport(
   report: GradeClassStatisticsReport,
   examName?: string,
+  exam?: GradeExam,
 ): Promise<void> {
   if (report.classes.length === 0) throw new Error("当前考试没有可导出的班级成绩");
   const usedNames = new Set<string>();
@@ -1022,6 +1049,12 @@ export async function exportGradeClassStatisticsReport(
     stickyRowsCount: 2,
     columns: report.columns.map((column) => ({ width: column.width })),
   }));
+  if (exam) {
+    sheets.forEach((sheet, index) => appendGradeNotes(
+      sheet,
+      buildGradeReportNotes(exam, exam.settings, report.classes[index].classId),
+    ));
+  }
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
   await writeXlsxFile(sheets).toFile(gradeReportFileName(examName, "各班成绩统计", report.title));
 }

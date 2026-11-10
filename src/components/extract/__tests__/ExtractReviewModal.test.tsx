@@ -330,7 +330,7 @@ describe("ExtractReviewModal", () => {
         semester="上学期"
         initialBlocks={[{
           id: "block-question", type: "question", content: "1. 阅读材料回答问题。",
-          questionType: "single", categories: ["单选题·2个小题"], order: 0, status: "new",
+          questionType: "single", categories: ["一题多问", "单选题·2个小题"], order: 0, status: "new",
           answer: "A", analysis: "解析", difficulty: 3,
         }]}
       />,
@@ -338,11 +338,13 @@ describe("ExtractReviewModal", () => {
 
     const subtype = screen.getByLabelText("地理细分题型");
     expect(subtype).toHaveValue("单选题·2个小题");
+    expect(screen.queryByText("附加题类")).not.toBeInTheDocument();
+    expect(screen.queryByText("自动识别题类 · 请复核")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("第1题：一题多问")).not.toBeInTheDocument();
     await user.selectOptions(subtype, "单选题·3个小题");
     await user.click(screen.getByRole("button", { name: "确认入库" }));
     await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledTimes(1));
-    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).toContain("单选题·3个小题");
-    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).not.toContain("单选题·2个小题");
+    expect(mocks.confirmExtract.mock.calls[0][2].questions[0].categories).toEqual(["单选题·3个小题"]);
   });
 
   it("restores original math blanks when a parsed fill-in question becomes an essay", async () => {

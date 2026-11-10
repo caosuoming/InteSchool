@@ -39,12 +39,12 @@ function state(): AppState {
     ],
     homeworkClassOverviewRecords: [
       { schoolId: "school-1", classId: "class-1", teacherId: "teacher-1",
-        homeworkDate: DATE, attendanceTaken: true, summary: "" },
+        homeworkDate: DATE, attendanceTaken: true, summary: "已完成批改" },
       { schoolId: "school-1", classId: "class-2", teacherId: "teacher-1",
         homeworkDate: "2026-10-14", attendanceTaken: true, summary: "" },
     ],
     scannerPages: [
-      { schoolId: "school-1", sheetType: "paper", sheetId: "scanned", createdAt: "2026-10-13T10:00:00Z" },
+      { schoolId: "school-1", sheetType: "paper", sheetId: "scanned", createdAt: "2026-10-13T10:00:00Z", reviewedAt: "2026-10-13T12:00:00Z" },
       { schoolId: "school-2", sheetType: "paper", sheetId: "not-eligible", createdAt: "2026-10-14T10:00:00Z" },
       { schoolId: "school-1", sheetType: "lecture", sheetId: "not-eligible", createdAt: "2026-10-14T10:00:00Z" },
     ],
@@ -63,6 +63,70 @@ describe("classroomHomeworkAnswers", () => {
       ]);
       expect(classroomHomeworkAnswers("school-1", "missing")).toEqual([]);
       expect(classroomHomeworkAnswers("school-2", "class-1")).toEqual([]);
+    });
+  });
+
+  it("does not unlock an entire day from attendance or an unreviewed scan alone", async () => {
+    const s = state();
+    s.homeworkClassOverviewRecords = [{ schoolId: "school-1", classId: "class-1", teacherId: "teacher-1",
+      homeworkDate: DATE, attendanceTaken: true, summary: "" }];
+    s.scannerPages = [{ schoolId: "school-1", sheetType: "paper", sheetId: "scanned",
+      createdAt: "2026-10-13T10:00:00Z" }];
+    await runWithState(s, async () => {
+      expect(classroomHomeworkAnswers("school-1", "class-1")).toEqual([]);
+    });
+  });
+
+  it("unlocks all papers sharing a date once their class's work is corrected", async () => {
+    const s = state();
+    s.examPapers = [...(s.examPapers as ExamPaper[]), paper("same-day")];
+    await runWithState(s, async () => {
+      expect(classroomHomeworkAnswers("school-1", "class-1").map((item) => item.id))
+        .toEqual(["scanned:2026-10-13", "recorded:2026-10-12", "same-day:2026-10-12"]);
+    });
+  });
+
+  it("uses the parent classroom assignment date for linked papers", async () => {
+    const s = state();
+    s.examPapers = [paper("linked", { assignedDate: undefined })];
+    s.scannerPages = [];
+    s.classroomHomeworks = [{
+      id: "hw-1", teacherId: "teacher-1", teacherName: "老师", schoolId: "school-1",
+      subject: "数学", content: "做试卷", classIds: ["class-1"], examPaperIds: ["linked"],
+      assignedDate: DATE, publishAt: "2026-10-11T00:00:00Z",
+      createdAt: DATE, updatedAt: DATE,
+    }];
+    await runWithState(s, async () => {
+      expect(classroomHomeworkAnswers("school-1", "class-1").map((item) => item.id)).toEqual([`linked:${DATE}`]);
+    });
+  });
+
+  it("recognizes a dated student evaluation as a correction", async () => {
+    const s = state();
+    s.homeworkClassOverviewRecords = [];
+    s.scannerPages = [];
+    s.students = [{ id: "student-1", classId: "class-1", schoolId: "school-1" }];
+    s.homeworkAttitudeRecords = [{
+      teacherId: "teacher-1", schoolId: "school-1", studentId: "student-1",
+      homeworkDate: DATE, keywords: [], evaluation: "已批改",
+    }];
+    await runWithState(s, async () => {
+      expect(classroomHomeworkAnswers("school-1", "class-1").map((item) => item.id)).toEqual([`recorded:${DATE}`]);
+    });
+  });
+
+  it("does not release one class's answers using another class's reviewed scan", async () => {
+    const s = state();
+    s.homeworkClassOverviewRecords = [];
+    s.examPapers = [paper("shared", { classIds: ["class-1", "class-2"] })];
+    s.students = [{ id: "student-2", schoolId: "school-1", classId: "class-2" }];
+    s.scannerPages = [{
+      schoolId: "school-1", sheetType: "paper", sheetId: "shared",
+      studentId: "student-2", createdAt: DATE, reviewedAt: DATE,
+    }];
+    await runWithState(s, async () => {
+      expect(classroomHomeworkAnswers("school-1", "class-1")).toEqual([]);
+      expect(classroomHomeworkAnswers("school-1", "class-2").map((item) => item.id)).toEqual([`shared:${DATE}`]);
     });
   });
 

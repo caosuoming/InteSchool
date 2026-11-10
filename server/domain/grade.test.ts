@@ -616,8 +616,20 @@ describe("grade service", () => {
       const renamed = await gradeService.updateExamMetadata(exam.id, {
         name: "八月联考",
         examDate: "2026-08-12",
+        examRemark: "  一班采用备用卷  ",
       });
-      expect(renamed).toMatchObject({ name: "八月联考", examDate: "2026-08-12" });
+      expect(renamed).toMatchObject({
+        name: "八月联考", examDate: "2026-08-12", examRemark: "一班采用备用卷",
+      });
+      expect((await gradeService.getExam(exam.id, undefined, appState.teachers[0] as any))?.examRemark).toBe("一班采用备用卷");
+      await expect(gradeService.updateExamMetadata(exam.id, {
+        name: "八月联考", examRemark: "x".repeat(2001),
+      })).rejects.toThrow("2000");
+      await expect(gradeService.updateExamMetadata(exam.id, {
+        name: "八月联考", examRemark: 42 as unknown as string,
+      })).rejects.toThrow("格式");
+      const unchanged = await gradeService.updateExamMetadata(exam.id, { name: "八月联考" });
+      expect(unchanged.examRemark).toBe("一班采用备用卷");
 
       const adjusted = await gradeService.adjustExamScore(
         exam.id,

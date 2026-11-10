@@ -1,3 +1,4 @@
+import { isGeographyChoiceGroup, renumberGeographyPaperStem, renumberGeographyPaperAnswer, geographyPaperQuestionCount } from "@/lib/geography-paper-layout";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -6,6 +7,8 @@ import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 
 interface ExtractedQuestionContentProps {
   number?: number;
+  geographySubject?: string;
+  questionType?: string;
   stem: string;
   options?: string[];
   answer: string;
@@ -18,6 +21,8 @@ interface ExtractedQuestionContentProps {
 
 export function ExtractedQuestionContent({
   number,
+  geographySubject,
+  questionType = "short",
   stem,
   options,
   answer,
@@ -27,6 +32,15 @@ export function ExtractedQuestionContent({
   expanded: controlledExpanded,
   onExpandedChange,
 }: ExtractedQuestionContentProps) {
+  const groupedChoice = isGeographyChoiceGroup(stem, questionType, geographySubject);
+  const displayStem = number === undefined ? stem
+    : renumberGeographyPaperStem(stem, questionType, geographySubject, number);
+  const displayAnswer = number === undefined ? answer
+    : renumberGeographyPaperAnswer(stem, answer, questionType, geographySubject, number);
+  const displayAnalysis = number === undefined ? analysis
+    : renumberGeographyPaperAnswer(stem, analysis, questionType, geographySubject, number);
+  const endNumber = number === undefined ? undefined
+    : number + geographyPaperQuestionCount(stem, questionType, geographySubject) - 1;
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
   const toggleExpanded = () => {
@@ -41,7 +55,9 @@ export function ExtractedQuestionContent({
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
-        aria-label={number ? `第 ${number} 题，点击展开答案和解析` : "点击展开答案和解析"}
+        aria-label={number
+          ? groupedChoice ? `第 ${number} 至 ${endNumber} 题，点击展开答案和解析` : `第 ${number} 题，点击展开答案和解析`
+          : "点击展开答案和解析"}
         onClick={toggleExpanded}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -51,16 +67,18 @@ export function ExtractedQuestionContent({
         }}
         className="group flex cursor-pointer items-start gap-2 rounded-sm text-left outline-none transition-colors hover:text-gold-700 focus-visible:ring-2 focus-visible:ring-gold-400"
       >
-        {number !== undefined && (
+        {number !== undefined && !groupedChoice && (
           <span className="flex-shrink-0 font-mono font-bold text-ink-400">{number}.</span>
         )}
         <MathHtml
+          geographyLabels={geographySubject?.trim() === "地理"}
+          geographyChoiceGroup={groupedChoice}
           className={cn(
             "min-w-0 flex-1 whitespace-pre-wrap text-ink-900",
             compact ? "text-sm leading-relaxed" : "text-sm leading-7",
           )}
         >
-          {stem}
+          {displayStem}
         </MathHtml>
         {expanded
           ? <ChevronDown className="mt-1 h-4 w-4 flex-shrink-0 text-gold-600" />
@@ -75,7 +93,7 @@ export function ExtractedQuestionContent({
         )}>
           {options.map((option, index) => {
             const optionLabel = String.fromCharCode(65 + index);
-            const isAnswer = expanded && answer.includes(optionLabel);
+            const isAnswer = expanded && displayAnswer.includes(optionLabel);
             return (
               <div
                 key={`${optionLabel}-${option}`}
@@ -107,11 +125,11 @@ export function ExtractedQuestionContent({
         <div className={cn("mt-2 space-y-2 animate-fade-in", number !== undefined && "pl-6")}>
           <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-sm text-emerald-900">
             <span className="font-bold">答案：</span>
-            {answer ? <MathHtml className="question-answer-content inline text-emerald-900">{answer}</MathHtml> : <span className="text-ink-400">暂无答案</span>}
+            {displayAnswer ? <MathHtml className="question-answer-content inline text-emerald-900">{displayAnswer}</MathHtml> : <span className="text-ink-400">暂无答案</span>}
           </div>
           <div className="rounded border border-gold-200 bg-gold-50/30 p-2 text-sm text-ink-800">
             <span className="font-bold text-gold-700">解析：</span>
-            {analysis ? <MathHtml className="inline text-ink-800">{analysis}</MathHtml> : <span className="text-ink-400">暂无解析</span>}
+            {displayAnalysis ? <MathHtml className="inline text-ink-800">{displayAnalysis}</MathHtml> : <span className="text-ink-400">暂无解析</span>}
           </div>
         </div>
       )}

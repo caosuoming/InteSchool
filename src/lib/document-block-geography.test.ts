@@ -157,7 +157,22 @@ describe("geography paper decomposition", () => {
     expect(parsed[0].content).not.toContain("就此完成下面小题");
     expect(parsed[1].content).toContain("材料二：下图展示了另一地区的植被分布");
     expect(parsed[1].content).toContain("就此完成下面小题");
-    expect(parsed.map((block) => block.answer)).toEqual(["（1）A\n（2）B", "（1）C\n（2）D"]);
+    expect(parsed.map((block) => block.answer)).toEqual(["（1）A\n（2）B", "（3）C\n（4）D"]);
+  });
+
+  it("keeps grouped answer and explanation labels aligned with original question numbers", () => {
+    const parsed = questions([
+      "一、单选题", "读图完成下面4—6题。",
+      "4. 降水量为？ A. 甲 B. 乙 C. 丙 D. 丁",
+      "5. 主要原因是？ A. 甲 B. 乙 C. 丙 D. 丁",
+      "6. 主要作用是？ A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案", "4. 【答案】B 【解析】降水较少。",
+      "5. 【答案】A 【解析】植被较多。",
+      "6. 【答案】D 【解析】改善土壤。",
+    ].join("\n"));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].answer).toBe("（4）B\n（5）A\n（6）D");
+    expect(parsed[0].analysis).toBe("（4）降水较少。\n（5）植被较多。\n（6）改善土壤。");
   });
 
   it("attaches the next single question reading passage instead of the previous last option", () => {
@@ -188,6 +203,75 @@ describe("geography paper decomposition", () => {
     expect(parsed[0].analysis).toBe("依据地形判断。");
     expect(parsed[1].content).toContain("另一地区植被分布");
     expect(parsed[1].content).toContain("就此完成下面小题");
+  });
+
+  it("counts two numbered choice questions instead of circled statements in their options", () => {
+    const parsed = questions([
+      "一、单选题", "阅读近代中国民族资本主义发展材料，据此完成19—20题。",
+      "19. 下列产业不包括（ ）",
+      "A. 金融业 B. 电力工业 C. 丝织业 D. 交通运输业",
+      "20. 主要原因是（ ）",
+      "①西部市场需求扩大②西部小麦产量高③东部生产受战争影响④东部被外国资本垄断",
+      "A. ①② B. ②③ C. ①③ D. ②④",
+    ].join("\n"));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].categories).toEqual(["单选题·2个小题"]);
+    expect(parsed[0].content).toContain("20. 主要原因");
+  });
+
+  it("extracts answers from a titled answer table after an inline QR-code image", () => {
+    const table = '<table class="document-table"><tbody>'
+      + '<tr><td>题号</td><td>19</td><td>20</td></tr>'
+      + '<tr><td>答案</td><td>C</td><td>D</td></tr>'
+      + '</tbody></table>';
+    const parsed = questions([
+      "一、单选题", "据此完成19—20题。",
+      "19. 甲地特点 A. 甲 B. 乙 C. 丙 D. 丁",
+      "20. 乙地特点 A. 甲 B. 乙 C. 丙 D. 丁",
+      '<img src="data:image/png;base64,AAAA" />《江苏省苏州市2025-2026学年高三上学期2月期末地理试题》参考答案',
+      table,
+    ].join("\n"));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].categories).toEqual(["单选题·2个小题"]);
+    expect(parsed[0].answer).toBe("（19）C\n（20）D");
+    expect(parsed[0].content).not.toContain("参考答案");
+  });
+
+  it("does not attach an unrelated answer number by ordinal fallback", () => {
+    const parsed = questions([
+      "一、单选题",
+      "19. 第十九题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "20. 第二十题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案", "1. A", "20. B",
+    ].join("\n"));
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].answer).toBeUndefined();
+    expect(parsed[1].answer).toBe("B");
+  });
+
+  it("recognizes an answer key from a numbering restart when the heading was lost", () => {
+    const parsed = questions([
+      "一、单选题",
+      "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "3. 第三题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "1. B", "2. C",
+    ].join("\n"));
+    expect(parsed).toHaveLength(3);
+    expect(parsed.map((block) => block.answer)).toEqual(["B", "C", undefined]);
+  });
+
+  it("recognizes restarted answers even after the paper switches question sections", () => {
+    const parsed = questions([
+      "一、单选题",
+      "1. 第一题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 第二题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "二、综合题",
+      "21. 分析地理环境特点。",
+      "22. 描述区域气候差异。",
+      "1. C", "2. D",
+    ].join("\n"));
+    expect(parsed.map((block) => block.answer)).toEqual(["C", "D", undefined, undefined]);
   });
 
   it("matches a partially populated reference-answer section by its original question number", () => {

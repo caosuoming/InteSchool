@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GradeQueryData, GradeQueryExam } from "@/types";
-import { classRankTrend, studentScoreHistory, studentSubjectTrend } from "./student-score-trends";
+import { classRankTrend, studentAllSubjectTrends, studentScoreHistory, studentSubjectTrend } from "./student-score-trends";
 
 const base: GradeQueryData = {
   scope: "homeroom", scopeLabel: "班主任", subject: "数学", roles: ["teacher"],
@@ -53,6 +53,22 @@ describe("student score trends", () => {
   it("does not invent rankings when there is only one comparable class", () => {
     const onlyClass = { ...data, exams: [{ ...data.exams[0], classSummaries: [data.exams[0].classSummaries[0]] }] };
     expect(classRankTrend(onlyClass, "c1").points).toEqual([]);
+  });
+
+  it("builds independently ranked timelines for every accessible subject", () => {
+    const trends = studentAllSubjectTrends(data, "s1");
+    expect(trends.map((item) => item.subject)).toEqual(["数学", "语文"]);
+    expect(trends[1].points.map((point) => [point.examId, point.value, point.rank, point.rankLabel])).toEqual([
+      ["old", 85, 4, "单独排名组名次"],
+      ["new", 85, 4, "单独排名组名次"],
+    ]);
+    expect(studentAllSubjectTrends(data, "not-found")).toEqual([]);
+  });
+
+  it("does not infer another subject's rank from the total when explicitly unranked", () => {
+    const record = data.exams[0].records[0];
+    const limited = { ...data, exams: [{ ...data.exams[0], records: [{ ...record, subjectRanks: { 数学: 3, 语文: null } }] }] };
+    expect(studentAllSubjectTrends(limited, "s1")[1].points[0].rank).toBeNull();
   });
 
   it("keeps all visible subjects and prefers assigned scores in full history", () => {

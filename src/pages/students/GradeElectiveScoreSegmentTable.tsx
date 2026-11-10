@@ -1,3 +1,5 @@
+import { GradeReportNotes } from "./GradeReportNotes";
+import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useMemo, useRef, useState } from "react";
 import { Download, SlidersHorizontal, TableProperties } from "lucide-react";
 import type {
@@ -111,7 +113,7 @@ export function GradeElectiveScoreSegmentTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeElectiveScoreSegmentReport(report, exam.name);
+      await exportGradeElectiveScoreSegmentReport(report, exam.name, buildGradeReportNotes(exam, settings));
       toast.success("选修分数段已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);
@@ -242,6 +244,7 @@ export function GradeElectiveScoreSegmentTable({
                   </tr>
                 </tbody>
               </table>
+              <GradeReportNotes notes={buildGradeReportNotes(exam, settings, undefined, subjectReport.subject)} />
             </section>
           ))}
         </div>

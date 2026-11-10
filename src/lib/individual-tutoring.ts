@@ -27,6 +27,39 @@ export function chapterScope(chapters: Pick<Chapter, "id" | "parentId">[], selec
   return selected;
 }
 
+/** Compact a fully expanded checked set into parent selections only when every
+ * descendant is checked. This preserves partial branches when a child is unchecked. */
+export function compactChapterSelection(
+  chapters: Pick<Chapter, "id" | "parentId">[],
+  checkedIds: Iterable<string>,
+): string[] {
+  const checked = new Set(checkedIds);
+  const byId = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+  const children = new Map<string, string[]>();
+  for (const chapter of chapters) {
+    if (!chapter.parentId || !byId.has(chapter.parentId)) continue;
+    children.set(chapter.parentId, [...(children.get(chapter.parentId) || []), chapter.id]);
+  }
+  const fullyChecked = new Map<string, boolean>();
+  const isFull = (id: string): boolean => {
+    if (fullyChecked.has(id)) return fullyChecked.get(id)!;
+    // Guard against malformed cyclic chapter data.
+    fullyChecked.set(id, false);
+    const full = checked.has(id) && (children.get(id) || []).every(isFull);
+    fullyChecked.set(id, full);
+    return full;
+  };
+  const result: string[] = [];
+  const visit = (id: string) => {
+    if (isFull(id)) result.push(id);
+    else for (const child of children.get(id) || []) visit(child);
+  };
+  for (const chapter of chapters) {
+    if (!chapter.parentId || !byId.has(chapter.parentId)) visit(chapter.id);
+  }
+  return result;
+}
+
 export function flattenChapterTree(tree: TreeNode | null): { id: string; name: string; parentId: string | null }[] {
   if (!tree) return [];
   const chapters: { id: string; name: string; parentId: string | null }[] = [];

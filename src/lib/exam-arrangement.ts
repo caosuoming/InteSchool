@@ -602,6 +602,42 @@ function roomIntersection(roomLists: string[][], fallback: string[]): string[] {
   return fallback.filter((roomId) => roomLists.every((list) => list.includes(roomId)));
 }
 
+function normalizeSpecialStudentRoomRules(
+  input: ExamArrangementInput,
+  context: ExamArrangementContext,
+  subjects: string[],
+  rooms: ExamRoomConfig[],
+  selections: Map<string, ExamStudentSubjectSelection>,
+): Map<string, Map<string, string>> {
+  const students = new Map(context.students.map((student) => [student.id, student]));
+  const roomIds = new Set(rooms.map((room) => room.id));
+  const validSubjects = new Set(subjects);
+  const byStudent = new Map<string, Map<string, string>>();
+  for (const rule of input.specialStudentRoomRules || []) {
+    const student = students.get(rule.studentId);
+    if (!student || !rule.classId || student.classId !== rule.classId) {
+      throw new Error("特殊学生固定考场包含无效班级或学生");
+    }
+    if (!roomIds.has(rule.roomId)) throw new Error(`特殊学生 ${student.name} 的固定考场不存在`);
+    const selection = selections.get(student.id);
+    const targets = uniqueStrings(rule.subjects || []);
+    if (targets.length === 0) throw new Error(`请为特殊学生 ${student.name} 选择考试科目`);
+    if (selection?.absent || targets.some((subject) => !validSubjects.has(subject) || !selection?.subjects.includes(subject))) {
+      throw new Error(`特殊学生 ${student.name} 的固定考场包含未参加的考试科目`);
+    }
+    const assigned = byStudent.get(student.id) || new Map<string, string>();
+    for (const subject of targets) {
+      const previous = assigned.get(subject);
+      if (previous && previous !== rule.roomId) {
+        throw new Error(`特殊学生 ${student.name} 的「${subject}」配置了冲突的固定考场`);
+      }
+      assigned.set(subject, rule.roomId);
+    }
+    byStudent.set(student.id, assigned);
+  }
+  return byStudent;
+}
+
 function createTask(
   student: Student,
   className: string,
@@ -614,6 +650,7 @@ function createTask(
   roomGroupKey?: string,
   fallbackRoomGroupKey?: string,
   seatPreference?: ExamStudentSeatPreference,
+  specialRoomIdsByStudent?: Map<string, Map<string, string>>,
 ): SeatTask {
   const classRule = rules.get(student.classId);
   const subjectRoomIds = roomIntersection(
@@ -623,10 +660,17 @@ function createTask(
   const groupKey = roomGroupKey || examGroupKey(sessionKey, selectedSubjects);
   const configuredRoomIds = groupRoomIds[groupKey]
     || (fallbackRoomGroupKey ? groupRoomIds[fallbackRoomGroupKey] : undefined);
-  const eligibleRoomIds = configuredRoomIds
+  const ordinaryRoomIds = configuredRoomIds
     ? subjectRoomIds.filter((roomId) => configuredRoomIds.includes(roomId))
     : subjectRoomIds;
   const subjectLabel = selectedSubjects.join(" / ");
+  const specialRoomIds = [...new Set(selectedSubjects
+    .map((subject) => specialRoomIdsByStudent?.get(student.id)?.get(subject))
+    .filter((roomId): roomId is string => Boolean(roomId)))];
+  if (specialRoomIds.length > 1) {
+    throw new Error(`特殊学生 ${student.name} 的「${subjectLabel}」共享座位，不能指定不同考场`);
+  }
+  const eligibleRoomIds = specialRoomIds.length > 0 ? specialRoomIds : ordinaryRoomIds;
   if (eligibleRoomIds.length === 0) {
     throw new Error(`「${className}」学生 ${student.name} 的「${subjectLabel}」没有共同可用考场`);
   }
@@ -654,6 +698,7 @@ function buildTasks(
   const classMap = new Map(context.classes.map((item) => [item.id, item]));
   const allRoomIds = rooms.map((room) => room.id);
   const roomIdSet = new Set(allRoomIds);
+  const specialRooms = normalizeSpecialStudentRoomRules(input, context, subjects, rooms, selections);
   const groupRoomIds = Object.fromEntries(Object.entries(input.groupRoomIds || {}).map(([groupKey, roomIds]) => {
     const normalized = uniqueStrings(roomIds || []);
     if (normalized.length === 0) throw new Error(`考试组合「${groupKey}」至少需要选择一个考场`);
@@ -696,6 +741,7 @@ function buildTasks(
           student, classItem.name, sessionKeys[index], actual, rules, allRoomIds,
           groupRoomIds, simultaneousGroups, `seat:${actual.join("|")}`,
           undefined, selection.seatPreference,
+          specialRooms,
         );
         // Even students taking disjoint electives in one group must occupy distinct seats.
         task.examSlotKeys.push(`seat-layout:${seatGroup.join("|")}`);
@@ -736,6 +782,7 @@ function buildTasks(
         undefined,
         legacyCombinedGroupKey,
         selection.seatPreference,
+        specialRooms,
       ));
     }
     for (const subject of selected.filter((item) => separateSubjects.has(item))) {
@@ -751,6 +798,7 @@ function buildTasks(
         `subject:${subject}`,
         undefined,
         selection.seatPreference,
+        specialRooms,
       ));
     }
   }

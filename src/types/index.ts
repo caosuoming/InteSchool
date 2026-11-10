@@ -836,6 +836,14 @@ export interface ExamStudentSubjectSelection {
   seatPreference?: ExamStudentSeatPreference;
 }
 
+/** 指定一名学生的若干考试科目只能安排在对应考场。 */
+export interface ExamSpecialStudentRoomRule {
+  classId: string;
+  studentId: string;
+  subjects: string[];
+  roomId: string;
+}
+
 export interface ExamSeatAssignment {
   id: string;
   studentId: string;
@@ -886,6 +894,7 @@ export interface ExamArrangementInput {
   splitRoomIdsBySession?: Record<string, string[]>;
   classRules: ExamClassRoomRule[];
   studentSubjects: ExamStudentSubjectSelection[];
+  specialStudentRoomRules?: ExamSpecialStudentRoomRule[];
 }
 
 export interface ExamArrangement extends Omit<ExamArrangementInput, "id"> {
@@ -1224,6 +1233,8 @@ export interface GradeScoreAdjustment {
 export interface GradeExamMetadataPatch {
   name: string;
   examDate?: string;
+  /** 该次考试的备注，最多 2000 字。 */
+  examRemark?: string;
 }
 
 export interface GradeExamPublication {
@@ -1243,6 +1254,7 @@ export interface GradeExam {
   cohortLabel: string;
   name: string;
   examDate?: string;
+  examRemark?: string;
   sourceFileName: string;
   sourceSheetName: string;
   subjects: string[];
@@ -1725,6 +1737,8 @@ export interface ExamPaper {
   layoutMode?: "grouped" | "flat";
   /** 按题型编排时的题型显示顺序。 */
   questionTypeOrder?: string[];
+  /** 题型标题文字覆盖，仅用于显示，不改变题目类型或编号。 */
+  questionTypeLabels?: Record<string, string>;
   /** 按项目模式中用户创建的有序项目，支持空项目。 */
   projects?: ExamPaperProject[];
   /** 作业/考试管理中的归属；旧试卷按作业处理。 */

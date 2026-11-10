@@ -66,6 +66,28 @@ describe("AnswerSheetComposer", () => {
     expect(container.querySelector('[data-answer-sheet-flow-item="zone-fill"]')).toHaveTextContent("例1.");
   });
 
+  it("renders custom type headings while keeping each answer aligned with source numbering", () => {
+    const { container } = renderComposer({
+      sourceLayoutMode: "grouped",
+      questionTypeLabels: { essay: "计算与证明", single: "客观选择题" },
+      questions: [
+        { id: "essay-first", type: "essay", stem: "证明题", score: 8 },
+        { id: "single-second", type: "single", stem: "选择题", options: ["A", "B"], score: 5 },
+      ],
+      initialSettings: { mode: "with-questions" },
+    });
+    const headings = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="group-heading"]'),
+      (node) => node.textContent || "");
+    expect(headings[0]).toContain("一、计算与证明");
+    expect(headings[1]).toContain("二、客观选择题");
+    const rows = Array.from(container.querySelectorAll('[data-answer-sheet-flow-item="question"]'),
+      (node) => node.textContent || "");
+    expect(rows[0]).toContain("1.");
+    expect(rows[1]).toContain("2.");
+    expect(rows[0]).toContain("证明题");
+    expect(rows[1]).toContain("选择题");
+  });
+
   it("shows project names instead of question types for a project-layout answer sheet", () => {
     const { container } = renderComposer({
       sourceLayoutMode: "flat",

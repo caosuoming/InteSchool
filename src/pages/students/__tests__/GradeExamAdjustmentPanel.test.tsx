@@ -86,7 +86,7 @@ describe("GradeExamAdjustmentPanel", () => {
   it("edits exam metadata used by report headers", async () => {
     const user = userEvent.setup();
     const initial = buildExam();
-    const updated = { ...initial, name: "八月联考", examDate: "2026-08-12" };
+    const updated = { ...initial, name: "八月联考", examDate: "2026-08-12", examRemark: "一班使用备用卷" };
     vi.mocked(gradeService.updateExamMetadata).mockResolvedValue(updated);
 
     render(<Harness initial={initial} />);
@@ -97,12 +97,14 @@ describe("GradeExamAdjustmentPanel", () => {
     const date = screen.getByLabelText("考试时间");
     await user.clear(date);
     await user.type(date, "2026-08-12");
+    await user.type(screen.getByRole("textbox", { name: "考试备注" }), "一班使用备用卷");
     await user.click(screen.getByRole("button", { name: "保存考试信息" }));
 
     await waitFor(() => {
       expect(gradeService.updateExamMetadata).toHaveBeenCalledWith("exam-1", {
         name: "八月联考",
         examDate: "2026-08-12",
+        examRemark: "一班使用备用卷",
       });
     });
   });

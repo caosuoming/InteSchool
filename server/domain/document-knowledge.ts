@@ -1,9 +1,9 @@
 import type { ExamPaper, Lecture, LectureSection } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
 
-function collectLectureQuestionIds(sections: LectureSection[]): string[] {
+function collectLectureQuestionIds(sections: LectureSection[] | null | undefined): string[] {
   const ids: string[] = [];
-  for (const section of sections) {
+  for (const section of sections || []) {
     if (section.questionId) ids.push(section.questionId);
     if (section.children?.length) ids.push(...collectLectureQuestionIds(section.children));
   }

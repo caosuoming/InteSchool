@@ -23,7 +23,7 @@ export function HomeworkAnswersPanel({ answers }: { answers: ClassroomHomeworkAn
       <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center text-neutral-500">
         <BookOpen className="h-10 w-10 text-neutral-700" />
         <div className="text-sm">暂无可查看的作业答案</div>
-        <div className="text-xs">保存对应日期的作业记录后，已布置试卷的参考答案会显示在这里。</div>
+        <div className="text-xs">完成对应日期的作业批改后，或独立试卷经过扫描复查后，即可查看参考答案。</div>
       </div>
     );
   }

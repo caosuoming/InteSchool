@@ -1244,10 +1244,16 @@ export const gradeService = {
     const name = patch?.name?.trim();
     if (!name) throw new Error("请填写考试名称");
     const examDate = normalizeExamDate(patch.examDate);
+    if (patch.examRemark !== undefined && typeof patch.examRemark !== "string") {
+      throw new Error("考试备注格式不正确");
+    }
+    const examRemark = patch.examRemark === undefined ? current.examRemark : patch.examRemark.trim();
+    if (examRemark && examRemark.length > 2000) throw new Error("考试备注不能超过 2000 字");
     const updated: GradeExam = {
       ...current,
       name,
       examDate,
+      examRemark: examRemark || undefined,
       updatedAt: new Date().toISOString(),
     };
     db.update("gradeExams", (items: GradeExam[]) => items.map((item) => item.id === examId ? updated : item));

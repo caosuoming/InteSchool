@@ -29,4 +29,15 @@ describe("getQuestionTypeSections", () => {
       "一、概念填空题", "二、解答题",
     ]);
   });
+  it("allows display-only headings without changing grouping or numbering", () => {
+    const questions = [question("single", "single"), question("essay", "essay")];
+    const labels = { single: "客观题", essay: "计算与证明" };
+    const sections = getQuestionTypeSections(questions);
+    expect(sections.map((section, index) => getQuestionTypeHeading(section.type, index, labels))).toEqual([
+      "一、客观题", "二、计算与证明",
+    ]);
+    expect(sections.map((section) => section.type)).toEqual(["single", "essay"]);
+    expect(getQuestionTypeHeading("single", 0, { single: "   " })).toBe("一、单选题");
+  });
+
 });

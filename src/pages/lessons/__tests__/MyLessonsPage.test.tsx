@@ -16,6 +16,7 @@ import { defaultTeacherScheduleTimeRanges } from "@/lib/teacher-schedule";
 vi.mock("@/services/class", () => ({
   classService: {
     listSchoolClasses: vi.fn(),
+    listPersonalClasses: vi.fn(),
   },
 }));
 
@@ -222,6 +223,7 @@ describe("MyLessonsPage classroom publishing", () => {
       createdBy: "teacher-1",
       createdAt: "2026-08-02T00:00:00.000Z",
     }]);
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([]);
     vi.mocked(classroomHomeworkService.createHomework).mockResolvedValue(createdHomework);
@@ -731,6 +733,32 @@ describe("MyLessonsPage classroom publishing", () => {
     await waitFor(() => {
       expect(lessonCoursewareService.completeCourseware).toHaveBeenCalledWith("published-1");
     });
+  });
+
+  it("keeps personal-class coursewares out of all My Lessons lifecycle lists", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([{
+      id: "personal-1", type: "personal", teacherId: teacher.id, name: "个人教学班",
+      description: "", studentIds: [], createdAt: "2026-11-01",
+    }]);
+    const schoolCourseware = courseware("school-active");
+    const schoolCompleted = courseware("school-completed", "completed");
+    const schoolTrashed = courseware("school-trashed", "trashed");
+    const personalActive = { ...courseware("personal-active"), classIds: ["personal-1"] };
+    const personalCompleted = { ...courseware("personal-completed", "completed"), classIds: ["personal-1"] };
+    const personalTrashed = { ...courseware("personal-trashed", "trashed"), classIds: ["personal-1"] };
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
+      if (filter.lifecycleStatus === "completed") return [schoolCompleted, personalCompleted];
+      if (filter.lifecycleStatus === "trashed") return [schoolTrashed, personalTrashed];
+      return [schoolCourseware, personalActive];
+    });
+    render(<MemoryRouter><MyLessonsPage /></MemoryRouter>);
+
+    expect(await screen.findByText("函数课件 school-active")).toBeInTheDocument();
+    expect(screen.getByText("函数课件 school-completed")).toBeInTheDocument();
+    expect(screen.getByText("函数课件 school-trashed")).toBeInTheDocument();
+    for (const name of ["personal-active", "personal-completed", "personal-trashed"]) {
+      expect(screen.queryByText(`函数课件 ${name}`)).not.toBeInTheDocument();
+    }
   });
 
   it("keeps former-school coursewares in My Lessons and treats them as needing republish", async () => {

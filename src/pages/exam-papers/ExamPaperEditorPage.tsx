@@ -1,3 +1,4 @@
+import { geographyPaperNumberMap, isGeographyChoiceGroup, renumberGeographyPaperAnswer, renumberGeographyPaperStem } from "@/lib/geography-paper-layout";
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import { useAutosave } from "@/hooks/useAutosave";
@@ -111,7 +112,7 @@ import { treeNameMap } from "@/lib/basket-audience";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
 import { isExamPaperStructureLocked, isDocumentStructureLocked } from "@/lib/document-resource";
 import { getProjectSections } from "./project-sections";
-import { DEFAULT_QUESTION_TYPE_ORDER, getQuestionTypeHeading, getQuestionTypeSections } from "./question-type-sections";
+import { DEFAULT_QUESTION_TYPE_ORDER, getQuestionTypeDisplayName, getQuestionTypeHeading, getQuestionTypeSections } from "./question-type-sections";
 import { basketsForAudience, countSelectedQuestionFacets, findSimilarAssignmentQuestions, selectAssignmentQuestions } from "./assignment-selection";
 import type { KnowledgeMastery } from "@/services/analytics";
 
@@ -181,12 +182,17 @@ interface QuestionGroup {
 const sectionNumerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
 const getGroupHeading = getQuestionTypeHeading;
 
-const groupByType = (questions: ExamPaperQuestion[], qMap: Record<string, Question>, order?: string[]): QuestionGroup[] => {
+const groupByType = (
+  questions: ExamPaperQuestion[],
+  qMap: Record<string, Question>,
+  order?: string[],
+  labels?: Record<string, string>,
+): QuestionGroup[] => {
   const indices = new Map(questions.map((question, index) => [question.id, index]));
   let displayIndex = 0;
   return getQuestionTypeSections(questions, qMap, order).map((section, groupIndex) => ({
     type: section.type,
-    label: getGroupHeading(section.type, groupIndex),
+    label: getGroupHeading(section.type, groupIndex, labels),
     questions: section.questions.map((pq) => ({
       pq,
       index: indices.get(pq.id)!,
@@ -217,6 +223,7 @@ interface ExamPaperNavigationDraft {
   contentBlocks: ExtractedDocumentBlock[];
   layoutMode: "grouped" | "flat";
   questionTypeOrder: string[];
+  questionTypeLabels: Record<string, string>;
   projects: ExamPaperProject[];
   selectedClassIds: string[];
   questions: Record<string, Question>;
@@ -242,6 +249,7 @@ type ExamPaperSaveState = Pick<
   | "contentBlocks"
   | "layoutMode"
   | "questionTypeOrder"
+  | "questionTypeLabels"
   | "projects"
 >;
 
@@ -263,6 +271,7 @@ function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
       contentBlocks: paper.contentBlocks || [],
       layoutMode: paper.layoutMode || "grouped",
       questionTypeOrder: paper.questionTypeOrder || [...DEFAULT_QUESTION_TYPE_ORDER],
+      questionTypeLabels: paper.questionTypeLabels || {},
       projects: paper.projects || [],
     }),
   };
@@ -345,6 +354,7 @@ export default function ExamPaperEditorPage() {
 
   // 大题型顺序（编辑模式）
   const [groupOrder, setGroupOrder] = useState<string[]>([...DEFAULT_QUESTION_TYPE_ORDER]);
+  const [groupLabels, setGroupLabels] = useState<Record<string, string>>({});
   const [collapsedGroupTypes, setCollapsedGroupTypes] = useState<Set<string>>(new Set());
   const [collapsedHeadingIds, setCollapsedHeadingIds] = useState<Set<string>>(new Set());
 
@@ -575,6 +585,7 @@ export default function ExamPaperEditorPage() {
       setContentBlocks(nextContentBlocks);
       setLayoutMode(draft?.layoutMode ?? p.layoutMode ?? "grouped");
       setGroupOrder(draft?.questionTypeOrder ?? p.questionTypeOrder ?? [...DEFAULT_QUESTION_TYPE_ORDER]);
+      setGroupLabels(draft?.questionTypeLabels ?? p.questionTypeLabels ?? {});
       setProjects(draft?.projects ?? p.projects ?? []);
       setSelectedClassIds(draft?.selectedClassIds ?? p.classIds ?? []);
       setPrepPasswordOpen(false);
@@ -883,6 +894,19 @@ export default function ExamPaperEditorPage() {
   );
 
   const isStructuredExtract = Boolean(paper?.isExtractCopy && contentBlocks.length > 0);
+  const geographySubject = paper?.subject || teacher?.subject;
+  const paperDisplayNumbers = useMemo(() => {
+    const ordered = isStructuredExtract
+      ? contentBlocks.filter((block) => block.type === "question").map((block) => {
+        const pq = paperQuestions.find((item) => item.id === block.examPaperQuestionId)
+          || paperQuestions.find((item) => item.questionId && item.questionId === block.questionId);
+        return { id: block.id, stem: block.content || pq?.stem || "", type: pq?.type || block.questionType || "short" };
+      })
+      : layoutMode === "grouped"
+        ? getQuestionTypeSections(paperQuestions, questions, groupOrder).flatMap((section) => section.questions)
+        : flatDisplayQuestions;
+    return geographyPaperNumberMap(ordered, geographySubject);
+  }, [isStructuredExtract, contentBlocks, paperQuestions, questions, groupOrder, layoutMode, flatDisplayQuestions, geographySubject]);
   const previewQuestionIds = useMemo(
     () => isStructuredExtract
       ? contentBlocks.filter((block) => block.type === "question").map((block) => block.id)
@@ -922,6 +946,7 @@ export default function ExamPaperEditorPage() {
       contentBlocks,
       layoutMode,
       questionTypeOrder: groupOrder,
+      questionTypeLabels: groupLabels,
       projects,
       selectedClassIds,
       questions,
@@ -933,6 +958,7 @@ export default function ExamPaperEditorPage() {
     grade,
     layoutMode,
     groupOrder,
+    groupLabels,
     projects,
     paper,
     paperQuestions,
@@ -1350,7 +1376,7 @@ export default function ExamPaperEditorPage() {
     classIds: selectedClassIds,
     studentIds: [],
     typeId: typeId || undefined,
-    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, questionTypeOrder: groupOrder, projects }),
+    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, questionTypeOrder: groupOrder, questionTypeLabels: groupLabels, projects }),
   }), [
     contentBlocks,
     description,
@@ -1359,6 +1385,7 @@ export default function ExamPaperEditorPage() {
     isStructureLocked,
     layoutMode,
     groupOrder,
+    groupLabels,
     projects,
     paperQuestions,
     schoolYear,
@@ -1388,6 +1415,7 @@ export default function ExamPaperEditorPage() {
       setContentBlocks(structuredClone(savedDraft.contentBlocks || []));
       setLayoutMode(savedDraft.layoutMode || "grouped");
       setGroupOrder(savedDraft.questionTypeOrder || [...DEFAULT_QUESTION_TYPE_ORDER]);
+      setGroupLabels(savedDraft.questionTypeLabels || {});
       setProjects(structuredClone(savedDraft.projects || []));
     }
     toast.success("已撤销未保存修改");
@@ -1502,6 +1530,7 @@ export default function ExamPaperEditorPage() {
       }
       await downloadExamPaperDocxVariants({
         ...paper,
+        subject: geographySubject,
         title,
         description,
         grade,
@@ -1513,6 +1542,7 @@ export default function ExamPaperEditorPage() {
         contentBlocks,
         layoutMode,
         questionTypeOrder: groupOrder,
+        questionTypeLabels: groupLabels,
         projects,
       }, questions, downloadModes);
       const updated = await examPaperService.markPaperDownloaded(paper.id);
@@ -1954,9 +1984,8 @@ export default function ExamPaperEditorPage() {
                   );
                 }
                 if (block.type === "question") {
-                  const questionNumber = contentBlocks
-                    .slice(0, blockIndex + 1)
-                    .filter((item) => item.type === "question").length;
+                  const questionNumber = paperDisplayNumbers.get(block.id)
+                    ?? contentBlocks.slice(0, blockIndex + 1).filter((item) => item.type === "question").length;
                   const paperQuestion = paperQuestions.find(
                     (item) => item.id === block.examPaperQuestionId,
                   );
@@ -1974,6 +2003,8 @@ export default function ExamPaperEditorPage() {
                         <section className="py-4">
                           <ExtractedQuestionContent
                             number={questionNumber}
+                            geographySubject={geographySubject}
+                            questionType={paperQuestion?.type || block.questionType || "short"}
                             stem={display.stem}
                             options={display.options}
                             answer={display.answer}
@@ -2032,7 +2063,7 @@ export default function ExamPaperEditorPage() {
                 )}
               />
             ) : layoutMode === "grouped" ? (
-              groupByType(paperQuestions, questions, groupOrder).flatMap((group, groupIndex) => {
+              groupByType(paperQuestions, questions, groupOrder, groupLabels).flatMap((group, groupIndex) => {
                 const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
                 return [
                   <PreviewQuestionPair
@@ -2040,7 +2071,7 @@ export default function ExamPaperEditorPage() {
                     leftClassName="pt-3 pb-2"
                     left={(
                       <div className="flex items-center gap-3 border-b border-ink-200 pb-2">
-                        <h2 className="font-serif text-lg font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
+                        <h2 className="font-serif text-lg font-bold text-ink-900">{group.label}</h2>
                         <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
                         <span className="text-sm font-medium text-gold-600">共 {groupScore} 分</span>
                       </div>
@@ -2052,7 +2083,8 @@ export default function ExamPaperEditorPage() {
                       left={(
                         <PreviewQuestionItem
                           pq={item.pq}
-                          index={item.displayIndex}
+                          index={(paperDisplayNumbers.get(item.pq.id) ?? item.displayIndex + 1) - 1}
+                          geographySubject={geographySubject}
                           expanded={expandedPreviewQuestionIds.has(item.pq.id)}
                           onExpandedChange={(expanded) => setPreviewQuestionExpanded(item.pq.id, expanded)}
                         />
@@ -2060,7 +2092,7 @@ export default function ExamPaperEditorPage() {
                       right={(
                         <PreviewQuestionDetails
                           pq={item.pq}
-                          index={item.displayIndex}
+                          index={(paperDisplayNumbers.get(item.pq.id) ?? item.displayIndex + 1) - 1}
                           question={item.question}
                           progress={getQuestionProgress(getCompletionQuestionId(item.pq))}
                           chapterTree={chapterTree}
@@ -2112,7 +2144,8 @@ export default function ExamPaperEditorPage() {
                       left={(
                         <PreviewQuestionItem
                           pq={paperQuestion}
-                          index={index}
+                          index={(paperDisplayNumbers.get(paperQuestion.id) ?? index + 1) - 1}
+                          geographySubject={geographySubject}
                           markMultiple
                           expanded={expandedPreviewQuestionIds.has(paperQuestion.id)}
                           onExpandedChange={(expanded) => setPreviewQuestionExpanded(paperQuestion.id, expanded)}
@@ -2121,7 +2154,7 @@ export default function ExamPaperEditorPage() {
                       right={(
                         <PreviewQuestionDetails
                           pq={paperQuestion}
-                          index={index}
+                          index={(paperDisplayNumbers.get(paperQuestion.id) ?? index + 1) - 1}
                           question={linkedQuestion}
                           progress={getQuestionProgress(getCompletionQuestionId(paperQuestion))}
                           chapterTree={chapterTree}
@@ -2720,7 +2753,7 @@ export default function ExamPaperEditorPage() {
               />
             ) : layoutMode === "grouped" ? (
               <div className="space-y-6">
-                {groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex, groups) => {
+                {groupByType(paperQuestions, questions, groupOrder, groupLabels).map((group, groupIndex, groups) => {
                   const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
                   const commonGroupScore = group.questions.every((item) => item.pq.score === group.questions[0]?.pq.score)
                     ? group.questions[0]?.pq.score ?? null
@@ -2738,7 +2771,7 @@ export default function ExamPaperEditorPage() {
                             return next;
                           })}
                           className="rounded p-1 text-ink-400 hover:bg-ink-50 hover:text-gold-700"
-                          aria-label={`${groupCollapsed ? "展开" : "折叠"}${getGroupHeading(group.type, groupIndex)}`}
+                          aria-label={`${groupCollapsed ? "展开" : "折叠"}${group.label}`}
                           title={groupCollapsed ? "展开题目" : "折叠题目"}
                         >
                           {groupCollapsed
@@ -2763,13 +2796,23 @@ export default function ExamPaperEditorPage() {
                             <ChevronDown className="w-3 h-3" />
                           </button>
                         </div>}
-                        <h2 className="font-serif text-base font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
+                        <div className="flex min-w-0 items-center gap-1 font-serif text-base font-bold text-ink-900">
+                          <span className="shrink-0">{sectionNumerals[groupIndex] || groupIndex + 1}、</span>
+                          <Input
+                            aria-label={`${getQuestionTypeDisplayName(group.type)}题型名称`}
+                            value={groupLabels[group.type] ?? getQuestionTypeDisplayName(group.type)}
+                            onChange={(event) => setGroupLabels((previous) => ({ ...previous, [group.type]: event.target.value }))}
+                            disabled={isEditingLocked}
+                            maxLength={80}
+                            className="h-8 w-40 min-w-0 font-serif text-base font-bold"
+                          />
+                        </div>
                         <span className="text-xs text-ink-500">{group.questions.length} 题</span>
                         <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-ink-500">每题</span>
                           <Input
-                            aria-label={`${getGroupHeading(group.type, groupIndex)}统一分值`}
+                            aria-label={`${group.label}统一分值`}
                             type="number"
                             min="0"
                             step="0.5"
@@ -2795,7 +2838,7 @@ export default function ExamPaperEditorPage() {
                           onClick={() => openAddQuestion({
                             kind: "group",
                             groupType: group.type,
-                            label: getGroupHeading(group.type, groupIndex),
+                            label: group.label,
                           })}
                         >
                           <Plus className="h-3.5 w-3.5" />
@@ -2808,6 +2851,8 @@ export default function ExamPaperEditorPage() {
                             <EditQuestionRow
                               pq={item.pq}
                               index={item.displayIndex}
+                              displayNumber={paperDisplayNumbers.get(item.pq.id)}
+                              geographySubject={geographySubject}
                               total={paperQuestions.length}
                               canMoveUp={itemIndex > 0}
                               canMoveDown={itemIndex < group.questions.length - 1}
@@ -2936,6 +2981,8 @@ export default function ExamPaperEditorPage() {
                             <EditQuestionRow
                               pq={paperQuestion}
                               index={displayIndex}
+                              displayNumber={paperDisplayNumbers.get(paperQuestion.id)}
+                              geographySubject={geographySubject}
                               markMultiple
                               total={paperQuestions.length}
                               canMoveUp={itemIndex > 0}
@@ -4272,14 +4319,19 @@ function PreviewQuestionDetails({
 
 // ===== 预览模式的题目项 =====
 function PreviewQuestionItem({
-  pq, index, markMultiple = false, expanded: controlledExpanded, onExpandedChange,
+  pq, index, geographySubject, markMultiple = false, expanded: controlledExpanded, onExpandedChange,
 }: {
   pq: ExamPaperQuestion;
   index: number;
+  geographySubject?: string;
   markMultiple?: boolean;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const groupedChoice = isGeographyChoiceGroup(pq.stem, pq.type, geographySubject);
+  const displayStem = renumberGeographyPaperStem(pq.stem, pq.type, geographySubject, index + 1);
+  const answer = renumberGeographyPaperAnswer(pq.stem, pq.answer, pq.type, geographySubject, index + 1);
+  const analysis = renumberGeographyPaperAnswer(pq.stem, pq.analysis, pq.type, geographySubject, index + 1);
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
   const toggleExpanded = () => {
@@ -4296,11 +4348,15 @@ function PreviewQuestionItem({
             onClick={toggleExpanded}
             className="flex cursor-pointer items-start gap-1 text-sm leading-relaxed text-ink-900 transition-colors hover:text-gold-700"
           >
-            <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>
+            {!groupedChoice && <span className="flex-shrink-0 font-mono font-bold text-ink-400">{index + 1}.</span>}
             {markMultiple && needsMultipleChoiceMarker(pq.type === "multiple", pq.stem) && (
               <strong className="flex-shrink-0">（多选）</strong>
             )}
-            <MathHtml className="min-w-0 flex-1 text-sm leading-relaxed text-ink-900">{pq.stem}</MathHtml>
+            <MathHtml
+              geographyLabels={geographySubject?.trim() === "地理"}
+              geographyChoiceGroup={groupedChoice}
+              className="min-w-0 flex-1 text-sm leading-relaxed text-ink-900"
+            >{displayStem}</MathHtml>
           </div>
           {/* 选项（按数量自适应列数；答案高亮仅在展开时显示） */}
           {pq.options && pq.options.length > 0 && (
@@ -4311,19 +4367,19 @@ function PreviewQuestionItem({
               {pq.options.map((opt, i) => (
                 <div key={i} className={cn(
                   "px-2 py-1.5 text-sm flex items-center gap-1.5 min-w-0",
-                  expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                  expanded && answer.includes(String.fromCharCode(65 + i))
                     ? "text-emerald-900"
                     : "",
                 )}>
                   <span className={cn(
                     "font-mono font-semibold flex-shrink-0",
-                    expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                    expanded && answer.includes(String.fromCharCode(65 + i))
                       ? "text-emerald-900"
                       : "text-ink-600",
                   )}>{String.fromCharCode(65 + i)}.</span>
                   <MathHtml className={cn(
                     "min-w-0 flex-1",
-                    expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                    expanded && answer.includes(String.fromCharCode(65 + i))
                       ? "text-emerald-900"
                       : "text-ink-800",
                   )}>{opt}</MathHtml>
@@ -4336,11 +4392,11 @@ function PreviewQuestionItem({
             <div className="space-y-2 pl-5 mt-2 animate-fade-in">
               <div className="p-2 rounded bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900">
                 <span className="font-bold">答案：</span>
-                <MathHtml className="question-answer-content inline text-emerald-900">{pq.answer}</MathHtml>
+                <MathHtml className="question-answer-content inline text-emerald-900">{answer}</MathHtml>
               </div>
               <div className="p-2 rounded bg-gold-50/30 border border-gold-200 text-sm text-ink-800">
                 <span className="font-bold text-gold-700">解析：</span>
-                <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
+                <MathHtml className="inline text-ink-800">{analysis}</MathHtml>
               </div>
             </div>
           )}
@@ -4375,12 +4431,14 @@ function QuestionProgressBadge({ progress }: { progress?: QuestionProgress }) {
 
 // ===== 编辑模式的题目行 =====
 function EditQuestionRow({
-  pq, index, total, markMultiple = false, canMoveUp, canMoveDown,
+  pq, index, total, displayNumber = index + 1, geographySubject, markMultiple = false, canMoveUp, canMoveDown,
   onMoveUp, onMoveDown, onRemove, structureLocked = false, sidebar,
 }: {
   pq: ExamPaperQuestion;
   index: number;
   total: number;
+  displayNumber?: number;
+  geographySubject?: string;
   markMultiple?: boolean;
   canMoveUp?: boolean;
   canMoveDown?: boolean;
@@ -4391,6 +4449,10 @@ function EditQuestionRow({
   sidebar?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const groupedChoice = isGeographyChoiceGroup(pq.stem, pq.type, geographySubject);
+  const displayStem = renumberGeographyPaperStem(pq.stem, pq.type, geographySubject, displayNumber);
+  const displayAnswer = renumberGeographyPaperAnswer(pq.stem, pq.answer, pq.type, geographySubject, displayNumber);
+  const displayAnalysis = renumberGeographyPaperAnswer(pq.stem, pq.analysis, pq.type, geographySubject, displayNumber);
   return (
     <div className={cn(sidebar && "grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start")}>
     <div className="border border-ink-100 rounded-md p-3 hover:border-ink-200 transition-colors">
@@ -4417,7 +4479,7 @@ function EditQuestionRow({
 
         <div className="flex-1 min-w-0">
           <div className="mb-1.5">
-            <span className="font-mono text-sm font-bold text-ink-400">{index + 1}.</span>
+            {!groupedChoice && <span className="font-mono text-sm font-bold text-ink-400">{displayNumber}.</span>}
           </div>
           {/* 题干 */}
           <div
@@ -4427,7 +4489,11 @@ function EditQuestionRow({
             {markMultiple && needsMultipleChoiceMarker(pq.type === "multiple", pq.stem) && (
               <strong className="flex-shrink-0 text-sm">（多选）</strong>
             )}
-            <MathHtml className="min-w-0 flex-1 whitespace-pre-wrap text-sm text-ink-900">{pq.stem}</MathHtml>
+            <MathHtml
+              geographyLabels={geographySubject?.trim() === "地理"}
+              geographyChoiceGroup={groupedChoice}
+              className="min-w-0 flex-1 whitespace-pre-wrap text-sm text-ink-900"
+            >{displayStem}</MathHtml>
           </div>
           {/* 选项（始终显示，按数量自适应列数；答案高亮仅在展开时显示） */}
           {pq.options && pq.options.length > 0 && (
@@ -4453,11 +4519,11 @@ function EditQuestionRow({
             <div className="mt-2 space-y-1.5 animate-fade-in pl-4">
               <div className="text-xs p-2 rounded bg-emerald-50/40 border border-emerald-200">
                 <span className="font-bold text-emerald-700">答案：</span>
-                <MathHtml className="question-answer-content inline text-emerald-900">{pq.answer}</MathHtml>
+                <MathHtml className="question-answer-content inline text-emerald-900">{displayAnswer}</MathHtml>
               </div>
               <div className="text-xs p-2 rounded bg-gold-50/30 border border-gold-200">
                 <span className="font-bold text-gold-700">解析：</span>
-                <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
+                <MathHtml className="inline text-ink-800">{displayAnalysis}</MathHtml>
               </div>
             </div>
           )}

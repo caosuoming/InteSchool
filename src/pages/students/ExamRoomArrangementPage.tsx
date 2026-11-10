@@ -26,6 +26,7 @@ import type {
   ExamRoomConfig,
   ExamSeatOrder,
   ExamStudentSeatPreference,
+  ExamSpecialStudentRoomRule,
   ExamStudentSubjectSelection,
   ExamSubjectSetupMode,
   GradeCohort,
@@ -554,6 +555,7 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
     splitRoomIdsBySession: {},
     classRules: createRules(context, DEFAULT_SUBJECTS, rooms, studentSubjects),
     studentSubjects,
+    specialStudentRoomRules: [],
   };
   const withRoomGroups = { ...draft, groupRoomIds: normalizeGroupRoomIds(draft, context) };
   return normalizeExamRoomSharing(withRoomGroups, context);
@@ -665,6 +667,7 @@ function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContex
     splitRoomIdsBySession: structuredClone(arrangement.splitRoomIdsBySession || {}),
     classRules: structuredClone(arrangement.classRules),
     studentSubjects: structuredClone(arrangement.studentSubjects),
+    specialStudentRoomRules: structuredClone(arrangement.specialStudentRoomRules || []),
   }, context);
 }
 
@@ -1513,6 +1516,32 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     });
   };
 
+  const updateSpecialStudentRoomRule = (index: number, changes: Partial<ExamSpecialStudentRoomRule>) => {
+    updateDraft((current) => ({
+      ...current,
+      specialStudentRoomRules: (current.specialStudentRoomRules || []).map((rule, position) => (
+        position === index ? { ...rule, ...changes } : rule
+      )),
+    }));
+  };
+
+  const addSpecialStudentRoomRule = () => {
+    updateDraft((current) => ({
+      ...current,
+      specialStudentRoomRules: [
+        ...(current.specialStudentRoomRules || []),
+        { classId: context?.classes[0]?.id || "", studentId: "", subjects: [], roomId: "" },
+      ],
+    }));
+  };
+
+  const removeSpecialStudentRoomRule = (index: number) => {
+    updateDraft((current) => ({
+      ...current,
+      specialStudentRoomRules: (current.specialStudentRoomRules || []).filter((_, position) => position !== index),
+    }));
+  };
+
   const toggleStudentSubject = (studentId: string, subject: string) => {
     updateDraft((current) => ({
       ...current,
@@ -2142,6 +2171,62 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                     )}
                   </div>
                 </div>
+                <div className="mt-4 border-t border-ink-100 pt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-ink-800">特殊学生固定考场</div>
+                      <p className="mt-1 text-xs text-ink-500">按班级、学生和科目指定考场，优先于班级学科固定考场；同座位组合的科目必须指定同一考场。</p>
+                    </div>
+                    <Button variant="outline" onClick={addSpecialStudentRoomRule}><Plus className="h-4 w-4" />增加特殊学生</Button>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {(draft.specialStudentRoomRules || []).map((rule, index) => {
+                      const students = context.students.filter((student) => student.classId === rule.classId);
+                      const student = students.find((item) => item.id === rule.studentId);
+                      const selection = draft.studentSubjects.find((item) => item.studentId === rule.studentId);
+                      const availableSubjects = draft.subjects.filter((subject) => !selection?.absent && selection?.subjects.includes(subject));
+                      return (
+                        <div key={index} className="rounded-lg border border-ink-100 bg-paper p-3" role="group" aria-label={`特殊学生固定考场${index + 1}`}>
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)_auto] md:items-end">
+                            <label className="text-xs text-ink-600">
+                              <span className="mb-1 block">班级</span>
+                              <select aria-label={`特殊学生${index + 1}班级`} value={rule.classId} onChange={(event) => updateSpecialStudentRoomRule(index, { classId: event.target.value, studentId: "", subjects: [] })} className="h-9 w-full rounded-md border border-ink-200 bg-paper px-2 text-sm text-ink-800">
+                                {context.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                              </select>
+                            </label>
+                            <label className="text-xs text-ink-600">
+                              <span className="mb-1 block">学生</span>
+                              <select aria-label={`特殊学生${index + 1}学生`} value={rule.studentId} onChange={(event) => updateSpecialStudentRoomRule(index, { studentId: event.target.value, subjects: [] })} className="h-9 w-full rounded-md border border-ink-200 bg-paper px-2 text-sm text-ink-800">
+                                <option value="">选择学生</option>
+                                {students.map((item) => <option key={item.id} value={item.id}>{item.name}（{item.studentNo}）</option>)}
+                              </select>
+                            </label>
+                            <label className="text-xs text-ink-600">
+                              <span className="mb-1 block">固定考场</span>
+                              <select aria-label={`特殊学生${index + 1}固定考场`} value={rule.roomId} onChange={(event) => updateSpecialStudentRoomRule(index, { roomId: event.target.value })} className="h-9 w-full rounded-md border border-ink-200 bg-paper px-2 text-sm text-ink-800">
+                                <option value="">选择考场</option>
+                                {draft.rooms.map((room) => <option key={room.id} value={room.id}>{room.number || room.name}</option>)}
+                              </select>
+                            </label>
+                            <Button variant="ghost" size="icon" aria-label={`删除特殊学生${index + 1}`} onClick={() => removeSpecialStudentRoomRule(index)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                          </div>
+                          <div className="mt-3">
+                            <div className="mb-2 text-xs text-ink-600">指定科目{student ? `（${student.name}）` : ""}</div>
+                            <div className="flex flex-wrap gap-2" role="group" aria-label={`特殊学生${index + 1}科目`}>
+                              {availableSubjects.length > 0 ? availableSubjects.map((subject) => (
+                                <CheckboxPill key={subject} checked={rule.subjects.includes(subject)} label={subject} onClick={() => updateSpecialStudentRoomRule(index, {
+                                  subjects: rule.subjects.includes(subject)
+                                    ? rule.subjects.filter((item) => item !== subject)
+                                    : [...rule.subjects, subject],
+                                })} />
+                              )) : <span className="text-xs text-ink-400">请先选择参加考试的学生</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </Card>
 
 
@@ -2467,9 +2552,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                                 title={item.admissionNo}
                               >
                                 {showStudentSubject && <strong className="exam-class-arrangement-subject">
-                                  {subjectLines(majoritySubjectLabel ? studentSubjectLabel : item.subjectLabel).map((line, lineIndex) => (
-                                    <span key={`${lineIndex}-${line}`}>{line}</span>
-                                  ))}
+                                  {(majoritySubjectLabel ? studentSubjectLabel : item.subjectLabel).split(" / ").join("、")}
                                 </strong>}
                                 <span>{item.roomNumber || item.roomName} · {item.seatNo}号</span>
                                 <span>{item.roomLocation || item.roomName}</span>

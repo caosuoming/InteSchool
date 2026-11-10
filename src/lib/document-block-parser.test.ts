@@ -2464,7 +2464,7 @@ describe("geography paper extraction", () => {
     ].join("\n"), geographyConfig);
     const questions = blocks.filter((block) => block.type === "question");
     expect(questions).toHaveLength(2);
-    expect(questions.map((block) => block.answer)).toEqual(["（1）B\n（2）A", "（1）C\n（2）D"]);
+    expect(questions.map((block) => block.answer)).toEqual(["（1）B\n（2）A", "（3）C\n（4）D"]);
     expect(questions[0].content).toContain("材料甲");
     expect(questions[0].content).not.toContain("材料乙");
     expect(questions[1].content).toContain("材料乙");
