@@ -8,21 +8,11 @@ import {
   groupStudentArrangements,
 } from "./exam-arrangement-export";
 
-const { writeXlsxFile, toFile, jsPDF, html2canvas, pdfAddImage, pdfAddPage, pdfSave } = vi.hoisted(() => {
-  const html2canvas = vi.fn();
-  const pdfAddImage = vi.fn();
-  const pdfAddPage = vi.fn();
-  const pdfSave = vi.fn();
+const { writeXlsxFile, toFile, saveVectorExamPdf } = vi.hoisted(() => {
   return {
     writeXlsxFile: vi.fn(),
     toFile: vi.fn(),
-    html2canvas,
-    pdfAddImage,
-    pdfAddPage,
-    pdfSave,
-    jsPDF: vi.fn(function MockJsPdf() {
-      return { addImage: pdfAddImage, addPage: pdfAddPage, save: pdfSave };
-    }),
+    saveVectorExamPdf: vi.fn(),
   };
 });
 
@@ -30,8 +20,7 @@ vi.mock("write-excel-file/browser", () => ({
   default: writeXlsxFile,
 }));
 
-vi.mock("jspdf", () => ({ jsPDF }));
-vi.mock("html2canvas", () => ({ default: html2canvas }));
+vi.mock("./exam-vector-pdf", () => ({ saveVectorExamPdf }));
 
 function assignment(overrides: Partial<ExamSeatAssignment>): ExamSeatAssignment {
   return {
@@ -57,7 +46,6 @@ describe("groupDeskLabels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeXlsxFile.mockReturnValue({ toFile });
-    html2canvas.mockResolvedValue(document.createElement("canvas"));
   });
 
   it("merges different exam sessions assigned to the same physical desk", () => {
@@ -166,30 +154,14 @@ describe("groupDeskLabels", () => {
     ]);
   });
 
-  it("renders each selected preview page into a fixed-size PDF", async () => {
+  it("exports each preview page through the vector PDF renderer", async () => {
     const first = document.createElement("section");
     first.textContent = "第一页";
     const second = document.createElement("section");
     second.textContent = "第二页";
-
     await downloadExamPreviewPdf([first, second], "期末考试_考场安排", "A4");
-
-    expect(jsPDF).toHaveBeenCalledWith(expect.objectContaining({
-      orientation: "portrait",
-      unit: "mm",
-      format: [210, 297],
-    }));
-    expect(html2canvas).toHaveBeenCalledTimes(2);
-    expect(html2canvas).toHaveBeenNthCalledWith(1, expect.any(HTMLElement), expect.objectContaining({
-      scale: 3,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-    }));
-    expect(pdfAddImage).toHaveBeenCalledTimes(2);
-    expect(pdfAddImage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), "PNG", 0, 0, 210, 297, undefined, "FAST");
-    expect(pdfAddPage).toHaveBeenCalledTimes(1);
-    expect(pdfAddPage).toHaveBeenCalledWith([210, 297], "portrait");
-    expect(pdfSave).toHaveBeenCalledWith("期末考试_考场安排.pdf");
-    expect(document.body.querySelector('[aria-hidden="true"][style*="-100000px"]')).not.toBeInTheDocument();
+    expect(saveVectorExamPdf).toHaveBeenCalledWith([first, second], "期末考试_考场安排", 210, 297);
+    await downloadExamPreviewPdf([first], "桌贴", "8K");
+    expect(saveVectorExamPdf).toHaveBeenLastCalledWith([first], "桌贴", 260, 370);
   });
 });
