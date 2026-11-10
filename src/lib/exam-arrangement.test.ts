@@ -229,6 +229,57 @@ describe("generateExamAssignments", () => {
     expect(() => generateExamAssignments(plan, context)).toThrow(/固定考场规则引用了不存在的考场/);
   });
 
+  it("prioritizes special students over class fixed rooms and group room selections", () => {
+    const plan = input("subject");
+    plan.classRules[0].fixedSubjectRoomIds = { 化学: ["room-a"] };
+    plan.groupRoomIds = { "subject:化学": ["room-a"] };
+    plan.specialStudentRoomRules = [
+      { classId: "class-1", studentId: "student-2", subjects: ["化学"], roomId: "room-b" },
+    ];
+    const assignments = generateExamAssignments(plan, context);
+    expect(assignments.find((item) => item.studentId === "student-2" && item.subjectLabel === "化学")?.roomId).toBe("room-b");
+    expect(assignments.find((item) => item.studentId === "student-1" && item.subjectLabel === "化学")?.roomId).toBe("room-a");
+  });
+
+  it("supports multiple special rules and allocates reserved rooms before flexible students", () => {
+    const plan = input("subject");
+    plan.rooms = [
+      { id: "room-a", name: "第一考场", capacity: 1 },
+      { id: "room-b", name: "第二考场", capacity: 2 },
+    ];
+    plan.classRules = plan.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a", "room-b"], 化学: ["room-a", "room-b"] },
+    }));
+    plan.specialStudentRoomRules = [
+      { classId: "class-1", studentId: "student-2", subjects: ["化学"], roomId: "room-a" },
+      { classId: "class-1", studentId: "student-1", subjects: ["物理", "化学"], roomId: "room-b" },
+    ];
+    const assignments = generateExamAssignments(plan, context);
+    expect(assignments.filter((item) => item.studentId === "student-1").map((item) => item.roomId)).toEqual(["room-b", "room-b"]);
+    expect(assignments.find((item) => item.studentId === "student-2")?.roomId).toBe("room-a");
+  });
+
+  it("rejects invalid special-student rules and inconsistent shared-seat rooms", () => {
+    const plan = input("combination");
+    plan.sameSeatSubjectGroups = [["物理", "化学"]];
+    plan.specialStudentRoomRules = [
+      { classId: "class-1", studentId: "student-1", subjects: ["物理"], roomId: "room-a" },
+      { classId: "class-1", studentId: "student-1", subjects: ["化学"], roomId: "room-b" },
+    ];
+    expect(() => generateExamAssignments(plan, context)).toThrow(/共享座位.*不同考场/);
+    plan.specialStudentRoomRules[1].subjects = ["物理"];
+    expect(() => generateExamAssignments(plan, context)).toThrow(/冲突的固定考场/);
+    plan.specialStudentRoomRules = [{ classId: "class-2", studentId: "student-1", subjects: ["化学"], roomId: "room-a" }];
+    expect(() => generateExamAssignments(plan, context)).toThrow(/无效班级或学生/);
+    plan.specialStudentRoomRules = [{ classId: "class-1", studentId: "student-2", subjects: ["物理"], roomId: "room-a" }];
+    expect(() => generateExamAssignments(plan, context)).toThrow(/未参加的考试科目/);
+    plan.specialStudentRoomRules = [{ classId: "class-1", studentId: "student-1", subjects: ["化学"], roomId: "missing" }];
+    expect(() => generateExamAssignments(plan, context)).toThrow(/固定考场不存在/);
+    plan.specialStudentRoomRules = [{ classId: "class-1", studentId: "student-1", subjects: [], roomId: "room-a" }];
+    expect(() => generateExamAssignments(plan, context)).toThrow(/选择考试科目/);
+  });
+
   it("reports the first student that cannot fit into eligible rooms", () => {
     const constrained = input("combination");
     constrained.rooms = [{ id: "room-a", name: "单一考场", capacity: 1 }];

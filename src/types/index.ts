@@ -836,6 +836,14 @@ export interface ExamStudentSubjectSelection {
   seatPreference?: ExamStudentSeatPreference;
 }
 
+/** 指定一名学生的若干考试科目只能安排在对应考场。 */
+export interface ExamSpecialStudentRoomRule {
+  classId: string;
+  studentId: string;
+  subjects: string[];
+  roomId: string;
+}
+
 export interface ExamSeatAssignment {
   id: string;
   studentId: string;
@@ -886,6 +894,7 @@ export interface ExamArrangementInput {
   splitRoomIdsBySession?: Record<string, string[]>;
   classRules: ExamClassRoomRule[];
   studentSubjects: ExamStudentSubjectSelection[];
+  specialStudentRoomRules?: ExamSpecialStudentRoomRule[];
 }
 
 export interface ExamArrangement extends Omit<ExamArrangementInput, "id"> {
