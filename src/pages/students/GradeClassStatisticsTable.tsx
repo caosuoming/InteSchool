@@ -1,3 +1,5 @@
+import { GradeReportNotes } from "./GradeReportNotes";
+import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useEffect, useMemo, useState } from "react";
 import { GitCompareArrows, TableProperties } from "lucide-react";
 import { Card } from "@/components/ui/Card";
@@ -197,6 +199,7 @@ export function GradeClassStatisticsTable({
           </table>
         </div>
       )}
+      <GradeReportNotes notes={buildGradeReportNotes(exam, exam.settings, selectedClass?.classId)} />
     </Card>
   );
 }

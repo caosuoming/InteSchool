@@ -552,7 +552,7 @@ function GradePreprocessing({
       classStatisticsOptions,
     );
     await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-    await exportGradeClassStatisticsReport(report, selectedExam.name);
+    await exportGradeClassStatisticsReport(report, selectedExam.name, previewExam!);
   }, [classStatisticsOptions, previousExams, previewExam, selectedExam, teacherId]);
 
   const copy = async () => {

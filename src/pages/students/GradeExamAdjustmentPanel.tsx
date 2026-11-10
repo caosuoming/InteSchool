@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Copy, Download, History, Printer, Save, Search, Send, SlidersHorizontal, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Input, Select } from "@/components/ui/Input";
+import { Input, Select, Textarea } from "@/components/ui/Input";
 import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 import { gradeService } from "@/services/grade";
 import { toast } from "@/stores/ui";
@@ -149,6 +149,7 @@ export function GradeExamAdjustmentPanel({
 }: GradeExamAdjustmentPanelProps) {
   const [examName, setExamName] = useState(exam.name);
   const [examDate, setExamDate] = useState(exam.examDate || "");
+  const [examRemark, setExamRemark] = useState(exam.examRemark || "");
   const [metadataSaving, setMetadataSaving] = useState(false);
   const [accessPassword, setAccessPassword] = useState("");
   const [accessSaving, setAccessSaving] = useState(false);
@@ -177,10 +178,11 @@ export function GradeExamAdjustmentPanel({
   useEffect(() => {
     setExamName(exam.name);
     setExamDate(exam.examDate || "");
+    setExamRemark(exam.examRemark || "");
     setPublishToParents(Boolean(exam.publication?.publishToParents));
     setAccessPassword("");
     setOneTimePassword("");
-  }, [exam.id, exam.name, exam.examDate, exam.publication?.publishToParents]);
+  }, [exam.id, exam.name, exam.examDate, exam.examRemark, exam.publication?.publishToParents]);
 
   useEffect(() => {
     if (selectedStudentId && !exam.records.some((record) => record.studentId === selectedStudentId)) {
@@ -230,6 +232,7 @@ export function GradeExamAdjustmentPanel({
       const updated = await gradeService.updateExamMetadata(exam.id, {
         name: examName,
         examDate: examDate || undefined,
+        examRemark,
       });
       onExamUpdated(updated);
       toast.success("考试信息已保存", "后续统计表表头已同步更新");
@@ -376,6 +379,18 @@ export function GradeExamAdjustmentPanel({
         <Button variant="outline" onClick={() => void saveMetadata()} loading={metadataSaving} disabled={published || readOnly}>
           保存考试信息
         </Button>
+        <div className="md:col-span-3">
+          <Textarea
+            label="考试备注"
+            value={examRemark}
+            maxLength={2000}
+            rows={3}
+            disabled={published || readOnly}
+            placeholder="例如：部分班级或学科使用了不同试卷"
+            hint="最多 2000 字，保存后显示在成绩统计各表下方及导出表格中。"
+            onChange={(event) => setExamRemark(event.target.value)}
+          />
+        </div>
       </div>
 
         <div className="space-y-4 border-t border-ink-100 p-5">

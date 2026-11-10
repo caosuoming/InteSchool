@@ -1,3 +1,4 @@
+import { GradeReportNotes } from "./GradeReportNotes";
 import { useEffect, useState } from "react";
 import { BarChart3, ShieldCheck } from "lucide-react";
 import { useParams } from "react-router";
@@ -173,6 +174,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
           均分按实际有分数的学生计算；分组平均和全校平均按学生人数加权，分差为同类别班级均分的最大值减最小值。
         </div>
       </div>
+      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }
@@ -242,6 +244,7 @@ function TotalScoreTable({ bundle }: { bundle: GradePublishedReportBundle }) {
           </tbody>
         </table>
       </div>
+      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }
@@ -296,6 +299,7 @@ function SubjectTables({ bundle }: { bundle: GradePublishedReportBundle }) {
           </table>
         </section>
       ))}
+      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }
@@ -364,6 +368,7 @@ function ElectiveTables({ bundle }: { bundle: GradePublishedReportBundle }) {
           </table>
         </section>
       ))}
+      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }
@@ -409,6 +414,7 @@ function TotalScoreRankingTables({ bundle }: { bundle: GradePublishedReportBundl
           </table>
         </section>
       ))}
+      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }

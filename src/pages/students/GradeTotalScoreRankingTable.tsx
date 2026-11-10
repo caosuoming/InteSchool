@@ -1,3 +1,5 @@
+import { GradeReportNotes } from "./GradeReportNotes";
+import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useMemo, useRef, useState } from "react";
 import { Download, Trophy } from "lucide-react";
 import type {
@@ -101,7 +103,7 @@ export function GradeTotalScoreRankingTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeTotalScoreRankingReport(report, exam.name);
+      await exportGradeTotalScoreRankingReport(report, exam.name, buildGradeReportNotes(exam, settings));
       toast.success("总分前 N 名已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);
@@ -218,6 +220,7 @@ export function GradeTotalScoreRankingTable({
           {autoSaving && <div className="text-xs text-emerald-700">正在自动保存表五名次数…</div>}
         </div>
       )}
+      <GradeReportNotes notes={buildGradeReportNotes(exam, settings)} />
     </Card>
   );
 }
