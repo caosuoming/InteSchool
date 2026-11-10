@@ -1129,12 +1129,14 @@ describe("ExamPaperEditorPage preview", () => {
     renderEditorPage();
     await screen.findByLabelText("文档名");
     fireEvent.click(screen.getAllByTitle("题型上移")[1]);
+    fireEvent.change(screen.getByLabelText("单选题题型名称"), { target: { value: "客观选择题" } });
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => {
       expect(mocks.updatePaper).toHaveBeenCalledWith(paper.id, expect.objectContaining({
         questionTypeOrder: expect.arrayContaining(["essay", "single"]),
+        questionTypeLabels: { single: "客观选择题" },
       }));
     });
     const savedOrder = mocks.updatePaper.mock.calls.at(-1)![1].questionTypeOrder as string[];
@@ -1142,12 +1144,15 @@ describe("ExamPaperEditorPage preview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
     await screen.findByTestId("exam-paper-preview");
+    expect(screen.getByText("二、客观选择题")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下载" }));
     fireEvent.click(screen.getByLabelText("学生用卷（无答案）"));
     fireEvent.click(screen.getByRole("button", { name: "下载 2 个版本" }));
     await waitFor(() => expect(mocks.downloadExamPaperDocxVariants).toHaveBeenCalledOnce());
     expect(mocks.downloadExamPaperDocxVariants.mock.calls[0][0].questionTypeOrder.slice(0, 2))
       .toEqual(["essay", "single"]);
+    expect(mocks.downloadExamPaperDocxVariants.mock.calls[0][0].questionTypeLabels)
+      .toEqual({ single: "客观选择题" });
   });
 
   it("creates an empty project, assigns existing questions, and saves the project structure", async () => {

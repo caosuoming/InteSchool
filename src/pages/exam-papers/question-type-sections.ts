@@ -25,7 +25,17 @@ export function getQuestionTypeSections(
 
 const sectionNumerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
 
-export function getQuestionTypeHeading(type: string, index: number): string {
+export function getQuestionTypeDisplayName(type: string, labels: Readonly<Record<string, string>> = {}): string {
+  const custom = labels[type]?.trim();
+  if (custom) return custom;
   const label = getDefaultQuestionTypeLabel(type);
-  return `${sectionNumerals[index] || index + 1}、${label}${label.endsWith("题") ? "" : "题"}`;
+  return `${label}${label.endsWith("题") ? "" : "题"}`;
+}
+
+export function getQuestionTypeHeading(
+  type: string,
+  index: number,
+  labels: Readonly<Record<string, string>> = {},
+): string {
+  return `${sectionNumerals[index] || index + 1}、${getQuestionTypeDisplayName(type, labels)}`;
 }

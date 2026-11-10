@@ -58,6 +58,23 @@ describe("exam-paper export locks", () => {
     });
   });
 
+  it("invalidates unexported answer sheets when a type heading changes and locks it after export", async () => {
+    await runWithState(state(), async () => {
+      const created = await paper();
+      await examPaperService.markAnswerSheetCreated(created.id);
+      const renamed = await examPaperService.updatePaper(created.id, {
+        questionTypeLabels: { single: "客观题" },
+      });
+      expect(renamed.questionTypeLabels).toEqual({ single: "客观题" });
+      expect(renamed.hasAnswerSheet).toBeUndefined();
+      await examPaperService.markAnswerSheetCreated(created.id);
+      await examPaperService.markAnswerSheetExported(created.id);
+      await expect(examPaperService.updatePaper(created.id, {
+        questionTypeLabels: { single: "选择题" },
+      })).rejects.toThrow("不能修改题型标题");
+    });
+  });
+
   it("cannot void an already published answer sheet", async () => {
     await runWithState(state(), async () => {
       const created = await paper();

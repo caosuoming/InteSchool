@@ -1725,6 +1725,8 @@ export interface ExamPaper {
   layoutMode?: "grouped" | "flat";
   /** 按题型编排时的题型显示顺序。 */
   questionTypeOrder?: string[];
+  /** 题型标题文字覆盖，仅用于显示，不改变题目类型或编号。 */
+  questionTypeLabels?: Record<string, string>;
   /** 按项目模式中用户创建的有序项目，支持空项目。 */
   projects?: ExamPaperProject[];
   /** 作业/考试管理中的归属；旧试卷按作业处理。 */

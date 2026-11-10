@@ -80,6 +80,7 @@ export interface ExamPaperInput {
   questionCategory?: string;
   layoutMode?: "grouped" | "flat";
   questionTypeOrder?: string[];
+  questionTypeLabels?: Record<string, string>;
   classIds?: string[];
   managementCategory?: "homework" | "exam";
   assignedDate?: string;
@@ -284,6 +285,7 @@ export const examPaperService = {
       questionCategory: input.questionCategory,
       layoutMode: input.layoutMode || "grouped",
       questionTypeOrder: input.questionTypeOrder,
+      questionTypeLabels: input.questionTypeLabels,
       classIds: input.classIds || [],
       managementCategory: input.managementCategory || "homework",
       assignedDate: input.assignedDate,

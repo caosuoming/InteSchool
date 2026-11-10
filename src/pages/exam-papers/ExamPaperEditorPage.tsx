@@ -112,7 +112,7 @@ import { treeNameMap } from "@/lib/basket-audience";
 import { classAudienceLabel, resolveClassAudienceStudents } from "@/lib/class-audience";
 import { isExamPaperStructureLocked, isDocumentStructureLocked } from "@/lib/document-resource";
 import { getProjectSections } from "./project-sections";
-import { DEFAULT_QUESTION_TYPE_ORDER, getQuestionTypeHeading, getQuestionTypeSections } from "./question-type-sections";
+import { DEFAULT_QUESTION_TYPE_ORDER, getQuestionTypeDisplayName, getQuestionTypeHeading, getQuestionTypeSections } from "./question-type-sections";
 import { basketsForAudience, countSelectedQuestionFacets, findSimilarAssignmentQuestions, selectAssignmentQuestions } from "./assignment-selection";
 import type { KnowledgeMastery } from "@/services/analytics";
 
@@ -182,12 +182,17 @@ interface QuestionGroup {
 const sectionNumerals = ["一", "二", "三", "四", "五", "六", "七", "八"];
 const getGroupHeading = getQuestionTypeHeading;
 
-const groupByType = (questions: ExamPaperQuestion[], qMap: Record<string, Question>, order?: string[]): QuestionGroup[] => {
+const groupByType = (
+  questions: ExamPaperQuestion[],
+  qMap: Record<string, Question>,
+  order?: string[],
+  labels?: Record<string, string>,
+): QuestionGroup[] => {
   const indices = new Map(questions.map((question, index) => [question.id, index]));
   let displayIndex = 0;
   return getQuestionTypeSections(questions, qMap, order).map((section, groupIndex) => ({
     type: section.type,
-    label: getGroupHeading(section.type, groupIndex),
+    label: getGroupHeading(section.type, groupIndex, labels),
     questions: section.questions.map((pq) => ({
       pq,
       index: indices.get(pq.id)!,
@@ -218,6 +223,7 @@ interface ExamPaperNavigationDraft {
   contentBlocks: ExtractedDocumentBlock[];
   layoutMode: "grouped" | "flat";
   questionTypeOrder: string[];
+  questionTypeLabels: Record<string, string>;
   projects: ExamPaperProject[];
   selectedClassIds: string[];
   questions: Record<string, Question>;
@@ -243,6 +249,7 @@ type ExamPaperSaveState = Pick<
   | "contentBlocks"
   | "layoutMode"
   | "questionTypeOrder"
+  | "questionTypeLabels"
   | "projects"
 >;
 
@@ -264,6 +271,7 @@ function examPaperSaveStateFromPaper(paper: ExamPaper): ExamPaperSaveState {
       contentBlocks: paper.contentBlocks || [],
       layoutMode: paper.layoutMode || "grouped",
       questionTypeOrder: paper.questionTypeOrder || [...DEFAULT_QUESTION_TYPE_ORDER],
+      questionTypeLabels: paper.questionTypeLabels || {},
       projects: paper.projects || [],
     }),
   };
@@ -346,6 +354,7 @@ export default function ExamPaperEditorPage() {
 
   // 大题型顺序（编辑模式）
   const [groupOrder, setGroupOrder] = useState<string[]>([...DEFAULT_QUESTION_TYPE_ORDER]);
+  const [groupLabels, setGroupLabels] = useState<Record<string, string>>({});
   const [collapsedGroupTypes, setCollapsedGroupTypes] = useState<Set<string>>(new Set());
   const [collapsedHeadingIds, setCollapsedHeadingIds] = useState<Set<string>>(new Set());
 
@@ -576,6 +585,7 @@ export default function ExamPaperEditorPage() {
       setContentBlocks(nextContentBlocks);
       setLayoutMode(draft?.layoutMode ?? p.layoutMode ?? "grouped");
       setGroupOrder(draft?.questionTypeOrder ?? p.questionTypeOrder ?? [...DEFAULT_QUESTION_TYPE_ORDER]);
+      setGroupLabels(draft?.questionTypeLabels ?? p.questionTypeLabels ?? {});
       setProjects(draft?.projects ?? p.projects ?? []);
       setSelectedClassIds(draft?.selectedClassIds ?? p.classIds ?? []);
       setPrepPasswordOpen(false);
@@ -923,6 +933,7 @@ export default function ExamPaperEditorPage() {
       contentBlocks,
       layoutMode,
       questionTypeOrder: groupOrder,
+      questionTypeLabels: groupLabels,
       projects,
       selectedClassIds,
       questions,
@@ -934,6 +945,7 @@ export default function ExamPaperEditorPage() {
     grade,
     layoutMode,
     groupOrder,
+    groupLabels,
     projects,
     paper,
     paperQuestions,
@@ -1351,7 +1363,7 @@ export default function ExamPaperEditorPage() {
     classIds: selectedClassIds,
     studentIds: [],
     typeId: typeId || undefined,
-    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, questionTypeOrder: groupOrder, projects }),
+    ...(isStructureLocked ? {} : { contentBlocks, layoutMode, questionTypeOrder: groupOrder, questionTypeLabels: groupLabels, projects }),
   }), [
     contentBlocks,
     description,
@@ -1360,6 +1372,7 @@ export default function ExamPaperEditorPage() {
     isStructureLocked,
     layoutMode,
     groupOrder,
+    groupLabels,
     projects,
     paperQuestions,
     schoolYear,
@@ -1389,6 +1402,7 @@ export default function ExamPaperEditorPage() {
       setContentBlocks(structuredClone(savedDraft.contentBlocks || []));
       setLayoutMode(savedDraft.layoutMode || "grouped");
       setGroupOrder(savedDraft.questionTypeOrder || [...DEFAULT_QUESTION_TYPE_ORDER]);
+      setGroupLabels(savedDraft.questionTypeLabels || {});
       setProjects(structuredClone(savedDraft.projects || []));
     }
     toast.success("已撤销未保存修改");
@@ -1514,6 +1528,7 @@ export default function ExamPaperEditorPage() {
         contentBlocks,
         layoutMode,
         questionTypeOrder: groupOrder,
+        questionTypeLabels: groupLabels,
         projects,
       }, questions, downloadModes);
       const updated = await examPaperService.markPaperDownloaded(paper.id);
@@ -2033,7 +2048,7 @@ export default function ExamPaperEditorPage() {
                 )}
               />
             ) : layoutMode === "grouped" ? (
-              groupByType(paperQuestions, questions, groupOrder).flatMap((group, groupIndex) => {
+              groupByType(paperQuestions, questions, groupOrder, groupLabels).flatMap((group, groupIndex) => {
                 const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
                 return [
                   <PreviewQuestionPair
@@ -2041,7 +2056,7 @@ export default function ExamPaperEditorPage() {
                     leftClassName="pt-3 pb-2"
                     left={(
                       <div className="flex items-center gap-3 border-b border-ink-200 pb-2">
-                        <h2 className="font-serif text-lg font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
+                        <h2 className="font-serif text-lg font-bold text-ink-900">{group.label}</h2>
                         <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
                         <span className="text-sm font-medium text-gold-600">共 {groupScore} 分</span>
                       </div>
@@ -2721,7 +2736,7 @@ export default function ExamPaperEditorPage() {
               />
             ) : layoutMode === "grouped" ? (
               <div className="space-y-6">
-                {groupByType(paperQuestions, questions, groupOrder).map((group, groupIndex, groups) => {
+                {groupByType(paperQuestions, questions, groupOrder, groupLabels).map((group, groupIndex, groups) => {
                   const groupScore = group.questions.reduce((sum, item) => sum + item.pq.score, 0);
                   const commonGroupScore = group.questions.every((item) => item.pq.score === group.questions[0]?.pq.score)
                     ? group.questions[0]?.pq.score ?? null
@@ -2739,7 +2754,7 @@ export default function ExamPaperEditorPage() {
                             return next;
                           })}
                           className="rounded p-1 text-ink-400 hover:bg-ink-50 hover:text-gold-700"
-                          aria-label={`${groupCollapsed ? "展开" : "折叠"}${getGroupHeading(group.type, groupIndex)}`}
+                          aria-label={`${groupCollapsed ? "展开" : "折叠"}${group.label}`}
                           title={groupCollapsed ? "展开题目" : "折叠题目"}
                         >
                           {groupCollapsed
@@ -2764,13 +2779,23 @@ export default function ExamPaperEditorPage() {
                             <ChevronDown className="w-3 h-3" />
                           </button>
                         </div>}
-                        <h2 className="font-serif text-base font-bold text-ink-900">{getGroupHeading(group.type, groupIndex)}</h2>
+                        <div className="flex min-w-0 items-center gap-1 font-serif text-base font-bold text-ink-900">
+                          <span className="shrink-0">{sectionNumerals[groupIndex] || groupIndex + 1}、</span>
+                          <Input
+                            aria-label={`${getQuestionTypeDisplayName(group.type)}题型名称`}
+                            value={groupLabels[group.type] ?? getQuestionTypeDisplayName(group.type)}
+                            onChange={(event) => setGroupLabels((previous) => ({ ...previous, [group.type]: event.target.value }))}
+                            disabled={isEditingLocked}
+                            maxLength={80}
+                            className="h-8 w-40 min-w-0 font-serif text-base font-bold"
+                          />
+                        </div>
                         <span className="text-xs text-ink-500">{group.questions.length} 题</span>
                         <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-ink-500">每题</span>
                           <Input
-                            aria-label={`${getGroupHeading(group.type, groupIndex)}统一分值`}
+                            aria-label={`${group.label}统一分值`}
                             type="number"
                             min="0"
                             step="0.5"
@@ -2796,7 +2821,7 @@ export default function ExamPaperEditorPage() {
                           onClick={() => openAddQuestion({
                             kind: "group",
                             groupType: group.type,
-                            label: getGroupHeading(group.type, groupIndex),
+                            label: group.label,
                           })}
                         >
                           <Plus className="h-3.5 w-3.5" />
