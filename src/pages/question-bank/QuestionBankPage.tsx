@@ -517,34 +517,73 @@ export default function QuestionBankPage({
   useEffect(() => {
     if (!teacher) return;
     let cancelled = false;
-    const load = async () => {
-      const results = await Promise.allSettled([
-        isTreeEnabled("chapter") ? knowledgeService.getChapterTree(teacher.id, false) : Promise.resolve(null),
-        isTreeEnabled("knowledge") ? knowledgeService.getKnowledgeTree(teacher.id, false) : Promise.resolve(null),
-        isTreeEnabled("method") ? knowledgeService.getMethodTree(teacher.id, false) : Promise.resolve(null),
-        isTreeEnabled("error") ? knowledgeService.getErrorReasonTree(teacher.id, false) : Promise.resolve(null),
-        basketService.listBaskets(teacher.id),
-        classService.listMyClasses(teacher.schoolId, teacher.id),
-        classService.listMyStudents(teacher.schoolId, teacher.id),
-      ] as const);
-      if (cancelled) return;
-      const [ch, kp, methods, errors, bs, allClasses, stus] = results;
-      const labels = ["章节课", "知识点", "思想方法", "错因库", "资源篮", "班级", "学生"];
-      setDirectoryLoadErrors(results.flatMap((result, index) => result.status === "rejected" ? [labels[index]] : []));
-      setChapterTree(ch.status === "fulfilled" ? ch.value : null);
-      setKnowledgeTree(kp.status === "fulfilled" ? kp.value : null);
-      setMethodTree(methods.status === "fulfilled" ? methods.value : null);
-      setErrorTree(errors.status === "fulfilled" ? errors.value : null);
-      setBaskets(bs.status === "fulfilled" ? bs.value.map((b) => ({ id: b.id, name: b.name, isDefault: b.isDefault, questionIds: b.questionIds })) : []);
-      const classes = allClasses.status === "fulfilled" ? allClasses.value : [];
-      setSchoolClasses(classes.filter((item): item is SchoolClass => item.type === "school"));
-      setPersonalClasses(classes.filter((item): item is PersonalClass => item.type === "personal"));
-      setStudents(stus.status === "fulfilled" ? stus.value : []);
-      setChapterMap(ch.status === "fulfilled" && ch.value ? treeNameMap(ch.value) : new Map());
-      setKnowledgeMap(kp.status === "fulfilled" && kp.value ? treeNameMap(kp.value) : new Map());
-      setMethodMap(methods.status === "fulfilled" && methods.value ? treeNameMap(methods.value) : new Map());
+    setDirectoryLoadErrors([]);
+
+    // Show each directory as soon as its own request resolves. Class, student and
+    // basket metadata must not hold back the visible knowledge tree.
+    const loadTree = (
+      enabled: boolean,
+      label: string,
+      request: () => Promise<TreeNode>,
+      update: (tree: TreeNode | null) => void,
+    ) => {
+      update(null);
+      if (!enabled) return;
+      void request().then((tree) => {
+        if (!cancelled) update(tree);
+      }).catch(() => {
+        if (cancelled) return;
+        update(null);
+        setDirectoryLoadErrors((errors) => [...errors, label]);
+      });
     };
-    void load();
+
+    loadTree(isTreeEnabled("chapter"), "章节课",
+      () => knowledgeService.getChapterTree(teacher.id, false),
+      (tree) => {
+        setChapterTree(tree);
+        setChapterMap(tree ? treeNameMap(tree) : new Map());
+      });
+    loadTree(isTreeEnabled("knowledge"), "知识点",
+      () => knowledgeService.getKnowledgeTree(teacher.id, false),
+      (tree) => {
+        setKnowledgeTree(tree);
+        setKnowledgeMap(tree ? treeNameMap(tree) : new Map());
+      });
+    loadTree(isTreeEnabled("method"), "思想方法",
+      () => knowledgeService.getMethodTree(teacher.id, false),
+      (tree) => {
+        setMethodTree(tree);
+        setMethodMap(tree ? treeNameMap(tree) : new Map());
+      });
+    loadTree(isTreeEnabled("error"), "错因库",
+      () => knowledgeService.getErrorReasonTree(teacher.id, false),
+      setErrorTree);
+
+    const reportMetadataError = (label: string) => {
+      if (!cancelled) setDirectoryLoadErrors((errors) => [...errors, label]);
+    };
+    // Auxiliary metadata is independent of the directory requests.
+    void basketService.listBaskets(teacher.id)
+      .then((items) => {
+        if (!cancelled) setBaskets(items.map((basket) => ({
+          id: basket.id, name: basket.name, isDefault: basket.isDefault,
+          questionIds: basket.questionIds,
+        })));
+      }).catch(() => { if (!cancelled) setBaskets([]); reportMetadataError("资源篮"); });
+    void classService.listMyClasses(teacher.schoolId, teacher.id)
+      .then((classes) => {
+        if (cancelled) return;
+        setSchoolClasses(classes.filter((item): item is SchoolClass => item.type === "school"));
+        setPersonalClasses(classes.filter((item): item is PersonalClass => item.type === "personal"));
+      }).catch(() => {
+        if (!cancelled) { setSchoolClasses([]); setPersonalClasses([]); }
+        reportMetadataError("班级");
+      });
+    void classService.listMyStudents(teacher.schoolId, teacher.id)
+      .then((items) => { if (!cancelled) setStudents(items); })
+      .catch(() => { if (!cancelled) setStudents([]); reportMetadataError("学生"); });
+
     return () => { cancelled = true; };
   }, [teacher, directoryReloadToken, isTreeEnabled]);
 
