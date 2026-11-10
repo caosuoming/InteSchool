@@ -123,8 +123,10 @@ describe("classroomHomeworkAnswers", () => {
     await runWithState(s, async () => {
       expect(classroomHomeworkAnswers("school-1", "class-1")).toEqual([]);
     });
-    s.homeworkClassOverviewRecords.push({ schoolId: "school-1", classId: "class-1", teacherId: "teacher-1",
-      homeworkDate: DATE, attendanceTaken: true } as typeof s.homeworkClassOverviewRecords[number]);
+    (s.homeworkClassOverviewRecords as Array<{
+      schoolId: string; classId: string; teacherId: string; homeworkDate: string; attendanceTaken: boolean;
+    }>).push({ schoolId: "school-1", classId: "class-1", teacherId: "teacher-1",
+      homeworkDate: DATE, attendanceTaken: true });
     s.classroomHomeworks[0].publishAt = "2099-01-01T00:00:00Z";
     await runWithState(s, async () => {
       expect(classroomHomeworkAnswers("school-1", "class-1")).toEqual([]);
