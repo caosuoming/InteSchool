@@ -1,3 +1,10 @@
+import {
+  geographyPaperQuestionCount,
+  isGeographyChoiceGroup,
+  renumberGeographyPaperAnswer,
+  renumberGeographyPaperStem,
+  splitGeographyChoiceGroup,
+} from "@/lib/geography-paper-layout";
 import { getProjectSections } from "@/pages/exam-papers/project-sections";
 import { getQuestionTypeHeading, getQuestionTypeSections } from "@/pages/exam-papers/question-type-sections";
 import {
@@ -13,7 +20,6 @@ import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
-import { alignGeographyGroupAnswerNumbers } from "@/lib/geography-answer-numbering";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 import { normalizePlainMathText } from "@/lib/plain-math";
 import {
@@ -1047,15 +1053,38 @@ async function appendExamQuestion(
   number: number,
   mode: DocumentDownloadMode,
   markMultiple: boolean,
+  subject?: string,
   stemOverride?: string,
 ): Promise<void> {
   const stem = stemOverride || question.stem || linkedQuestion?.stem || "";
   const options = question.options?.length ? question.options : linkedQuestion?.options;
-  const answer = alignGeographyGroupAnswerNumbers(stem, question.answer || linkedQuestion?.answer || "暂无答案");
-  const analysis = alignGeographyGroupAnswerNumbers(stem, question.analysis || linkedQuestion?.analysis || "暂无解析");
+  const answer = renumberGeographyPaperAnswer(
+    stem, question.answer || linkedQuestion?.answer || "暂无答案", question.type, subject, number,
+  );
+  const analysis = renumberGeographyPaperAnswer(
+    stem, question.analysis || linkedQuestion?.analysis || "暂无解析", question.type, subject, number,
+  );
+  const displayStem = renumberGeographyPaperStem(stem, question.type, subject, number);
+  const group = isGeographyChoiceGroup(stem, question.type, subject)
+    ? splitGeographyChoiceGroup(displayStem) : null;
 
-  children.push(
-    new Paragraph({
+  if (group) {
+    if (group.introduction) {
+      children.push(new Paragraph({
+        children: await documentRichChildren(group.introduction, { size: 24, font: "楷体" }),
+        alignment: AlignmentType.LEFT,
+        spacing: { before: 240, after: 120, line: 360 },
+      }));
+    }
+    for (const subquestion of group.questions) {
+      children.push(new Paragraph({
+        children: await documentRichChildren(subquestion, { size: 24 }),
+        alignment: AlignmentType.LEFT,
+        spacing: { before: 160, after: 120, line: 360 },
+      }));
+    }
+  } else {
+    children.push(new Paragraph({
       children: [
         textRun(`${number}. `, { bold: true, size: 24 }),
         ...(markMultiple && needsMultipleChoiceMarker(question.type === "multiple" || linkedQuestion?.type === "multiple", stem)
@@ -1065,8 +1094,8 @@ async function appendExamQuestion(
       ],
       alignment: AlignmentType.LEFT,
       spacing: { before: 240, after: 120, line: 360 },
-    }),
-  );
+    }));
+  }
 
   if (options?.length) {
     children.push(...await createOptionParagraphs(options));
@@ -1136,21 +1165,23 @@ export async function buildExamPaperDocxBlob(
           }
           continue;
         }
-        questionNumber += 1;
         const linkedQuestionId = question.questionId || block.questionId;
         const linkedQuestion = linkedQuestionId ? questionsById[linkedQuestionId] : undefined;
         const stem = block.content || question.stem || linkedQuestion?.stem || "";
-        const answer = alignGeographyGroupAnswerNumbers(stem, question.answer || linkedQuestion?.answer || "暂无答案");
-        const analysis = alignGeographyGroupAnswerNumbers(stem, question.analysis || linkedQuestion?.analysis || "暂无解析");
-        solutions.push({ number: questionNumber, answer, analysis });
+        const startNumber = questionNumber + 1;
+        questionNumber += geographyPaperQuestionCount(stem, question.type, paper.subject);
+        const answer = renumberGeographyPaperAnswer(stem, question.answer || linkedQuestion?.answer || "暂无答案", question.type, paper.subject, startNumber);
+        const analysis = renumberGeographyPaperAnswer(stem, question.analysis || linkedQuestion?.analysis || "暂无解析", question.type, paper.subject, startNumber);
+        solutions.push({ number: startNumber, answer, analysis });
         if (mode !== "answers") {
           await appendExamQuestion(
             children,
             question,
             linkedQuestion,
-            questionNumber,
+            startNumber,
             mode,
             markMultiple,
+            paper.subject,
             block.content,
           );
         }
@@ -1198,22 +1229,24 @@ export async function buildExamPaperDocxBlob(
         children.push(createHeading(plainDocumentText(section.heading)));
       }
       for (const question of section.questions) {
-        questionNumber += 1;
         const linkedQuestion = question.questionId ? questionsById[question.questionId] : undefined;
         const stem = question.stem || linkedQuestion?.stem || "";
+        const startNumber = questionNumber + 1;
+        questionNumber += geographyPaperQuestionCount(stem, question.type, paper.subject);
         solutions.push({
-          number: questionNumber,
-          answer: alignGeographyGroupAnswerNumbers(stem, question.answer || linkedQuestion?.answer || "暂无答案"),
-          analysis: alignGeographyGroupAnswerNumbers(stem, question.analysis || linkedQuestion?.analysis || "暂无解析"),
+          number: startNumber,
+          answer: renumberGeographyPaperAnswer(stem, question.answer || linkedQuestion?.answer || "暂无答案", question.type, paper.subject, startNumber),
+          analysis: renumberGeographyPaperAnswer(stem, question.analysis || linkedQuestion?.analysis || "暂无解析", question.type, paper.subject, startNumber),
         });
         if (mode !== "answers") {
           await appendExamQuestion(
             children,
             question,
             linkedQuestion,
-            questionNumber,
+            startNumber,
             mode,
             markMultiple,
+            paper.subject,
           );
         }
       }

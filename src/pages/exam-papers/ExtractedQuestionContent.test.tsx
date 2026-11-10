@@ -32,6 +32,25 @@ describe("ExtractedQuestionContent", () => {
     expect(screen.getByText("答案：").parentElement).toHaveTextContent("答案：A");
   });
 
+  it("uses consecutive subquestion numbers instead of a duplicate group number", () => {
+    render(
+      <ExtractedQuestionContent
+        number={3}
+        geographySubject="地理"
+        questionType="single"
+        stem={"读图完成8—9题。\n8. 气候\nA. 甲\nB. 乙\n9. 地貌"}
+        answer={"（8）A\n（9）B"}
+        analysis={"（8）解析甲\n（9）解析乙"}
+      />,
+    );
+    const group = screen.getByRole("button", { name: "第 3 至 4 题，点击展开答案和解析" });
+    expect(group).toHaveTextContent("3. 气候");
+    expect(group).toHaveTextContent("4. 地貌");
+    expect(group).not.toHaveTextContent("8. 气候");
+    fireEvent.click(group);
+    expect(screen.getByText(/（3）A/)).toHaveTextContent("（3）A （4）B");
+  });
+
   it("supports keyboard expansion", () => {
     render(
       <ExtractedQuestionContent
