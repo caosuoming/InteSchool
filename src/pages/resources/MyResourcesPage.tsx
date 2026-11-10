@@ -15,7 +15,6 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService, loadEditableCoursewarePptSlides } from "@/services/lessonCourseware";
-import { extractStoredFile } from "@/services/api";
 import { BoardLibrary } from "./BoardLibrary";
 import { questionService } from "@/services/question";
 import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
