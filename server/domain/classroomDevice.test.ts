@@ -109,7 +109,7 @@ async function bindClassOne() {
 }
 
 describe("classroomDeviceService", () => {
-  it("only includes the selected class's eligible homework answers in the device snapshot", async () => {
+  it("only exposes reviewed homework answers from the selected class in the device snapshot", async () => {
     const state = makeState();
     state.examPapers = [
       {
@@ -125,7 +125,7 @@ describe("classroomDeviceService", () => {
     ];
     state.scannerPages = [
       { schoolId: "school-1", sheetType: "paper", sheetId: "paper-class-1", createdAt: CREATED_AT, reviewedAt: CREATED_AT },
-      { schoolId: "school-1", sheetType: "paper", sheetId: "paper-class-2", createdAt: CREATED_AT },
+      { schoolId: "school-1", sheetType: "paper", sheetId: "paper-class-2", createdAt: CREATED_AT, reviewedAt: CREATED_AT },
     ];
     await runWithState(state, async () => {
       await bindClassOne();
