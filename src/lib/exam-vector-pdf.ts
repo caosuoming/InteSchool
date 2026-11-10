@@ -34,7 +34,9 @@ export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, 
   if (!fontResponse.ok) throw new Error("无法加载 PDF 中文字体");
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
-  const font = await pdf.embedFont(await fontResponse.arrayBuffer(), { subset: true });
+  // fontkit's CFF/OpenType subsetting produces a PDF that loses Chinese glyphs
+  // in MuPDF. Embed the original CJK font program for reliable printing.
+  const font = await pdf.embedFont(await fontResponse.arrayBuffer(), { subset: false });
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
   Object.assign(host.style, { position: "fixed", left: "-100000px", top: "0", width: `${widthMm}mm`, background: "white", pointerEvents: "none" });
