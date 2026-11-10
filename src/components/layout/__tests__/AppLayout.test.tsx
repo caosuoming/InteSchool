@@ -93,6 +93,8 @@ describe("AppLayout", () => {
       switchSubject,
     });
     render(<MemoryRouter initialEntries={["/dashboard"]}><AppLayout>测试</AppLayout></MemoryRouter>);
+    expect(screen.getByLabelText("当前学科：数学")).toBeInTheDocument();
+    expect(screen.getByText("平台管理员")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /测试学校/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: /另一所学校/ })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("搜索学校"), { target: { value: "OTHER" } });
@@ -101,6 +103,39 @@ describe("AppLayout", () => {
     fireEvent.click(screen.getByRole("button", { name: /测试学校/ }));
     fireEvent.click(screen.getByRole("button", { name: "地理" }));
     await waitFor(() => expect(switchSubject).toHaveBeenCalledWith("地理"));
+  });
+
+  it("shows the active subject under the school and updates it when switching subjects", async () => {
+    let activeAffiliation = { ...affiliation, subject: "数学", subjects: ["数学", "物理"] };
+    const switchSubject = vi.fn().mockImplementation(async (subject: string) => {
+      activeAffiliation = { ...activeAffiliation, subject };
+      useAuthStore.setState((state) => ({ teacher: { ...state.teacher!, subject } }));
+      return true;
+    });
+    useAuthStore.setState({
+      getAffiliations: () => [activeAffiliation],
+      getCurrentAffiliation: () => activeAffiliation,
+      switchSubject,
+    });
+
+    render(<MemoryRouter initialEntries={["/dashboard"]}><AppLayout>测试</AppLayout></MemoryRouter>);
+    expect(screen.getByLabelText("当前学科：数学")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /测试学校/ }));
+    fireEvent.click(screen.getByRole("button", { name: "物理" }));
+    await waitFor(() => expect(switchSubject).toHaveBeenCalledWith("物理"));
+    expect(await screen.findByLabelText("当前学科：物理")).toBeInTheDocument();
+    expect(screen.queryByLabelText("当前学科：数学")).not.toBeInTheDocument();
+  });
+
+  it("does not show a school-subject badge for personal identity", () => {
+    const personalAffiliation = { ...affiliation, schoolId: null, schoolName: null };
+    useAuthStore.setState({
+      getAffiliations: () => [personalAffiliation],
+      getCurrentAffiliation: () => personalAffiliation,
+    });
+    render(<MemoryRouter><AppLayout>页面内容</AppLayout></MemoryRouter>);
+    expect(screen.getByRole("button", { name: /个人身份/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/当前学科/)).not.toBeInTheDocument();
   });
 
   it("does not expose personal classes in the primary sidebar", () => {
