@@ -285,7 +285,7 @@ export function MyLessonsPage() {
       const commonFilter = {
         teacherId: teacher.id,
       };
-      const [activeItems, completedItems, trashedItems] = await Promise.all([
+      const [activeItems, completedItems, trashedItems, personalClasses] = await Promise.all([
         lessonCoursewareService.listCoursewares({
           ...commonFilter,
           lifecycleStatus: "active",
@@ -298,10 +298,14 @@ export function MyLessonsPage() {
           ...commonFilter,
           lifecycleStatus: "trashed",
         }),
+        classService.listPersonalClasses(teacher.id),
       ]);
-      setCoursewares(activeItems);
-      setCompletedCoursewares(completedItems);
-      setTrashedCoursewares(trashedItems);
+      const personalClassIds = new Set(personalClasses.map((item) => item.id));
+      const forSchool = (items: LessonCourseware[]) =>
+        items.filter((item) => !item.classIds.some((classId) => personalClassIds.has(classId)));
+      setCoursewares(forSchool(activeItems));
+      setCompletedCoursewares(forSchool(completedItems));
+      setTrashedCoursewares(forSchool(trashedItems));
     } catch (err) {
       toast.error("加载失败", err instanceof Error ? err.message : undefined);
     } finally {

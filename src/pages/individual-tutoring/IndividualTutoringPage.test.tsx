@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import IndividualTutoringPage from "./IndividualTutoringPage";
 import { useAuthStore } from "@/stores/auth";
@@ -20,7 +20,7 @@ vi.mock("@/services/question", () => ({ questionService: { listQuestions: vi.fn(
 vi.mock("@/services/analytics", () => ({ analyticsService: { getKnowledgeMastery: vi.fn(), getStudentAnswerDetails: vi.fn() } }));
 vi.mock("@/services/lecture", () => ({ lectureService: { listLectures: vi.fn(), createLecture: vi.fn() } }));
 vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn() } }));
-vi.mock("@/services/lessonCourseware", () => ({ lessonCoursewareService: { listCoursewares: vi.fn(), createFromLecture: vi.fn(), createFromExamPaper: vi.fn(), updateCourseware: vi.fn() } }));
+vi.mock("@/services/lessonCourseware", () => ({ lessonCoursewareService: { listCoursewares: vi.fn(), createFromLecture: vi.fn(), createFromExamPaper: vi.fn(), updateCourseware: vi.fn(), restoreCourseware: vi.fn() } }));
 vi.mock("@/services/basket", () => ({ basketService: { listBaskets: vi.fn(), addQuestion: vi.fn() } }));
 vi.mock("@/services/grade", () => ({ gradeService: { getQueryData: vi.fn() } }));
 vi.mock("@/stores/ui", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -42,11 +42,17 @@ const lecture = {
   classIds: ["pc-1"], sections: [{ id: "sec", title: "数列", type: "chapter", content: "", children: [] }],
 } as Lecture;
 
-function renderPage(section: string) {
-  render(<MemoryRouter initialEntries={[`/individual-tutoring/${section}`]}>
+function EditorDestination() {
+  const location = useLocation();
+  return <div data-testid="editor-destination">{location.pathname}{location.search}</div>;
+}
+
+function renderPage(section: string, query = "") {
+  render(<MemoryRouter initialEntries={[`/individual-tutoring/${section}${query}`]}>
     <Routes>
       <Route path="/individual-tutoring/:section" element={<IndividualTutoringPage />} />
       <Route path="/lectures/:id/edit" element={<div>讲义编辑器</div>} />
+      <Route path="/my-lessons/:id/edit" element={<EditorDestination />} />
     </Routes>
   </MemoryRouter>);
 }
@@ -167,6 +173,50 @@ describe("IndividualTutoringPage", () => {
     expect(screen.getByText("二班作业")).toBeInTheDocument();
     expect(screen.queryByText("个人辅导作业")).not.toBeInTheDocument();
     expect(screen.queryByText("数列专题")).not.toBeInTheDocument();
+  });
+
+  it("lists personal class decks independent of their source and preserves the class on editing", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([personalClass, secondClass]);
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => filter.lifecycleStatus
+      ? [] : [
+      { id: "personal-manual", sourceType: "manual", classIds: ["pc-2"],
+        title: "二班独立课件", slides: [], status: "draft" },
+      { id: "school-manual", sourceType: "manual", classIds: ["school-1"],
+        title: "学校课件", slides: [], status: "draft" },
+    ] as never);
+    renderPage("coursewares", "?classId=pc-2");
+    expect(await screen.findByText("二班独立课件")).toBeInTheDocument();
+    expect(screen.queryByText("学校课件")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("个人教学班")).toHaveValue("pc-2");
+    fireEvent.click(screen.getByRole("button", { name: "二次编辑" }));
+    expect(await screen.findByTestId("editor-destination")).toHaveTextContent(
+      "/my-lessons/personal-manual/edit?classId=pc-2",
+    );
+  });
+
+  it("keeps archived personal coursewares visible and allows restoring them", async () => {
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) => {
+      if (filter.lifecycleStatus === "completed") return [{
+        id: "completed-pc", classIds: ["pc-1"], sourceType: "manual",
+        title: "已上课的个人课件", slides: [], status: "draft",
+      }] as never;
+      if (filter.lifecycleStatus === "trashed") return [{
+        id: "trashed-pc", classIds: ["pc-1"], sourceType: "manual",
+        title: "删除的个人课件", slides: [], status: "draft",
+      }] as never;
+      return [];
+    });
+    vi.mocked(lessonCoursewareService.restoreCourseware).mockResolvedValue({
+      id: "completed-pc", classIds: ["pc-1"], sourceType: "manual",
+      title: "已上课的个人课件", slides: [], status: "published",
+    } as never);
+    renderPage("coursewares");
+    expect(await screen.findByText("已上课的个人课件")).toBeInTheDocument();
+    expect(screen.getByText("删除的个人课件")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByText("已上课课件（1）").closest("div")!).getByRole("button", { name: "恢复" }));
+    await waitFor(() => expect(lessonCoursewareService.restoreCourseware).toHaveBeenCalledWith("completed-pc"));
+    expect(await screen.findByText("已推送的个别辅导课件（1）")).toBeInTheDocument();
+    expect(screen.getByText("删除的个人课件")).toBeInTheDocument();
   });
 
   it("pushes homework only to personal classes not yet covered by a lesson deck", async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { BookOpen, FilePlus2, Files, GraduationCap, Presentation, Users } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -38,6 +38,8 @@ export default function IndividualTutoringPage() {
   const { section } = useParams();
   const currentSection = tabs.find((tab) => tab.key === section)?.key;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedClassId = searchParams.get("classId");
   const { teacher, getCurrentAffiliation } = useAuthStore();
   const teacherId = teacher?.id || "";
   const schoolId = teacherResourceScopeId({ id: teacherId, schoolId: getCurrentAffiliation()?.schoolId || teacher?.schoolId });
@@ -59,6 +61,9 @@ export default function IndividualTutoringPage() {
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [papers, setPapers] = useState<ExamPaper[]>([]);
   const [coursewares, setCoursewares] = useState<LessonCourseware[]>([]);
+  const [completedCoursewares, setCompletedCoursewares] = useState<LessonCourseware[]>([]);
+  const [trashedCoursewares, setTrashedCoursewares] = useState<LessonCourseware[]>([]);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [baskets, setBaskets] = useState<Basket[]>([]);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [basketId, setBasketId] = useState("");
@@ -75,12 +80,14 @@ export default function IndividualTutoringPage() {
       .then((result) => {
         if (!active) return;
         setClasses(result);
-        setClassId((previous) => result.some((item) => item.id === previous) ? previous : result[0]?.id || "");
+        setClassId((previous) => result.some((item) => item.id === requestedClassId)
+          ? requestedClassId!
+          : result.some((item) => item.id === previous) ? previous : result[0]?.id || "");
       })
       .catch((e) => toast.error("个人教学班加载失败", errorMessage(e)))
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [teacherId]);
+  }, [teacherId, requestedClassId]);
 
   useEffect(() => {
     if (!teacherId || !classId) return;
@@ -104,8 +111,10 @@ export default function IndividualTutoringPage() {
       lectureService.listLectures({ teacherId }),
       examPaperService.listPapers({ teacherId }),
       lessonCoursewareService.listCoursewares({ teacherId }),
+      lessonCoursewareService.listCoursewares({ teacherId, lifecycleStatus: "completed" }),
+      lessonCoursewareService.listCoursewares({ teacherId, lifecycleStatus: "trashed" }),
       basketService.listBaskets(teacherId),
-    ]).then(([ch, kp, qs, ls, ps, cs, bs]) => {
+    ]).then(([ch, kp, qs, ls, ps, cs, completed, trashed, bs]) => {
       if (!active) return;
       if (ch.status === "fulfilled") { setChapterTree(ch.value); setChapterLoadFailed(false); }
       else { setChapterTree(null); setChapterLoadFailed(true); }
@@ -114,11 +123,13 @@ export default function IndividualTutoringPage() {
       if (ls.status === "fulfilled") setLectures(ls.value);
       if (ps.status === "fulfilled") setPapers(ps.value);
       if (cs.status === "fulfilled") setCoursewares(cs.value);
+      if (completed.status === "fulfilled") setCompletedCoursewares(completed.value);
+      if (trashed.status === "fulfilled") setTrashedCoursewares(trashed.value);
       if (bs.status === "fulfilled") {
         setBaskets(bs.value);
         setBasketId((previous) => bs.value.some((b) => b.id === previous) ? previous : bs.value[0]?.id || "");
       }
-      if ([ch, kp, qs, ls, ps, cs, bs].some((result) => result.status === "rejected")) {
+      if ([ch, kp, qs, ls, ps, cs, completed, trashed, bs].some((result) => result.status === "rejected")) {
         toast.error("部分个别辅导资源加载失败，请刷新重试");
       }
     });
@@ -192,11 +203,27 @@ export default function IndividualTutoringPage() {
   const isPushed = (material: TutoringMaterial, targetClassIds = material.personalClassIds) =>
     targetClassIds.every((id) => coursewares.some((courseware) => courseware.sourceType === material.type
       && courseware.sourceId === material.item.id && courseware.classIds.includes(id)));
-  const filteredCoursewares = coursewares.filter((courseware) => courseware.classIds.includes(classId)
-    && materials.some((material) => material.type === courseware.sourceType && material.item.id === courseware.sourceId
-      && material.personalClassIds.includes(classId)));
+  const filteredCoursewares = coursewares.filter((courseware) => courseware.classIds.includes(classId));
+  const filteredCompleted = completedCoursewares.filter((courseware) => courseware.classIds.includes(classId));
+  const filteredTrashed = trashedCoursewares.filter((courseware) => courseware.classIds.includes(classId));
   const pendingMaterials = materials.filter((material) => material.personalClassIds.includes(classId)
     && !isPushed(material, [classId]));
+
+  const restorePersonalCourseware = async (courseware: LessonCourseware) => {
+    if (restoringId) return;
+    setRestoringId(courseware.id);
+    try {
+      const restored = await lessonCoursewareService.restoreCourseware(courseware.id);
+      setCompletedCoursewares((items) => items.filter((item) => item.id !== courseware.id));
+      setTrashedCoursewares((items) => items.filter((item) => item.id !== courseware.id));
+      setCoursewares((items) => [restored, ...items.filter((item) => item.id !== courseware.id)]);
+      toast.success("课件已恢复");
+    } catch (e) {
+      toast.error("恢复课件失败", errorMessage(e));
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   const updateChapterSelection = (ids: string[]) => {
     if (!classId) return;
@@ -449,11 +476,28 @@ export default function IndividualTutoringPage() {
             <h2 className="font-semibold text-ink-900">已推送的个别辅导课件（{filteredCoursewares.length}）</h2>
             {filteredCoursewares.map((courseware) => <div key={courseware.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-3">
               <div><div className="font-medium text-sm">{courseware.title}</div><div className="text-xs text-ink-400">{courseware.slides.length} 页 · {courseware.status === "published" ? "已发布" : "草稿"}</div></div>
-              <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => navigate(`/my-lessons/${courseware.id}/edit`)}>二次编辑</Button>
-                <Button size="sm" onClick={() => navigate(`/my-lessons/${courseware.id}/edit?preview=1`)}>上课</Button></div>
+              <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => navigate(`/my-lessons/${courseware.id}/edit?classId=${encodeURIComponent(classId)}`)}>二次编辑</Button>
+                <Button size="sm" onClick={() => navigate(`/my-lessons/${courseware.id}/edit?preview=1&classId=${encodeURIComponent(classId)}`)}>上课</Button></div>
             </div>)}
             {!filteredCoursewares.length && <p className="text-sm text-ink-400">暂无已推送课件</p>}
           </Card>
+          {filteredCompleted.length > 0 && <Card className="space-y-3">
+            <h2 className="font-semibold text-ink-900">已上课课件（{filteredCompleted.length}）</h2>
+            {filteredCompleted.map((courseware) => <div key={courseware.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-3">
+              <div className="text-sm font-medium">{courseware.title}</div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => navigate(`/my-lessons/${courseware.id}/edit?preview=1&classId=${encodeURIComponent(classId)}`)}>查看</Button>
+                <Button size="sm" disabled={restoringId !== null} onClick={() => void restorePersonalCourseware(courseware)}>恢复</Button>
+              </div>
+            </div>)}
+          </Card>}
+          {filteredTrashed.length > 0 && <Card className="space-y-3">
+            <h2 className="font-semibold text-ink-900">课件回收站（{filteredTrashed.length}）</h2>
+            {filteredTrashed.map((courseware) => <div key={courseware.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-3">
+              <div className="text-sm font-medium">{courseware.title}</div>
+              <Button size="sm" disabled={restoringId !== null} onClick={() => void restorePersonalCourseware(courseware)}>恢复</Button>
+            </div>)}
+          </Card>}
           <Card className="space-y-3">
             <h2 className="font-semibold text-ink-900">未推送的讲义与作业（{pendingMaterials.length}）</h2>
             {pendingMaterials.map((material) => <div key={`${material.type}-${material.item.id}`} className="flex items-center justify-between gap-3 border-t border-ink-100 pt-3">
