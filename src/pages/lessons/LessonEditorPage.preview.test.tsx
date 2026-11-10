@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Basket, LessonCourseware, LessonSlideElement, Material, Question, Teacher } from "@/types";
 
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getMaterial: vi.fn(),
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
+  listPersonalClasses: vi.fn(),
   listFollowedStudentIds: vi.fn(),
   listIgnoredStudentIds: vi.fn(),
   getKnowledgeMastery: vi.fn(),
@@ -72,6 +73,7 @@ vi.mock("@/services/class", () => ({
   classService: {
     listMyStudents: mocks.listMyStudents,
     listMyClasses: mocks.listMyClasses,
+    listPersonalClasses: mocks.listPersonalClasses,
   },
 }));
 vi.mock("@/services/question", () => ({
@@ -107,11 +109,17 @@ vi.mock("./PresentationMode", () => ({
 
 import LessonEditorPage from "./LessonEditorPage";
 
+function TutoringDestination() {
+  const location = useLocation();
+  return <div data-testid="tutoring-destination">{location.pathname}{location.search}</div>;
+}
+
 function renderPage(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/my-lessons/:id/edit" element={<LessonEditorPage />} />
+        <Route path="/individual-tutoring/coursewares" element={<TutoringDestination />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -132,11 +140,33 @@ describe("LessonEditorPage preview query", () => {
     mocks.getMaterial.mockResolvedValue(null);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
+    mocks.listPersonalClasses.mockResolvedValue([]);
     mocks.listFollowedStudentIds.mockResolvedValue([]);
     mocks.listIgnoredStudentIds.mockResolvedValue([]);
     mocks.getKnowledgeMastery.mockResolvedValue([]);
     mocks.uploadFile.mockResolvedValue({ url: "/uploads/pasted.png" });
     mocks.listLibraryCoursewares.mockResolvedValue([]);
+  });
+
+  it("returns a personal teaching class deck to its tutoring class and keeps its affiliation", async () => {
+    const personalDeck = {
+      ...courseware, schoolId: "previous-school", classIds: ["pc-1", "pc-2"],
+    };
+    mocks.getCourseware.mockResolvedValue(personalDeck);
+    mocks.listPersonalClasses.mockResolvedValue([
+      { id: "pc-1", type: "personal", teacherId: teacher.id, name: "个人一班" },
+      { id: "pc-2", type: "personal", teacherId: teacher.id, name: "个人二班" },
+    ]);
+    renderPage("/my-lessons/lesson-courseware-1/edit?classId=pc-2");
+    expect(await screen.findByDisplayValue(personalDeck.title)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /授课班级/ }));
+    expect(await screen.findByText("个人一班")).toBeInTheDocument();
+    expect(screen.getByText("个人二班")).toBeInTheDocument();
+    expect(screen.getByText("授课班级 (2)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(await screen.findByTestId("tutoring-destination")).toHaveTextContent(
+      "/individual-tutoring/coursewares?classId=pc-2",
+    );
   });
 
   it("inserts an existing GGB courseware slide and persists its file reference", async () => {
