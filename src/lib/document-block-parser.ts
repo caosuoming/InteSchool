@@ -1082,7 +1082,10 @@ function extractQuestionNumber(text: string, config: DocumentParseConfig): strin
 }
 
 function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind | null {
-  const compact = normalizeStructuralText(text)
+  const withoutImages = text
+    .replace(/<img\b[^>]*>/gi, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+  const compact = normalizeStructuralText(withoutImages)
     .replace(/\s+/g, "")
     .replace(/^[【［[(（]+/, "");
   const normalized = compact.replace(/[】］\])）:：]+$/, "");
@@ -1099,6 +1102,11 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
   if (trailing) {
     const prefix = normalized.slice(0, trailing.index);
     if (prefix.length > 0 && prefix.length <= 60 && !/[?？。！:：]/.test(prefix)) {
+      return trailing[0].includes("解析") ? "answerAnalysis" : "answer";
+    }
+    // Exporters may place a QR-code image and a full paper title on the
+    // same line as "参考答案". Recognize titled answer keys, not prose mentions.
+    if (/^《[^》]{2,180}》$/.test(prefix) && /(?:试题|试卷|考试卷)/.test(prefix)) {
       return trailing[0].includes("解析") ? "answerAnalysis" : "answer";
     }
   }
@@ -1424,11 +1432,13 @@ function mergeTrailingSolutions(
   for (const solution of solutions) {
     let target = questionsByNumber.get(solution.number)?.find((question) => !used.has(question));
     const ordinal = Number(solution.number) - 1;
-    if (!target && Number.isInteger(ordinal) && ordinal >= 0 && ordinal < questions.length) {
+    if (!target && config.subject?.trim() !== "地理"
+      && Number.isInteger(ordinal) && ordinal >= 0 && ordinal < questions.length) {
       const ordinalTarget = questions[ordinal];
       if (!used.has(ordinalTarget)) target = ordinalTarget;
     }
-    if (!target && options.allowPositionalFallback !== false && solutions.length === questions.length) {
+    if (!target && config.subject?.trim() !== "地理"
+      && options.allowPositionalFallback !== false && solutions.length === questions.length) {
       const positionalTarget = questions[solution.order];
       if (positionalTarget && !used.has(positionalTarget)) target = positionalTarget;
     }
@@ -2055,12 +2065,21 @@ function startsGeographyReadingPassage(lines: string[], index: number, config: D
 }
 
 function geographySubQuestionCount(content: string): number {
-  const markers = scanGroupedSubQuestionMarkers(content);
+  // A choice question may refer to statements ①②③④ inside its stem/options.
+  // Those are not four subquestions. Top-level numbered questions take priority.
+  const topLevelNumbers = [...content.matchAll(/^\s*([\d０-９]{1,4})\s*[.．、]\s*\S/gm)]
+    .map((match) => Number(normalizeQuestionNumber(match[1])));
+  if (topLevelNumbers.length > 1) return new Set(topLevelNumbers).size;
+
+  // Only a leading marker denotes a real nested question. Inline circled
+  // statement references and answer-option combinations must not count.
+  const markers = content.split("\n")
+    .map((line) => leadingNestedSubQuestionIndex(line))
+    .filter((value): value is number => value !== undefined);
   let expected = 1;
   for (const marker of markers) {
-    if (marker.index === expected) expected += 1;
+    if (marker === expected) expected += 1;
   }
-  const topLevelNumbers = [...content.matchAll(/^\s*(\d{1,4})\s*[.．、]\s*\S/gm)];
   return Math.max(1, expected - 1, topLevelNumbers.length);
 }
 
@@ -2478,6 +2497,35 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
   return blocks;
 }
 
+function findRestartedGeographyAnswerIndex(lines: string[], config: DocumentParseConfig): number | undefined {
+  if (config.subject?.trim() !== "地理") return undefined;
+  let previous = 0;
+  let increasing = 0;
+  const seen = new Set<string>();
+  const answerLike = (line: string): boolean => {
+    const entry = extractLeadingQuestionNumber(line);
+    if (!entry || !seen.has(entry.number)) return false;
+    return /^(?:[A-H](?:\s*[,，、;；/ ]\s*[A-H])*\s*$|(?:【\s*)?(?:答案|详解|解析)(?:\s*】)?\s*[:：]?\s*\S|见解析\s*$)/i.test(entry.rest);
+  };
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (isHeading(line, config) || isProjectHeading(line, config)) {
+      continue;
+    }
+    const entry = extractLeadingQuestionNumber(line);
+    if (!entry) continue;
+    const number = Number(entry.number);
+    if (seen.has(entry.number) && increasing >= 2 && number <= previous) {
+      const candidates = lines.slice(index).filter((candidate) => candidate.trim()).slice(0, 3);
+      if (candidates.length >= 2 && candidates.slice(0, 2).every(answerLike)) return index;
+    }
+    increasing = number > previous ? increasing + 1 : 1;
+    previous = number;
+    seen.add(entry.number);
+  }
+  return undefined;
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const english = parseEnglishDocumentBlocks(content, config);
   if (english) return english;
@@ -2507,6 +2555,19 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     const requiredMatches = kind === "answer" && config.subject?.trim() !== "地理"
       ? Math.min(2, questions.length) : 1;
     if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config);
+  }
+
+  // Some scans omit the answer-key heading. Only a numbering restart with
+  // multiple short, answer-shaped entries may delimit a geography answer key.
+  const restartedAnswerIndex = findRestartedGeographyAnswerIndex(lines, config);
+  if (restartedAnswerIndex !== undefined) {
+    const solutions = parseTrailingSolutions(lines.slice(restartedAnswerIndex), config);
+    const blocks = parseDocumentBlocksCore(lines.slice(0, restartedAnswerIndex).join("\n"), config);
+    if (mergeTrailingSolutions(blocks, solutions, config, { allowPositionalFallback: false }) >= 2) {
+      return refineGeographyBlocks(
+        normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config,
+      );
+    }
   }
 
   const fallback = refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
