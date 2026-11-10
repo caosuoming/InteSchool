@@ -1181,7 +1181,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [loadAll]);
 
   useEffect(() => {
-    if (!teacher) return;
+    // The embedded question bank loads its own student data. Fetch it here
+    // only when the shared picker opens, avoiding duplicate startup requests.
+    if (!teacher || (activeTab === "question" && !resourceStudentPickerOpen)) return;
     let cancelled = false;
     Promise.all([
       classService.listMyClasses(teacher.schoolId || null, teacher.id),
@@ -1197,7 +1199,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       }
     });
     return () => { cancelled = true; };
-  }, [teacher]);
+  }, [teacher, activeTab, resourceStudentPickerOpen]);
 
   useEffect(() => {
     if (!selectedResourceStudentIds.length || (activeTab !== "examPaper" && activeTab !== "lecture")) {
