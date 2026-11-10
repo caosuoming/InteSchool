@@ -35,6 +35,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
+import { alignGeographyGroupAnswerNumbers } from "@/lib/geography-answer-numbering";
 import { QuestionCard } from "@/components/question/QuestionCard";
 import { QuestionSelectionList } from "@/components/question/QuestionSelectionList";
 import { RelatedQuestionReplacementPanel } from "@/components/question/RelatedQuestionReplacementPanel";
@@ -4280,6 +4281,8 @@ function PreviewQuestionItem({
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const answer = alignGeographyGroupAnswerNumbers(pq.stem, pq.answer);
+  const analysis = alignGeographyGroupAnswerNumbers(pq.stem, pq.analysis);
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
   const toggleExpanded = () => {
@@ -4311,19 +4314,19 @@ function PreviewQuestionItem({
               {pq.options.map((opt, i) => (
                 <div key={i} className={cn(
                   "px-2 py-1.5 text-sm flex items-center gap-1.5 min-w-0",
-                  expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                  expanded && answer.includes(String.fromCharCode(65 + i))
                     ? "text-emerald-900"
                     : "",
                 )}>
                   <span className={cn(
                     "font-mono font-semibold flex-shrink-0",
-                    expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                    expanded && answer.includes(String.fromCharCode(65 + i))
                       ? "text-emerald-900"
                       : "text-ink-600",
                   )}>{String.fromCharCode(65 + i)}.</span>
                   <MathHtml className={cn(
                     "min-w-0 flex-1",
-                    expanded && pq.answer.includes(String.fromCharCode(65 + i))
+                    expanded && answer.includes(String.fromCharCode(65 + i))
                       ? "text-emerald-900"
                       : "text-ink-800",
                   )}>{opt}</MathHtml>
@@ -4336,11 +4339,11 @@ function PreviewQuestionItem({
             <div className="space-y-2 pl-5 mt-2 animate-fade-in">
               <div className="p-2 rounded bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900">
                 <span className="font-bold">答案：</span>
-                <MathHtml className="question-answer-content inline text-emerald-900">{pq.answer}</MathHtml>
+                <MathHtml className="question-answer-content inline text-emerald-900">{answer}</MathHtml>
               </div>
               <div className="p-2 rounded bg-gold-50/30 border border-gold-200 text-sm text-ink-800">
                 <span className="font-bold text-gold-700">解析：</span>
-                <MathHtml className="inline text-ink-800">{pq.analysis}</MathHtml>
+                <MathHtml className="inline text-ink-800">{analysis}</MathHtml>
               </div>
             </div>
           )}
