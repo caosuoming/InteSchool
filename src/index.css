@@ -832,7 +832,7 @@
     --desk-seat-padding: 0.9mm;
     --desk-subline-spacing: 0.65mm;
     --desk-content-shift: 0mm;
-    --desk-seat-shift: 0mm;
+    --desk-seat-shift: -0.65mm;
     page: exam-desk-label;
     display: grid;
     width: 260mm;
@@ -860,7 +860,7 @@
     --desk-seat-padding: 0.65mm;
     --desk-subline-spacing: 0.45mm;
     --desk-content-shift: 0mm;
-    --desk-seat-shift: 0mm;
+    --desk-seat-shift: -0.65mm;
   }
   .exam-desk-label-measure {
     position: fixed;
