@@ -10,6 +10,7 @@ import type {
   QuestionType,
   QuestionRemark,
   QuestionVideoReference,
+  QuestionAudioReference,
   ResourceSemester,
   SimilarQuestionCandidate,
 } from "../../src/types/index.js";
@@ -37,6 +38,7 @@ export interface QuestionInput {
   boardImages?: string[];
   links?: QuestionLink[];
   explanationVideo?: QuestionVideoReference | null;
+  listeningAudios?: QuestionAudioReference[];
   chapterIds: string[];
   knowledgePointIds: string[];
   grade?: string;
@@ -315,6 +317,7 @@ function buildQuestion(teacherId: string, schoolId: string, input: QuestionInput
     boardImages: input.boardImages ? [...input.boardImages] : [],
     links: input.links?.map((link) => ({ ...link })) || [],
     explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
+    listeningAudios: input.listeningAudios?.map((audio) => ({ ...audio })) || [],
     chapterIds: input.chapterIds,
     knowledgePointIds: expandedKpIds,
     grade: input.grade,
@@ -724,6 +727,7 @@ export const questionService = {
       boardImages: input.boardImages ? [...input.boardImages] : [],
       links: input.links?.map((link) => ({ ...link })) || [],
       explanationVideo: input.explanationVideo ? { ...input.explanationVideo } : null,
+      listeningAudios: input.listeningAudios?.map((audio) => ({ ...audio })) || [],
       chapterIds: input.chapterIds,
       knowledgePointIds: expandKnowledgePointAliases(input.knowledgePointIds, schoolId, teacherId),
       grade: input.grade,

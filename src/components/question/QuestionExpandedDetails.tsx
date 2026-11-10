@@ -4,7 +4,7 @@ import type { Question } from "@/types";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 
 type QuestionExpandedDetailsProps = {
-  question: Pick<Question, "id" | "answer" | "analysis" | "summary" | "board" | "boardImages" | "links" | "explanationVideo">;
+  question: Pick<Question, "id" | "answer" | "analysis" | "summary" | "board" | "boardImages" | "links" | "explanationVideo" | "listeningAudios">;
   wideLayout?: boolean;
 };
 
@@ -63,6 +63,7 @@ export function QuestionExpandedDetails({
         boardImages={question.boardImages}
         links={question.links}
         explanationVideo={question.explanationVideo}
+        listeningAudios={question.listeningAudios}
       />
     </div>
   );

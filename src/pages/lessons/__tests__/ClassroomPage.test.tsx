@@ -311,6 +311,9 @@ describe("ClassroomPage", () => {
     await user.click(answersButton);
     expect(classroomHomeworkService.listHomeworkAnswers).toHaveBeenCalledWith("school-1", "class-1");
     const dialog = await screen.findByRole("dialog", { name: "作业答案" });
+    expect(dialog).toHaveClass("h-full", "w-full");
+    expect(dialog).not.toHaveClass("max-w-4xl");
+    expect(within(dialog).getByRole("toolbar", { name: "答案缩放" })).toBeInTheDocument();
     expect(within(dialog).getByText("期中复习")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "语文" }));
     expect(within(dialog).getByText("古诗词")).toBeInTheDocument();

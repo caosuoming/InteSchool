@@ -130,7 +130,7 @@ describe("classroomDeviceService", () => {
     await runWithState(state, async () => {
       await bindClassOne();
       const snapshot = await classroomDeviceService.getClassroomSnapshot(TOKEN_1);
-      expect(snapshot.homeworkAnswers.map((item) => item.id)).toEqual(["paper-class-1"]);
+      expect(snapshot.homeworkAnswers.map((item) => item.id)).toEqual([`paper-class-1:${localDateValue()}`]);
       expect(snapshot.homeworkAnswers[0].questions).toEqual([{ id: "q1", number: 1, answer: "C" }]);
     });
   });
