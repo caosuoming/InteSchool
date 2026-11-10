@@ -133,9 +133,9 @@ describe("classroomHomeworkAnswers", () => {
     });
   });
 
-  it("does not expose an unpublished or examination paper", async () => {
+  it("does not expose examination papers or extract copies", async () => {
     const s = state();
-    s.examPapers = [paper("draft", { status: "draft" }), paper("exam", { managementCategory: "exam" })];
+    s.examPapers = [paper("exam", { managementCategory: "exam" }), paper("copy", { isExtractCopy: true })];
     await runWithState(s, async () => {
       expect(classroomHomeworkAnswers("school-1", "class-1")).toEqual([]);
     });

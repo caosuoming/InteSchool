@@ -62,7 +62,6 @@ export function classroomHomeworkAnswers(schoolId: string, classId: string): Cla
 
   return ((db.read("examPapers") || []) as ExamPaper[])
     .filter((paper) => paper.schoolId === schoolId
-      && paper.status === "published"
       && paper.managementCategory !== "exam"
       && !paper.isExtractCopy
       && (paper.classIds || []).includes(classId)
