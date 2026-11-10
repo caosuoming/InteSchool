@@ -297,9 +297,9 @@ function SubjectTables({ bundle }: { bundle: GradePublishedReportBundle }) {
               </tr>
             </tbody>
           </table>
+          <GradeReportNotes notes={bundle.reportNotes} />
         </section>
       ))}
-      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }
@@ -366,9 +366,9 @@ function ElectiveTables({ bundle }: { bundle: GradePublishedReportBundle }) {
               </tr>
             </tbody>
           </table>
+          <GradeReportNotes notes={bundle.reportNotes} />
         </section>
       ))}
-      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }
@@ -412,9 +412,9 @@ function TotalScoreRankingTables({ bundle }: { bundle: GradePublishedReportBundl
               ))}
             </tbody>
           </table>
+          <GradeReportNotes notes={bundle.reportNotes} />
         </section>
       ))}
-      <GradeReportNotes notes={bundle.reportNotes} />
     </Card>
   );
 }

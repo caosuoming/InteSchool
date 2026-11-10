@@ -225,11 +225,11 @@ export function GradeSubjectScoreSegmentTable({
                   </tr>
                 </tbody>
               </table>
+              <GradeReportNotes notes={buildGradeReportNotes(exam, settings, undefined, subjectReport.subject)} />
             </section>
           ))}
         </div>
       )}
-      <GradeReportNotes notes={buildGradeReportNotes(exam, settings)} />
     </Card>
   );
 }

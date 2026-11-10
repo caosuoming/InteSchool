@@ -215,12 +215,12 @@ export function GradeTotalScoreRankingTable({
                   ))}
                 </tbody>
               </table>
+              <GradeReportNotes notes={buildGradeReportNotes(exam, settings, undefined, undefined)} />
             </section>
           ))}
           {autoSaving && <div className="text-xs text-emerald-700">正在自动保存表五名次数…</div>}
         </div>
       )}
-      <GradeReportNotes notes={buildGradeReportNotes(exam, settings)} />
     </Card>
   );
 }
