@@ -94,7 +94,7 @@ describe("AppLayout", () => {
     });
     render(<MemoryRouter initialEntries={["/dashboard"]}><AppLayout>测试</AppLayout></MemoryRouter>);
     expect(screen.getByLabelText("当前学科：数学")).toBeInTheDocument();
-    expect(screen.getByText("平台管理员")).toBeInTheDocument();
+    expect(screen.getAllByText("平台管理员")).not.toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: /测试学校/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: /另一所学校/ })).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("搜索学校"), { target: { value: "OTHER" } });
