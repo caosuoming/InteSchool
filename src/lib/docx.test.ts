@@ -11,6 +11,7 @@ vi.mock("file-saver", () => ({
 
 import {
   buildExamPaperDocxBlob,
+  collectPaperListeningAudios,
   buildLectureDocxBlob,
   downloadExamPaperDocxVariants,
   generateExamPaperDocx,
@@ -316,6 +317,35 @@ describe("generateExamPaperDocx", () => {
     const documentXml = await zip.file("word/document.xml")!.async("string");
 
     expect(documentXml).not.toContain("（多选）");
+  });
+
+  it("exports one clickable download link per unique listening recording", async () => {
+    const refs = [
+      { materialId: "audio-1", title: "第一段.mp3", fileUrl: "/api/files/1111-aaaa" },
+      { materialId: "audio-2", title: "第二段.wav", fileUrl: "/api/files/2222-bbbb" },
+    ];
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      questions: [
+        { ...structuredPaper.questions[0], listeningAudios: refs },
+        { ...structuredPaper.questions[0], id: "paper-question-2", listeningAudios: [refs[0]] },
+      ],
+      contentBlocks: undefined,
+    };
+    const linked: Question = { ...linkedQuestion, listeningAudios: [refs[0]] };
+    expect(collectPaperListeningAudios(paper, { [linked.id]: linked })).toEqual(refs);
+    const blob = await buildExamPaperDocxBlob(paper, { [linked.id]: linked }, { mode: "student" });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    const relationships = await zip.file("word/_rels/document.xml.rels")!.async("string");
+    expect(xml).toContain("听力音频下载链接");
+    expect(xml.match(/第一段\.mp3/g)).toHaveLength(1);
+    expect(xml.match(/第二段\.wav/g)).toHaveLength(1);
+    expect(relationships).toContain(new URL(refs[0].fileUrl, window.location.origin).href);
+    expect(relationships).toContain(new URL(refs[1].fileUrl, window.location.origin).href);
+    const answers = await buildExamPaperDocxBlob(paper, { [linked.id]: linked }, { mode: "answers" });
+    const answersZip = await JSZip.loadAsync(await blobToArrayBuffer(answers));
+    expect(await answersZip.file("word/document.xml")!.async("string")).not.toContain("听力音频下载链接");
   });
 
   it("bundles multiple selected paper variants into one zip download", async () => {

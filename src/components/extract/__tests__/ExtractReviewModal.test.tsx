@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   reparseMathQuestionBlock: vi.fn(),
   findSimilarQuestionsBatch: vi.fn(),
   confirmExtract: vi.fn(),
+  listMaterials: vi.fn(),
+  createMaterial: vi.fn(),
+  uploadFile: vi.fn(),
   createLectureExtractCopy: vi.fn(),
   createExamExtractCopy: vi.fn(),
   authState: {
@@ -94,6 +97,14 @@ vi.mock("@/services/question", () => ({
 
 vi.mock("@/services/api", () => ({
   extractStoredFile: mocks.extractStoredFile,
+  uploadFile: mocks.uploadFile,
+}));
+
+vi.mock("@/services/material", () => ({
+  materialService: {
+    listMaterials: mocks.listMaterials,
+    createMaterial: mocks.createMaterial,
+  },
 }));
 
 vi.mock("@/lib/document-block-parser", async (importOriginal) => ({
@@ -116,6 +127,8 @@ describe("ExtractReviewModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.authState.teacher.subject = "物理";
+    mocks.listMaterials.mockResolvedValue([]);
+    mocks.uploadFile.mockResolvedValue({ id: "file-1", url: "/api/files/1234-5678", size: 120 });
     mocks.extractConfig.questionKeywords = ["题目"];
     mocks.getPaper.mockResolvedValue({
       id: "paper-1",
@@ -245,6 +258,79 @@ describe("ExtractReviewModal", () => {
       expect(questions[1].categories).toContain("一题多问");
     },
   );
+
+  it("links a single material to multiple English listening questions and hides extra category controls", async () => {
+    mocks.authState.teacher.subject = "英语";
+    mocks.listMaterials.mockResolvedValue([
+      { id: "audio-1", type: "audio", title: "听力原音.mp3", fileUrl: "/api/files/1234-5678" },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="paper-1"
+        resourceType="examPaper"
+        resourceTitle="英语试卷"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[
+          { id: "q-1", type: "question", questionType: "englishListeningChoice",
+            content: "1. What can you hear?", order: 0, status: "new" },
+          { id: "q-2", type: "question", questionType: "englishListeningChoice",
+            content: "2. What does he like?", order: 1, status: "new" },
+        ]}
+      />,
+    );
+    expect(screen.queryByText("附加题类")).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.listMaterials).toHaveBeenCalledOnce());
+    await user.selectOptions(screen.getByRole("combobox", { name: "第1块听力音频" }), "audio-1");
+    await user.selectOptions(screen.getByRole("combobox", { name: "第2块听力音频" }), "audio-1");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledOnce());
+    const questions = mocks.confirmExtract.mock.calls[0][2].questions;
+    expect(questions).toHaveLength(2);
+    expect(questions[0].listeningAudios).toEqual([
+      { materialId: "audio-1", title: "听力原音.mp3", fileUrl: "/api/files/1234-5678" },
+    ]);
+    expect(questions[1].listeningAudios).toEqual(questions[0].listeningAudios);
+  });
+
+  it("uploads audio material and makes it reusable in the English extraction", async () => {
+    mocks.authState.teacher.subject = "英语";
+    mocks.createMaterial.mockImplementation(async (_teacherId, _schoolId, input) => ({
+      ...input, id: "audio-new", teacherId: "teacher-1", schoolId: "school-1",
+    }));
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open
+        onClose={vi.fn()}
+        resourceId="paper-1"
+        resourceType="examPaper"
+        resourceTitle="英语试卷"
+        chapterIds={[]}
+        knowledgePointIds={[]}
+        grade="高一"
+        schoolYear="2026-2027"
+        semester="上学期"
+        initialBlocks={[{ id: "q-1", type: "question", questionType: "englishListeningFill",
+          content: "1. Fill the missing word.", order: 0, status: "new" }]}
+      />,
+    );
+    const input = document.querySelector('input[type="file"][multiple]');
+    expect(input).not.toBeNull();
+    const file = new File(["audio"], "reading.mp3", { type: "audio/mpeg" });
+    await user.upload(input as HTMLInputElement, file);
+    await waitFor(() => expect(mocks.createMaterial).toHaveBeenCalledOnce());
+    expect(mocks.createMaterial.mock.calls[0][2]).toMatchObject({
+      type: "audio", fileUrl: "/api/files/1234-5678",
+    });
+    expect(await screen.findByRole("option", { name: "reading.mp3" })).toBeInTheDocument();
+  });
 
   it("uses one block column with controls inside each block", async () => {
     render(

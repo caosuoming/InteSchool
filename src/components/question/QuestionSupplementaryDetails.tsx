@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { ExternalLink, Link2, Video } from "lucide-react";
+import { ExternalLink, Link2, Video, Headphones, Download } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { Modal } from "@/components/ui/Modal";
-import type { QuestionLink, QuestionVideoReference } from "@/types";
+import type { QuestionAudioReference, QuestionLink, QuestionVideoReference } from "@/types";
 
 interface QuestionSupplementaryDetailsProps {
   board?: string;
   boardImages?: string[];
   links?: QuestionLink[];
   explanationVideo?: QuestionVideoReference | null;
+  listeningAudios?: QuestionAudioReference[];
   compact?: boolean;
 }
 
@@ -29,6 +30,7 @@ export function QuestionSupplementaryDetails({
   boardImages = [],
   links = [],
   explanationVideo,
+  listeningAudios = [],
   compact = false,
 }: QuestionSupplementaryDetailsProps) {
   const [previewBoardImage, setPreviewBoardImage] = useState<string | null>(null);
@@ -40,7 +42,7 @@ export function QuestionSupplementaryDetails({
   ]));
   const boardText = board && !legacyBoardImage ? board : "";
 
-  if (!board && boardImageSources.length === 0 && links.length === 0 && !explanationVideo) return null;
+  if (!board && boardImageSources.length === 0 && links.length === 0 && !explanationVideo && !listeningAudios.length) return null;
 
   return (
     <>
@@ -103,6 +105,21 @@ export function QuestionSupplementaryDetails({
         </div>
       )}
 
+      {listeningAudios.length > 0 && (
+        <div>
+          <div className="mb-1 flex items-center gap-1 text-xs font-medium text-ink-500">
+            <Headphones className="h-3 w-3" />听力音频
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {listeningAudios.filter((audio) => /^\/api\/files\/[a-z\d-]+$/i.test(audio.fileUrl)).map((audio) => (
+              <a key={audio.materialId} href={audio.fileUrl} download={audio.title}
+                className="inline-flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs text-sky-800 hover:bg-sky-100">
+                <Download className="h-3 w-3" />{audio.title}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
       {explanationVideo && (
         <div>
           <div className="mb-1 flex items-center gap-1 text-xs font-medium text-ink-500">

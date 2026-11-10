@@ -8,6 +8,7 @@ import type {
   Material,
   ResourceSemester,
   ExtractedDocumentBlock,
+  QuestionAudioReference,
 } from "../../src/types/index.js";
 import {
   createDuplicateConfirmationError,
@@ -56,6 +57,31 @@ function validateMergeFields(fields: DuplicateQuestionMergeFields | undefined): 
     }
   }
   return fields;
+}
+
+function resolveListeningAudios(
+  item: ExtractedQuestionItem,
+  teacherId: string,
+  schoolId: string,
+): QuestionAudioReference[] {
+  const references = item.listeningAudios || [];
+  if (references.length && !item.type.startsWith("englishListening")) {
+    throw new Error("只有英语听力题能够关联听力音频");
+  }
+  const materials = db.read("materials") as Material[];
+  const seen = new Set<string>();
+  return references.map((reference) => {
+    if (!reference?.materialId || seen.has(reference.materialId)) {
+      throw new Error("听力音频不能重复关联，且必须来自素材库");
+    }
+    seen.add(reference.materialId);
+    const material = materials.find((entry) => entry.id === reference.materialId);
+    if (!material || material.teacherId !== teacherId || material.schoolId !== schoolId || material.type !== "audio"
+        || !/^\/api\/files\/[a-z\d-]+$/i.test(material.fileUrl || "")) {
+      throw new Error("听力音频不存在、无权关联或文件地址不合法");
+    }
+    return { materialId: material.id, title: material.title, fileUrl: material.fileUrl! };
+  });
 }
 
 export const extractService = {
@@ -118,6 +144,10 @@ export const extractService = {
       if (matches[0]) throw createDuplicateConfirmationError(matches[0]);
     }
 
+    // Resolve and authorize every audio reference before changing the database.
+    const audioByItemId = new Map(items.questions.map((item) => [
+      item.id, resolveListeningAudios(item, teacherId, schoolId),
+    ]));
     const createdQuestions: Question[] = [];
     const mergedQuestions: Question[] = [];
     const createdMaterials: Material[] = [];
@@ -146,6 +176,10 @@ export const extractService = {
             analysis: mergeTextField(target.analysis, item.analysis, fields.analysis, "解析2"),
             summary: mergeTextField(target.summary, item.summary, fields.summary, "总结2"),
             categories: [...new Set([...questionCategories(target), ...(item.categories || [])])],
+            listeningAudios: [...new Map([
+              ...(target.listeningAudios || []),
+              ...(audioByItemId.get(item.id) || []),
+            ].map((audio) => [audio.materialId, audio])).values()],
           },
           "add",
         );
@@ -172,6 +206,7 @@ export const extractService = {
           type: item.type,
           stem: item.stem,
           options: item.options,
+          listeningAudios: audioByItemId.get(item.id),
           answer,
           analysis,
           summary,

@@ -73,15 +73,42 @@ describe("English exam document extraction", () => {
       "B", "An article about the sea.", "23. Where are the fish?", "A. Sea B. Sky C. Land D. Tree",
       "【答案】23. A", "【导语】本文介绍海洋。",
     ]);
-    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content)).toEqual(["第一部分 阅读理解", "A", "B"]);
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content)).toEqual(["第一部分 阅读理解"]);
     const questions = blocks.filter((block) => block.type === "question");
     expect(questions).toHaveLength(2);
-    expect(questions[0].content).toContain("An article about the sun.");
+    expect(questions[0].content).toMatch(/^A\nAn article about the sun\./);
     expect(questions[0].answer).toBe("21. A 22. B");
     expect(questions[0].summary).toBe("本文介绍太阳。");
     expect(questions[0].analysis).toContain("【21题详解】阳光提供光。");
     expect(questions[0].analysis).toContain("【22题详解】作者建议阅读。");
+    expect(questions[1].content).toMatch(/^B\nAn article about the sea\./);
     expect(questions[1].content).toContain("23. Where are the fish?");
+  });
+
+  it("recognizes 第二部分 阅读 as a project heading and does not split subquestion numbers", () => {
+    const blocks = parse([
+      "英语期中试卷", "第二部分 阅读", "A", "A story about a park.",
+      "21.", "What does the author see?", "A. A dog B. A cat C. A fox",
+      "22. Why does she visit?", "A. Work B. Fun C. Rest",
+      "B", "A story about the sea.", "23. What is the topic?", "A. Fish B. Birds",
+    ]);
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(["第二部分 阅读"]);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].questionType).toBe("englishReading");
+    expect(questions[0].content).toContain("21.\nWhat does the author see?");
+    expect(questions[0].content).toContain("22. Why does she visit?");
+    expect(questions[1].content).toMatch(/^B\n/);
+  });
+
+  it("retains a lettered reading passage as a question even without numbered subquestions", () => {
+    const questions = parse([
+      "第二部分 阅读", "A", "Read this article and summarize it.",
+      "B", "Read the next article and summarize it.",
+    ]).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions.map((block) => block.content.split("\n")[0])).toEqual(["A", "B"]);
   });
 
   it("keeps reading sentence insertion blanks and A-G options in one question", () => {

@@ -2198,7 +2198,7 @@ function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: 
 
 type EnglishPart = "听力" | "阅读理解" | "语言运用" | "写作";
 
-const englishPartPattern = /^第\s*[一二三四五六七八九十百\d]+\s*部分\s*(听力|阅读理解|语言运用|写作)(?:\b|\s|[（(：:]|$)/;
+const englishPartPattern = /^第\s*[一二三四五六七八九十百\d]+\s*部分\s*(听力|阅读理解|阅读|语言运用|写作)(?:\b|\s|[（(：:]|$)/;
 const englishSectionPattern = /^第\s*[一二三四五六七八九十百\d]+\s*节(?:\s|[（(：:]|$)/;
 const englishTypeHeadingPattern = /^(?:(?:[一二三四五六七八九十百\d]+)\s*[、.．)]\s*|第\s*[一二三四五六七八九十百\d]+\s*节\s*)?(听力选择题|听力填空|单项选择(?:题)?|阅读理解|完形填空|语法填空|短文改错|改错|选词填空|翻译|完成句子|单词拼写|短文填空|书面表达|书信写作|应用文写作|读后续写)(?:题)?(?:\s|[（(：:]|$)/;
 const englishListeningSinglePattern = /每\s*段\s*录音\s*后\s*有\s*一个\s*小题/;
@@ -2213,7 +2213,7 @@ function englishSectionType(heading: string): QuestionType | undefined {
   if (/听力填空|听力(?:信息|表格|记录)填空/.test(text)) return "englishListeningFill";
   if (/听力选择|听力理解|^听力$/.test(text)) return "englishListeningChoice";
   if (/单项选择|单选/.test(text)) return "englishSingle";
-  if (/阅读理解|阅读表达|七选五/.test(text)) return "englishReading";
+  if (/^(?:阅读|阅读理解)$|阅读表达|七选五/.test(text)) return "englishReading";
   if (/完形填空|完型填空/.test(text)) return "englishCloze";
   if (/语法填空|语法填词/.test(text)) return "englishGrammarFill";
   if (/短文改错|改错|错误改正/.test(text)) return "englishCorrection";
@@ -2260,6 +2260,7 @@ interface EnglishUnit {
   questionType?: QuestionType;
   grouped: boolean;
   gap: boolean;
+  readingPassage?: boolean;
 }
 
 function englishFieldParts(lines: string[]): {
@@ -2335,7 +2336,7 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
     const fields = englishFieldParts(unit.lines);
     if (!fields.content) return;
     const numbers = englishQuestionNumbers(fields.content);
-    const isQuestion = numbers.length > 0 || unit.gap
+    const isQuestion = numbers.length > 0 || unit.gap || unit.readingPassage
       || (unit.part === "写作" && /请|写|write|suppose|假设|要求/i.test(fields.content));
     if (!isQuestion) {
       addBlock("knowledge", fields.content, { knowledgeTitle: fields.content.slice(0, 20) });
@@ -2381,7 +2382,7 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
         if (beforePart.length > 1) addBlock("documentInfo", beforePart.slice(1).join("\n"));
         beforePart = [];
       }
-      part = major[1] as EnglishPart;
+      part = major[1] === "阅读" ? "阅读理解" : major[1] as EnglishPart;
       listeningAtomic = false;
       gap = false;
       sectionType = englishSectionType(major[1]);
@@ -2421,7 +2422,9 @@ function parseEnglishDocumentBlocks(content: string, config: DocumentParseConfig
     }
     if (part === "阅读理解" && !gap && /^(?:[A-D]|(?:Passage|Text)\s+[A-D\d]+|阅读材料\s*[A-D\d]+)$/i.test(line)) {
       submitCurrent();
-      addBlock("groupTitle", raw);
+      // A/B/C/D is part of the passage question, not a separate project heading.
+      addLine(raw, true);
+      current!.readingPassage = true;
       continue;
     }
     if (part === "听力" && englishListeningPassagePattern.test(line)) {

@@ -45,7 +45,8 @@ import {
   type DocumentBlock as DocBlock,
   type DocumentBlockType as BlockType,
 } from "@/lib/document-block-parser";
-import { extractStoredFile } from "@/services/api";
+import { extractStoredFile, uploadFile } from "@/services/api";
+import { materialService } from "@/services/material";
 import {
   officeMetafilePreviewClassName,
   useOfficeMetafileImages,
@@ -346,6 +347,58 @@ export function ExtractReviewModal({
   const [progressMsg, setProgressMsg] = useState(initialBlocks ? "拆解完成，等待审阅" : "正在初始化...");
   const [error, setError] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<DocBlock[]>(withDetectedQuestionCategories(initialBlocks || [], subject));
+  const [audioMaterials, setAudioMaterials] = useState<Material[]>([]);
+  const [audioAssignments, setAudioAssignments] = useState<Record<string, string[]>>({});
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+
+  useEffect(() => {
+    if (!open || subject?.trim() !== "英语" || !teacher?.id || !teacher.schoolId) return;
+    let active = true;
+    materialService.listMaterials({ teacherId: teacher.id, schoolId: teacher.schoolId })
+      .then((items) => {
+        if (active) setAudioMaterials(items.filter((item) => item.type === "audio"));
+      })
+      .catch((error) => {
+        if (active) toast.error("加载听力音频素材失败", error instanceof Error ? error.message : undefined);
+      });
+    return () => { active = false; };
+  }, [open, subject, teacher?.id, teacher?.schoolId]);
+
+  const uploadListeningAudios = async (files: File[]) => {
+    if (!teacher?.id || !teacher.schoolId || !files.length) return;
+    if (files.some((file) => !/\.(mp3|wav)$/i.test(file.name))) {
+      toast.warning("听力音频支持 MP3、WAV 格式");
+      return;
+    }
+    setUploadingAudio(true);
+    try {
+      for (const file of files) {
+        const uploaded = await uploadFile(file);
+        const material = await materialService.createMaterial(teacher.id, teacher.schoolId, {
+          title: file.name,
+          description: `英语试卷听力音频：${resourceTitle}`,
+          chapterIds,
+          knowledgePointIds,
+          grade,
+          schoolYear,
+          semester,
+          type: "audio",
+          content: file.name,
+          fileName: file.name,
+          fileUrl: uploaded.url,
+          fileSize: uploaded.size,
+          tags: ["英语听力"],
+        });
+        setAudioMaterials((current) => [material, ...current]);
+      }
+      toast.success("听力音频已加入素材库", "请在对应听力题中选择关联的音频");
+    } catch (error) {
+      toast.error("上传听力音频失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setUploadingAudio(false);
+    }
+  };
+
   const [mathNumberInput, setMathNumberInput] = useState("");
   const [mathConfirmedNumbers, setMathConfirmedNumbers] = useState<number[]>([]);
   const [acceptedMathGapSignature, setAcceptedMathGapSignature] = useState("");
@@ -387,6 +440,7 @@ export function ExtractReviewModal({
     setAcceptedMathGapSignature("");
     setMathRepairError(null);
     setBlocks([]);
+    setAudioAssignments({});
     setPreservedScoreLabelBlockIds(new Set());
     setEditingBlockId(null);
     setMergeTargets({});
@@ -782,6 +836,10 @@ export function ExtractReviewModal({
     newBlocks.splice(idx, 1);
     newBlocks.forEach((b, i) => (b.order = i));
     setBlocks(newBlocks);
+    setAudioAssignments((current) => {
+      const { [id]: removed, ...rest } = current;
+      return { ...rest, [prev.id]: [...new Set([...(current[prev.id] || []), ...(removed || [])])] };
+    });
     if (editingBlockId === id) setEditingBlockId(prev.id);
   };
 
@@ -818,6 +876,10 @@ export function ExtractReviewModal({
     newBlocks.splice(idx, 1, newBlock1, newBlock2);
     newBlocks.forEach((b, i) => (b.order = i));
     setBlocks(newBlocks);
+    setAudioAssignments((current) => {
+      const { [id]: selected, ...rest } = current;
+      return selected ? { ...rest, [newBlock1.id]: selected } : rest;
+    });
   };
 
   const mathParseConfig = { ...extractConfig, subject };
@@ -910,6 +972,11 @@ export function ExtractReviewModal({
         return {
           id: b.id,
           type,
+          listeningAudios: type.startsWith("englishListening")
+            ? (audioAssignments[b.id] || []).map((id) => audioMaterials.find((material) => material.id === id))
+              .filter((material): material is Material => Boolean(material?.fileUrl))
+              .map((material) => ({ materialId: material.id, title: material.title, fileUrl: material.fileUrl! }))
+            : undefined,
           categories: subject?.trim() === "地理" && GEOGRAPHY_SUBTYPES[type]
             ? [
               ...(b.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
@@ -1253,7 +1320,7 @@ export function ExtractReviewModal({
                   { value: "question", label: "题目" },
                 ]}
               />
-              {block.type === "question" && (
+              {block.type === "question" && subject?.trim() !== "英语" && (
                 <div className={cn(
                   "rounded-lg border p-2.5",
                   block.suggestedCategories?.length ? "border-amber-200 bg-amber-50/70" : "border-ink-100 bg-paper",
@@ -1282,6 +1349,45 @@ export function ExtractReviewModal({
                       </label>
                     ))}
                   </div>
+                </div>
+              )}
+              {block.type === "question" && subject?.trim() === "英语"
+                  && block.questionType?.startsWith("englishListening") && (
+                <div className="space-y-2 rounded border border-sky-200 bg-sky-50/30 p-2 text-xs">
+                  <label className="block font-semibold text-sky-900" htmlFor={`listening-audio-${block.id}`}>
+                    听力音频（可关联多个素材）
+                  </label>
+                  <select
+                    id={`listening-audio-${block.id}`}
+                    aria-label={`第${block.order + 1}块听力音频`}
+                    className="input-base w-full"
+                    value=""
+                    onChange={(event) => {
+                      const id = event.target.value;
+                      if (!id) return;
+                      setAudioAssignments((current) => ({
+                        ...current, [block.id]: [...new Set([...(current[block.id] || []), id])],
+                      }));
+                    }}
+                  >
+                    <option value="">从素材库选择音频…</option>
+                    {audioMaterials.filter((material) => !(audioAssignments[block.id] || []).includes(material.id))
+                      .map((material) => <option key={material.id} value={material.id}>{material.title}</option>)}
+                  </select>
+                  {(audioAssignments[block.id] || []).map((id) => {
+                    const material = audioMaterials.find((item) => item.id === id);
+                    if (!material) return null;
+                    return (
+                      <div key={id} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{material.title}</span>
+                        <button type="button" className="text-red-700 hover:underline"
+                          aria-label={`移除${material.title}与第${block.order + 1}块的关联`}
+                          onClick={() => setAudioAssignments((current) => ({
+                            ...current, [block.id]: (current[block.id] || []).filter((value) => value !== id),
+                          }))}>移除</button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {block.type === "question" && (
@@ -2008,6 +2114,29 @@ export function ExtractReviewModal({
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          {subject?.trim() === "英语" && blocks.some((block) => block.type === "question"
+            && block.questionType?.startsWith("englishListening")) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/50 p-3 text-sm">
+              <div>
+                <div className="font-semibold text-sky-900">英语听力音频</div>
+                <p className="text-xs text-sky-700">
+                  上传的音频自动进入素材库。可在多个听力题中选择同一音频，也可为单题关联多个音频。
+                </p>
+                <div className="mt-1 text-xs text-sky-700">素材库现有 {audioMaterials.length} 个音频</div>
+              </div>
+              <label className={cn("cursor-pointer rounded border border-sky-300 bg-paper px-3 py-2 text-xs font-medium text-sky-800",
+                uploadingAudio && "pointer-events-none opacity-50")}>
+                {uploadingAudio ? "上传中…" : "上传音频（支持多选）"}
+                <input type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" multiple className="sr-only"
+                  disabled={uploadingAudio}
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    event.target.value = "";
+                    void uploadListeningAudios(files);
+                  }} />
+              </label>
+            </div>
+          )}
           {mathIssueSignature && (
             <div role="alert" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
               <div className="font-medium">数学试卷题号可能不连续，请确认原文</div>
