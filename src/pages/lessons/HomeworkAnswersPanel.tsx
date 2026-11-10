@@ -17,7 +17,7 @@ export function HomeworkAnswersPanel({ answers }: { answers: ClassroomHomeworkAn
       <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center text-neutral-500">
         <BookOpen className="h-10 w-10 text-neutral-700" />
         <div className="text-sm">暂无可查看的作业答案</div>
-        <div className="text-xs">填写作业记录或扫描对应作业后，有答案的题目会显示在这里。</div>
+        <div className="text-xs">完成对应日期的作业批改或扫描复查后，有答案的题目会显示在这里。</div>
       </div>
     );
   }

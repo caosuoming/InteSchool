@@ -63,6 +63,42 @@ export function homeworkSubmissionCounts(
   return details ? { submitted: details.submitted, missing: details.missing } : null;
 }
 
+/** A record aimed only at personal teaching classes belongs in the personal-class view. */
+export function isPersonalOnlyHomework(
+  item: Pick<ClassroomHomework | ExamPaper, "classIds">,
+  personalClassIds: ReadonlySet<string>,
+): boolean {
+  return !!item.classIds?.length && item.classIds.every((id) => personalClassIds.has(id));
+}
+
+type DatedHomework = {
+  assignedDate?: string;
+  assignedEndDate?: string;
+  updatedAt: string;
+};
+
+/** Group by the complete scheduled date range, not by the last edited time. */
+export function homeworkDateGroupKey(item: DatedHomework): string | null {
+  return item.assignedDate ? `${item.assignedDate}|${item.assignedEndDate || item.assignedDate}` : null;
+}
+
+export function sortByHomeworkDate<T extends { item: DatedHomework }>(records: T[]): T[] {
+  return [...records].sort((left, right) => {
+    const leftKey = homeworkDateGroupKey(left.item);
+    const rightKey = homeworkDateGroupKey(right.item);
+    if (!leftKey) return rightKey ? 1 : right.item.updatedAt.localeCompare(left.item.updatedAt);
+    if (!rightKey) return -1;
+    return rightKey.localeCompare(leftKey) || right.item.updatedAt.localeCompare(left.item.updatedAt);
+  });
+}
+
+export function homeworkGroupPosition<T extends { item: DatedHomework }>(records: T[], index: number) {
+  const key = homeworkDateGroupKey(records[index].item);
+  const hasPrevious = !!key && index > 0 && homeworkDateGroupKey(records[index - 1].item) === key;
+  const hasNext = !!key && index + 1 < records.length && homeworkDateGroupKey(records[index + 1].item) === key;
+  return { grouped: hasPrevious || hasNext, first: !hasPrevious && hasNext, last: hasPrevious && !hasNext };
+}
+
 /** 未排期的试卷文档只是待布置资源，不应被显示为已开始的作业。 */
 export function paperHomeworkStatus(paper: ExamPaper, now = new Date()): string {
   if (paper.status !== "published") return "草稿";

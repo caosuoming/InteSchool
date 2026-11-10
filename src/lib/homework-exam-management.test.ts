@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClassroomHomework, ExamPaper, ExamPublication, HomeworkClassOverviewRecord } from "@/types";
-import { homeworkStatus, homeworkSubmissionDetails, homeworkSubmissionCounts, homeworkTitle, paperHomeworkStatus, publicationStatus } from "./homework-exam-management";
+import { homeworkDateGroupKey, homeworkGroupPosition, homeworkStatus, homeworkSubmissionDetails, homeworkSubmissionCounts, homeworkTitle, isPersonalOnlyHomework, paperHomeworkStatus, publicationStatus, sortByHomeworkDate } from "./homework-exam-management";
 
 const homework: ClassroomHomework = {
   id: "hw-1", teacherId: "teacher-1", teacherName: "王老师", schoolId: "school-1", subject: "数学",
@@ -46,6 +46,29 @@ describe("作业考试管理展示", () => {
     const now = new Date("2026-10-12T12:00:00+08:00");
     expect(paperHomeworkStatus(paper, now)).toBe("草稿");
     expect(paperHomeworkStatus({ ...paper, status: "published" }, now)).toBe("进行中");
+  });
+
+  it("excludes homework aimed solely at personal classes, not mixed or unassigned documents", () => {
+    const personal = new Set(["personal-1"]);
+    expect(isPersonalOnlyHomework({ classIds: ["personal-1"] }, personal)).toBe(true);
+    expect(isPersonalOnlyHomework({ classIds: ["personal-1", "school-1"] }, personal)).toBe(false);
+    expect(isPersonalOnlyHomework({ classIds: [] }, personal)).toBe(false);
+  });
+
+  it("orders matching date ranges together and marks only multi-row groups", () => {
+    const wrap = (id: string, assignedDate?: string, assignedEndDate?: string) =>
+      ({ id, item: { assignedDate, assignedEndDate, updatedAt: "2026-10-11T00:00:00Z" } });
+    const records = sortByHomeworkDate([
+      wrap("unscheduled"), wrap("old", "2026-10-10"),
+      wrap("new1", "2026-10-12"), wrap("different-range", "2026-10-12", "2026-10-13"),
+      wrap("new2", "2026-10-12"),
+    ]);
+    expect(records.map((row) => row.id)).toEqual(["different-range", "new1", "new2", "old", "unscheduled"]);
+    expect(homeworkDateGroupKey(records[1].item)).toBe(homeworkDateGroupKey(records[2].item));
+    expect(homeworkGroupPosition(records, 0)).toEqual({ grouped: false, first: false, last: false });
+    expect(homeworkGroupPosition(records, 1)).toEqual({ grouped: true, first: true, last: false });
+    expect(homeworkGroupPosition(records, 2)).toEqual({ grouped: true, first: false, last: true });
+    expect(homeworkGroupPosition(records, 4).grouped).toBe(false);
   });
 
   it("uses publication lifecycle and unlock date without inventing an exam date", () => {

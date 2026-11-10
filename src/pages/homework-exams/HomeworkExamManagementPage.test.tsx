@@ -122,6 +122,58 @@ describe("作业考试管理页面", () => {
     expect(screen.queryByRole("link", { name: "制作空白答题卡" })).not.toBeInTheDocument();
   });
 
+  it("excludes personal teaching class homework but keeps school-class records", async () => {
+    vi.mocked(classService.listAllClasses).mockResolvedValue([one, personal]);
+    vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([
+      homework, { ...homework, id: "personal-homework", title: "个人班课后作业", classIds: [personal.id] },
+    ]);
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      paper, { ...paper, id: "personal-paper", title: "个人班试卷", classIds: [personal.id] },
+    ]);
+    mount("homework");
+    expect(await screen.findByRole("row", { name: /函数专题作业/ })).toBeInTheDocument();
+    expect(screen.queryByText("个人班课后作业")).not.toBeInTheDocument();
+    expect(screen.queryByText("个人班试卷")).not.toBeInTheDocument();
+    expect(homeworkRecordService.listClassOverviews).toHaveBeenCalledWith(one.id);
+    expect(homeworkRecordService.listClassOverviews).not.toHaveBeenCalledWith(personal.id);
+  });
+
+  it("groups matching homework dates together with bold outer borders", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      { ...paper, assignedDate: homework.assignedDate, id: "same-1", title: "同一天试卷一" },
+      { ...paper, assignedDate: homework.assignedDate, id: "same-2", title: "同一天试卷二" },
+      { ...paper, assignedDate: "2026-10-10", id: "old", title: "历史试卷" },
+    ]);
+    mount("homework");
+    const region = await screen.findByRole("region", { name: "作业管理表格，可横向滚动查看后续列" });
+    const rows = within(region).getAllByRole("row").slice(1);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("函数专题作业"),
+      expect.stringContaining("同一天试卷一"),
+      expect.stringContaining("同一天试卷二"),
+      expect.stringContaining("历史试卷"),
+    ]);
+    expect(rows[0]).toHaveClass("border-t-2");
+    expect(rows[2]).toHaveClass("border-b-2");
+    expect(within(rows[0]).getAllByRole("cell")[0]).toHaveClass("border-l-2");
+    expect(within(rows[1]).getAllByRole("cell").at(-1)).toHaveClass("border-r-2");
+    expect(rows[3]).not.toHaveClass("border-t-2");
+  });
+
+  it("offers a time-adjustment action in the management list", async () => {
+    mount("homework");
+    const row = await screen.findByRole("row", { name: /函数专题作业/ });
+    fireEvent.click(within(row).getByRole("button", { name: "调整「函数专题作业」作业时间" }));
+    expect(screen.getByLabelText("开始日期")).toHaveValue("2026-10-12");
+    fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-10-15" } });
+    fireEvent.change(screen.getByLabelText("结束日期"), { target: { value: "2026-10-16" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(classroomHomeworkService.updateHomework).toHaveBeenCalledWith(
+      "homework-1", "teacher-1", "school-1",
+      expect.objectContaining({ assignedDate: "2026-10-15", assignedEndDate: "2026-10-16" }),
+    ));
+  });
+
   it("shows a combined homework and its papers in the same management row", async () => {
     vi.mocked(classroomHomeworkService.listHomeworks).mockResolvedValue([{
       ...homework, examPaperIds: [paper.id], linkedPapers: [{
@@ -265,7 +317,7 @@ describe("作业考试管理页面", () => {
     expect(screen.queryByText("拆解稿")).not.toBeInTheDocument();
   });
 
-  it("renders individual recipients by name and resolves personal class audiences in Chinese", async () => {
+  it("renders individual recipients and hides personal teaching class homework", async () => {
     vi.mocked(classService.listAllClasses).mockResolvedValue([one, personal]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([{
       ...paper, id: "individual", classIds: [], studentIds: ["s2"],
@@ -273,10 +325,7 @@ describe("作业考试管理页面", () => {
     mount("homework");
     const row = await screen.findByRole("row", { name: /资源篮函数练习/ });
     expect(within(row).getByText("个人：李四")).toBeInTheDocument();
-    const personalRow = screen.getByRole("row", { name: /个人班级作业/ });
-    expect(within(personalRow).getByText("班级：个人班级 · 周末提高班")).toBeInTheDocument();
-    fireEvent.click(within(personalRow).getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("checkbox", { name: "个人班级 · 周末提高班" })).toBeChecked();
+    expect(screen.queryByRole("row", { name: /个人班级作业/ })).not.toBeInTheDocument();
   });
 
   it("keeps original-file documents in exam management when categorized as exams", async () => {
