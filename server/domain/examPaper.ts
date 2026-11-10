@@ -484,6 +484,7 @@ export const examPaperService = {
           return {
             id,
             questionId: block.questionId,
+            listeningAudios: linkedQuestion?.listeningAudios?.map((audio) => ({ ...audio })),
             stem: block.content || linkedQuestion?.stem || "",
             options: linkedQuestion?.options,
             answer: linkedQuestion?.answer || "",

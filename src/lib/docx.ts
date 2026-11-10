@@ -8,7 +8,7 @@ import {
 import { getProjectSections } from "@/pages/exam-papers/project-sections";
 import { getQuestionTypeHeading, getQuestionTypeSections } from "@/pages/exam-papers/question-type-sections";
 import {
-  Document, Packer, Paragraph, TextRun, HeadingLevel,
+  Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel,
   AlignmentType, Tab, TabStopPosition, TabStopType,
   BorderStyle, convertInchesToTwip, ImportedXmlComponent, ImageRun,
   type ParagraphChild,
@@ -17,7 +17,7 @@ import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import katex from "katex";
 import { mml2omml } from "mathml2omml";
-import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
+import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question, QuestionAudioReference } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
@@ -1107,6 +1107,22 @@ async function appendExamQuestion(
   }
 }
 
+/** Gather each recording once, including snapshots from extracted papers. */
+export function collectPaperListeningAudios(
+  paper: ExamPaper,
+  questionsById: Record<string, Question>,
+): QuestionAudioReference[] {
+  const references = new Map<string, QuestionAudioReference>();
+  for (const entry of paper.questions) {
+    const linked = entry.questionId ? questionsById[entry.questionId] : undefined;
+    for (const audio of [...(entry.listeningAudios || []), ...(linked?.listeningAudios || [])]) {
+      if (!audio?.materialId || !/^\/api\/files\/[a-z\d-]+$/i.test(audio.fileUrl)) continue;
+      if (!references.has(audio.materialId)) references.set(audio.materialId, audio);
+    }
+  }
+  return [...references.values()];
+}
+
 export async function buildExamPaperDocxBlob(
   paper: ExamPaper,
   questionsById: Record<string, Question> = {},
@@ -1255,6 +1271,29 @@ export async function buildExamPaperDocxBlob(
 
   if (mode === "normal" || mode === "answers") {
     await appendSolutionSection(children, solutions, mode);
+  }
+
+  if (mode !== "answers") {
+    const audios = collectPaperListeningAudios(paper, questionsById);
+    if (audios.length > 0) {
+      children.push(createHeading("听力音频下载链接", HeadingLevel.HEADING_2));
+      for (const [index, audio] of audios.entries()) {
+        children.push(new Paragraph({
+          children: [
+            new ExternalHyperlink({
+              link: new URL(audio.fileUrl, window.location.origin).href,
+              children: [new TextRun({
+                text: `${index + 1}. ${audio.title}`,
+                style: "Hyperlink",
+                color: "0563C1",
+                underline: { color: "0563C1" },
+              })],
+            }),
+          ],
+          spacing: { after: 120 },
+        }));
+      }
+    }
   }
 
   if (children.length === 0) {

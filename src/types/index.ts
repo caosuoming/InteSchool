@@ -1565,6 +1565,13 @@ export interface QuestionVideoReference {
   content?: string;
 }
 
+/** Audio materials used by a listening question; several passages may share a recording. */
+export interface QuestionAudioReference {
+  materialId: string;
+  title: string;
+  fileUrl: string;
+}
+
 export interface QuestionAdaptationInput {
   stem: string;
   answer: string;
@@ -1592,6 +1599,7 @@ export interface Question {
   links?: QuestionLink[];
   /** 关联到素材库中的讲解视频。 */
   explanationVideo?: QuestionVideoReference | null;
+  listeningAudios?: QuestionAudioReference[];
   chapterIds: string[];
   knowledgePointIds: string[];
   thoughtMethodIds?: string[];
@@ -1667,6 +1675,7 @@ export interface ExamPaperQuestion {
   projectId?: string;
   id: string;
   questionId?: string; // 关联题库中的题目（拆解后填入）
+  listeningAudios?: QuestionAudioReference[];
   stem: string;
   options?: string[];
   answer: string;
@@ -2574,6 +2583,7 @@ export interface DuplicateQuestionMergeFields {
 export interface ExtractedQuestionItem {
   id: string;
   type: QuestionType;
+  listeningAudios?: QuestionAudioReference[];
   categories?: string[];
   stem: string;
   options?: string[];
