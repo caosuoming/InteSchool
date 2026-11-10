@@ -13,6 +13,7 @@ import { mml2omml } from "mathml2omml";
 import type { ExamPaper, ExamPaperQuestion, Lecture, LectureSection, Question } from "@/types";
 import { getDefaultQuestionTypeLabel } from "@/lib/question-types";
 import { needsMultipleChoiceMarker } from "@/lib/multiple-choice-marker";
+import { alignGeographyGroupAnswerNumbers } from "@/lib/geography-answer-numbering";
 import { normalizeLegacyOmmlMathText } from "@/lib/legacy-omml-formulas";
 import { normalizePlainMathText } from "@/lib/plain-math";
 import {
@@ -1050,8 +1051,8 @@ async function appendExamQuestion(
 ): Promise<void> {
   const stem = stemOverride || question.stem || linkedQuestion?.stem || "";
   const options = question.options?.length ? question.options : linkedQuestion?.options;
-  const answer = question.answer || linkedQuestion?.answer || "暂无答案";
-  const analysis = question.analysis || linkedQuestion?.analysis || "暂无解析";
+  const answer = alignGeographyGroupAnswerNumbers(stem, question.answer || linkedQuestion?.answer || "暂无答案");
+  const analysis = alignGeographyGroupAnswerNumbers(stem, question.analysis || linkedQuestion?.analysis || "暂无解析");
 
   children.push(
     new Paragraph({
@@ -1138,8 +1139,9 @@ export async function buildExamPaperDocxBlob(
         questionNumber += 1;
         const linkedQuestionId = question.questionId || block.questionId;
         const linkedQuestion = linkedQuestionId ? questionsById[linkedQuestionId] : undefined;
-        const answer = question.answer || linkedQuestion?.answer || "暂无答案";
-        const analysis = question.analysis || linkedQuestion?.analysis || "暂无解析";
+        const stem = block.content || question.stem || linkedQuestion?.stem || "";
+        const answer = alignGeographyGroupAnswerNumbers(stem, question.answer || linkedQuestion?.answer || "暂无答案");
+        const analysis = alignGeographyGroupAnswerNumbers(stem, question.analysis || linkedQuestion?.analysis || "暂无解析");
         solutions.push({ number: questionNumber, answer, analysis });
         if (mode !== "answers") {
           await appendExamQuestion(
@@ -1198,10 +1200,11 @@ export async function buildExamPaperDocxBlob(
       for (const question of section.questions) {
         questionNumber += 1;
         const linkedQuestion = question.questionId ? questionsById[question.questionId] : undefined;
+        const stem = question.stem || linkedQuestion?.stem || "";
         solutions.push({
           number: questionNumber,
-          answer: question.answer || linkedQuestion?.answer || "暂无答案",
-          analysis: question.analysis || linkedQuestion?.analysis || "暂无解析",
+          answer: alignGeographyGroupAnswerNumbers(stem, question.answer || linkedQuestion?.answer || "暂无答案"),
+          analysis: alignGeographyGroupAnswerNumbers(stem, question.analysis || linkedQuestion?.analysis || "暂无解析"),
         });
         if (mode !== "answers") {
           await appendExamQuestion(

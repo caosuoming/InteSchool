@@ -194,6 +194,37 @@ describe("generateExamPaperDocx", () => {
     expect(answersXml).toContain("2.");
   });
 
+  it("matches geography group answer labels to visible question numbers in Word exports", async () => {
+    const stem = "读图完成下面4—6题。\n4. 第一题\n5. 第二题\n6. 第三题";
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      subject: "地理",
+      contentBlocks: [{
+        id: "group-question", type: "question", content: stem,
+        examPaperQuestionId: "paper-question-1",
+      }],
+      questions: [{
+        ...structuredPaper.questions[0],
+        stem,
+        answer: "（1）B\n（2）A\n（3）D",
+        analysis: "（1）地形\n（2）气候\n（3）土壤",
+      }],
+    };
+    for (const mode of ["teacher", "normal", "answers"] as const) {
+      const blob = await buildExamPaperDocxBlob(paper, {}, { mode });
+      const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+      const xml = await zip.file("word/document.xml")!.async("string");
+      const content = new DOMParser().parseFromString(xml, "application/xml").documentElement.textContent || "";
+      expect(content).toContain("（4）B");
+      expect(content).toContain("（5）A");
+      expect(content).toContain("（6）D");
+      expect(content).not.toContain("（1）B");
+      if (mode === "teacher" || mode === "normal") {
+        expect(content).toContain("（4）地形");
+      }
+    }
+  });
+
   it("supports student, normal, and answer-only paper variants", async () => {
     const multiplePaper: ExamPaper = {
       ...structuredPaper,

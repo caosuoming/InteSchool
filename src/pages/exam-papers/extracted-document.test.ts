@@ -109,3 +109,16 @@ describe("extracted document question helpers", () => {
     });
   });
 });
+
+describe("geography grouped answer compatibility", () => {
+  it("presents legacy group answers under the original subquestion numbers", () => {
+    const display = resolveExtractedQuestionDisplay({
+      id: "group", type: "single", score: 6,
+      stem: "读图完成4—6题。\n4. 第一题\n5. 第二题\n6. 第三题",
+      answer: "（1）B\n（2）A\n（3）D",
+      analysis: "（1）地形\n（2）气候\n（3）土壤",
+    }, undefined);
+    expect(display.answer).toBe("（4）B\n（5）A\n（6）D");
+    expect(display.analysis).toBe("（4）地形\n（5）气候\n（6）土壤");
+  });
+});

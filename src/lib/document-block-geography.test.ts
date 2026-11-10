@@ -157,7 +157,22 @@ describe("geography paper decomposition", () => {
     expect(parsed[0].content).not.toContain("就此完成下面小题");
     expect(parsed[1].content).toContain("材料二：下图展示了另一地区的植被分布");
     expect(parsed[1].content).toContain("就此完成下面小题");
-    expect(parsed.map((block) => block.answer)).toEqual(["（1）A\n（2）B", "（1）C\n（2）D"]);
+    expect(parsed.map((block) => block.answer)).toEqual(["（1）A\n（2）B", "（3）C\n（4）D"]);
+  });
+
+  it("keeps grouped answer and explanation labels aligned with original question numbers", () => {
+    const parsed = questions([
+      "一、单选题", "读图完成下面4—6题。",
+      "4. 降水量为？ A. 甲 B. 乙 C. 丙 D. 丁",
+      "5. 主要原因是？ A. 甲 B. 乙 C. 丙 D. 丁",
+      "6. 主要作用是？ A. 甲 B. 乙 C. 丙 D. 丁",
+      "参考答案", "4. 【答案】B 【解析】降水较少。",
+      "5. 【答案】A 【解析】植被较多。",
+      "6. 【答案】D 【解析】改善土壤。",
+    ].join("\n"));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].answer).toBe("（4）B\n（5）A\n（6）D");
+    expect(parsed[0].analysis).toBe("（4）降水较少。\n（5）植被较多。\n（6）改善土壤。");
   });
 
   it("attaches the next single question reading passage instead of the previous last option", () => {
