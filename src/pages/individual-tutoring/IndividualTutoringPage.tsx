@@ -19,7 +19,7 @@ import { examPaperService } from "@/services/examPaper";
 import { basketService } from "@/services/basket";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { gradeService } from "@/services/grade";
-import { chapterScope, flattenChapterTree, tutoringSuggestions } from "@/lib/individual-tutoring";
+import { chapterScope, compactChapterSelection, flattenChapterTree, tutoringSuggestions } from "@/lib/individual-tutoring";
 import { teacherResourceScopeId } from "@/lib/personal-resource-scope";
 import type { Basket, ExamPaper, GradeQueryExam, KnowledgePoint, Lecture, LessonCourseware, PersonalClass, Question, Student, TreeNode } from "@/types";
 
@@ -66,6 +66,7 @@ export default function IndividualTutoringPage() {
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [baskets, setBaskets] = useState<Basket[]>([]);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
   const [basketId, setBasketId] = useState("");
   const [lectureTitle, setLectureTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -185,6 +186,10 @@ export default function IndividualTutoringPage() {
   [chapterSelections, classId, currentClass?.tutoringChapterIds, chapterIdsAvailable]);
   const scope = useMemo(() => chapterScope(chapters, chapterIds), [chapters, chapterIds]);
   const suggestions = useMemo(() => tutoringSuggestions(questions, scope, points, mastery), [questions, scope, points, mastery]);
+  const activeTopicId = suggestions.topics.some((topic) => topic.id === selectedTopicId) ? selectedTopicId : null;
+  const visibleQuestions = activeTopicId
+    ? suggestions.questions.filter((question) => question.knowledgePointIds.includes(activeTopicId))
+    : suggestions.questions;
   const chosen = suggestions.questions.filter((question) => selectedQuestionIds.includes(question.id));
   const classIds = new Set(classes.map((cls) => cls.id));
   const personalLectures = lectures.filter((lecture) => lecture.classIds.some((id) => classIds.has(id)));
@@ -227,8 +232,14 @@ export default function IndividualTutoringPage() {
 
   const updateChapterSelection = (ids: string[]) => {
     if (!classId) return;
-    const next = [...new Set(ids)].filter((id) => chapterIdsAvailable.has(id));
+    const checked = new Set(ids.filter((id) => chapterIdsAvailable.has(id)));
+    const added = [...checked].filter((id) => !scope.has(id));
+    const removed = [...scope].filter((id) => !checked.has(id));
+    const expanded = new Set([...scope, ...chapterScope(chapters, added)]);
+    for (const id of chapterScope(chapters, removed)) expanded.delete(id);
+    const next = compactChapterSelection(chapters, expanded);
     setChapterSelections((previous) => ({ ...previous, [classId]: next }));
+    setSelectedTopicId(null);
     setSelectedQuestionIds([]);
     const selectedClassId = classId;
     saveQueue.current = saveQueue.current.then(async () => {
@@ -328,7 +339,7 @@ export default function IndividualTutoringPage() {
         ))}
       </div>
       {currentSection !== "materials" && <Card className="max-w-xl">
-        <Select label="个人教学班" value={classId} onChange={(e) => { setClassId(e.target.value); setSelectedQuestionIds([]); setStudentId(""); }}
+        <Select label="个人教学班" value={classId} onChange={(e) => { setClassId(e.target.value); setSelectedTopicId(null); setSelectedQuestionIds([]); setStudentId(""); }}
           options={classes.map((item) => ({ value: item.id, label: item.name }))} />
       </Card>}
 
@@ -374,37 +385,57 @@ export default function IndividualTutoringPage() {
       )}
 
       {currentSection === "prepare" && (
-        <div className="space-y-4">
-          <Card className="max-w-xl space-y-3">
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.6fr)]">
+          <Card className="min-w-0 space-y-3">
             <h2 className="font-semibold text-ink-900">选择章节课范围</h2>
             {chapterTree ? <SearchableTree key={classId} data={chapterTree} title="章节课目录"
-              checkable checkedIds={chapterIds} onCheck={updateChapterSelection}
-              cascadeCheck={false} showCount={false} expandLevel={2}
+              checkable checkedIds={[...scope]} onCheck={updateChapterSelection}
+              cascadeCheck showCount={false} expandLevel={2}
               searchPlaceholder="搜索章节课目录..." className="rounded-lg border border-ink-200"
             /> : chapterLoadFailed
               ? <p role="alert" className="text-sm text-red-600">章节课目录加载失败，请刷新重试</p>
               : <Spinner />}
-            <p className="text-xs text-ink-500">已选择 {chapterIds.length} 个节点，可复选并展开或折叠。范围包含所选节点的全部子章节，选择将自动保存至当前个人教学班，下次打开继续使用。</p>
-            {!chapterIds.length && chapterTree && <p className="text-xs text-ink-400">请从知识树章节课目录中勾选至少一个节点。</p>}
+            <p className="text-xs text-ink-500">已选择 {chapterIds.length} 个范围，勾选父节点时包含其全部下级节点。支持多选及展开折叠；选择将自动保存到当前个人教学班。</p>
+            {!chapterIds.length && chapterTree && <p className="text-xs text-ink-400">请从章节课目录中勾选至少一个节点。</p>}
           </Card>
-          {chapterIds.length > 0 && <>
-            <Card className="space-y-3">
+          <div className="min-w-0 space-y-4">
+            <Card className="min-w-0 space-y-3">
               <h2 className="font-semibold text-ink-900">班级薄弱与未训练知识点</h2>
-              {loadingProgress ? <Spinner /> : suggestions.topics.length ? <div className="flex flex-wrap gap-2">
-                {suggestions.topics.map((topic) => <span key={topic.id} className={`rounded-full px-3 py-1 text-xs ${topic.level === "weak" ? "bg-red-50 text-red-700" : "bg-mist text-ink-600"}`}>
-                  {topic.name} · {topic.level === "weak" ? "薄弱" : "未训练"} · {topic.questionCount} 题
-                </span>)}
-              </div> : <p className="text-sm text-ink-500">该章节没有匹配的薄弱或未训练知识点及题目。</p>}
+              {!chapterIds.length
+                ? <p className="text-sm text-ink-500">请先在左侧选择章节课范围。</p>
+                : loadingProgress ? <Spinner /> : suggestions.topics.length ? <>
+                  <p className="text-xs text-ink-500">点击知识点以筛选下方的相关试题，可切换或查看全部。</p>
+                  <div className="flex flex-wrap gap-2" aria-label="知识点筛选">
+                    <button type="button" aria-pressed={activeTopicId === null}
+                      onClick={() => setSelectedTopicId(null)}
+                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${activeTopicId === null ? "border-gold-400 bg-gold-50 text-gold-800" : "border-ink-200 text-ink-600 hover:border-gold-300"}`}>
+                      全部知识点 · {suggestions.questions.length} 题
+                    </button>
+                    {suggestions.topics.map((topic) => (
+                      <button key={topic.id} type="button"
+                        aria-pressed={activeTopicId === topic.id}
+                        onClick={() => setSelectedTopicId(topic.id)}
+                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${activeTopicId === topic.id
+                          ? "border-gold-400 bg-gold-50 text-gold-800"
+                          : topic.level === "weak" ? "border-red-200 bg-red-50 text-red-700 hover:border-red-400"
+                            : "border-ink-200 bg-mist text-ink-600 hover:border-gold-300"}`}>
+                        {topic.name} · {topic.level === "weak" ? "薄弱" : "未训练"} · {topic.questionCount} 题
+                      </button>
+                    ))}
+                  </div>
+                </> : <p className="text-sm text-ink-500">该章节没有匹配的薄弱或未训练知识点及题目。</p>}
             </Card>
-            <Card className="space-y-3">
+            {chapterIds.length > 0 && <Card className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-semibold text-ink-900">推荐试题（{suggestions.questions.length}）</h2>
+                <h2 className="font-semibold text-ink-900">推荐试题（{visibleQuestions.length}）</h2>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setSelectedQuestionIds(suggestions.questions.map((q) => q.id))}>全选</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setSelectedQuestionIds([])}>清空</Button>
+                  <Button size="sm" variant="outline" disabled={!visibleQuestions.length}
+                    onClick={() => setSelectedQuestionIds((previous) => [...new Set([...previous, ...visibleQuestions.map((q) => q.id)])])}>全选当前题目</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedQuestionIds([])}>清空已选</Button>
                 </div>
               </div>
-              {suggestions.questions.map((q) => <label key={q.id} className="flex items-start gap-3 border-t border-ink-100 pt-3 cursor-pointer">
+              {activeTopicId && <p className="text-xs text-ink-500">当前知识点：{suggestions.topics.find((topic) => topic.id === activeTopicId)?.name}（可在上方切换）</p>}
+              {visibleQuestions.map((q) => <label key={q.id} className="flex items-start gap-3 border-t border-ink-100 pt-3 cursor-pointer">
                 <input type="checkbox" className="mt-1" checked={selectedQuestionIds.includes(q.id)} onChange={(e) => setSelectedQuestionIds((previous) => e.target.checked ? [...previous, q.id] : previous.filter((id) => id !== q.id))} />
                 <div className="min-w-0 flex-1 text-sm text-ink-800">
                   <MathHtml>{q.stem}</MathHtml>
@@ -414,9 +445,9 @@ export default function IndividualTutoringPage() {
                   <span className="block mt-1 text-xs text-ink-400">{q.knowledgePointIds.map((id) => points.find((p) => p.id === id)?.name).filter(Boolean).join(" · ") || "未关联知识点"}</span>
                 </div>
               </label>)}
-              {!suggestions.questions.length && <p className="text-sm text-ink-400">暂无可选试题</p>}
+              {!visibleQuestions.length && <p className="text-sm text-ink-400">暂无可选试题</p>}
               <div className="pt-4 border-t border-ink-100 space-y-3">
-                <p className="text-sm text-ink-600">已选择 {chosen.length} 道题</p>
+                <p className="text-sm text-ink-600">已选择 {chosen.length} 道题（可跨知识点选题）</p>
                 <div className="flex flex-wrap gap-2 items-end">
                   <div className="min-w-52 flex-1"><Select label="目标资源篮" value={basketId} options={baskets.map((item) => ({ value: item.id, label: item.name }))} placeholder="选择资源篮" onChange={(e) => setBasketId(e.target.value)} /></div>
                   <Button disabled={!basketId || !chosen.length || busy} variant="outline" onClick={() => void addToBasket()}>加入资源篮</Button>
@@ -427,8 +458,8 @@ export default function IndividualTutoringPage() {
                   <Button disabled={!chosen.length || busy} onClick={() => void createLecture()}>生成讲义</Button>
                 </div>
               </div>
-            </Card>
-          </>}
+            </Card>}
+          </div>
         </div>
       )}
 
