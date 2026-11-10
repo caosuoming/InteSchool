@@ -49,7 +49,7 @@ import {
   groupDeskLabelsByRoom,
   groupStudentArrangements,
 } from "@/lib/exam-arrangement-export";
-import { examGroupsShareExamTime, fixedRoomIdsForSubject, normalizeExamRoomSharing, summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangement";
+import { examGroupsShareExamTime, fixedRoomIdsForSubject, normalizeExamRoomSharing, resolveSameSeatSubjectGroups, summarizeExamGroups, type ExamGroupSummary } from "@/lib/exam-arrangement";
 
 const DEFAULT_SUBJECTS = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
 const CORE_SUBJECTS = ["语文", "数学", "英语"];
@@ -545,6 +545,7 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
     subjects: [...DEFAULT_SUBJECTS],
     selectionSubjects,
     separateSubjects: [],
+    sameSeatSubjectGroups: [[...DEFAULT_SUBJECTS]],
     simultaneousSubjectGroups: defaultSimultaneousSubjectGroups(DEFAULT_SUBJECTS, studentSubjects),
     seatOrder: "random",
     rooms,
@@ -556,6 +557,20 @@ function createDefaultDraft(context: ExamArrangementContext): ExamArrangementInp
   };
   const withRoomGroups = { ...draft, groupRoomIds: normalizeGroupRoomIds(draft, context) };
   return normalizeExamRoomSharing(withRoomGroups, context);
+}
+
+function normalizeSameSeatGroupsForDraft(current: ExamArrangementInput, subjects: string[]): string[][] {
+  if (current.sameSeatSubjectGroups === undefined) return resolveSameSeatSubjectGroups(current, subjects);
+  const claimed = new Set<string>();
+  const groups = current.sameSeatSubjectGroups.map((source) => subjects.filter((subject) => {
+    if (!source.includes(subject) || claimed.has(subject)) return false;
+    claimed.add(subject);
+    return true;
+  }));
+  const missing = subjects.filter((subject) => !claimed.has(subject));
+  if (groups.length === 0) return [missing];
+  groups[0].push(...missing);
+  return groups;
 }
 
 function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementContext): ExamArrangementInput {
@@ -585,6 +600,7 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
     subjects,
     selectionSubjects,
     separateSubjects: uniqueSubjects(current.separateSubjects || []).filter((subject) => subjects.includes(subject)),
+    sameSeatSubjectGroups: normalizeSameSeatGroupsForDraft(current, subjects),
     simultaneousSubjectGroups: normalizeSimultaneousSubjectGroupsForDraft(current.simultaneousSubjectGroups, subjects),
     seatOrder: current.seatOrder || "random",
     rooms,
@@ -603,6 +619,25 @@ function normalizeDraft(current: ExamArrangementInput, context: ExamArrangementC
       };
     }),
   };
+  // Convert saved room choices when opening a plan created before same-seat groups existed.
+  if (current.sameSeatSubjectGroups === undefined) {
+    const legacyGroups = summarizeExamGroups(current, context);
+    const newGroups = summarizeExamGroups(normalized, context);
+    const groupRoomIds = { ...(current.groupRoomIds || {}) };
+    const groupRoomCapacities = { ...(current.groupRoomCapacities || {}) };
+    for (const group of legacyGroups) {
+      const corresponding = newGroups.find((candidate) => candidate.subjectLabel === group.subjectLabel);
+      if (!corresponding) continue;
+      if (!groupRoomIds[corresponding.key] && current.groupRoomIds?.[group.key]) {
+        groupRoomIds[corresponding.key] = current.groupRoomIds[group.key];
+      }
+      if (!groupRoomCapacities[corresponding.key] && current.groupRoomCapacities?.[group.key]) {
+        groupRoomCapacities[corresponding.key] = current.groupRoomCapacities[group.key];
+      }
+    }
+    normalized.groupRoomIds = groupRoomIds;
+    normalized.groupRoomCapacities = groupRoomCapacities;
+  }
   const groupRoomIds = normalizeGroupRoomIds(normalized, context);
   const withRoomGroups = { ...normalized, groupRoomIds };
   const groupRoomCapacities = normalizeGroupRoomCapacities(withRoomGroups, context);
@@ -621,6 +656,7 @@ function cloneDraft(arrangement: ExamArrangement, context: ExamArrangementContex
     subjects: structuredClone(arrangement.subjects),
     selectionSubjects: structuredClone(arrangement.selectionSubjects || {}),
     separateSubjects: structuredClone(arrangement.separateSubjects || []),
+    sameSeatSubjectGroups: arrangement.sameSeatSubjectGroups === undefined ? undefined : structuredClone(arrangement.sameSeatSubjectGroups),
     simultaneousSubjectGroups: structuredClone(arrangement.simultaneousSubjectGroups || []),
     seatOrder: arrangement.seatOrder,
     rooms: structuredClone(arrangement.rooms),
@@ -1150,7 +1186,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     }
     const preparedDraft = normalizeDraft({
       ...draft,
-      mode: draft.separateSubjects?.length === draft.subjects.length ? "subject" : "combination",
+      mode: (draft.sameSeatSubjectGroups || []).length === draft.subjects.length ? "subject" : "combination",
     }, context);
     setSaving(true);
     try {
@@ -1230,6 +1266,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         ...current,
         subjects,
         separateSubjects: current.separateSubjects?.filter((item) => item !== subject),
+        sameSeatSubjectGroups: current.sameSeatSubjectGroups?.map((group) => group.filter((item) => item !== subject)),
         simultaneousSubjectGroups: current.simultaneousSubjectGroups?.map((group) => group.filter((item) => item !== subject)),
         selectionSubjects: Object.fromEntries(Object.entries(current.selectionSubjects || {}).map(([name, items]) => [
           name,
@@ -1266,14 +1303,36 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     });
   };
 
-  const toggleSeparateSubject = (subject: string) => {
+  const addSameSeatSubjectGroup = () => {
+    updateDraft((current) => ({
+      ...current,
+      sameSeatSubjectGroups: [...(current.sameSeatSubjectGroups || []), []],
+    }));
+  };
+
+  const moveSubjectToSameSeatGroup = (groupIndex: number, subject: string) => {
+    updateDraft((current) => ({
+      ...current,
+      sameSeatSubjectGroups: (current.sameSeatSubjectGroups || []).map((group, index) => (
+        index === groupIndex
+          ? uniqueSubjects([...group, subject])
+          : group.filter((item) => item !== subject)
+      )),
+    }));
+  };
+
+  const removeSameSeatSubjectGroup = (groupIndex: number) => {
     updateDraft((current) => {
-      const selected = current.separateSubjects || [];
+      const groups = current.sameSeatSubjectGroups || [];
+      if (groups.length < 2) return current;
+      const destination = groupIndex === 0 ? 1 : 0;
       return {
         ...current,
-        separateSubjects: selected.includes(subject)
-          ? selected.filter((item) => item !== subject)
-          : uniqueSubjects([...selected, subject]),
+        sameSeatSubjectGroups: groups
+          .map((group, index) => index === destination
+            ? uniqueSubjects([...group, ...groups[groupIndex]])
+            : group)
+          .filter((_, index) => index !== groupIndex),
       };
     });
   };
@@ -1651,7 +1710,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   </div>
                   <div className="mt-2 text-sm text-ink-600">学生考试科目：{selectedArrangement.subjects.join("、")}</div>
                   <div className="mt-1 text-xs text-ink-500">
-                    单独排考：{selectedArrangement.separateSubjects?.join("、") || "无"}；弃考 {selectedArrangement.studentSubjects.filter((item) => item.absent).length} 人；{selectedArrangement.rooms.length} 个考场
+                    同座位组合：{resolveSameSeatSubjectGroups(selectedArrangement).map((group) => group.join("、")).join("；")}；弃考 {selectedArrangement.studentSubjects.filter((item) => item.absent).length} 人；{selectedArrangement.rooms.length} 个考场
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1854,13 +1913,32 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
 
               <Card>
                 <div className="font-medium text-ink-900">第四步：排考场规则</div>
-                <div className="mt-1 text-xs text-ink-500">勾选的科目每个学科单独排考场；未勾选的科目按每名学生实际参加的科目组合合并安排。</div>
-                <div className="mt-4 flex flex-wrap gap-2">{draft.subjects.map((subject) => (
-                  <CheckboxPill key={subject} checked={(draft.separateSubjects || []).includes(subject)} label={`${subject}单独排`} onClick={() => toggleSeparateSubject(subject)} />
-                ))}</div>
-                <div className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
-                  参与合并的科目：{draft.subjects.filter((subject) => !(draft.separateSubjects || []).includes(subject)).join("、") || "无"}
-                  {(draft.subjects.length > (draft.separateSubjects || []).length) && "；每名学生仅合并本人实际参加的科目"}
+                <div className="mt-1 text-xs text-ink-500">同一组合内的科目共用一套座位；默认全部学科位于同一组合。每个科目只能属于一个组合。</div>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-ink-800">同座位科目组合</div>
+                  <Button variant="outline" size="sm" onClick={addSameSeatSubjectGroup}><Plus className="h-3.5 w-3.5" />增加组合</Button>
+                </div>
+                <div className="mt-2 text-xs text-ink-500">点击科目可将其移入当前组合；从其他组合移入时自动移除原来的归属。删除组合会将其科目并入第一个保留的组合。</div>
+                <div className="mt-3 space-y-3">
+                  {(draft.sameSeatSubjectGroups || []).map((group, groupIndex) => (
+                    <div key={groupIndex} className="rounded-lg border border-ink-100 bg-paper p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium text-ink-800">同座位组合 {groupIndex + 1}</div>
+                        <Button variant="ghost" size="sm" disabled={(draft.sameSeatSubjectGroups || []).length < 2} onClick={() => removeSameSeatSubjectGroup(groupIndex)}><Trash2 className="h-3.5 w-3.5" />删除组合</Button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {draft.subjects.map((subject) => (
+                          <CheckboxPill
+                            key={subject}
+                            checked={group.includes(subject)}
+                            label={subject}
+                            onClick={() => moveSubjectToSameSeatGroup(groupIndex, subject)}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-2 text-xs text-ink-500">{group.length > 0 ? `本组合：${group.join("、")}` : "暂无科目，可从其他组合移入学科"}</div>
+                    </div>
+                  ))}
                 </div>
                 <div className="mt-4 border-t border-ink-100 pt-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1872,8 +1950,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   </div>
                   <div className="mt-3 space-y-3">
                     {(draft.simultaneousSubjectGroups || []).map((group, groupIndex) => {
-                      const separateCount = group.filter((subject) => (draft.separateSubjects || []).includes(subject)).length;
-                      const mixedArrangementMode = group.length >= 2 && separateCount > 0 && separateCount < group.length;
+                      const sameSeatGroupCount = new Set(group.map((subject) =>
+                        (draft.sameSeatSubjectGroups || []).findIndex((items) => items.includes(subject)),
+                      )).size;
                       const conflictCount = draft.studentSubjects.filter((selection) => (
                         !selection.absent && group.filter((subject) => selection.subjects.includes(subject)).length > 1
                       )).length;
@@ -1897,22 +1976,20 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                               );
                             })}
                           </div>
-                          <div className={cn("mt-2 text-xs", mixedArrangementMode || conflictCount > 0 ? "text-red-600" : "text-ink-500")}>
+                          <div className={cn("mt-2 text-xs", conflictCount > 0 ? "text-red-600" : "text-ink-500")}>
                             {group.length < 2
                               ? "未启用；至少选择两个科目后才作为同时场次生效。"
-                              : mixedArrangementMode
-                                ? "同一同时考试组合中的科目需全部单独排，或全部参与合并安排。"
-                                : conflictCount > 0
+                              : conflictCount > 0
                                   ? `有 ${conflictCount} 名学生同时参加本组中的多个科目，请先调整学生考试科目或同时考试组合。`
-                                  : separateCount === group.length
-                                    ? "同组单独排考科目共享同一场次的考场容量。"
-                                    : "同组科目参与同一套合并座位时，将按选科或学科相对集中。"}
+                                  : sameSeatGroupCount > 1
+                                    ? "不同同座位组合中的同场科目共享实体考场容量。"
+                                    : "同组科目共用同一套座位，按选科或学科相对集中。"}
                           </div>
                         </div>
                       );
                     })}
                     {(draft.simultaneousSubjectGroups || []).length === 0 && (
-                      <div className="rounded-lg border border-dashed border-ink-200 px-4 py-5 text-center text-xs text-ink-400">未设置同时考试科目；各单独排考科目按不同场次处理。</div>
+                      <div className="rounded-lg border border-dashed border-ink-200 px-4 py-5 text-center text-xs text-ink-400">未设置同时考试科目；不同同座位组合独立排座。</div>
                     )}
                   </div>
                 </div>
@@ -1924,11 +2001,15 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                   )}
                   <div className="mt-3 space-y-3">
                     {examSessions.map((session, sessionIndex) => {
-                      const sessionTitle = session.key === "combined"
-                        ? "合并场次"
-                        : session.key.startsWith("simultaneous:")
-                          ? `同时场次 · ${session.key.slice("simultaneous:".length).split("|").join("、")}`
-                          : `单独场次 · ${session.key.replace(/^subject:/, "")}`;
+                      const sessionTitle = session.key.startsWith("seat-session:")
+                        ? `同场考试 · ${session.key.slice("seat-session:".length).split("|").join("、")}`
+                        : session.key.startsWith("seat:")
+                          ? `同座位场次 · ${session.key.slice("seat:".length).split("|").join("、")}`
+                          : session.key === "combined"
+                            ? "合并场次"
+                            : session.key.startsWith("simultaneous:")
+                              ? `同时场次 · ${session.key.slice("simultaneous:".length).split("|").join("、")}`
+                              : `单独场次 · ${session.key.replace(/^subject:/, "")}`;
                       return (
                         <div key={session.key} data-testid={`exam-session-${sessionIndex + 1}`} className="rounded-xl border border-ink-200 bg-ink-50/60 p-3 sm:p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2">

@@ -84,6 +84,67 @@ function normalizeSimultaneousSubjectGroups(
   return groups;
 }
 
+/** Resolve persisted same-seat groups while preserving legacy independent subjects. */
+export function resolveSameSeatSubjectGroups(
+  input: ExamArrangementInput,
+  subjects: string[] = uniqueStrings(input.subjects || []),
+  strict = false,
+): string[][] {
+  const subjectSet = new Set(subjects);
+  if (input.sameSeatSubjectGroups === undefined) {
+    const separate = new Set(uniqueStrings(
+      input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
+    ));
+    const combined = subjects.filter((subject) => !separate.has(subject));
+    return [
+      ...(combined.length > 0 ? [combined] : []),
+      ...subjects.filter((subject) => separate.has(subject)).map((subject) => [subject]),
+    ];
+  }
+  const seen = new Set<string>();
+  const groups: string[][] = [];
+  for (const source of input.sameSeatSubjectGroups) {
+    const raw = uniqueStrings(source || []);
+    const unknown = raw.filter((subject) => !subjectSet.has(subject));
+    const duplicate = raw.filter((subject) => seen.has(subject));
+    if (strict && unknown.length > 0) throw new Error(`同座位组合包含未启用科目：${unknown.join("、")}`);
+    if (strict && duplicate.length > 0) throw new Error(`科目不能属于多个同座位组合：${duplicate.join("、")}`);
+    const group = subjects.filter((subject) => raw.includes(subject) && !seen.has(subject));
+    if (group.length === 0) continue;
+    group.forEach((subject) => seen.add(subject));
+    groups.push(group);
+  }
+  const missing = subjects.filter((subject) => !seen.has(subject));
+  if (strict && missing.length > 0) throw new Error(`科目必须属于一个同座位组合：${missing.join("、")}`);
+  if (missing.length > 0) {
+    if (groups.length === 0) groups.push(missing);
+    else groups[0].push(...missing);
+  }
+  return groups;
+}
+
+/** Connected simultaneous exams compete for the same physical seat capacity. */
+function sameSeatSessionKeys(seatGroups: string[][], simultaneousGroups: string[][]): string[] {
+  const parents = seatGroups.map((_, index) => index);
+  const root = (index: number): number => {
+    while (parents[index] !== index) index = parents[index];
+    return index;
+  };
+  for (const simultaneous of simultaneousGroups) {
+    const indices = [...new Set(simultaneous.flatMap((subject) => {
+      const index = seatGroups.findIndex((group) => group.includes(subject));
+      return index < 0 ? [] : [index];
+    }))];
+    for (const index of indices.slice(1)) parents[root(index)] = root(indices[0]);
+  }
+  return seatGroups.map((group, index) => {
+    const linked = seatGroups.filter((_, other) => root(other) === root(index));
+    return linked.length === 1
+      ? `seat:${group.join("|")}`
+      : `seat-session:${linked.flat().join("|")}`;
+  });
+}
+
 function simultaneousSessionKey(subject: string, groups: string[][]): string {
   const group = groups.find((items) => items.includes(subject));
   return group ? `simultaneous:${group.join("|")}` : `subject:${subject}`;
@@ -94,8 +155,17 @@ function examSlotKey(subject: string, groups: string[][]): string {
   return group ? `simultaneous:${group.join("|")}` : `subject:${subject}`;
 }
 
-function groupExamSlotKeys(group: ExamGroupSummary, simultaneousGroups: string[][]): string[] {
-  return uniqueStrings(group.subjectLabel.split(" / ")).map((subject) => examSlotKey(subject, simultaneousGroups));
+function groupExamSlotKeys(
+  group: ExamGroupSummary,
+  simultaneousGroups: string[][],
+  sameSeatGroups: string[][] = [],
+): string[] {
+  const selected = uniqueStrings(group.subjectLabel.split(" / "));
+  const seatGroup = sameSeatGroups.find((subjects) => selected.every((subject) => subjects.includes(subject)));
+  return uniqueStrings([
+    ...selected.map((subject) => examSlotKey(subject, simultaneousGroups)),
+    ...(seatGroup ? [`seat-layout:${seatGroup.join("|")}`] : []),
+  ]);
 }
 
 export function examGroupsShareExamTime(
@@ -105,8 +175,10 @@ export function examGroupsShareExamTime(
 ): boolean {
   const subjects = uniqueStrings(input.subjects || []);
   const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, subjects);
-  const leftSlots = new Set(groupExamSlotKeys(left, simultaneousGroups));
-  return groupExamSlotKeys(right, simultaneousGroups).some((slotKey) => leftSlots.has(slotKey));
+  const seatGroups = input.sameSeatSubjectGroups === undefined
+    ? [] : resolveSameSeatSubjectGroups(input, subjects);
+  const leftSlots = new Set(groupExamSlotKeys(left, simultaneousGroups, seatGroups));
+  return groupExamSlotKeys(right, simultaneousGroups, seatGroups).some((slotKey) => leftSlots.has(slotKey));
 }
 
 function taskConcentrationKey(student: Student, selectedSubjects: string[], groups: string[][]): string | undefined {
@@ -132,6 +204,40 @@ export function summarizeExamGroups(
   const separateSubjects = new Set(uniqueStrings(
     input.separateSubjects ?? (input.mode === "subject" ? subjects : []),
   ).filter((subject) => subjects.includes(subject)));
+  if (input.sameSeatSubjectGroups !== undefined) {
+    const seatGroups = resolveSameSeatSubjectGroups(input, subjects);
+    const sessionKeys = sameSeatSessionKeys(seatGroups, simultaneousGroups);
+    const selections = new Map((input.studentSubjects || []).map((item) => [item.studentId, item]));
+    const groups = new Map<string, ExamGroupSummary>();
+    for (const student of context.students) {
+      const selection = selections.get(student.id);
+      if (selection?.absent) continue;
+      const selected = subjects.filter((subject) => (selection?.subjects || subjects).includes(subject));
+      seatGroups.forEach((seatGroup, index) => {
+        const actual = seatGroup.filter((subject) => selected.includes(subject));
+        if (actual.length === 0) return;
+        const key = `seat:${actual.join("|")}`;
+        const existing = groups.get(key);
+        if (existing) {
+          existing.studentCount += 1;
+          if (!existing.classIds.includes(student.classId)) existing.classIds.push(student.classId);
+          return;
+        }
+        groups.set(key, {
+          key,
+          sessionKey: sessionKeys[index],
+          subjectLabel: actual.join(" / "),
+          actualSubjectLabels: [actual.join(" / ")],
+          studentCount: 1,
+          classIds: [student.classId],
+        });
+      });
+    }
+    return [...groups.values()].sort((left, right) => (
+      left.sessionKey.localeCompare(right.sessionKey, "zh-CN")
+      || left.subjectLabel.localeCompare(right.subjectLabel, "zh-CN")
+    ));
+  }
   const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
   const selections = new Map((input.studentSubjects || []).map((item) => [item.studentId, item]));
   const groups = new Map<string, ExamGroupSummary>();
@@ -209,7 +315,16 @@ export function normalizeExamRoomSharing(
   }
   const roomMap = new Map(input.rooms.map((room) => [room.id, room]));
   const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, uniqueStrings(input.subjects || []));
-  const slotsByGroup = new Map(groups.map((group) => [group.key, groupExamSlotKeys(group, simultaneousGroups)]));
+  const seatGroups = input.sameSeatSubjectGroups === undefined
+    ? [] : resolveSameSeatSubjectGroups(input, uniqueStrings(input.subjects || []));
+  const slotsByGroup = new Map(groups.map((group) => [
+    group.key, groupExamSlotKeys(group, simultaneousGroups, seatGroups),
+  ]));
+  const seatLayoutByGroupKey = new Map(groups.map((group) => {
+    const selected = uniqueStrings(group.subjectLabel.split(" / "));
+    const seatGroup = seatGroups.find((subjects) => selected.every((subject) => subjects.includes(subject)));
+    return [group.key, seatGroup ? `seat-layout:${seatGroup.join("|")}` : group.key];
+  }));
   const roomsByGroup = new Map(groups.map((group) => [group.key, configuredRoomsForGroup(input, group)]));
   try {
     const subjects = uniqueStrings(input.subjects || []);
@@ -280,9 +395,13 @@ export function normalizeExamRoomSharing(
             sum + (effectiveCapacities.get(group.key)?.get(room.id) || 0)
           ), 0) - room.capacity;
           if (overflow <= 0) continue;
-          const candidates = splitCandidates.get(sessionKey) || new Set<string>();
-          candidates.add(room.id);
-          splitCandidates.set(sessionKey, candidates);
+          // Subgroups of one seating layout must use one physical/numbered room.
+          const differentLayouts = new Set(slotGroups.map((group) => seatLayoutByGroupKey.get(group.key))).size > 1;
+          if (differentLayouts) {
+            const candidates = splitCandidates.get(sessionKey) || new Set<string>();
+            candidates.add(room.id);
+            splitCandidates.set(sessionKey, candidates);
+          }
 
           while (overflow > 0) {
             const reducible = slotGroups
@@ -340,7 +459,9 @@ export function normalizeExamRoomSharing(
           groupsBySlot.set(slotKey, groupKeys);
         }
       }
-      return [...groupsBySlot.values()].some((groupKeys) => new Set(groupKeys).size >= 2);
+      return [...groupsBySlot.values()].some((groupKeys) => (
+        new Set(groupKeys.map((key) => seatLayoutByGroupKey.get(key) || key)).size >= 2
+      ));
     });
     if (valid.length > 0) splitRoomIdsBySession[sessionKey] = valid;
   }
@@ -546,10 +667,42 @@ function buildTasks(
   ).filter((subject) => subjects.includes(subject)));
   const simultaneousGroups = normalizeSimultaneousSubjectGroups(input, subjects, true);
   for (const group of simultaneousGroups) {
+    if (input.sameSeatSubjectGroups !== undefined) continue;
     const separateCount = group.filter((subject) => separateSubjects.has(subject)).length;
     if (separateCount !== 0 && separateCount !== group.length) {
       throw new Error(`同时考试组合「${group.join("、")}」中的科目需全部单独排，或全部参与合并安排`);
     }
+  }
+  if (input.sameSeatSubjectGroups !== undefined) {
+    const seatGroups = resolveSameSeatSubjectGroups(input, subjects, true);
+    const sessionKeys = sameSeatSessionKeys(seatGroups, simultaneousGroups);
+    const tasks: SeatTask[] = [];
+    for (const student of context.students) {
+      const selection = selections.get(student.id);
+      if (!selection || selection.absent) continue;
+      const selected = subjects.filter((subject) => selection.subjects.includes(subject));
+      for (const simultaneous of simultaneousGroups) {
+        const conflicts = simultaneous.filter((subject) => selected.includes(subject));
+        if (conflicts.length > 1) {
+          throw new Error(`学生 ${student.name} 同时参加「${conflicts.join("、")}」，不能安排在同一考试场次`);
+        }
+      }
+      const classItem = classMap.get(student.classId);
+      if (!classItem) continue;
+      seatGroups.forEach((seatGroup, index) => {
+        const actual = seatGroup.filter((subject) => selected.includes(subject));
+        if (actual.length === 0) return;
+        const task = createTask(
+          student, classItem.name, sessionKeys[index], actual, rules, allRoomIds,
+          groupRoomIds, simultaneousGroups, `seat:${actual.join("|")}`,
+          undefined, selection.seatPreference,
+        );
+        // Even students taking disjoint electives in one group must occupy distinct seats.
+        task.examSlotKeys.push(`seat-layout:${seatGroup.join("|")}`);
+        tasks.push(task);
+      });
+    }
+    return tasks;
   }
   const combinedSubjects = subjects.filter((subject) => !separateSubjects.has(subject));
   const legacyCombinedGroupKey = examGroupKey("combined", combinedSubjects);
@@ -661,6 +814,13 @@ function allocateSession(
   const sessionKey = tasks[0]?.sessionKey || String(sessionIndex);
   const seed = `${input.name}:${input.examDate || ""}:${sessionKey}`;
   const splitRoomIds = new Set(input.splitRoomIdsBySession?.[sessionKey] || []);
+  const seatGroups = input.sameSeatSubjectGroups === undefined
+    ? [] : resolveSameSeatSubjectGroups(input, uniqueStrings(input.subjects || []));
+  const layoutKey = (task: SeatTask): string => {
+    const actual = uniqueStrings(task.subjectLabel.split(" / "));
+    const seatGroup = seatGroups.find((subjects) => actual.every((subject) => subjects.includes(subject)));
+    return seatGroup ? `seat-layout:${seatGroup.join("|")}` : task.groupKey;
+  };
   const roomCapacityForGroup = (task: SeatTask, room: ExamRoomConfig): number => (
     input.groupRoomCapacities?.[task.groupKey]?.[room.id] ?? room.capacity
   );
@@ -710,7 +870,7 @@ function allocateSession(
     return { task, room };
   });
 
-  const groupOrder = [...new Set(tasks.map((task) => task.groupKey))]
+  const groupOrder = [...new Set(tasks.map(layoutKey))]
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
   const splitGroupIndexes = new Map<string, Map<string, number>>();
   for (const room of rooms) {
@@ -720,7 +880,7 @@ function allocateSession(
     for (const item of roomItems) {
       for (const slotKey of item.task.examSlotKeys) {
         const groupKeys = groupsBySlot.get(slotKey) || new Set<string>();
-        groupKeys.add(item.task.groupKey);
+        groupKeys.add(layoutKey(item.task));
         groupsBySlot.set(slotKey, groupKeys);
       }
     }
@@ -734,12 +894,12 @@ function allocateSession(
     splitGroupIndexes.set(room.id, new Map(orderedGroups.map((groupKey, index) => [groupKey, index + 1])));
   }
   const resolved = planned.map(({ task, room }) => {
-    const mixedIndex = splitGroupIndexes.get(room.id)?.get(task.groupKey);
+    const mixedIndex = splitGroupIndexes.get(room.id)?.get(layoutKey(task));
     const baseRoomNumber = room.number || room.name;
     return {
       task,
       room,
-      logicalRoomId: mixedIndex ? `${room.id}::mixed::${encodeURIComponent(task.groupKey)}` : room.id,
+      logicalRoomId: mixedIndex ? `${room.id}::mixed::${encodeURIComponent(layoutKey(task))}` : room.id,
       roomNumber: mixedIndex ? `${baseRoomNumber}混${mixedIndex}` : baseRoomNumber,
       physicalRoomId: mixedIndex ? room.id : undefined,
     };
@@ -780,7 +940,9 @@ function allocateSession(
     .map(({ task, room, logicalRoomId, roomNumber, physicalRoomId }, index) => {
       const roomLocation = room.location || room.name;
       return {
-        id: `${task.sessionKey}:${task.student.id}`,
+        id: input.sameSeatSubjectGroups === undefined
+          ? `${task.sessionKey}:${task.student.id}`
+          : `${task.sessionKey}:${task.groupKey}:${task.student.id}`,
         studentId: task.student.id,
         studentName: task.student.name,
         studentNo: task.student.studentNo,
@@ -812,6 +974,7 @@ export function generateExamAssignments(
   if (subjects.length > 30) throw new Error("考试科目不能超过 30 个");
   const invalidSeparate = uniqueStrings(input.separateSubjects || []).filter((subject) => !subjects.includes(subject));
   if (invalidSeparate.length > 0) throw new Error(`独立排考科目不存在：${invalidSeparate.join("、")}`);
+  if (input.sameSeatSubjectGroups !== undefined) resolveSameSeatSubjectGroups(input, subjects, true);
   const rooms = normalizeRooms(input.rooms || []);
   const roomMap = new Map(rooms.map((room) => [room.id, room]));
   for (const [groupKey, capacities] of Object.entries(input.groupRoomCapacities || {})) {

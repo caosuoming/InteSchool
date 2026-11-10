@@ -288,8 +288,8 @@ describe("ExamRoomArrangementPage", () => {
     );
 
     await waitFor(() => {
-      expect(within(session).getByRole("button", { name: /1考场混1/ })).toBeInTheDocument();
-      expect(within(session).getByRole("button", { name: /1考场混2/ })).toBeInTheDocument();
+      expect(within(session).queryByRole("button", { name: /1考场混1/ })).not.toBeInTheDocument();
+      expect(within(session).queryByRole("button", { name: /1考场混2/ })).not.toBeInTheDocument();
     });
     expect(within(session).getAllByText(/本组合布置上限 1 人/)).toHaveLength(2);
     expect(within(session).queryByRole("button", { name: /拆分 1考场/ })).not.toBeInTheDocument();
@@ -511,12 +511,24 @@ describe("ExamRoomArrangementPage", () => {
     renderPage();
 
     await screen.findByText("第四步：排考场规则");
-    for (const subject of ["语文", "数学", "英语", "物理"]) {
-      await user.click(screen.getByRole("button", { name: `${subject}单独排` }));
-    }
+    expect(screen.getByText("同座位组合 1")).toBeInTheDocument();
+    const originalGroup = screen.getByText("同座位组合 1").closest<HTMLElement>("div.rounded-lg");
+    expect(originalGroup).not.toBeNull();
+    expect(within(originalGroup!).getByRole("button", { name: "化学" })).toHaveAttribute("aria-pressed", "true");
 
+    await user.click(screen.getAllByRole("button", { name: "增加组合" })[0]);
+    const secondGroup = screen.getByText("同座位组合 2").closest<HTMLElement>("div.rounded-lg");
+    expect(secondGroup).not.toBeNull();
+    await user.click(within(secondGroup!).getByRole("button", { name: "化学" }));
+    await user.click(within(secondGroup!).getByRole("button", { name: "生物" }));
+    expect(within(secondGroup!).getByRole("button", { name: "化学" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(originalGroup!).getByRole("button", { name: "化学" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getAllByText("化学、生物").length).toBeGreaterThan(0);
-    expect(screen.getByText(/合并场次 · 1 人/)).toBeInTheDocument();
+    expect(screen.getByText(/同座位场次 · 化学、生物/)).toBeInTheDocument();
+
+    await user.click(within(secondGroup!).getByRole("button", { name: "删除组合" }));
+    expect(screen.queryByText("同座位组合 2")).not.toBeInTheDocument();
+    expect(within(originalGroup!).getByRole("button", { name: "化学" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("summarizes and reuses a saved arrangement without overwriting it", async () => {
