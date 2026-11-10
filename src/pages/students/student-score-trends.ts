@@ -39,35 +39,54 @@ function visibleScore(record: GradeQueryRecord, subject: string): number | null 
   return validNumber(raw) ? raw : null;
 }
 
-export function studentSubjectTrend(data: GradeQueryData | null, studentId: string | null): {
+export interface SubjectTrend {
   subject: string;
   points: RankTrendPoint[];
-} {
-  if (!data || !studentId) return { subject: "", points: [] };
-  const exams = chronologicalExams(data.exams);
-  const latestRecord = [...exams].reverse().map((exam) => exam.records.find((item) => item.studentId === studentId)).find(Boolean);
-  const fallbackSubject = latestRecord && Object.keys(latestRecord.assignedScores).find((item) => validNumber(visibleScore(latestRecord, item)));
-  const subject = data.subject && exams.some((exam) => exam.records.some((record) => record.studentId === studentId && validNumber(visibleScore(record, data.subject))))
-    ? data.subject
-    : fallbackSubject || "";
-  if (!subject) return { subject, points: [] };
+}
 
-  const points = exams.flatMap((exam): RankTrendPoint[] => {
+/** Only use records and subjects returned by the permission-filtered grade query. */
+export function studentAllSubjectTrends(data: GradeQueryData | null, studentId: string | null): SubjectTrend[] {
+  if (!data || !studentId) return [];
+  const exams = chronologicalExams(data.exams);
+  const subjects = [...new Set(exams.flatMap((exam) => {
     const record = exam.records.find((item) => item.studentId === studentId);
-    if (!record) return [];
-    const score = visibleScore(record, subject);
-    if (score === null) return [];
-    const subjectRank = record.subjectRanks?.[subject];
-    const rankScope = record.subjectRankScopes?.[subject];
-    const hasSubjectRank = validNumber(subjectRank) && subjectRank > 0;
-    const subjectRankProvided = Object.prototype.hasOwnProperty.call(record.subjectRanks || {}, subject);
-    const rank = hasSubjectRank ? subjectRank : !subjectRankProvided && record.gradeRank > 0 ? record.gradeRank : null;
-    const rankLabel = hasSubjectRank
-      ? rankScope === "class" ? "班内名次" : rankScope === "separate" ? "单独排名组名次" : "单科年级名次"
-      : subjectRankProvided ? "单科名次" : "总分年级名次";
-    return [{ examId: exam.id, examName: exam.name, date: exam.examDate || exam.createdAt.slice(0, 10), value: score, rank, rankLabel, valueLabel: `${subject}成绩` }];
-  });
-  return { subject, points };
+    return record ? exam.subjects.filter((subject) => visibleScore(record, subject) !== null) : [];
+  }))];
+
+  return subjects.map((subject) => ({
+    subject,
+    points: exams.flatMap((exam): RankTrendPoint[] => {
+      const record = exam.records.find((item) => item.studentId === studentId);
+      if (!record) return [];
+      const score = visibleScore(record, subject);
+      if (score === null) return [];
+      const subjectRank = record.subjectRanks?.[subject];
+      const rankScope = record.subjectRankScopes?.[subject];
+      const hasSubjectRank = validNumber(subjectRank) && subjectRank > 0;
+      const subjectRankProvided = Object.prototype.hasOwnProperty.call(record.subjectRanks || {}, subject);
+      const rank = hasSubjectRank ? subjectRank : !subjectRankProvided && record.gradeRank > 0 ? record.gradeRank : null;
+      const rankLabel = hasSubjectRank
+        ? rankScope === "class" ? "班内名次" : rankScope === "separate" ? "单独排名组名次" : "单科年级名次"
+        : subjectRankProvided ? "单科名次" : "总分年级名次";
+      return [{
+        examId: exam.id, examName: exam.name, date: exam.examDate || exam.createdAt.slice(0, 10),
+        value: score, rank, rankLabel, valueLabel: `${subject}成绩`,
+      }];
+    }),
+  }));
+}
+
+export function studentSubjectTrend(data: GradeQueryData | null, studentId: string | null): SubjectTrend {
+  const trends = studentAllSubjectTrends(data, studentId);
+  if (trends.length === 0) return { subject: "", points: [] };
+  const exams = chronologicalExams(data!.exams);
+  const latestRecord = [...exams].reverse()
+    .map((exam) => exam.records.find((item) => item.studentId === studentId)).find(Boolean);
+  const fallbackSubject = latestRecord && Object.keys(latestRecord.assignedScores)
+    .find((subject) => visibleScore(latestRecord, subject) !== null);
+  return trends.find((trend) => trend.subject === data!.subject)
+    || trends.find((trend) => trend.subject === fallbackSubject)
+    || trends[0];
 }
 
 export function classRankTrend(data: GradeQueryData | null, classId: string | null): {
