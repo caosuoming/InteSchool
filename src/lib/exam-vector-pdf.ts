@@ -1,5 +1,6 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { paginateClassArrangementPages } from "./exam-class-pagination";
 
 const MM_TO_PT = 72 / 25.4;
 const PX_TO_PT = 72 / 96;
@@ -43,8 +44,9 @@ export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, 
   document.body.append(host);
   try {
     if (document.fonts?.ready) await document.fonts.ready;
-    for (const source of pages) {
-      const clone = source.cloneNode(true) as HTMLElement;
+    // Measure actual card heights before committing to physical PDF pages.
+    const paginatedPages = paginateClassArrangementPages(pages, host);
+    for (const clone of paginatedPages) {
       clone.style.breakAfter = "auto";
       host.replaceChildren(clone);
       const root = clone.getBoundingClientRect();
