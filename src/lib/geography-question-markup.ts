@@ -1,3 +1,4 @@
+import { splitGeographyChoiceGroup } from "./geography-paper-layout";
 import { getQuestionOptionGridColumns } from "./question-option-layout";
 
 const optionStyles = [
@@ -53,7 +54,21 @@ export function emphasizeGeographyLabels(html: string): string {
 }
 
 /** Lay out consecutive A–D lines in grouped geography stems as evenly spaced choices. */
-export function renderGeographyChoiceGroups(source: string, render: (part: string) => string): string {
+export function renderGeographyChoiceGroups(
+  source: string,
+  render: (part: string) => string,
+  formatGroup = false,
+): string {
+  const group = formatGroup ? splitGeographyChoiceGroup(source) : null;
+  if (group) {
+    return [
+      ...(group.introduction
+        ? [`<div class="geography-reading mb-2" style="font-family: KaiTi, STKaiti, 'Kaiti SC', serif">${render(group.introduction)}</div>`]
+        : []),
+      ...group.questions.map((question) =>
+        `<div class="geography-subquestion my-2">${renderGeographyChoiceGroups(question, render)}</div>`),
+    ].join("");
+  }
   const lines = source.split("\n");
   const optionLine = /^\s*([A-Da-d])\s*[.．、:：)）]\s*(\S.*)$/;
   const result: string[] = [];

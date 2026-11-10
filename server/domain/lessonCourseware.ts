@@ -789,8 +789,8 @@ function documentBlockSlides(
   });
 }
 
-function flattenLectureSections(sections: LectureSection[]): LectureSection[] {
-  return sections.flatMap((section) => [section, ...flattenLectureSections(section.children || [])]);
+function flattenLectureSections(sections: LectureSection[] | null | undefined): LectureSection[] {
+  return (sections || []).flatMap((section) => [section, ...flattenLectureSections(section.children)]);
 }
 
 export interface LessonCoursewareInput {
@@ -1521,7 +1521,7 @@ export const lessonCoursewareService = {
     const libraryCoursewareId = genId("cw");
     const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${lecture.title}（上课课件）`,
-      chapterIds: lecture.chapterIds,
+      chapterIds: lecture.chapterIds || [],
       knowledgePointIds: lectureKnowledgePointIds(lecture),
       grade: lecture.grade,
       schoolYear: lecture.schoolYear,

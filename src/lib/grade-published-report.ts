@@ -1,3 +1,4 @@
+import { buildGradeReportNotes } from "./grade-report-notes.js";
 import type { GradeExam, GradeImportContext } from "../types/index.js";
 import {
   buildGradeClassAverageReport,
@@ -37,6 +38,7 @@ export interface GradePublishedReportBundle {
     examDate?: string;
     publishedAt: string;
   };
+  reportNotes: string[];
   classAverage?: GradeClassAverageReport;
   totalScoreSegment?: GradeTotalScoreSegmentReport;
   subjectScoreSegment?: GradeSubjectScoreSegmentReport;
@@ -59,6 +61,7 @@ export function buildGradePublishedReportBundle(
       examDate: exam.examDate,
       publishedAt,
     },
+    reportNotes: buildGradeReportNotes(exam),
   };
 
   if (classAverageTemplate) {

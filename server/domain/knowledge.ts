@@ -1117,7 +1117,6 @@ export const knowledgeService = {
   },
 
   async getChapterTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
-    await delay(300);
     const chapters = directoryRecords(scopeId, "chapter") as Chapter[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
       (item) => item.id === scopeId,
@@ -1136,7 +1135,6 @@ export const knowledgeService = {
   },
 
   async getKnowledgeTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
-    await delay(300);
     const points = directoryRecords(scopeId, "knowledge") as KnowledgePoint[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
       (item) => item.id === scopeId,
@@ -1155,7 +1153,6 @@ export const knowledgeService = {
   },
 
   async getMethodTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
-    await delay(300);
     const methods = directoryRecords(scopeId, "method") as ThoughtMethod[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
       (item) => item.id === scopeId,
@@ -1172,7 +1169,6 @@ export const knowledgeService = {
   },
 
   async getErrorReasonTree(scopeId: string, includeCounts = true): Promise<TreeNode> {
-    await delay(200);
     const reasons = directoryRecords(scopeId, "error") as ErrorReason[];
     const teacherScope = ((db.read("teachers") || []) as DirectoryTeacher[]).some(
       (item) => item.id === scopeId,

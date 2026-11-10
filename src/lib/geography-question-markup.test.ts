@@ -25,6 +25,18 @@ describe("geography question presentation", () => {
     expect(renderGeographyChoiceGroups("A. 单个选项", (value) => value)).not.toContain("geography-option-grid");
   });
 
+  it("renders the group reading in KaiTi and starts every subquestion on a new block", () => {
+    const source = "读图完成4—5题。\n4. 甲地\nA. 东\nB. 西\n5. 乙地\nA. 南\nB. 北";
+    const html = renderGeographyChoiceGroups(source, (value) => value, true);
+    const container = element(html);
+    expect(container.querySelector(".geography-reading")).toHaveTextContent("读图完成4—5题。");
+    expect(container.querySelector(".geography-reading")?.getAttribute("style")).toContain("KaiTi");
+    expect(container.querySelectorAll(".geography-subquestion")).toHaveLength(2);
+    expect(container.querySelectorAll(".geography-subquestion .geography-option-grid")).toHaveLength(2);
+    expect(container.querySelectorAll(".geography-subquestion")[0]).toHaveTextContent("4. 甲地");
+    expect(container.querySelectorAll(".geography-subquestion")[1]).toHaveTextContent("5. 乙地");
+  });
+
   it("never reinterprets formula nodes or inserts unescaped HTML text", () => {
     const html = emphasizeGeographyLabels('<span class="katex">A. 数学公式</span>\n1. 题干 &lt;script&gt;bad&lt;/script&gt;');
     const container = element(html);

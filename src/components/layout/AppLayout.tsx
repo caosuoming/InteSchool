@@ -308,8 +308,19 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <div className="text-xs text-ink-200 truncate">
                   {isPersonalIdentity ? "个人身份" : currentAffiliation?.schoolName}
                 </div>
-                <div className="text-[10px] text-ink-400 truncate">
-                  {platformAdmin ? "平台管理员" : `${currentAffiliation?.subject}教师`}
+                <div className="flex items-center justify-between gap-1 min-w-0">
+                  <span className="text-[10px] text-ink-400 truncate">
+                    {platformAdmin ? "平台管理员" : isPersonalIdentity ? `${currentAffiliation?.subject}教师` : "教师"}
+                  </span>
+                  {!isPersonalIdentity && currentAffiliation?.subject && (
+                    <span
+                      className="shrink-0 rounded bg-gold-400/10 px-1.5 py-0.5 text-[10px] leading-none text-gold-300"
+                      aria-label={`当前学科：${currentAffiliation.subject}`}
+                      title={`当前学科：${currentAffiliation.subject}`}
+                    >
+                      学科：{currentAffiliation.subject}
+                    </span>
+                  )}
                 </div>
               </div>
               <ChevronDown className={cn(

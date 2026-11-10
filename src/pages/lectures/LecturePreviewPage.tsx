@@ -537,11 +537,12 @@ export default function LecturePreviewPage() {
   return (
     <div className="max-w-[1500px] mx-auto">
       <PageHeader
+        className="flex-col xl:flex-row"
         title={`预览：${lecture.title}`}
         description="检查讲义内容、版面与题目属性"
         icon={<Eye className="w-5 h-5" />}
         action={
-          <div className="no-print flex flex-wrap items-center justify-end gap-2">
+          <div className="no-print grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {lecture.teacherId === teacher?.id && (
               <Button variant="outline" onClick={() => setDocumentMetadataOpen(true)}>
                 <Edit3 className="w-4 h-4" />
@@ -718,6 +719,7 @@ export default function LecturePreviewPage() {
         <aside className="preview-sticky-rail no-print">
           <div className="preview-sticky-controls" data-testid="lecture-preview-details">
             <PreviewSidebarControls
+              compact
               value={previewSidebarVisibility}
               onChange={setPreviewSidebarVisibility}
             />

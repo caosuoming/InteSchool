@@ -1,5 +1,6 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { paginateClassArrangementPages } from "./exam-class-pagination";
 
 const MM_TO_PT = 72 / 25.4;
 const PX_TO_PT = 72 / 96;
@@ -33,7 +34,9 @@ export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, 
   if (!fontResponse.ok) throw new Error("无法加载 PDF 中文字体");
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkit);
-  const font = await pdf.embedFont(await fontResponse.arrayBuffer(), { subset: true });
+  // fontkit's CFF/OpenType subsetting produces a PDF that loses Chinese glyphs
+  // in MuPDF. Embed the original CJK font program for reliable printing.
+  const font = await pdf.embedFont(await fontResponse.arrayBuffer(), { subset: false });
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
   Object.assign(host.style, { position: "fixed", left: "-100000px", top: "0", width: `${widthMm}mm`, background: "white", pointerEvents: "none" });
@@ -43,8 +46,9 @@ export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, 
   document.body.append(host);
   try {
     if (document.fonts?.ready) await document.fonts.ready;
-    for (const source of pages) {
-      const clone = source.cloneNode(true) as HTMLElement;
+    // Measure actual card heights before committing to physical PDF pages.
+    const paginatedPages = paginateClassArrangementPages(pages, host);
+    for (const clone of paginatedPages) {
       clone.style.breakAfter = "auto";
       host.replaceChildren(clone);
       const root = clone.getBoundingClientRect();

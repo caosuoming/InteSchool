@@ -11,13 +11,14 @@ interface MathHtmlProps {
   revealedAnswerStep?: number;
   emphasizeEnglishQuestions?: boolean;
   geographyLabels?: boolean;
+  geographyChoiceGroup?: boolean;
 }
 
 /** Renders rich HTML that may also contain $...$ or $$...$$ LaTeX formulas. */
-export function MathHtml({ children, className, revealedAnswerStep, emphasizeEnglishQuestions = false, geographyLabels = false }: MathHtmlProps) {
+export function MathHtml({ children, className, revealedAnswerStep, emphasizeEnglishQuestions = false, geographyLabels = false, geographyChoiceGroup = false }: MathHtmlProps) {
   const html = useMemo(() => {
     const raw = geographyLabels
-      ? renderGeographyChoiceGroups(children, renderMathHtml)
+      ? renderGeographyChoiceGroups(children, renderMathHtml, geographyChoiceGroup)
       : renderMathHtml(children);
     const rendered = geographyLabels ? emphasizeGeographyLabels(raw)
       : emphasizeEnglishQuestions ? emphasizeEnglishQuestionHtml(raw) : raw;
@@ -31,7 +32,7 @@ export function MathHtml({ children, className, revealedAnswerStep, emphasizeEng
         }
       });
     return template.innerHTML;
-  }, [children, revealedAnswerStep, emphasizeEnglishQuestions, geographyLabels]);
+  }, [children, revealedAnswerStep, emphasizeEnglishQuestions, geographyLabels, geographyChoiceGroup]);
 
   return (
     <div

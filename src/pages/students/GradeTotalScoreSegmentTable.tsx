@@ -1,3 +1,5 @@
+import { GradeReportNotes } from "./GradeReportNotes";
+import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useMemo, useRef, useState } from "react";
 import { Download, RotateCcw, SlidersHorizontal, Table2 } from "lucide-react";
 import type {
@@ -204,7 +206,7 @@ export function GradeTotalScoreSegmentTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeTotalScoreSegmentReport(report, exam.name);
+      await exportGradeTotalScoreSegmentReport(report, exam.name, buildGradeReportNotes(exam, settings));
       toast.success("总分分数段汇总表已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);
@@ -477,6 +479,7 @@ export function GradeTotalScoreSegmentTable({
           </div>
         </div>
       )}
+      <GradeReportNotes notes={buildGradeReportNotes(exam, settings)} />
     </Card>
   );
 }

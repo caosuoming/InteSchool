@@ -648,7 +648,7 @@
   body.grade-summary-printing .grade-summary-print-root > .card-base:last-child {
     break-after: auto;
   }
-  body.grade-summary-printing .grade-summary-print-root > .card-base > :not(:last-child) {
+  body.grade-summary-printing .grade-summary-print-root > .card-base > :not(:last-child):not(:has(+ .grade-report-notes)) {
     display: none !important;
   }
   body.grade-summary-printing .grade-summary-print-root .overflow-x-auto {
@@ -801,9 +801,8 @@
     font-weight: 700;
   }
   .exam-class-arrangement-subject {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15mm;
+    display: block;
+    overflow-wrap: anywhere;
   }
   .exam-class-arrangement-page[data-density="compact"] {
     --class-print-font-size: 5.05pt;

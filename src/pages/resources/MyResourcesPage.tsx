@@ -50,7 +50,6 @@ import type {
   CoursewareType, MaterialType, ShareableResourceType,
   Reflection, Basket, AnyClass, Student, AnswerRecord,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
-  LessonDocumentBlock,
   ResourceFolder, ResourceFolderType,
   UserQuotaSnapshot,
 } from "@/types";
@@ -97,6 +96,7 @@ import {
 import { documentResourceUsageSummary, isIssuedUnusedDocumentResource } from "@/lib/document-resource-usage";
 import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
+import { fallbackLessonBlocks } from "@/lib/lesson-resource-blocks";
 import {
   downloadOfflineLessonCourseware,
   offlineLessonFromLibraryCourseware,
@@ -108,11 +108,9 @@ import {
   type BatchResourceRef,
 } from "@/pages/resources/batch-resource";
 import {
-  currentParseConfig,
   isExtractTaskRunning,
   useExtractTasksStore,
 } from "@/stores/extractTasks";
-import { parseDocumentBlocks, type DocumentBlock } from "@/lib/document-block-parser";
 import { matchingResourceTypeIds } from "@/lib/resource-type-hierarchy";
 import { annotateTreeWithResourceCounts } from "@/lib/resource-tree-counts";
 import { AddResourceToPrepModal } from "@/components/prep/AddResourceToPrepModal";
@@ -249,68 +247,6 @@ const materialTypeLabel: Record<MaterialType, string> = {
   file: "文件",
   knowledgeBlock: "知识块",
 };
-
-function hasLectureLessonBody(sections: Lecture["sections"]): boolean {
-  return sections.some((section) =>
-    section.type === "question"
-    || section.type === "knowledge"
-    || hasLectureLessonBody(section.children || []));
-}
-
-function lessonDocumentBlocks(blocks: DocumentBlock[]): LessonDocumentBlock[] {
-  return blocks.flatMap<LessonDocumentBlock>((block) => {
-    if (
-      block.type === "documentTitle"
-      || block.type === "documentInfo"
-      || block.type === "groupTitle"
-    ) {
-      return [{
-        id: block.id,
-        type: block.type,
-        content: block.content,
-      }];
-    }
-    if (block.type === "knowledge") {
-      return [{
-        id: block.id,
-        type: "knowledge" as const,
-        title: block.knowledgeTitle,
-        content: block.content,
-        inlineAnswers: block.inlineAnswers,
-      }];
-    }
-    if (block.type !== "question") return [];
-    return [{
-      id: block.id,
-      type: "question" as const,
-      content: block.content,
-      questionType: block.questionType,
-      options: block.options,
-      answer: block.answer,
-      analysis: block.analysis,
-    }];
-  });
-}
-
-async function fallbackLessonBlocks(
-  resource: ExamPaper | Lecture,
-  resourceType: "examPaper" | "lecture",
-  subject?: string,
-): Promise<LessonDocumentBlock[]> {
-  const hasBody = resourceType === "examPaper"
-    ? ((resource as ExamPaper).questions.length > 0
-      || Boolean((resource as ExamPaper).contentBlocks?.some((block) =>
-        block.type === "question" || block.type === "knowledge")))
-    : hasLectureLessonBody((resource as Lecture).sections);
-  if (hasBody || !resource.originalFileUrl) return [];
-
-  const extracted = await extractStoredFile(resource.originalFileUrl);
-  const blocks = lessonDocumentBlocks(parseDocumentBlocks(extracted.text, currentParseConfig(subject)));
-  if (!blocks.some((block) => block.type === "question" || block.type === "knowledge")) {
-    throw new Error("文档中未识别出题目或知识块，请先进行文档拆解");
-  }
-  return blocks;
-}
 
 interface OriginalFileRowProps {
   fileUrl: string;
@@ -1183,7 +1119,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   }, [loadAll]);
 
   useEffect(() => {
-    if (!teacher) return;
+    // The embedded question bank loads its own student data. Fetch it here
+    // only when the shared picker opens, avoiding duplicate startup requests.
+    if (!teacher || (activeTab === "question" && !resourceStudentPickerOpen)) return;
     let cancelled = false;
     Promise.all([
       classService.listMyClasses(teacher.schoolId || null, teacher.id),
@@ -1199,7 +1137,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       }
     });
     return () => { cancelled = true; };
-  }, [teacher]);
+  }, [teacher, activeTab, resourceStudentPickerOpen]);
 
   useEffect(() => {
     if (!selectedResourceStudentIds.length || (activeTab !== "examPaper" && activeTab !== "lecture")) {

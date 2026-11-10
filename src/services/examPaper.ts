@@ -23,6 +23,7 @@ export interface ExamPaperInput {
   questionSourceType?: string;
   questionCategory?: string;
   layoutMode?: "grouped" | "flat";
+  questionTypeLabels?: Record<string, string>;
   classIds?: string[];
   managementCategory?: "homework" | "exam";
   assignedDate?: string;

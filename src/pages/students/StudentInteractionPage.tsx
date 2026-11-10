@@ -9,15 +9,12 @@ import { toast } from "@/stores/ui";
 import { classService } from "@/services/class";
 import { studentInteractionService } from "@/services/studentInteraction";
 import { homeworkRecordService } from "@/services/homeworkRecord";
-import { knowledgeService } from "@/services/knowledge";
 import { gradeService } from "@/services/grade";
 import { uploadFile } from "@/services/api";
 import type {
   AnyClass,
   GradeQueryData,
   HomeworkAttitudeRecord,
-  HomeworkKnowledgeRecord,
-  KnowledgePoint,
   Student,
   StudentMissingHomeworkRecord,
   StudentInteractionAttachment,
@@ -29,8 +26,8 @@ import { StudentRosterSidebar } from "./StudentRosterSidebar";
 import { buildStudentRosterGroups } from "./student-roster";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
-import { AllSubjectScoreChart, RankTrendStrip } from "./StudentScoreTrends";
-import { classRankTrend, studentScoreHistory, studentSubjectTrend } from "./student-score-trends";
+import { OtherSubjectRankTrends, RankTrendStrip } from "./StudentScoreTrends";
+import { classRankTrend, studentAllSubjectTrends, studentSubjectTrend } from "./student-score-trends";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Textarea, Select } from "@/components/ui/Input";
@@ -56,13 +53,6 @@ const attitudeOptions = [
   { value: "2", label: "稍显懈怠", icon: Frown, color: "text-orange-600" },
   { value: "1", label: "消极", icon: Frown, color: "text-red-600" },
 ];
-
-const homeworkStatusLabels: Record<string, string> = {
-  done: "完成",
-  correct: "做对",
-  partial: "部分正确",
-  wrong: "做错",
-};
 
 const statusTagOptions = [
   "听课专注",
@@ -92,9 +82,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   const [ignorePendingStudentIds, setIgnorePendingStudentIds] = useState<Set<string>>(() => new Set());
   // 每个学生的最近互动时间
   const [lastInteractionMap, setLastInteractionMap] = useState<Record<string, string>>({});
-  const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
   const [gradeQueryData, setGradeQueryData] = useState<GradeQueryData | null>(null);
-  const [recentHomeworkRecords, setRecentHomeworkRecords] = useState<HomeworkKnowledgeRecord[]>([]);
   const [homeworkFeedbackRecords, setHomeworkFeedbackRecords] = useState<HomeworkAttitudeRecord[]>([]);
   const [missingHomeworkRecords, setMissingHomeworkRecords] = useState<StudentMissingHomeworkRecord[]>([]);
 
@@ -154,13 +142,10 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   useEffect(() => {
     if (!teacher?.schoolId || !teacher?.id) return;
     let cancelled = false;
-    void Promise.allSettled([
-      knowledgeService.listKnowledgePoints(teacher.schoolId),
-      gradeService.getQueryData(),
-    ]).then(([knowledgeResult, gradeResult]) => {
-      if (cancelled) return;
-      setKnowledgePoints(knowledgeResult.status === "fulfilled" ? knowledgeResult.value : []);
-      setGradeQueryData(gradeResult.status === "fulfilled" ? gradeResult.value : null);
+    void gradeService.getQueryData().then((data) => {
+      if (!cancelled) setGradeQueryData(data);
+    }).catch(() => {
+      if (!cancelled) setGradeQueryData(null);
     });
     return () => {
       cancelled = true;
@@ -214,24 +199,6 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
     }
   }, [loadInteractions, selectedStudentId]);
 
-  useEffect(() => {
-    if (!selectedStudentId) {
-      setRecentHomeworkRecords([]);
-      return;
-    }
-    let cancelled = false;
-    void homeworkRecordService.listByStudent(selectedStudentId)
-      .then((records) => {
-        if (!cancelled) setRecentHomeworkRecords(records.slice(0, 2));
-      })
-      .catch(() => {
-        if (!cancelled) setRecentHomeworkRecords([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedStudentId]);
-
   const filteredStudents = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (!normalizedKeyword) return allStudents;
@@ -264,15 +231,12 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
   }, [myClasses]);
 
   const selectedStudent = allStudents.find((s) => s.id === selectedStudentId);
-  const knowledgePointMap = useMemo(
-    () => new Map(knowledgePoints.map((point) => [point.id, point] as const)),
-    [knowledgePoints],
-  );
   const subjectTrend = useMemo(() => studentSubjectTrend(gradeQueryData, selectedStudentId), [gradeQueryData, selectedStudentId]);
   const classTrend = useMemo(() => classRankTrend(gradeQueryData, selectedGroupId), [gradeQueryData, selectedGroupId]);
-  const scoreHistory = useMemo(() => studentScoreHistory(gradeQueryData, selectedStudentId), [gradeQueryData, selectedStudentId]);
+  const otherSubjectTrends = useMemo(() => studentAllSubjectTrends(gradeQueryData, selectedStudentId)
+    .filter((trend) => trend.subject !== subjectTrend.subject), [gradeQueryData, selectedStudentId, subjectTrend.subject]);
   const selectedGroup = studentGroups.find((group) => group.id === selectedGroupId);
-  const canViewFullHistory = Boolean(selectedStudent?.classId && gradeQueryData?.homeroomClassIds.includes(selectedStudent.classId));
+  const canViewOtherSubjects = Boolean(selectedStudent?.classId && gradeQueryData?.fullClassIds.includes(selectedStudent.classId));
   const selectStudent = (studentId: string) => {
     setSelectedGroupId(null);
     setSelectedStudentId(studentId);
@@ -535,59 +499,40 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
       >
           {selectedStudent ? (
             <div className="h-full flex flex-col gap-4">
-              {/* 学生信息卡片 */}
+              {/* 学生信息卡片：右侧仅显示当前单科成绩趋势 */}
               <Card className="p-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-gold-300 to-gold-500 flex items-center justify-center text-xl font-medium text-ink-900">
+                <div className="flex flex-wrap items-start gap-4">
+                  <div className="w-14 h-14 shrink-0 rounded-full bg-gradient-to-br from-gold-300 to-gold-500 flex items-center justify-center text-xl font-medium text-ink-900">
                     {selectedStudent.name.slice(0, 1)}
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-[150px] flex-1">
                     <div className="text-lg font-serif font-semibold text-ink-900">
                       {selectedStudent.name}
                     </div>
                     <div className="text-xs text-ink-500 mt-0.5">
                       学号：{selectedStudent.studentNo || "未设置"} · 班级：{selectedStudent.classId ? (classMap[selectedStudent.classId]?.name || "未知") : "未分班"}
                     </div>
-                  </div>
-                  <div className="flex min-w-0 flex-wrap items-start gap-3">
-                    <div className="min-w-[150px] rounded-lg bg-mist/60 px-3 py-2">
-                      <div className="text-[11px] font-medium text-ink-500">最近作业记录</div>
-                      <div className="mt-1 space-y-1">
-                        {recentHomeworkRecords.length > 0 ? recentHomeworkRecords.map((record) => (
-                          <div key={record.id} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="max-w-[110px] truncate text-ink-700" title={knowledgePointMap.get(record.knowledgePointId)?.name || record.knowledgePointId}>
-                              {knowledgePointMap.get(record.knowledgePointId)?.name || "知识点"}
-                            </span>
-                            <span className="shrink-0 text-ink-500">{homeworkStatusLabels[record.status] || record.status}</span>
+                    {(latestAttitude || latestStatus) && (
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        {latestAttitude && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-ink-400">
+                            最近态度 <Badge variant="gold">{getAttitudeOption(latestAttitude.attitude)?.label || "未知"}</Badge>
                           </div>
-                        )) : (
-                          <div className="text-xs text-ink-400">暂无记录</div>
                         )}
-                      </div>
-                    </div>
-                    <div className="w-[260px] max-w-full min-w-0 rounded-lg bg-mist/60 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-medium text-ink-500">历次单科成绩 · {subjectTrend.subject || "暂无科目"}</div>
-                        {canViewFullHistory && (
-                          <button type="button" onClick={() => setHistoryOpen(true)} className="shrink-0 text-xs text-gold-700 hover:underline">更多</button>
+                        {latestStatus && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-ink-400">
+                            最近状态 <Badge variant="teal">{latestStatus.statusTag}</Badge>
+                          </div>
                         )}
-                      </div>
-                      <RankTrendStrip points={subjectTrend.points} label={`${selectedStudent.name}单科成绩与名次`} />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {latestAttitude && (
-                      <div className="text-center">
-                        <div className="text-[11px] text-ink-400 mb-1">最近态度</div>
-                        <Badge variant="gold">
-                          {getAttitudeOption(latestAttitude.attitude)?.label || "未知"}
-                        </Badge>
                       </div>
                     )}
-                    {latestStatus && (
-                      <div className="text-center">
-                        <div className="text-[11px] text-ink-400 mb-1">最近状态</div>
-                        <Badge variant="teal">{latestStatus.statusTag}</Badge>
+                  </div>
+                  <div className="w-[320px] max-w-full min-w-0 rounded-lg bg-mist/60 px-3 py-2">
+                    <div className="text-[11px] font-medium text-ink-500">历次单科成绩 · {subjectTrend.subject || "暂无科目"}</div>
+                    <RankTrendStrip points={subjectTrend.points} label={`${selectedStudent.name}单科成绩与名次`} metric="score" />
+                    {canViewOtherSubjects && (
+                      <div className="mt-1 flex justify-end">
+                        <button type="button" onClick={() => setHistoryOpen(true)} className="text-xs text-gold-700 hover:underline">更多</button>
                       </div>
                     )}
                   </div>
@@ -923,13 +868,13 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
           )}
       </ResizableSplitPane>
       <Modal
-        open={historyOpen && canViewFullHistory}
+        open={historyOpen && canViewOtherSubjects}
         onClose={() => setHistoryOpen(false)}
-        title={`${selectedStudent?.name || "学生"} · 全科历次成绩`}
-        description="展示有权限查看的历次考试各科成绩；使用赋分成绩（有赋分时），悬停数据点查看详情。"
+        title={`${selectedStudent?.name || "学生"} · 其他学科成绩与名次`}
+        description="逐科查看有权限访问的历史成绩和名次；优先使用赋分成绩，悬停数据点可查看考试详情。"
         size="xl"
       >
-        <AllSubjectScoreChart exams={scoreHistory.exams} subjects={scoreHistory.subjects} />
+        <OtherSubjectRankTrends trends={otherSubjectTrends} studentName={selectedStudent?.name || "学生"} />
       </Modal>
     </div>
   );

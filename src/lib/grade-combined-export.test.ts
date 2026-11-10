@@ -141,6 +141,53 @@ describe("combined grade exports", () => {
     toFile.mockResolvedValue(undefined);
   });
 
+  it("appends per-exam remarks and automatic ranking notes to every exported sheet", async () => {
+    const annotated: GradeExam = {
+      ...exam,
+      examRemark: "二班使用 B 卷",
+      settings: {
+        ...settings,
+        classSubjects: [
+          { classId: "class-1", examSubjects: ["语文", "化学"], statisticSubjects: ["语文"], separateRankSubjects: ["化学"] },
+          { classId: "class-2", examSubjects: ["语文", "化学"], statisticSubjects: ["语文"] },
+        ],
+      },
+    };
+    await exportGradeTablesOneToFive({
+      exam: annotated, settings: annotated.settings, context,
+      classAverageTemplate, totalScoreSegmentTemplate,
+    });
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ data: ExportRow[] }>;
+    expect(sheets.length).toBeGreaterThanOrEqual(5);
+    sheets.forEach((sheet) => {
+      const values = sheet.data.slice(-3).map((row) => row[0]?.value);
+      expect(values).toEqual([
+        "考试备注：二班使用 B 卷",
+        "高三（1）班：化学实行单独排名，不计入全年级统一排名。",
+        "高三（2）班：化学不参与全年级成绩排名。",
+      ]);
+      expect(sheet.data.at(-1)?.slice(1).every((cell) => cell === null)).toBe(true);
+    });
+    vi.clearAllMocks();
+    writeXlsxFile.mockReturnValue({ toFile });
+    const classReport = buildGradeClassStatisticsReport(annotated, [], {
+      showSubjectClassRanks: false, showSubjectGradeRanks: false,
+      showRawSubjectScores: false, showAssignedSubjectScores: false,
+      showRawTotal: false, showAssignedTotal: false, comparisonExamIds: [],
+    });
+    await exportGradeClassStatisticsReport(classReport, annotated.name, annotated);
+    const classSheets = writeXlsxFile.mock.calls[0][0] as Array<{ data: ExportRow[] }>;
+    expect(classSheets).toHaveLength(2);
+    expect(classSheets[0].data.slice(-2).map((row) => row[0]?.value)).toEqual([
+      "考试备注：二班使用 B 卷",
+      "高三（1）班：化学实行单独排名，不计入全年级统一排名。",
+    ]);
+    expect(classSheets[1].data.slice(-2).map((row) => row[0]?.value)).toEqual([
+      "考试备注：二班使用 B 卷",
+      "高三（2）班：化学不参与全年级成绩排名。",
+    ]);
+  });
+
   it("places tables one through five in one workbook", async () => {
     await exportGradeTablesOneToFive({
       exam,

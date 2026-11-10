@@ -1,4 +1,5 @@
 import { normalizeLegacyQuestionMeanNotation } from "@/lib/legacy-question-math";
+import { alignGeographyGroupAnswerNumbers } from "@/lib/geography-answer-numbering";
 import type {
   ExamPaperQuestion,
   ExtractedDocumentBlock,
@@ -21,11 +22,12 @@ export function resolveExtractedQuestionDisplay(
     ? paperQuestion.options
     : linkedQuestion?.options;
 
+  const stem = stemOverride || paperQuestion?.stem || linkedQuestion?.stem || "";
   return normalizeLegacyQuestionMeanNotation({
-    stem: stemOverride || paperQuestion?.stem || linkedQuestion?.stem || "",
+    stem,
     options,
-    answer: paperQuestion?.answer || linkedQuestion?.answer || "",
-    analysis: paperQuestion?.analysis || linkedQuestion?.analysis || "",
+    answer: alignGeographyGroupAnswerNumbers(stem, paperQuestion?.answer || linkedQuestion?.answer || ""),
+    analysis: alignGeographyGroupAnswerNumbers(stem, paperQuestion?.analysis || linkedQuestion?.analysis || ""),
   });
 }
 

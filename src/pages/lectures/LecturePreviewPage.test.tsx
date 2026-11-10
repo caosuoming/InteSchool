@@ -755,6 +755,16 @@ describe("LecturePreviewPage", () => {
     expect(screen.queryByTestId("answered-student-list")).not.toBeInTheDocument();
   });
 
+  it("uses compact preview controls and two rows of header actions", async () => {
+    renderPage();
+    await screen.findByTestId("lecture-preview-details");
+    const toolbar = within(screen.getByTestId("lecture-preview-details"))
+      .getByRole("toolbar", { name: "题目侧栏显示控制" });
+    expect(toolbar).toHaveClass("max-w-[16rem]", "grid-cols-2");
+    expect(screen.getByRole("button", { name: "创建副本" }).parentElement)
+      .toHaveClass("lg:grid-cols-5");
+  });
+
   it("controls which per-question sidebar sections are visible", async () => {
     renderPage();
     await screen.findByTestId("lecture-question-details-1");

@@ -455,6 +455,44 @@ describe("ExamRoomArrangementPage", () => {
     expect(screen.getByLabelText("高三（1）班语文固定考场")).toHaveTextContent("1考场、2考场");
   });
 
+  it("adds, edits, removes, and saves repeatable special student fixed-room rules", async () => {
+    const user = userEvent.setup();
+    vi.mocked(examArrangementService.saveArrangement).mockImplementation(async (_schoolId, _teacherId, input) => ({
+      ...savedArrangement,
+      ...input,
+      id: "new-arrangement",
+      assignments: [],
+    }));
+    renderPage();
+    await screen.findByText("特殊学生固定考场");
+
+    await user.click(screen.getByRole("button", { name: "增加特殊学生" }));
+    const first = screen.getByRole("group", { name: "特殊学生固定考场1" });
+    expect(within(first).getByLabelText("特殊学生1班级")).toHaveValue("class-1");
+    await user.selectOptions(within(first).getByLabelText("特殊学生1学生"), "student-1");
+    await user.click(within(first).getByRole("button", { name: "语文" }));
+    await user.click(within(first).getByRole("button", { name: "数学" }));
+    await user.selectOptions(within(first).getByLabelText("特殊学生1固定考场"), "room-class-1");
+
+    await user.click(screen.getByRole("button", { name: "增加特殊学生" }));
+    const second = screen.getByRole("group", { name: "特殊学生固定考场2" });
+    await user.selectOptions(within(second).getByLabelText("特殊学生2学生"), "student-1");
+    await user.click(within(second).getByRole("button", { name: "英语" }));
+    await user.selectOptions(within(second).getByLabelText("特殊学生2固定考场"), "room-class-1");
+    await user.click(screen.getByRole("button", { name: "增加特殊学生" }));
+    expect(screen.getByRole("group", { name: "特殊学生固定考场3" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除特殊学生3" }));
+    expect(screen.queryByRole("group", { name: "特殊学生固定考场3" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "预览" }));
+
+    await waitFor(() => expect(examArrangementService.saveArrangement).toHaveBeenCalledOnce());
+    const savedInput = vi.mocked(examArrangementService.saveArrangement).mock.calls[0][2];
+    expect(savedInput.specialStudentRoomRules).toEqual([
+      { classId: "class-1", studentId: "student-1", subjects: ["语文", "数学"], roomId: "room-class-1" },
+      { classId: "class-1", studentId: "student-1", subjects: ["英语"], roomId: "room-class-1" },
+    ]);
+  });
+
   it("supports class batch subjects, fixed rooms, special students, and external-student labels", async () => {
     const user = userEvent.setup();
     vi.mocked(examArrangementService.getContext).mockResolvedValue({
@@ -730,11 +768,11 @@ describe("ExamRoomArrangementPage", () => {
 
     const printPage = screen.getByTestId("class-arrangement-print-page");
     expect(printPage.querySelector(".exam-class-arrangement-header-subjects")).toBeNull();
-    expect([...printPage.querySelectorAll(".exam-class-arrangement-subject span")].map((node) => node.textContent)).toEqual([
-      "语文、数学、英语",
-      "化学、生物",
+    expect([...printPage.querySelectorAll(".exam-class-arrangement-subject")].map((node) => node.textContent)).toEqual([
+      "语文、数学、英语、化学、生物",
       "物理",
     ]);
+    expect(printPage.querySelectorAll(".exam-class-arrangement-subject span")).toHaveLength(0);
     expect(printPage.querySelectorAll(".exam-class-arrangement-item")).toHaveLength(2);
   });
 

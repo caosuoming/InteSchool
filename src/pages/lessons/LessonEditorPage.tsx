@@ -41,6 +41,7 @@ import type {
   Question,
   Student,
   SchoolClass,
+  PersonalClass,
 } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -132,6 +133,7 @@ export function LessonEditorPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { teacher } = useAuthStore();
+  const teacherId = teacher?.id;
 
   const [courseware, setCourseware] = useState<LessonCourseware | null>(null);
   const [slides, setSlides] = useState<LessonSlide[]>([]);
@@ -175,6 +177,7 @@ export function LessonEditorPage() {
   const [ignoredStudentIds, setIgnoredStudentIds] = useState<Set<string>>(() => new Set());
   const [studentWeaknessById, setStudentWeaknessById] = useState<Record<string, number | null>>({});
   const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [personalClasses, setPersonalClasses] = useState<PersonalClass[]>([]);
   const [classModalOpen, setClassModalOpen] = useState(false);
   const [boardPickerOpen, setBoardPickerOpen] = useState(false);
   const [boardOptions, setBoardOptions] = useState<BoardDocument[]>([]);
@@ -206,13 +209,18 @@ export function LessonEditorPage() {
     if (!id) return;
     setLoading(true);
     try {
-      const cw = await lessonCoursewareService.getCourseware(id);
+      const [cw, personalClassItems] = await Promise.all([
+        lessonCoursewareService.getCourseware(id),
+        teacherId ? classService.listPersonalClasses(teacherId) : Promise.resolve([]),
+      ]);
+      setPersonalClasses(personalClassItems);
       if (!cw) {
         toast.error("课件不存在");
         navigate("/my-lessons");
         return;
       }
-      const editableCourseware = teacher?.schoolId && cw.schoolId !== teacher.schoolId
+      const isPersonal = cw.classIds.some((classId) => personalClassItems.some((item) => item.id === classId));
+      const editableCourseware = !isPersonal && teacher?.schoolId && cw.schoolId !== teacher.schoolId
         ? {
           ...cw,
           classIds: [],
@@ -246,7 +254,7 @@ export function LessonEditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, teacher?.schoolId]);
+  }, [id, navigate, teacherId, teacher?.schoolId]);
 
   useEffect(() => {
     if (!id || !teacher) return;
@@ -269,6 +277,18 @@ export function LessonEditorPage() {
       })
       .catch((error) => toast.error("班级与学生列表加载失败", error instanceof Error ? error.message : undefined));
   }, [teacher]);
+
+  const personalClassIds = new Set(personalClasses.map((item) => item.id));
+  const isPersonalCourseware = !!courseware?.classIds.some((classId) => personalClassIds.has(classId));
+  const requestedClassId = searchParams.get("classId");
+  const returnClassId = requestedClassId && courseware?.classIds.includes(requestedClassId)
+    && personalClassIds.has(requestedClassId)
+    ? requestedClassId
+    : courseware?.classIds.find((classId) => personalClassIds.has(classId));
+  const returnPath = isPersonalCourseware
+    ? `/individual-tutoring/coursewares${returnClassId ? `?classId=${encodeURIComponent(returnClassId)}` : ""}`
+    : "/my-lessons";
+  const selectableClasses = isPersonalCourseware ? personalClasses : classes;
 
   const currentSlide = slides[currentIndex];
   const selectedElement = currentSlide?.elements?.find((item) => item.id === selectedElementId) || null;
@@ -1199,7 +1219,7 @@ export function LessonEditorPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)]" onPaste={handlePaste}>
       {/* 顶部工具栏 */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-ink-200 bg-paper">
-        <Button variant="ghost" size="sm" onClick={() => openPage("/my-lessons")}>
+        <Button variant="ghost" size="sm" onClick={() => isPersonalCourseware ? navigate(returnPath) : openPage(returnPath)}>
           <ChevronLeft className="w-4 h-4" />
           返回
         </Button>
@@ -1769,9 +1789,9 @@ export function LessonEditorPage() {
         }
       >
         <div className="space-y-2 max-h-80 overflow-auto">
-          {classes.length === 0 ? (
+          {selectableClasses.length === 0 ? (
             <div className="py-8 text-center text-sm text-ink-500">暂无可选班级</div>
-          ) : classes.map((item) => {
+          ) : selectableClasses.map((item) => {
             const selected = courseware?.classIds.includes(item.id) || false;
             return (
               <button
@@ -1789,7 +1809,7 @@ export function LessonEditorPage() {
                 )}>
                   {selected && <Check className="w-3 h-3 text-ink-900" />}
                 </span>
-                <span className="flex-1 text-sm text-ink-800">{item.grade} · {item.name}</span>
+                <span className="flex-1 text-sm text-ink-800">{item.type === "personal" ? item.name : `${item.grade} · ${item.name}`}</span>
               </button>
             );
           })}

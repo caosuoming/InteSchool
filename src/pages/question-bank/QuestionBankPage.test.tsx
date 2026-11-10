@@ -78,6 +78,7 @@ vi.mock("@/components/tree/SearchableTree", () => ({
   }) => (
     <div
       data-testid={`searchable-tree-${data.type}`}
+      data-tree-id={data.id}
       data-editable={String(editable)}
       data-has-data-change={String(Boolean(onDataChange))}
       data-cascade-check={String(cascadeCheck)}
@@ -343,6 +344,41 @@ describe("QuestionBankPage personal resource scope", () => {
     finishRequest({ items: [freshQuestion], total: 1 });
     expect(await screen.findByText("服务器新题干")).toBeInTheDocument();
     expect(screen.queryByText("缓存题干")).not.toBeInTheDocument();
+  });
+
+  it("shows the requested knowledge tree and question list without waiting for auxiliary metadata", async () => {
+    // Slow school roster and resource basket endpoints must not delay the first useful render.
+    vi.mocked(basketService.listBaskets).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(classService.listMyClasses).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(classService.listMyStudents).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(knowledgeService.getKnowledgeTree).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(questionService.listQuestionPage).mockResolvedValue({
+      items: [{
+        id: "first-screen-question", teacherId: "teacher-1", schoolId: "school-2",
+        type: "short", stem: "首屏题目", answer: "1", analysis: "",
+        chapterIds: [], knowledgePointIds: [], difficulty: 3, recommendation: 3,
+        usageCount: 0, remark: "", isShared: false,
+        createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z",
+      } as Question],
+      total: 1,
+    });
+
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+
+    expect(await screen.findByText("首屏题目")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("searchable-tree-chapter"))
+      .toHaveAttribute("data-tree-id", "chapter-root"));
+    expect(knowledgeService.getChapterTree).toHaveBeenCalledWith("teacher-1", false);
+  });
+
+  it("keeps visible directory content when an unrelated metadata request fails", async () => {
+    vi.mocked(classService.listMyStudents).mockRejectedValue(new Error("roster unavailable"));
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId("searchable-tree-chapter"))
+      .toHaveAttribute("data-tree-id", "chapter-root"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("学生加载失败"));
+    expect(screen.getByTestId("searchable-tree-chapter"))
+      .toHaveAttribute("data-tree-id", "chapter-root");
   });
 
   it("adds a question to another basket without checking for similar questions", async () => {

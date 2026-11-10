@@ -197,6 +197,8 @@ describe("ScannerPage", () => {
     expect(download).toHaveAttribute("href", "https://github.com/caosuoming/InteSchool/releases/download/scanner-bridge-latest/InteSchool-Scanner-Setup.exe");
     expect(screen.getByRole("link", { name: "授权连接本站" })).toHaveAttribute("href",
       `inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`);
+    expect(screen.getByText(/在安装程序中勾选“授权 InteSchool 网站使用本机扫描仪”/)).toBeInTheDocument();
+    expect(screen.getByText(/没有该菜单说明客户端版本较旧/)).toBeInTheDocument();
     expect(screen.getByText(/点击后没有弹窗/)).toBeInTheDocument();
     expect(screen.getByText(window.location.origin)).toBeInTheDocument();
     expect(screen.getByText(/菜单顶部灰色的服务状态仅用于显示/)).toBeInTheDocument();
