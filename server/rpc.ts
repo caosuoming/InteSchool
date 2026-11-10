@@ -25,6 +25,7 @@ const PUBLIC_CALLS = new Set([
   "classroomDevice.bindDevice",
   "classroomDevice.getDeviceSession",
   "classroomDevice.getClassroomSnapshot",
+  "classroomDevice.getLinkedBoards",
   "classroomDevice.reportHeartbeat",
   "classroomDevice.recordClassroomQuestionProgress",
   "grade.getPublishedReportByToken",
@@ -135,6 +136,7 @@ const PERSONAL_SETTINGS_ID_MUTATIONS = new Set([
 
 const PERSONAL_RESOURCE_SERVICES = new Set<ServiceName>([
   "courseware",
+  "board",
   "donation",
   "examPaper",
   "extract",
@@ -150,6 +152,7 @@ const PERSONAL_RESOURCE_SERVICES = new Set<ServiceName>([
 const TARGET_COLLECTION: Partial<Record<ServiceName, string>> = {
   ai: "documents",
   basket: "baskets",
+  board: "boards",
   class: "schoolClasses",
   classroomHomework: "classroomHomeworks",
   classroomNotice: "classroomNotices",

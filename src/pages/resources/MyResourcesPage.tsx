@@ -8,13 +8,14 @@ import {
   FileSpreadsheet, Sparkles, Trash2, Share2, Upload, Filter, Library, FileText,
   PlayCircle, Copy, MessageSquareText, Star, Video,
   ShoppingCart, CheckSquare, Square, Plus, X,
-  Layout,
+  Layout, Network,
   Gift, Users, Pencil, Check,
   Folder, FolderPlus, FolderMinus, Pin, PinOff, ArrowUp, ArrowDown, Download,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService, loadEditableCoursewarePptSlides } from "@/services/lessonCourseware";
+import { BoardLibrary } from "./BoardLibrary";
 import { questionService } from "@/services/question";
 import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
 import { prepService } from "@/services/prep";
@@ -120,8 +121,8 @@ import {
   type DocumentCategory,
 } from "@/lib/document-resource";
 
-type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "answerSheet" | "basket";
-type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "basket">;
+type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "answerSheet" | "board" | "basket";
+type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "board" | "basket">;
 type LeftTab = "chapter" | "knowledge" | "method" | "error";
 type SortKey = "updated" | "created" | "title";
 
@@ -196,6 +197,7 @@ const tabConfig: { key: MyResourceTab; label: string; icon: typeof FileText; des
   { key: "courseware", label: "课件库", icon: Presentation, description: "管理课件资源，可在生成讲义时引用" },
   { key: "material", label: "素材库", icon: FileBox, description: "管理教学素材，可在生成讲义时引用" },
   { key: "answerSheet", label: "题卡库", icon: Layout, description: "管理由试卷或讲义制作的答题卡" },
+  { key: "board", label: "导图库", icon: Network, description: "总导图、结构板书与课件复用" },
   { key: "basket", label: "资源篮", icon: ShoppingCart, description: "管理资源篮，快速将题目和素材生成讲义或试卷" },
 ];
 
@@ -896,7 +898,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const loadAll = useCallback(async () => {
     const loadId = ++resourceLoadIdRef.current;
-    if (activeTab === "question" || activeTab === "basket") {
+    if (activeTab === "question" || activeTab === "basket" || activeTab === "board") {
       setLoading(false);
       return;
     }
@@ -1989,7 +1991,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         await loadResourceFolders();
       }
       toast.success("已删除");
-      if (activeTab !== "basket" && activeTab !== "answerSheet") {
+      if (activeTab !== "basket" && activeTab !== "answerSheet" && activeTab !== "board") {
         const key = batchResourceKey(activeTab, id);
         setResourceSelections((previous) => {
           const next = new Set(previous);
@@ -2911,7 +2913,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     <div>
       <PageHeader
         title="我的资源"
-        description="统一管理我的题库、试卷库、讲义库、课件库、素材库、题卡库"
+        description="统一管理我的题库、试卷库、讲义库、课件库、素材库、题卡库、导图库"
         titleAction={(
           <Button variant="outline" size="sm" onClick={() => setResourceStudentPickerOpen(true)}>
             <Users className="w-3.5 h-3.5" />
@@ -3019,6 +3021,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           }}
           refreshToken={resourceRefreshToken}
         />
+      ) : activeTab === "board" ? (
+        <BoardLibrary />
       ) : activeTab === "basket" ? (
         <div className="grid grid-cols-12 gap-4">
           {/* 左侧：资源篮列表 */}

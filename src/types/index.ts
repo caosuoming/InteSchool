@@ -2868,6 +2868,45 @@ export interface QuestionReference {
   markedAsUsed: boolean;
 }
 
+// ============ 导图库 / 结构板书 ============
+export type BoardLineStyle = "solid" | "double" | "dashed";
+export type BoardArrow = "none" | "forward" | "reverse" | "both";
+export type BoardLineRoute = "straight" | "elbow";
+
+export interface BoardNode {
+  id: string;
+  label: string;
+  parentId: string | null;
+  /** 原知识树节点 ID。总导图以实时知识树为准，禁止更改来源。 */
+  sourceKnowledgeId?: string;
+  /** 结构板书画布坐标，0—100。 */
+  x: number;
+  y: number;
+}
+
+export interface BoardEdge {
+  id: string;
+  from: string;
+  to: string;
+  style: BoardLineStyle;
+  arrow: BoardArrow;
+  route: BoardLineRoute;
+}
+
+export interface BoardDocument {
+  id: string;
+  kind: "master" | "structure";
+  teacherId: string;
+  schoolId: string;
+  subject: string;
+  title: string;
+  rootNodeId: string;
+  nodes: BoardNode[];
+  edges: BoardEdge[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============ 上课课件 ============
 
 /** 课件页类型 */
@@ -3149,6 +3188,8 @@ export interface LessonCourseware {
   coursewareMode?: "editable" | "direct";
   /** 课件页面列表 */
   slides: LessonSlide[];
+  /** 按 ID 关联的共享结构板书；展示时读取最新版本。 */
+  boardIds?: string[];
   /** 班级ID */
   classIds: string[];
   /** 发布时展示的学科与教师信息 */

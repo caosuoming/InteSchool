@@ -135,6 +135,26 @@ describe("classroomDeviceService", () => {
     });
   });
 
+  it("restricts device board reads to the assigned published lesson and class", async () => {
+    const state = makeState();
+    state.boards = [
+      { id: "board-1", teacherId: "subject", schoolId: "school-1", kind: "structure", title: "函数结构板书" },
+      { id: "board-unlinked", teacherId: "subject", schoolId: "school-1", kind: "structure", title: "未关联" },
+      { id: "board-other", teacherId: "other", schoolId: "school-1", kind: "structure", title: "其他老师" },
+    ];
+    state.lessonCoursewares = [{ id: "lesson-1", teacherId: "subject", schoolId: "school-1",
+      classIds: ["class-1"], boardIds: ["board-1", "board-other"], status: "published",
+      lifecycleStatus: "active" }];
+    await runWithState(state, async () => {
+      await bindClassOne();
+      expect((await classroomDeviceService.getLinkedBoards(TOKEN_1, "class-1", "lesson-1")).map((item) => item.id)).toEqual(["board-1"]);
+      await expect(classroomDeviceService.getLinkedBoards(TOKEN_1, "class-2", "lesson-1")).rejects.toThrow();
+      await expect(classroomDeviceService.getLinkedBoards("invalid", "class-1", "lesson-1")).rejects.toThrow();
+      (state.lessonCoursewares as Array<{ status: string }>)[0].status = "draft";
+      await expect(classroomDeviceService.getLinkedBoards(TOKEN_1, "class-1", "lesson-1")).rejects.toThrow(/无权/);
+    });
+  });
+
   it("binds a selected school and class without a teacher account and exposes only the public device shape", async () => {
     const state = makeState();
     await runWithState(state, async () => {

@@ -741,6 +741,8 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
           : BLANK_CLASSROOM_SLIDES}
         initialIndex={0}
         coursewareId={presenting?.id}
+        boardIds={presenting?.boardIds}
+        boardOwnerId={presenting?.teacherId}
         classId={selectedClassId}
         deviceToken={deviceMode ? localStorage.getItem(CLASSROOM_DEVICE_TOKEN_KEY) || undefined : undefined}
         students={students}

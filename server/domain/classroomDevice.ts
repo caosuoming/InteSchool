@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  BoardDocument,
   ClassroomDevice,
   ClassroomDeviceAccessPolicy,
   ClassroomDeviceAccessRule,
@@ -518,6 +519,24 @@ export const classroomDeviceService = {
       availableClassrooms: availableClassroomsForDevice(device),
       ...currentClassroomContent(device, classroom.id),
     };
+  },
+
+  /** 设备令牌只可读取所在班级已发布课件明确关联的结构板书。 */
+  async getLinkedBoards(deviceToken: string, classId: string, coursewareId: string): Promise<BoardDocument[]> {
+    const device = findStoredByToken(deviceToken);
+    const classroom = classroomForDevice(device, classId);
+    if (classroom.id !== classId) throw new Error("当前设备无权访问该班级");
+    const lesson = (db.read("lessonCoursewares") as LessonCourseware[])
+      .find((item) => item.id === coursewareId
+        && item.schoolId === device.schoolId
+        && item.classIds.includes(classroom.id)
+        && item.status === "published"
+        && (item.lifecycleStatus || "active") === "active");
+    if (!lesson) throw new Error("当前教室无权访问该课件板书");
+    const ids = new Set(lesson.boardIds || []);
+    return (db.read("boards") as BoardDocument[])
+      .filter((item) => ids.has(item.id) && item.kind === "structure"
+        && item.teacherId === lesson.teacherId && item.schoolId === lesson.schoolId);
   },
 
   async reportHeartbeat(deviceToken: string, input: ClassroomDeviceHeartbeatInput = {}) {
