@@ -320,6 +320,11 @@ export function normalizeExamRoomSharing(
   const slotsByGroup = new Map(groups.map((group) => [
     group.key, groupExamSlotKeys(group, simultaneousGroups, seatGroups),
   ]));
+  const seatLayoutByGroupKey = new Map(groups.map((group) => {
+    const selected = uniqueStrings(group.subjectLabel.split(" / "));
+    const seatGroup = seatGroups.find((subjects) => selected.every((subject) => subjects.includes(subject)));
+    return [group.key, seatGroup ? `seat-layout:${seatGroup.join("|")}` : group.key];
+  }));
   const roomsByGroup = new Map(groups.map((group) => [group.key, configuredRoomsForGroup(input, group)]));
   try {
     const subjects = uniqueStrings(input.subjects || []);
@@ -390,9 +395,13 @@ export function normalizeExamRoomSharing(
             sum + (effectiveCapacities.get(group.key)?.get(room.id) || 0)
           ), 0) - room.capacity;
           if (overflow <= 0) continue;
-          const candidates = splitCandidates.get(sessionKey) || new Set<string>();
-          candidates.add(room.id);
-          splitCandidates.set(sessionKey, candidates);
+          // Subgroups of one seating layout must use one physical/numbered room.
+          const differentLayouts = new Set(slotGroups.map((group) => seatLayoutByGroupKey.get(group.key))).size > 1;
+          if (differentLayouts) {
+            const candidates = splitCandidates.get(sessionKey) || new Set<string>();
+            candidates.add(room.id);
+            splitCandidates.set(sessionKey, candidates);
+          }
 
           while (overflow > 0) {
             const reducible = slotGroups
@@ -450,7 +459,9 @@ export function normalizeExamRoomSharing(
           groupsBySlot.set(slotKey, groupKeys);
         }
       }
-      return [...groupsBySlot.values()].some((groupKeys) => new Set(groupKeys).size >= 2);
+      return [...groupsBySlot.values()].some((groupKeys) => (
+        new Set(groupKeys.map((key) => seatLayoutByGroupKey.get(key) || key)).size >= 2
+      ));
     });
     if (valid.length > 0) splitRoomIdsBySession[sessionKey] = valid;
   }
@@ -803,6 +814,13 @@ function allocateSession(
   const sessionKey = tasks[0]?.sessionKey || String(sessionIndex);
   const seed = `${input.name}:${input.examDate || ""}:${sessionKey}`;
   const splitRoomIds = new Set(input.splitRoomIdsBySession?.[sessionKey] || []);
+  const seatGroups = input.sameSeatSubjectGroups === undefined
+    ? [] : resolveSameSeatSubjectGroups(input, uniqueStrings(input.subjects || []));
+  const layoutKey = (task: SeatTask): string => {
+    const actual = uniqueStrings(task.subjectLabel.split(" / "));
+    const seatGroup = seatGroups.find((subjects) => actual.every((subject) => subjects.includes(subject)));
+    return seatGroup ? `seat-layout:${seatGroup.join("|")}` : task.groupKey;
+  };
   const roomCapacityForGroup = (task: SeatTask, room: ExamRoomConfig): number => (
     input.groupRoomCapacities?.[task.groupKey]?.[room.id] ?? room.capacity
   );
@@ -852,7 +870,7 @@ function allocateSession(
     return { task, room };
   });
 
-  const groupOrder = [...new Set(tasks.map((task) => task.groupKey))]
+  const groupOrder = [...new Set(tasks.map(layoutKey))]
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
   const splitGroupIndexes = new Map<string, Map<string, number>>();
   for (const room of rooms) {
@@ -862,7 +880,7 @@ function allocateSession(
     for (const item of roomItems) {
       for (const slotKey of item.task.examSlotKeys) {
         const groupKeys = groupsBySlot.get(slotKey) || new Set<string>();
-        groupKeys.add(item.task.groupKey);
+        groupKeys.add(layoutKey(item.task));
         groupsBySlot.set(slotKey, groupKeys);
       }
     }
@@ -876,12 +894,12 @@ function allocateSession(
     splitGroupIndexes.set(room.id, new Map(orderedGroups.map((groupKey, index) => [groupKey, index + 1])));
   }
   const resolved = planned.map(({ task, room }) => {
-    const mixedIndex = splitGroupIndexes.get(room.id)?.get(task.groupKey);
+    const mixedIndex = splitGroupIndexes.get(room.id)?.get(layoutKey(task));
     const baseRoomNumber = room.number || room.name;
     return {
       task,
       room,
-      logicalRoomId: mixedIndex ? `${room.id}::mixed::${encodeURIComponent(task.groupKey)}` : room.id,
+      logicalRoomId: mixedIndex ? `${room.id}::mixed::${encodeURIComponent(layoutKey(task))}` : room.id,
       roomNumber: mixedIndex ? `${baseRoomNumber}混${mixedIndex}` : baseRoomNumber,
       physicalRoomId: mixedIndex ? room.id : undefined,
     };

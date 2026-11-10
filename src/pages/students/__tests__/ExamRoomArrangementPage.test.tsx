@@ -288,8 +288,8 @@ describe("ExamRoomArrangementPage", () => {
     );
 
     await waitFor(() => {
-      expect(within(session).getByRole("button", { name: /1考场混1/ })).toBeInTheDocument();
-      expect(within(session).getByRole("button", { name: /1考场混2/ })).toBeInTheDocument();
+      expect(within(session).queryByRole("button", { name: /1考场混1/ })).not.toBeInTheDocument();
+      expect(within(session).queryByRole("button", { name: /1考场混2/ })).not.toBeInTheDocument();
     });
     expect(within(session).getAllByText(/本组合布置上限 1 人/)).toHaveLength(2);
     expect(within(session).queryByRole("button", { name: /拆分 1考场/ })).not.toBeInTheDocument();

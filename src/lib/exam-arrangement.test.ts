@@ -101,6 +101,30 @@ describe("same-seat subject groups", () => {
     expect(new Set(assignments.map((assignment) => assignment.seatNo)).size).toBe(2);
   });
 
+  it("keeps a single physical room label for different electives in the same seat group", () => {
+    const arrangement = input("combination");
+    arrangement.sameSeatSubjectGroups = [["物理", "化学"]];
+    arrangement.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: [] },
+    ];
+    arrangement.rooms = [{ id: "room-a", name: "第一考场", capacity: 2 }];
+    arrangement.classRules = arrangement.classRules.map((rule) => ({
+      ...rule, subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    arrangement.groupRoomCapacities = {
+      "seat:物理": { "room-a": 2 },
+      "seat:化学": { "room-a": 2 },
+    };
+    const normalized = normalizeExamRoomSharing(arrangement, context);
+    expect(normalized.splitRoomIdsBySession?.["seat:物理|化学"]).toBeUndefined();
+    const assignments = generateExamAssignments(arrangement, context);
+    expect(assignments).toHaveLength(2);
+    expect(assignments.every((item) => item.roomNumber === "第一考场")).toBe(true);
+    expect(new Set(assignments.map((item) => item.seatNo)).size).toBe(2);
+  });
+
   it("uses independent seating layouts for different subject groups", () => {
     const arrangement = input("combination");
     arrangement.sameSeatSubjectGroups = [["物理"], ["化学"]];
