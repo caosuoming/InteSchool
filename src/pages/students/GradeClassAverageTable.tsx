@@ -1,3 +1,5 @@
+import { GradeReportNotes } from "./GradeReportNotes";
+import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useMemo, useState } from "react";
 import {
   ChevronDown,
@@ -154,7 +156,7 @@ export function GradeClassAverageTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeClassAverageReport(report, exam.name);
+      await exportGradeClassAverageReport(report, exam.name, buildGradeReportNotes(exam, settings));
       toast.success("班级平均分表已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);
@@ -585,6 +587,7 @@ export function GradeClassAverageTable({
           </div>
         </div>
       )}
+      <GradeReportNotes notes={buildGradeReportNotes(exam, settings)} />
     </Card>
   );
 }

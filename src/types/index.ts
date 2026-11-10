@@ -1224,6 +1224,8 @@ export interface GradeScoreAdjustment {
 export interface GradeExamMetadataPatch {
   name: string;
   examDate?: string;
+  /** 该次考试的备注，最多 2000 字。 */
+  examRemark?: string;
 }
 
 export interface GradeExamPublication {
@@ -1243,6 +1245,7 @@ export interface GradeExam {
   cohortLabel: string;
   name: string;
   examDate?: string;
+  examRemark?: string;
   sourceFileName: string;
   sourceSheetName: string;
   subjects: string[];

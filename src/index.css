@@ -648,7 +648,7 @@
   body.grade-summary-printing .grade-summary-print-root > .card-base:last-child {
     break-after: auto;
   }
-  body.grade-summary-printing .grade-summary-print-root > .card-base > :not(:last-child) {
+  body.grade-summary-printing .grade-summary-print-root > .card-base > :not(:last-child):not(:has(+ .grade-report-notes)) {
     display: none !important;
   }
   body.grade-summary-printing .grade-summary-print-root .overflow-x-auto {
