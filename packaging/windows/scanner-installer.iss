@@ -50,7 +50,7 @@ Name: "{userstartup}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Pa
 [Run]
 ; Only the explicitly selected production origin is saved. The launcher uses
 ; the same origin validation and persistent allowlist as browser pairing.
-Filename: "{app}\node.exe"; Parameters: """{app}\scripts\scanner-launcher.mjs"" ""inteschool-scanner://connect?origin={#OfficialSiteEncoded}"""; Tasks: authorizeOfficialWebsite; Flags: runhidden waituntilterminated; StatusMsg: "正在授权 InteSchool 网站..."
+Filename: "{app}\node.exe"; Parameters: """{app}\scripts\scanner-launcher.mjs"" --pair-only ""inteschool-scanner://connect?origin={#OfficialSiteEncoded}"""; Tasks: authorizeOfficialWebsite; Flags: runhidden waituntilterminated; StatusMsg: "正在授权 InteSchool 网站..."
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -STA -File ""{app}\scanner-tray.ps1"" -Restart"; Description: "启动本机扫描服务"; Flags: nowait skipifsilent
 
 [UninstallRun]
