@@ -47,6 +47,9 @@ import { LessonSlideCanvas } from "@/components/lessons/LessonSlideCanvas";
 import { LessonSlideContent } from "@/components/lessons/LessonSlideContent";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { uploadFile } from "@/services/api";
+import { boardService } from "@/services/board";
+import { BoardCanvas } from "@/components/board/BoardCanvas";
+import type { BoardDocument } from "@/types";
 import { HomeworkHistoryPanel } from "./HomeworkHistoryPanel";
 import { questionService } from "@/services/question";
 import { analyticsService } from "@/services/analytics";
@@ -62,6 +65,8 @@ interface PresentationModeProps {
   slides: LessonSlide[];
   initialIndex: number;
   coursewareId?: string;
+  boardIds?: string[];
+  boardOwnerId?: string;
   classId?: string;
   deviceToken?: string;
   students: { id: string; name: string }[];
@@ -1034,6 +1039,8 @@ export function PresentationMode({
   slides,
   initialIndex,
   coursewareId,
+  boardIds,
+  boardOwnerId,
   classId,
   deviceToken,
   students,
@@ -1083,6 +1090,9 @@ export function PresentationMode({
     Partial<Record<QuestionRevealSection, DrawingStroke[]>>
   >>({});
   const [boardsVisible, setBoardsVisible] = useState(false);
+  const [linkedBoards, setLinkedBoards] = useState<BoardDocument[]>([]);
+  const [linkedBoardIndex, setLinkedBoardIndex] = useState<number | null>(null);
+  const [linkedBoardLoading, setLinkedBoardLoading] = useState(false);
   const [savingBoardId, setSavingBoardId] = useState<string | null>(null);
   const [mainClearToken, setMainClearToken] = useState(0);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -1908,6 +1918,29 @@ export function PresentationMode({
       board.id === boardId ? { ...board, activeWritingAreaId: writingAreaId } : board
     )));
     setActiveBoardId(boardId);
+  };
+
+  const openLinkedBoards = async () => {
+    if (linkedBoardIndex !== null) {
+      setLinkedBoardIndex(null);
+      return;
+    }
+    if (!boardIds?.length || (!boardOwnerId && !deviceToken)) return;
+    setLinkedBoardLoading(true);
+    try {
+      const items = deviceToken && classId && coursewareId
+        ? await classroomDeviceService.getLinkedBoards(deviceToken, classId, coursewareId)
+        : coursewareId
+          ? await boardService.getLessonBoards(coursewareId)
+          : await Promise.all(boardIds.map((id) => boardService.getBoard(id, boardOwnerId!)));
+      const validItems = items.filter((item) => item.kind === "structure");
+      setLinkedBoards(validItems);
+      setLinkedBoardIndex(validItems.length ? 0 : null);
+    } catch (error) {
+      toast.error("加载关联板书失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setLinkedBoardLoading(false);
+    }
   };
 
   const toggleBoards = () => {
@@ -2749,6 +2782,12 @@ export function PresentationMode({
           </div>
         </div>
 
+        {linkedBoardIndex !== null && linkedBoards[linkedBoardIndex] && (
+          <div className="pointer-events-none absolute inset-0 z-[5]" data-testid="linked-board-page">
+            <BoardCanvas board={linkedBoards[linkedBoardIndex]} readonly className="rounded-none" />
+          </div>
+        )}
+
         <WritableCanvas
           key={currentSlide?.id || "empty-slide"}
           tool={tool}
@@ -2764,6 +2803,27 @@ export function PresentationMode({
           className="z-10"
         />
 
+        {boardIds && boardIds.length > 0 && <>
+          {(["left", "right"] as const).map((side) => (
+            <div key={side} className={cn("absolute bottom-[12rem] z-[95] flex flex-col gap-1 rounded-lg border border-white/30 bg-paper/95 p-1 shadow-xl",
+              side === "left" ? "left-4" : "right-4")} data-presentation-popup-root>
+              <button type="button" aria-label={`${side === "left" ? "左侧" : "右侧"}打开结构板书`}
+                aria-pressed={linkedBoardIndex !== null} disabled={linkedBoardLoading}
+                onClick={() => void openLinkedBoards()}
+                className={cn("rounded-md px-2 py-1.5 text-sm font-bold",
+                  linkedBoardIndex !== null ? "bg-amber-300 text-ink-900" : "text-ink-700 hover:bg-amber-50")}>
+                板
+              </button>
+              {linkedBoardIndex !== null && linkedBoards.length > 1 && (
+                <select aria-label={`${side === "left" ? "左侧" : "右侧"}选择结构板书`}
+                  value={linkedBoardIndex} onChange={(event) => setLinkedBoardIndex(Number(event.target.value))}
+                  className="max-w-28 rounded border bg-paper px-1 py-1 text-xs">
+                  {linkedBoards.map((item, index) => <option key={item.id} value={index}>{item.title}</option>)}
+                </select>
+              )}
+            </div>
+          ))}
+        </>}
         {renderSideRail("left")}
         {renderSideRail("right")}
         {renderPageNavigation("left")}

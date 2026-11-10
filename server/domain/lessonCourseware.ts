@@ -1265,6 +1265,21 @@ export const lessonCoursewareService = {
   async updateCourseware(id: string, patch: Partial<LessonCourseware>): Promise<LessonCourseware> {
     await delay(300);
     maybeThrowError();
+    if (patch.boardIds !== undefined) {
+      const courseware = db.read("lessonCoursewares").find((item) => item.id === id);
+      if (!courseware) throw new Error("课件不存在");
+      if (!Array.isArray(patch.boardIds) || patch.boardIds.length > 100 ||
+        new Set(patch.boardIds).size !== patch.boardIds.length ||
+        patch.boardIds.some((item) => typeof item !== "string")) {
+        throw new Error("关联板书列表不合法");
+      }
+      const boards = db.read("boards") as Array<{ id: string; teacherId: string; kind: string }>;
+      for (const boardId of patch.boardIds) {
+        if (!boards.some((board) => board.id === boardId && board.teacherId === courseware.teacherId && board.kind === "structure")) {
+          throw new Error("不能关联不属于本人的结构板书");
+        }
+      }
+    }
     let updated: LessonCourseware | null = null;
     db.update("lessonCoursewares", (list) =>
       list.map((c) => {

@@ -1,4 +1,12 @@
 export const serviceParameters = {
+  "board": {
+    "listBoards": ["teacherId"],
+    "getBoard": ["boardId", "teacherId"],
+    "getLessonBoards": ["coursewareId", "teacher"],
+    "createBoard": ["teacherId", "sourceNodeId"],
+    "saveBoard": ["boardId", "teacherId", "patch"],
+    "deleteBoard": ["boardId", "teacherId"]
+  },
   "scanner": { "listPublishedAnswerSheets": ["schoolId"], "listThirdPartyCards": ["schoolId", "teacher"], "updateThirdPartyCard": ["cardId", "patch", "teacher"] },
   "help": {
     "getBoard": [
@@ -70,6 +78,7 @@ export const serviceParameters = {
       "deviceToken",
       "requestedClassId"
     ],
+    "getLinkedBoards": ["deviceToken", "classId", "coursewareId"],
     "reportHeartbeat": [
       "deviceToken",
       "input"

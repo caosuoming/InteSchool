@@ -10,17 +10,26 @@ const serviceMocks = vi.hoisted(() => ({
   updateQuestion: vi.fn(),
   recordClassroomQuestionProgress: vi.fn(),
   deviceRecordClassroomQuestionProgress: vi.fn(),
+  getLessonBoards: vi.fn(),
+  getLinkedBoards: vi.fn(),
 }));
 
 vi.mock("@/services/api", () => ({
   uploadFile: serviceMocks.uploadFile,
 }));
 
+vi.mock("@/services/board", () => ({
+  boardService: { getLessonBoards: serviceMocks.getLessonBoards },
+}));
+
 vi.mock("@/services/analytics", () => ({
   analyticsService: { recordClassroomQuestionProgress: serviceMocks.recordClassroomQuestionProgress },
 }));
 vi.mock("@/services/classroomDevice", () => ({
-  classroomDeviceService: { recordClassroomQuestionProgress: serviceMocks.deviceRecordClassroomQuestionProgress },
+  classroomDeviceService: {
+    recordClassroomQuestionProgress: serviceMocks.deviceRecordClassroomQuestionProgress,
+    getLinkedBoards: serviceMocks.getLinkedBoards,
+  },
 }));
 
 vi.mock("@/services/question", () => ({
@@ -86,6 +95,8 @@ beforeEach(() => {
   serviceMocks.updateQuestion.mockReset();
   serviceMocks.recordClassroomQuestionProgress.mockReset().mockResolvedValue([]);
   serviceMocks.deviceRecordClassroomQuestionProgress.mockReset().mockResolvedValue(undefined);
+  serviceMocks.getLessonBoards.mockReset().mockResolvedValue([]);
+  serviceMocks.getLinkedBoards.mockReset().mockResolvedValue([]);
   localStorage.clear();
   Object.defineProperty(window, "PointerEvent", {
     configurable: true,
@@ -157,6 +168,24 @@ describe("PresentationMode", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("opens the latest linked structure board from either side without removing writing tools", async () => {
+    serviceMocks.getLessonBoards.mockResolvedValue([{
+      id: "linked-one", teacherId: "teacher-1", schoolId: "school-1", kind: "structure",
+      subject: "数学", title: "函数结构板书", rootNodeId: "root",
+      nodes: [{ id: "root", parentId: null, label: "函数结构板书", x: 50, y: 9 }], edges: [],
+      createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+    }]);
+    render(<PresentationMode slides={slides} initialIndex={0} students={[]}
+      boardIds={["linked-one"]} boardOwnerId="teacher-1" coursewareId="course-1"
+      relatedQuestionsById={{}} onExit={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "左侧打开结构板书" }));
+    await waitFor(() => expect(screen.getByTestId("linked-board-page")).toBeInTheDocument());
+    expect(screen.getByLabelText("书写工具")).toBeInTheDocument();
+    expect(serviceMocks.getLessonBoards).toHaveBeenCalledWith("course-1");
+    fireEvent.click(screen.getByRole("button", { name: "右侧打开结构板书" }));
+    expect(screen.queryByTestId("linked-board-page")).not.toBeInTheDocument();
   });
 
   it("does not credit a question when a slide changes before the two-minute threshold", async () => {

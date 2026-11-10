@@ -1,5 +1,6 @@
 import { rpcCall } from "./api";
 import type {
+  BoardDocument,
   ClassroomDeviceAccessPolicy,
   ClassroomDevice,
   ClassroomDeviceSession,
@@ -56,6 +57,10 @@ export const classroomDeviceService = {
 
   async getClassroomSnapshot(deviceToken: string, classId?: string): Promise<ClassroomDeviceSnapshot> {
     return rpcCall("classroomDevice", "getClassroomSnapshot", [deviceToken, classId]) as any;
+  },
+
+  async getLinkedBoards(deviceToken: string, classId: string, coursewareId: string): Promise<BoardDocument[]> {
+    return rpcCall("classroomDevice", "getLinkedBoards", [deviceToken, classId, coursewareId]);
   },
 
   async recordClassroomQuestionProgress(deviceToken: string, input: {

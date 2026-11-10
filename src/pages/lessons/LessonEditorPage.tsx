@@ -19,6 +19,7 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { boardService } from "@/services/board";
 import { coursewareService } from "@/services/courseware";
 import { basketService } from "@/services/basket";
 import { materialService } from "@/services/material";
@@ -30,6 +31,7 @@ import { uploadFile } from "@/services/api";
 import type {
   LessonCourseware,
   Courseware,
+  BoardDocument,
   LessonSlide,
   LessonSlideElement,
   LessonSlideTextRegion,
@@ -108,6 +110,7 @@ interface LessonSaveState {
   slides: LessonSlide[];
   title: string;
   classIds: string[];
+  boardIds: string[];
 }
 
 interface LessonElementClipboard {
@@ -120,6 +123,7 @@ function lessonSaveStateFromCourseware(courseware: LessonCourseware): LessonSave
     slides: courseware.slides,
     title: courseware.title,
     classIds: courseware.classIds,
+    boardIds: courseware.boardIds || [],
   };
 }
 
@@ -172,6 +176,8 @@ export function LessonEditorPage() {
   const [studentWeaknessById, setStudentWeaknessById] = useState<Record<string, number | null>>({});
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [classModalOpen, setClassModalOpen] = useState(false);
+  const [boardPickerOpen, setBoardPickerOpen] = useState(false);
+  const [boardOptions, setBoardOptions] = useState<BoardDocument[]>([]);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedTextRegion, setSelectedTextRegion] = useState<LessonSlideTextRegion | null>(null);
   const [elementClipboard, setElementClipboard] = useState<LessonElementClipboard | null>(null);
@@ -782,6 +788,7 @@ export function LessonEditorPage() {
     slides,
     title: courseware.title,
     classIds: courseware.classIds,
+    boardIds: courseware.boardIds || [],
   } : null;
   const hasUnsavedChanges = currentSaveState !== null
     && savedDraft !== null
@@ -794,6 +801,7 @@ export function LessonEditorPage() {
       ...courseware,
       title: savedDraft.title,
       classIds: [...savedDraft.classIds],
+      boardIds: [...savedDraft.boardIds],
     });
     setSelectedElementId(null);
     setSelectedTextRegion(null);
@@ -809,6 +817,7 @@ export function LessonEditorPage() {
         slides,
         title: courseware.title,
         classIds: courseware.classIds,
+        boardIds: courseware.boardIds || [],
       });
       setCourseware(updated);
       setSavedDraft(lessonSaveStateFromCourseware(updated));
@@ -840,6 +849,7 @@ export function LessonEditorPage() {
         slides,
         title: courseware.title,
         classIds: courseware.classIds,
+        boardIds: courseware.boardIds || [],
         schoolId: teacher.schoolId,
         status: "draft",
         publishedAt: undefined,
@@ -1227,6 +1237,16 @@ export function LessonEditorPage() {
         <Button variant="outline" size="sm" onClick={() => setClassModalOpen(true)}>
           <School className="w-4 h-4" />
           授课班级 {courseware?.classIds.length ? `(${courseware.classIds.length})` : ""}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => {
+          if (!teacher) return;
+          setBoardPickerOpen(true);
+          void boardService.listBoards(teacher.id).then((items) =>
+            setBoardOptions(items.filter((item) => item.kind === "structure")),
+          ).catch((err: unknown) => toast.error("获取板书失败", err instanceof Error ? err.message : undefined));
+        }}>
+          <Blocks className="w-4 h-4" />
+          关联板书 {courseware?.boardIds?.length ? `(${courseware.boardIds.length})` : ""}
         </Button>
         <Button
           variant="outline"
@@ -1845,11 +1865,36 @@ export function LessonEditorPage() {
         )}
       </Modal>
 
+      <Modal open={boardPickerOpen} onClose={() => setBoardPickerOpen(false)} title="关联结构板书" size="lg">
+        <div className="max-h-[55vh] space-y-2 overflow-auto p-1">
+          {boardOptions.length === 0 ? <p className="py-5 text-center text-sm text-ink-500">暂无结构板书，请先在“我的资源 → 导图库”创建。</p> :
+            boardOptions.map((item) => {
+              const linked = courseware?.boardIds?.includes(item.id) || false;
+              return <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink-100 p-3 text-sm hover:bg-mist">
+                <input type="checkbox" checked={linked} onChange={(event) => setCourseware((current) => {
+                  if (!current) return current;
+                  const previous = current.boardIds || [];
+                  const boardIds = event.target.checked ? [...previous.filter((id) => id !== item.id), item.id]
+                    : previous.filter((id) => id !== item.id);
+                  return { ...current, boardIds };
+                })} />
+                <span className="flex-1 font-medium">{item.title}</span>
+                <span className="text-xs text-ink-400">{item.nodes.length} 节点</span>
+              </label>;
+            })}
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button size="sm" onClick={() => setBoardPickerOpen(false)}>完成（自动保存）</Button>
+        </div>
+      </Modal>
+
       {/* 预览模式（全屏覆盖） */}
       {previewMode && (
         <PresentationMode
           slides={slides}
           initialIndex={currentIndex}
+          boardIds={courseware?.boardIds}
+          boardOwnerId={teacher?.id}
           students={students}
           followedStudentIds={followedStudentIds}
           ignoredStudentIds={ignoredStudentIds}

@@ -28,7 +28,7 @@ export const COLLECTIONS = [
   "lectures", "lectureColumnTemplates", "examPapers", "coursewares", "materials", "resourceFolders", "baskets", "documents",
   "recognitions", "answerRecords", "scannerPages", "subjectGroups", "prepGroups", "organizationDepartments", "onlineResources",
   "prepTasks", "questionReferences", "schoolSettings", "examPaperTypes", "lectureTypes",
-  "shareRecords", "creditTransactions", "platformCreditSettings", "platformAccessSettings", "examPublications", "lessonCoursewares", "reflections",
+  "shareRecords", "creditTransactions", "platformCreditSettings", "platformAccessSettings", "examPublications", "lessonCoursewares", "boards", "reflections",
   "classroomHomeworks", "classroomNotices", "classroomDevices", "thirdPartyCards",
   "studentInteractions", "studentInteractionFollows", "studentInteractionIgnores", "homeworkAttitudeRecords", "homeworkKnowledgeRecords", "homeworkRecordPreferences", "homeworkClassOverviewRecords", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
