@@ -432,7 +432,7 @@ describe("StudentInteractionPage", () => {
     expect(screen.queryByText("数学 · 历次成绩与名次")).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: /甲同学语文成绩走势折线图/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /甲同学语文名次走势折线图/ })).toBeInTheDocument();
-    expect(screen.getByLabelText(/语文成绩：90/)).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/语文成绩：90/)).toHaveLength(2);
     expect(more.parentElement).toHaveClass("justify-end");
     await user.click(screen.getByRole("button", { name: /高一（2）班/ }));
     expect(screen.queryByText("甲同学 · 其他学科成绩与名次")).not.toBeInTheDocument();
