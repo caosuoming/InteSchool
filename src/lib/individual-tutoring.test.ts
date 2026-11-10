@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chapterScope, flattenChapterTree, tutoringSuggestions } from "./individual-tutoring";
+import { chapterScope, compactChapterSelection, flattenChapterTree, tutoringSuggestions } from "./individual-tutoring";
 import type { Chapter, KnowledgePoint, Question } from "@/types";
 import type { KnowledgeMastery } from "@/services/analytics";
 
@@ -39,6 +39,13 @@ describe("individual tutoring suggestions", () => {
     expect([...chapterScope(chapters, ["child", "sibling"])].sort()).toEqual(["child", "sibling"]);
     expect([...chapterScope(chapters, ["root", "sibling"])].sort()).toEqual(["child", "root", "sibling"]);
     expect(chapterScope(chapters, [])).toEqual(new Set());
+  });
+
+  it("compacts full branches but preserves partially selected descendants", () => {
+    expect(compactChapterSelection(chapters, ["root", "child"])).toEqual(["root"]);
+    expect(compactChapterSelection(chapters, ["root"])).toEqual([]);
+    expect(compactChapterSelection(chapters, ["child", "sibling"])).toEqual(["child", "sibling"]);
+    expect(compactChapterSelection(chapters, ["root", "child", "sibling"])).toEqual(["root", "sibling"]);
   });
 
   it("flattens the knowledge-tree chapter directory without including its synthetic root", () => {
