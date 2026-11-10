@@ -98,8 +98,6 @@ const typeLabels: Record<string, string> = {
 
 const EMPTY_PROJECTS: AnswerSheetProject[] = [];
 
-const answerSheetTypeOrder = ["single", "multiple", "judge", "short", "conceptFill", "essay", "comprehensive"];
-
 const chineseNumerals = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 
 function chineseSectionNumber(number: number): string {
@@ -222,31 +220,22 @@ function isFillQuestion(question: AnswerSheetQuestion): boolean {
   return question.type === "short" || question.type === "conceptFill";
 }
 
-function groupQuestions(questions: AnswerSheetQuestion[], consolidateTypes = false): QuestionGroup[] {
+function groupQuestions(questions: AnswerSheetQuestion[], labels: Record<string, string> = {}): QuestionGroup[] {
   const groups: QuestionGroup[] = [];
-  const byType = new Map<string, QuestionGroup>();
   questions.forEach((question, index) => {
     const type = question.type;
-    const existing = consolidateTypes ? byType.get(type) : groups[groups.length - 1];
+    const existing = groups[groups.length - 1];
     if (existing?.type === type) {
       existing.items.push({ question, number: index + 1 });
     } else {
       const group = {
         type,
-        label: typeLabels[type] || type,
+        label: labels[type]?.trim() || typeLabels[type] || type,
         items: [{ question, number: index + 1 }],
       };
       groups.push(group);
-      if (consolidateTypes) byType.set(type, group);
     }
   });
-  if (consolidateTypes) {
-    const priority = (type: string) => {
-      const index = answerSheetTypeOrder.indexOf(type);
-      return index < 0 ? answerSheetTypeOrder.length : index;
-    };
-    groups.sort((left, right) => priority(left.type) - priority(right.type));
-  }
   return groups;
 }
 
@@ -893,6 +882,7 @@ interface AnswerSheetComposerProps {
   resourceLabel: "试卷" | "讲义";
   questions: AnswerSheetQuestion[];
   sourceLayoutMode?: "grouped" | "flat";
+  questionTypeLabels?: Record<string, string>;
   projects?: AnswerSheetProject[];
   totalScore?: number;
   initialSettings?: Partial<AnswerSheetSettings>;
@@ -941,6 +931,7 @@ export function AnswerSheetComposer({
   resourceLabel,
   questions,
   sourceLayoutMode,
+  questionTypeLabels,
   projects = EMPTY_PROJECTS,
   totalScore,
   initialSettings,
@@ -965,8 +956,8 @@ export function AnswerSheetComposer({
   const previewPagesRef = useRef<HTMLDivElement>(null);
 
   const groups = useMemo(
-    () => sourceLayoutMode === "flat" ? groupProjectQuestions(questions, projects) : groupQuestions(questions),
-    [questions, projects, sourceLayoutMode],
+    () => sourceLayoutMode === "flat" ? groupProjectQuestions(questions, projects) : groupQuestions(questions, questionTypeLabels),
+    [questions, projects, questionTypeLabels, sourceLayoutMode],
   );
   const numberedQuestions = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const choiceItems = useMemo(

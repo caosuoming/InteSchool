@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnswerSheetComposer } from "@/components/answer-sheet/AnswerSheetComposer";
 import { getProjectSections } from "./project-sections";
+import { getQuestionTypeSections } from "./question-type-sections";
 import { Spinner } from "@/components/ui/Spinner";
 import { examPaperService } from "@/services/examPaper";
 import { toast } from "@/stores/ui";
@@ -65,7 +66,7 @@ export default function ExamPaperAnswerSheetPage() {
     .map((block) => [block.examPaperQuestionId!, block.customLabel]));
   const orderedQuestions = paper.layoutMode === "flat"
     ? getProjectSections(paper.questions, paper.projects || []).flatMap((section) => section.questions)
-    : paper.questions;
+    : getQuestionTypeSections(paper.questions, {}, paper.questionTypeOrder).flatMap((section) => section.questions);
   const answerQuestions = orderedQuestions.map((question) => ({
     ...question,
     label: originalLabels.get(question.id),
@@ -81,6 +82,7 @@ export default function ExamPaperAnswerSheetPage() {
       resourceLabel="试卷"
       questions={answerQuestions}
       sourceLayoutMode={paper.layoutMode}
+      questionTypeLabels={paper.questionTypeLabels}
       projects={paper.projects}
       totalScore={paper.totalScore}
       initialSettings={paper.answerSheetSettings}

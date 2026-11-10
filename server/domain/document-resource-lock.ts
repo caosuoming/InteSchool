@@ -76,7 +76,7 @@ function sameJsonStructure(
 
 const PAPER_CARD_FIELDS: (keyof ExamPaper)[] = [
   "title", "description", "grade", "schoolYear", "duration", "totalScore", "questions",
-  "contentBlocks", "layoutMode", "questionTypeOrder", "projects",
+  "contentBlocks", "layoutMode", "questionTypeOrder", "questionTypeLabels", "projects",
 ];
 const LECTURE_CARD_FIELDS: (keyof Lecture)[] = [
   "title", "description", "grade", "schoolYear", "sections", "contentBlocks",
@@ -165,12 +165,16 @@ export function sanitizeExamPaperPatch(
   if (patch.questionTypeOrder && !sameJsonStructure(current.questionTypeOrder, patch.questionTypeOrder)) {
     throw new Error("上传原稿和拆解稿不能调整题型顺序");
   }
+  if (patch.questionTypeLabels && !isDeepStrictEqual(current.questionTypeLabels || {}, patch.questionTypeLabels)) {
+    throw new Error(`${lockReason}不能修改题型标题`);
+  }
   if (patch.projects && !sameJsonStructure(current.projects, patch.projects)) {
     throw new Error(`${lockReason}不能调整项目编排`);
   }
   delete safePatch.contentBlocks;
   delete safePatch.layoutMode;
   delete safePatch.questionTypeOrder;
+  delete safePatch.questionTypeLabels;
   delete safePatch.projects;
   return safePatch;
 }

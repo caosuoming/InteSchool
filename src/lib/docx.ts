@@ -1189,7 +1189,7 @@ export async function buildExamPaperDocxBlob(
         };
       })
       : getQuestionTypeSections(paper.questions, questionsById, paper.questionTypeOrder).map((section, index) => ({
-        heading: getQuestionTypeHeading(section.type, index),
+        heading: getQuestionTypeHeading(section.type, index, paper.questionTypeLabels),
         questions: section.questions,
       }));
     let questionNumber = 0;
