@@ -1229,7 +1229,7 @@ describe("legacy lecture lesson creation", () => {
       expect(result.slides).toHaveLength(2);
       expect(result.slides[1]).toMatchObject({ type: "knowledge", title: "双曲线" });
       expect(result.chapterIds).toEqual([]);
-      expect(state.coursewares.some((item) => item.lessonCoursewareId === result.id)).toBe(true);
+      expect((state.coursewares as Courseware[]).some((item) => item.lessonCoursewareId === result.id)).toBe(true);
     });
   });
 });
