@@ -22,12 +22,20 @@ async function isListening() {
 }
 
 async function main() {
-  const uri = process.argv[2];
+  const args = process.argv.slice(2);
+  const pairingOnly = args[0] === "--pair-only";
+  if ((pairingOnly && args.length !== 2) || (!pairingOnly && args.length > 1)) {
+    throw new Error("连接请求无效");
+  }
+  const uri = pairingOnly ? args[1] : args[0];
   if (uri) {
-    // The Windows protocol handler asks the user to approve the full origin
-    // before invoking this launcher. Never accept unvalidated URI parameters.
+    // Browser protocol requests require user confirmation in the VBS handler.
+    // The installer offers a separate opt-in task for its pinned HTTPS origin.
     await approveOrigin(parsePairingUri(uri));
   }
+  // Inno Setup waits for this invocation: never spawn the long-lived bridge
+  // from the installer authorization step.
+  if (pairingOnly) return;
   await access(bridge);
   if (await isListening()) return;
   const { SCANNER_ALLOWED_ORIGIN: _configuredOrigin, ...cleanEnvironment } = process.env;

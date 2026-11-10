@@ -1,11 +1,30 @@
 import { describe, it, expect } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approveOrigin, parsePairingUri, readPairedOrigins, validateWebsiteOrigin } from "./scanner-pairing.mjs";
 import { createBridge } from "./scanner-bridge.mjs";
 
 describe("scanner installer site pairing", () => {
+  it("allows the installer to authorize a site without starting the long-lived bridge", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "inteschool-installer-pairing-"));
+    const file = join(dir, "origins.json");
+    const launcher = join(process.cwd(), "scripts", "scanner-launcher.mjs");
+    const run = (uri) => spawnSync(process.execPath, [launcher, "--pair-only", uri], {
+      env: { ...process.env, INTESCHOOL_SCANNER_ORIGINS_FILE: file }, encoding: "utf8", timeout: 3000,
+    });
+    try {
+      const approved = run("inteschool-scanner://connect?origin=https%3A%2F%2Finteschool.fwerkor.com");
+      expect(approved.status, approved.stderr).toBe(0);
+      expect(await readPairedOrigins(file)).toEqual(["https://inteschool.fwerkor.com"]);
+      const denied = run("inteschool-scanner://connect?origin=http%3A%2F%2Fevil.example");
+      expect(denied.status).not.toBe(0);
+      expect(await readPairedOrigins(file)).toEqual(["https://inteschool.fwerkor.com"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it("accepts only exact secure origins and valid protocol URIs", () => {
     expect(parsePairingUri("inteschool-scanner://connect?origin=https%3A%2F%2Fschool.example")).toBe("https://school.example");
     expect(validateWebsiteOrigin("http://localhost:5173")).toBe("http://localhost:5173");
