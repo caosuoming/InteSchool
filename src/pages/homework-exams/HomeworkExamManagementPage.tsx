@@ -23,7 +23,8 @@ import { toast } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
 import type { ClassroomHomework, ExamPaper, ExamPaperQuestion, ExamPublication, HomeworkClassOverviewRecord, AnyClass, Student, ClassroomHomeworkAttachment } from "@/types";
 import {
-  homeworkStatus, homeworkSubmissionDetails, homeworkTitle, paperHomeworkStatus, publicationStatus,
+  homeworkGroupPosition, homeworkStatus, homeworkSubmissionDetails, homeworkTitle,
+  isPersonalOnlyHomework, paperHomeworkStatus, publicationStatus, sortByHomeworkDate,
 } from "@/lib/homework-exam-management";
 
 type Section = "homework" | "exams";
@@ -268,8 +269,10 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           section === "homework" ? scannerService.listPages(schoolId).then((records) => ({ records, failed: false }))
             .catch(() => ({ records: [] as ScannerPageRecord[], failed: true })) : Promise.resolve({ records: [] as ScannerPageRecord[], failed: false }),
         ]);
+        const personalIds = new Set(classItems.filter((item) => item.type === "personal").map((item) => item.id));
         const classIds = section === "homework"
           ? [...new Set(homeworkItems.filter((item) => item.managementCategory !== "exam"
+            && !isPersonalOnlyHomework(item, personalIds)
             && (item.assignedEndDate || item.assignedDate) === item.assignedDate).flatMap((item) => item.classIds))]
           : [];
         const overviews = await Promise.allSettled(classIds.map((id) =>
@@ -325,17 +328,24 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
     return (statusFilter === "all" || status === statusFilter) && searchText.includes(normalizedQuery);
   };
 
+  const personalClassIds = new Set(classes.filter((item) => item.type === "personal").map((item) => item.id));
   const linkedPaperIds = new Set(homeworks.filter((item) => item.managementCategory !== "exam")
     .flatMap((item) => item.examPaperIds || []));
   const managedRecords: ManagedRecord[] = [
-    ...homeworks.filter((item) => (item.managementCategory === "exam") !== isHomework)
+    ...homeworks.filter((item) => (item.managementCategory === "exam") !== isHomework
+      && (!isHomework || !isPersonalOnlyHomework(item, personalClassIds)))
       .map((item): ManagedRecord => ({ kind: "classroom", item })),
     ...papers.filter((item) => (item.managementCategory === "exam") !== isHomework
-      && (!isHomework || (!item.originalFileUrl && !item.isExtractCopy
+      && (!isHomework || (!isPersonalOnlyHomework(item, personalClassIds)
+        && !item.originalFileUrl && !item.isExtractCopy
         && !(linkedPaperIds.has(item.id) && !item.assignedDate))))
       .map((item): ManagedRecord => ({ kind: "paper", item })),
-  ].filter(matchesRecord).sort((left, right) =>
-    right.item.updatedAt.localeCompare(left.item.updatedAt));
+  ].filter(matchesRecord);
+  if (isHomework) {
+    managedRecords.splice(0, managedRecords.length, ...sortByHomeworkDate(managedRecords));
+  } else {
+    managedRecords.sort((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt));
+  }
 
   const categorizedPaperIds = new Set(papers.filter((item) =>
     item.managementCategory === "exam").map((item) => item.id));
@@ -568,12 +578,13 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       </div></td>
                     </tr>
                   ))}
-                  {visibleRecords.map((record) => {
+                  {visibleRecords.map((record, index) => {
                     const status = recordStatus(record, now);
                     const counts = record.kind === "classroom" ? homeworkSubmissionDetails(record.item, attendance) : null;
+                    const groupPosition = homeworkGroupPosition(visibleRecords, index);
                     return (
-                    <tr key={`${record.kind}-${record.item.id}`} className="group align-top hover:bg-mist/40">
-                      <td className="sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist">{recordTitle(record)}</td>
+                    <tr key={`${record.kind}-${record.item.id}`} className={`group align-top hover:bg-mist/40 ${groupPosition.first ? "border-t-2 border-ink-900" : ""} ${groupPosition.last ? "border-b-2 border-ink-900" : ""}`}>
+                      <td className={`sticky left-0 z-10 break-words bg-paper px-4 py-3 font-medium text-ink-900 group-hover:bg-mist ${groupPosition.grouped ? "border-l-2 border-ink-900" : ""}`}>{recordTitle(record)}</td>
                       <td style={{ left: columnWidths.title }} className="sticky z-10 break-all bg-paper px-4 py-3 text-ink-600 group-hover:bg-mist">
                         {record.kind === "paper" ? (
                           <Link className="text-teal-700 hover:underline" to={paperPreviewUrl(record.item)}>{fileName(record)}</Link>
@@ -599,10 +610,13 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className="px-4 py-3 text-ink-700">{counts && counts.missing > 0 ? (
                         <button type="button" className="text-teal-700 underline-offset-2 hover:underline" onClick={() => setMissingList({ title: recordTitle(record), students: counts.missingStudents })}>{counts.missing}</button>
                       ) : counts?.missing ?? "—"}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-ink-600">
+                        <span>{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</span>
+                        <button type="button" className="ml-2 text-teal-700 hover:underline" aria-label={`调整「${recordTitle(record)}」作业时间`} onClick={() => beginEdit(record)}>调整</button>
+                      </td>
                       <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "classroom" ? record.item.publishAt : record.item.createdAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                      <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link>{record.kind === "paper" && <button type="button" disabled={scannerError}
+                      <td className={`whitespace-nowrap px-4 py-3 ${groupPosition.grouped ? "border-r-2 border-ink-900" : ""}`}><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link>{record.kind === "paper" && <button type="button" disabled={scannerError}
                         className="text-teal-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setScanPaper(record.item)}
                         aria-label={`查看「${record.item.title}」答题卡扫描情况：${scannerError ? "加载失败" : scanStatus(scannerPages, record.item.id)}`}>
                         {scannerError ? "扫描状态未知" : scanStatus(scannerPages, record.item.id)}
