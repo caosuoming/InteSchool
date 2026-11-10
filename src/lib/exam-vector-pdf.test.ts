@@ -37,7 +37,7 @@ describe("exam vector PDF font embedding", () => {
       revokeObjectURL: vi.fn(),
     });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    vi.spyOn(globalThis, "setTimeout").mockImplementation(() => 1 as ReturnType<typeof setTimeout>);
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(() => 1 as unknown as ReturnType<typeof setTimeout>);
     mocks.save.mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
     await saveVectorExamPdf([], "中文文件名", 210, 297);
     expect(mocks.embedFont).toHaveBeenCalledWith(fontBytes, { subset: false });
