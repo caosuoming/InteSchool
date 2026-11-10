@@ -3200,10 +3200,12 @@ export interface ClassroomHomework {
   updatedAt: string;
 }
 
-/** 班级已有作业记录或扫描件时可公开展示的试卷参考答案。 */
+/** 已关联完成记录的班级作业试卷参考答案；历史独立扫描件保持兼容。 */
 export interface ClassroomHomeworkAnswer {
   id: string;
   title: string;
+  /** 试卷与文字作业合并布置时的作业标题。 */
+  homeworkTitle?: string;
   subject: string;
   assignedDate: string;
   questions: Array<{ id: string; number: number; answer: string }>;

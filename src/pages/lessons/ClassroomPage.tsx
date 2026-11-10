@@ -1178,14 +1178,14 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
       )}
 
       {answersOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/70" onClick={() => setAnswersOpen(false)}>
+        <div className="fixed inset-0 z-50 flex bg-neutral-950" onClick={() => setAnswersOpen(false)}>
           <section role="dialog" aria-label="作业答案" aria-modal="true"
-            className="flex h-[85vh] max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl border border-neutral-800 bg-neutral-950 shadow-2xl lg:m-6 lg:rounded-3xl"
+            className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-neutral-950"
             onClick={(event) => event.stopPropagation()}>
             <header className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold">作业答案</h2>
-                <p className="mt-1 text-xs text-neutral-500">选择学科，按时间查看已有作业记录或扫描件的参考答案。</p>
+                <p className="mt-1 text-xs text-neutral-500">选择学科，查看已记录作业的试卷参考答案；支持放大和缩小。</p>
               </div>
               <button type="button" onClick={() => setAnswersOpen(false)}
                 className="text-sm text-neutral-400 hover:text-white">关闭</button>
