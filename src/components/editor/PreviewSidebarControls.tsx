@@ -11,6 +11,7 @@ export interface PreviewSidebarVisibility {
 interface PreviewSidebarControlsProps {
   value: PreviewSidebarVisibility;
   onChange: (value: PreviewSidebarVisibility) => void;
+  compact?: boolean;
 }
 
 const items = [
@@ -20,12 +21,12 @@ const items = [
   { key: "basket" as const, label: "添加资源篮", icon: ShoppingBasket },
 ];
 
-export function PreviewSidebarControls({ value, onChange }: PreviewSidebarControlsProps) {
+export function PreviewSidebarControls({ value, onChange, compact = false }: PreviewSidebarControlsProps) {
   return (
     <div
       role="toolbar"
       aria-label="题目侧栏显示控制"
-      className="grid w-full max-w-[32rem] grid-cols-2 gap-1.5"
+      className={cn("grid w-full grid-cols-2 gap-1.5", compact ? "max-w-[16rem]" : "max-w-[32rem]")}
     >
       <span className="col-span-2 mb-0.5 text-[11px] font-medium text-ink-400">显示内容</span>
       {items.map(({ key, label, icon: Icon }) => {
