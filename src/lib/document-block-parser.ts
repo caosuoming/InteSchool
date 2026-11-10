@@ -2133,7 +2133,7 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
     if (type !== "single" && type !== "multiple" && type !== "comprehensive") continue;
 
     const field = (key: "answer" | "analysis" | "summary") => members
-      .map((item, index) => item[key] ? `（${group.numbers[index]}）${item[key]}` : "")
+      .map((item, index) => item[key] ? `（${type === "comprehensive" ? index + 1 : group.numbers[index]}）${item[key]}` : "")
       .filter(Boolean)
       .join("\n") || undefined;
     const content = [group.introduction, ...members.map((item) => [
