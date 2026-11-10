@@ -1,3 +1,4 @@
+import { isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { useEffect, useState } from "react";
@@ -135,7 +136,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">题干</div>
         <div className="p-3 rounded-md bg-mist border border-ink-100 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
-<MathHtml emphasizeEnglishQuestions={english} geographyLabels={question.subject?.trim() === "地理"}>{question.stem}</MathHtml>
+          <MathHtml emphasizeEnglishQuestions={english} geographyLabels={question.subject?.trim() === "地理"} geographyChoiceGroup={isGeographyChoiceGroup(question.stem, question.type, question.subject)}>{question.stem}</MathHtml>
         </div>
       </div>
 

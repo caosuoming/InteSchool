@@ -272,6 +272,7 @@ export const examArrangementService = {
       rooms: structuredClone(preparedInput.rooms),
       classRules: structuredClone(preparedInput.classRules),
       studentSubjects: structuredClone(preparedInput.studentSubjects),
+      specialStudentRoomRules: structuredClone(preparedInput.specialStudentRoomRules || []),
       assignments,
       invigilation: existing?.invigilation ? structuredClone(existing.invigilation) : undefined,
       createdAt: existing?.createdAt || now,

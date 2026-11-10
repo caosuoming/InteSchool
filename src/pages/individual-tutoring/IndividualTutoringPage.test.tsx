@@ -119,6 +119,52 @@ describe("IndividualTutoringPage", () => {
     expect(await screen.findByText("讲义编辑器")).toBeInTheDocument();
   });
 
+  it("checks all descendants of a chapter and allows excluding a child", async () => {
+    vi.mocked(questionService.listQuestions).mockResolvedValue([{
+      id: "child-question", teacherId: "t-1", chapterIds: ["child"], knowledgePointIds: ["kp"],
+      stem: "子章节试题", recommendation: 3,
+    }] as never);
+    renderPage("prepare");
+    fireEvent.click(await screen.findByRole("button", { name: "勾选数列" }));
+    expect(screen.getByRole("button", { name: "取消勾选等比数列" })).toBeInTheDocument();
+    expect(await screen.findByText("子章节试题")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消勾选等比数列" }));
+    expect(screen.getByRole("button", { name: "勾选数列" })).toBeInTheDocument();
+    expect(screen.queryByText("子章节试题")).not.toBeInTheDocument();
+    await waitFor(() => expect(classService.savePersonalClassChapterSelection).toHaveBeenLastCalledWith("pc-1", []));
+  });
+
+  it("filters questions by selected weak or untrained topic while retaining cross-topic choices", async () => {
+    vi.mocked(knowledgeService.listKnowledgePoints).mockResolvedValue([
+      { id: "kp", schoolId: "sch-1", parentId: null, name: "等差数列", level: 1, order: 0 },
+      { id: "kp2", schoolId: "sch-1", parentId: null, name: "函数", level: 1, order: 1 },
+    ]);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([
+      { id: "q1", teacherId: "t-1", chapterIds: ["ch"], knowledgePointIds: ["kp"], stem: "数列题目", recommendation: 4 },
+      { id: "q2", teacherId: "t-1", chapterIds: ["ch"], knowledgePointIds: ["kp2"], stem: "函数题目", recommendation: 3 },
+    ] as never);
+    vi.mocked(analyticsService.getKnowledgeMastery).mockResolvedValue([
+      { knowledgePointId: "kp", knowledgePointName: "等差数列", masteryLevel: "weak" },
+      { knowledgePointId: "kp2", knowledgePointName: "函数", masteryLevel: "untrained" },
+    ] as never);
+    renderPage("prepare");
+    fireEvent.click(await screen.findByRole("button", { name: "勾选数列" }));
+    expect(await screen.findByText("数列题目")).toBeInTheDocument();
+    expect(screen.getByText("函数题目")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /等差数列 · 薄弱/ }));
+    expect(screen.getByText("数列题目")).toBeInTheDocument();
+    expect(screen.queryByText("函数题目")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /函数 · 未训练/ }));
+    expect(screen.queryByText("数列题目")).not.toBeInTheDocument();
+    expect(screen.getByText("函数题目")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText(/已选择 2 道题/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /全部知识点/ }));
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    expect(screen.getAllByRole("checkbox").every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
+  });
+
   it("restores saved chapter nodes and keeps selections separate for each personal class", async () => {
     vi.mocked(classService.listPersonalClasses).mockResolvedValue([
       { ...personalClass, tutoringChapterIds: ["ch"] },

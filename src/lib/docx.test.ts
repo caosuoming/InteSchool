@@ -195,7 +195,7 @@ describe("generateExamPaperDocx", () => {
     expect(answersXml).toContain("2.");
   });
 
-  it("matches geography group answer labels to visible question numbers in Word exports", async () => {
+  it("renumbers geography groups and their answers consistently in Word exports", async () => {
     const stem = "读图完成下面4—6题。\n4. 第一题\n5. 第二题\n6. 第三题";
     const paper: ExamPaper = {
       ...structuredPaper,
@@ -216,14 +216,56 @@ describe("generateExamPaperDocx", () => {
       const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
       const xml = await zip.file("word/document.xml")!.async("string");
       const content = new DOMParser().parseFromString(xml, "application/xml").documentElement.textContent || "";
-      expect(content).toContain("（4）B");
-      expect(content).toContain("（5）A");
-      expect(content).toContain("（6）D");
-      expect(content).not.toContain("（1）B");
+      expect(content).toContain("（1）B");
+      expect(content).toContain("（2）A");
+      expect(content).toContain("（3）D");
+      expect(content).not.toContain("（4）B");
       if (mode === "teacher" || mode === "normal") {
-        expect(content).toContain("（4）地形");
+        expect(content).toContain("（1）地形");
       }
     }
+  });
+
+  it("exports geography reading in KaiTi with separate subquestions and continuous comprehensive numbering", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      subject: "地理",
+      isExtractCopy: false,
+      contentBlocks: [],
+      questions: [
+        {
+          ...structuredPaper.questions[0],
+          id: "group",
+          stem: "读图完成4—5题。\n4. 甲地气候\nA. 热\nB. 冷\n5. 乙地植被\nA. 草\nB. 林",
+          options: [],
+          answer: "（4）A\n（5）B",
+          analysis: "（4）甲地\n（5）乙地",
+        },
+        {
+          ...structuredPaper.questions[0],
+          id: "comprehensive",
+          type: "comprehensive",
+          stem: "归纳地理过程",
+          options: [],
+          answer: "地理综合答案",
+        },
+      ],
+    };
+    const blob = await buildExamPaperDocxBlob(paper, {}, { mode: "teacher" });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const xml = new DOMParser().parseFromString(await zip.file("word/document.xml")!.async("string"), "application/xml");
+    const paragraphs = Array.from(xml.getElementsByTagName("w:p"));
+    const paragraphText = paragraphs.map((paragraph) => Array.from(paragraph.getElementsByTagName("w:t"))
+      .map((node) => node.textContent || "").join(""));
+    expect(paragraphText).toContain("读图完成1—2题。");
+    expect(paragraphText.some((value) => value.startsWith("1. 甲地气候"))).toBe(true);
+    expect(paragraphText.some((value) => value.startsWith("2. 乙地植被"))).toBe(true);
+    expect(paragraphText.some((value) => value.startsWith("3. 归纳地理过程"))).toBe(true);
+    const readingParagraph = paragraphs.find((paragraph) => paragraph.textContent?.includes("读图完成1—2题。"));
+    expect(readingParagraph?.getElementsByTagName("w:rFonts")[0]?.getAttribute("w:ascii")).toBe("楷体");
+    const text = xml.documentElement.textContent || "";
+    expect(text).toContain("（1）A");
+    expect(text).toContain("（2）B");
   });
 
   it("supports student, normal, and answer-only paper variants", async () => {

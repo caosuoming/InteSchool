@@ -139,6 +139,13 @@ const blockTypeLabel: Record<BlockType, string> = {
 function withDetectedQuestionCategories(blocks: DocBlock[], subject?: string): DocBlock[] {
   return blocks.map((block) => {
     if (block.type !== "question") return block;
+    if (subject?.trim() === "地理") {
+      return {
+        ...block,
+        suggestedCategories: [],
+        categories: (block.categories || []).filter((category) => !AUTO_QUESTION_CATEGORIES.some((item) => item === category)),
+      };
+    }
     const suggestedCategories = detectQuestionCategories(block, subject);
     return {
       ...block,
@@ -153,8 +160,6 @@ const GEOGRAPHY_SUBTYPES: Partial<Record<QuestionType, string[]>> = {
   multiple: ["多选单题", "多选题组"],
   comprehensive: ["综合题·1问", "综合题·2问", "综合题·3问", "综合题·4问", "综合题·5问", "综合题·6问及以上"],
 };
-
-const ALL_GEOGRAPHY_SUBTYPES = Object.values(GEOGRAPHY_SUBTYPES).flat();
 
 const optionLetter = (idx: number) => String.fromCharCode(65 + idx);
 
@@ -660,7 +665,8 @@ export function ExtractReviewModal({
         if (b.id !== id) return b;
         const updated: DocBlock = { ...b, type, status: "edited" };
         if (type === "question" && b.type !== "question") {
-          updated.suggestedCategories = detectQuestionCategories(updated, subject);
+          updated.suggestedCategories = subject?.trim() === "地理"
+            ? [] : detectQuestionCategories(updated, subject);
           updated.categories = [...new Set([...(updated.categories || []), ...updated.suggestedCategories])];
         }
         if (type === "question" && !updated.questionType) {
@@ -977,12 +983,12 @@ export function ExtractReviewModal({
               .filter((material): material is Material => Boolean(material?.fileUrl))
               .map((material) => ({ materialId: material.id, title: material.title, fileUrl: material.fileUrl! }))
             : undefined,
-          categories: subject?.trim() === "地理" && GEOGRAPHY_SUBTYPES[type]
-            ? [
-              ...(b.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
-              (b.categories || []).find((category) => GEOGRAPHY_SUBTYPES[type]?.includes(category))
-                || GEOGRAPHY_SUBTYPES[type]![0],
-            ]
+          categories: subject?.trim() === "地理"
+            ? (GEOGRAPHY_SUBTYPES[type]
+              ? [(b.categories || []).find((category) => GEOGRAPHY_SUBTYPES[type]?.includes(category))
+                || GEOGRAPHY_SUBTYPES[type]![0]]
+              : [])
+
             : b.categories || [],
           stem,
           options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
@@ -1320,7 +1326,8 @@ export function ExtractReviewModal({
                   { value: "question", label: "题目" },
                 ]}
               />
-              {block.type === "question" && subject?.trim() !== "英语" && (
+              {block.type === "question" && !["英语", "地理"].includes(subject?.trim() || "") && (
+
                 <div className={cn(
                   "rounded-lg border p-2.5",
                   block.suggestedCategories?.length ? "border-amber-200 bg-amber-50/70" : "border-ink-100 bg-paper",
@@ -1401,10 +1408,7 @@ export function ExtractReviewModal({
                     updateBlockField(block.id, {
                       questionType,
                       categories: subject?.trim() === "地理"
-                        ? [
-                          ...(block.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
-                          ...(GEOGRAPHY_SUBTYPES[questionType]?.slice(0, 1) || []),
-                        ]
+                        ? (GEOGRAPHY_SUBTYPES[questionType]?.slice(0, 1) || [])
                         : block.categories,
                     });
                   }}
@@ -1417,10 +1421,7 @@ export function ExtractReviewModal({
                     || GEOGRAPHY_SUBTYPES[block.questionType || "single"]![0]}
                   options={GEOGRAPHY_SUBTYPES[block.questionType || "single"]!.map((category) => ({ value: category, label: category }))}
                   onChange={(e) => updateBlockField(block.id, {
-                    categories: [
-                      ...(block.categories || []).filter((category) => !ALL_GEOGRAPHY_SUBTYPES.includes(category)),
-                      e.target.value,
-                    ],
+                    categories: [e.target.value],
                   })}
                 />
               )}

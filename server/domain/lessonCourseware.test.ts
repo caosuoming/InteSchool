@@ -1213,6 +1213,27 @@ describe("courseware lesson flow", () => {
 });
 
 
+describe("legacy lecture lesson creation", () => {
+  it("creates lesson slides for a lecture with null sections and supplied document text", async () => {
+    const state = createState();
+    const lecture = sourceLecture();
+    lecture.sections = null as unknown as Lecture["sections"];
+    lecture.contentBlocks = null as unknown as Lecture["contentBlocks"];
+    lecture.chapterIds = null as unknown as string[];
+    state.lectures = [lecture];
+    await runWithState(state, async () => {
+      const result = await lessonCoursewareService.createFromLecture(
+        "teacher-1", "school-1", lecture.id,
+        [{ id: "raw-knowledge", type: "knowledge", title: "双曲线", content: "双曲线的定义" }],
+      );
+      expect(result.slides).toHaveLength(2);
+      expect(result.slides[1]).toMatchObject({ type: "knowledge", title: "双曲线" });
+      expect(result.chapterIds).toEqual([]);
+      expect((state.coursewares as Courseware[]).some((item) => item.lessonCoursewareId === result.id)).toBe(true);
+    });
+  });
+});
+
 describe("knowledge underlined answers in generated courseware", () => {
   it("puts every extracted answer at its original position with its own reveal step", async () => {
     const state = createState();

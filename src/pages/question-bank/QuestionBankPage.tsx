@@ -1,3 +1,4 @@
+import { isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
@@ -2544,7 +2545,7 @@ function QuestionRow({
               "text-ink-900 leading-relaxed mb-2",
               wideLayout ? "text-base" : "text-sm",
             )}>
-              <MathHtml geographyLabels={question.subject?.trim() === "地理"} className="whitespace-pre-wrap">{question.stem}</MathHtml>
+              <MathHtml geographyLabels={question.subject?.trim() === "地理"} geographyChoiceGroup={isGeographyChoiceGroup(question.stem, question.type, question.subject)} className="whitespace-pre-wrap">{question.stem}</MathHtml>
             </div>
 
             {/* 选项（网格布局，根据选项长度动态调整列数；答案高亮仅在展开时显示） */}
