@@ -801,9 +801,8 @@
     font-weight: 700;
   }
   .exam-class-arrangement-subject {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15mm;
+    display: block;
+    overflow-wrap: anywhere;
   }
   .exam-class-arrangement-page[data-density="compact"] {
     --class-print-font-size: 5.05pt;
