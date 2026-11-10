@@ -71,6 +71,83 @@ function input(mode: ExamArrangementInput["mode"]): ExamArrangementInput {
   };
 }
 
+describe("same-seat subject groups", () => {
+  it("defaults to a single shared seating arrangement for all enabled subjects", () => {
+    const arrangement = input("combination");
+    arrangement.sameSeatSubjectGroups = [["物理", "化学"]];
+    const assignments = generateExamAssignments(arrangement, context);
+    expect(assignments).toHaveLength(3);
+    expect(assignments.find((item) => item.studentId === "student-1")?.subjectLabel).toBe("物理 / 化学");
+    expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["seat:物理|化学"]));
+  });
+
+  it("never assigns the same physical seat to different students in one seat group", () => {
+    const arrangement = input("combination");
+    arrangement.sameSeatSubjectGroups = [["物理", "化学"]];
+    arrangement.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: [] },
+    ];
+    arrangement.rooms = [{ id: "room-a", name: "第一考场", capacity: 1 }];
+    arrangement.classRules = arrangement.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    expect(() => generateExamAssignments(arrangement, context)).toThrow(/考场容量不足/);
+    arrangement.rooms[0].capacity = 2;
+    const assignments = generateExamAssignments(arrangement, context);
+    expect(assignments).toHaveLength(2);
+    expect(new Set(assignments.map((assignment) => assignment.seatNo)).size).toBe(2);
+  });
+
+  it("uses independent seating layouts for different subject groups", () => {
+    const arrangement = input("combination");
+    arrangement.sameSeatSubjectGroups = [["物理"], ["化学"]];
+    const assignments = generateExamAssignments(arrangement, context);
+    expect(assignments).toHaveLength(4);
+    expect(new Set(assignments.map((item) => item.id)).size).toBe(assignments.length);
+    expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["seat:物理", "seat:化学"]));
+  });
+
+  it("enforces room capacity across simultaneous subjects in separate seat groups", () => {
+    const arrangement = input("combination");
+    arrangement.sameSeatSubjectGroups = [["物理"], ["化学"]];
+    arrangement.simultaneousSubjectGroups = [["物理", "化学"]];
+    arrangement.studentSubjects = [
+      { studentId: "student-1", subjects: ["物理"] },
+      { studentId: "student-2", subjects: ["化学"] },
+      { studentId: "student-3", subjects: ["物理"] },
+    ];
+    arrangement.rooms = [{ id: "room-a", name: "第一考场", capacity: 2 }];
+    arrangement.classRules = arrangement.classRules.map((rule) => ({
+      ...rule,
+      subjectRoomIds: { 物理: ["room-a"], 化学: ["room-a"] },
+    }));
+    expect(() => generateExamAssignments(arrangement, context)).toThrow(/考场容量不足/);
+    arrangement.rooms[0].capacity = 3;
+    const assignments = generateExamAssignments(arrangement, context);
+    expect(new Set(assignments.map((item) => item.sessionKey)).size).toBe(1);
+    expect(new Set(assignments.map((item) => item.id)).size).toBe(3);
+    expect(new Set(assignments.map((item) => item.seatNo)).size).toBe(3);
+  });
+
+  it("rejects duplicates and missing subjects rather than silently changing the grouping", () => {
+    const arrangement = input("combination");
+    arrangement.sameSeatSubjectGroups = [["物理"], ["物理", "化学"]];
+    expect(() => generateExamAssignments(arrangement, context)).toThrow(/多个同座位组合/);
+    arrangement.sameSeatSubjectGroups = [["物理"]];
+    expect(() => generateExamAssignments(arrangement, context)).toThrow(/必须属于一个同座位组合/);
+  });
+
+  it("retains legacy independent-subject arrangements without the new field", () => {
+    const arrangement = input("subject");
+    expect(arrangement.sameSeatSubjectGroups).toBeUndefined();
+    const assignments = generateExamAssignments(arrangement, context);
+    expect(new Set(assignments.map((item) => item.sessionKey))).toEqual(new Set(["subject:物理", "subject:化学"]));
+  });
+});
+
 describe("generateExamAssignments", () => {
   it("reuses room capacity independently for each subject session", () => {
     const assignments = generateExamAssignments(input("subject"), context);

@@ -42,6 +42,7 @@ function readArrangements(): ExamArrangement[] {
       separateSubjects: structuredClone(
         item.separateSubjects ?? (item.mode === "subject" ? item.subjects : []),
       ),
+      sameSeatSubjectGroups: item.sameSeatSubjectGroups === undefined ? undefined : structuredClone(item.sameSeatSubjectGroups),
       simultaneousSubjectGroups: structuredClone(item.simultaneousSubjectGroups || []),
       seatOrder: item.seatOrder || "random",
       groupRoomIds: structuredClone(item.groupRoomIds || {}),
@@ -220,6 +221,7 @@ export const examArrangementService = {
       subjectSetupMode: input.subjectSetupMode || "all",
       selectionSubjects: structuredClone(input.selectionSubjects || {}),
       separateSubjects: structuredClone(separateSubjects),
+      sameSeatSubjectGroups: input.sameSeatSubjectGroups === undefined ? undefined : structuredClone(input.sameSeatSubjectGroups),
       simultaneousSubjectGroups: structuredClone(input.simultaneousSubjectGroups || []),
       seatOrder: input.seatOrder || "random",
       groupRoomIds: structuredClone(input.groupRoomIds || {}),
@@ -261,6 +263,7 @@ export const examArrangementService = {
       subjects: [...preparedInput.subjects],
       selectionSubjects: structuredClone(preparedInput.selectionSubjects),
       separateSubjects: structuredClone(preparedInput.separateSubjects),
+      sameSeatSubjectGroups: preparedInput.sameSeatSubjectGroups === undefined ? undefined : structuredClone(preparedInput.sameSeatSubjectGroups),
       simultaneousSubjectGroups: structuredClone(preparedInput.simultaneousSubjectGroups),
       seatOrder: preparedInput.seatOrder,
       groupRoomIds: structuredClone(preparedInput.groupRoomIds),
