@@ -1,5 +1,7 @@
 #define AppName "InteSchool 扫描桥接"
-#define AppVersion "1.1.1"
+#define AppVersion "1.2.0"
+#define OfficialSite "https://inteschool.fwerkor.com"
+#define OfficialSiteEncoded "https%3A%2F%2Finteschool.fwerkor.com"
 
 [Setup]
 AppId={{B2A20F71-10F0-40CA-9057-4CF45CDE8634}
@@ -30,6 +32,12 @@ Source: "scanner-launch.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "scanner-tray.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\public\favicon.ico"; DestDir: "{app}"; DestName: "scanner.ico"; Flags: ignoreversion
 
+[Tasks]
+; A user-selected installation task grants the production site access without
+; requiring a separate protocol-handler dialog or manual URL entry.
+; Never silently approve arbitrary sites or enable this task by default.
+Name: "authorizeOfficialWebsite"; Description: "授权 {#OfficialSite} 使用本机扫描仪"; GroupDescription: "网站访问权限（可选）："; Flags: unchecked
+
 [Registry]
 Root: HKCU; Subkey: "Software\Classes\inteschool-scanner"; ValueType: string; ValueName: ""; ValueData: "URL:InteSchool Scanner Protocol"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\inteschool-scanner"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
@@ -40,6 +48,9 @@ Name: "{group}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Paramete
 Name: "{userstartup}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\scanner-launch.vbs"""
 
 [Run]
+; Only the explicitly selected production origin is saved. The launcher uses
+; the same origin validation and persistent allowlist as browser pairing.
+Filename: "{app}\node.exe"; Parameters: """{app}\scripts\scanner-launcher.mjs"" ""inteschool-scanner://connect?origin={#OfficialSiteEncoded}"""; Tasks: authorizeOfficialWebsite; Flags: runhidden waituntilterminated; StatusMsg: "正在授权 InteSchool 网站..."
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -STA -File ""{app}\scanner-tray.ps1"" -Restart"; Description: "启动本机扫描服务"; Flags: nowait skipifsilent
 
 [UninstallRun]

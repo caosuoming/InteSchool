@@ -34,6 +34,10 @@ jobs:
           $parseErrors = $null
           [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors) | Out-Null
           if ($parseErrors.Count -gt 0) { throw "Invalid scanner tray script: $($parseErrors | Out-String)" }
+          $traySource = Get-Content -Raw -Encoding UTF8 $script
+          if ($traySource -notmatch '\$menu\.Items\.Add\(''授权网站''\)') {
+            throw "Scanner tray authorization action is missing"
+          }
       - name: Prepare bundled Node runtime
         shell: pwsh
         run: |
@@ -54,13 +58,20 @@ jobs:
         shell: pwsh
         run: |
           $installer = (Resolve-Path packaging/windows/stage/output/InteSchool-Scanner-Setup.exe).Path
-          $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          # Simulate explicit consent to the optional installer task.
+          $env:INTESCHOOL_SCANNER_ORIGINS_FILE = Join-Path $env:TEMP 'inteschool-ci-origins.json'
+          Remove-Item -LiteralPath $env:INTESCHOOL_SCANNER_ORIGINS_FILE -Force -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=authorizeOfficialWebsite' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
           $dir = Join-Path $env:LOCALAPPDATA 'Programs\InteSchool Scanner'
           foreach ($file in @('node.exe','scanner-launch.vbs','scripts\scanner-bridge.mjs','scripts\scanner-wia.ps1','scripts\scanner-pairing.mjs')) {
             if (!(Test-Path (Join-Path $dir $file))) { throw "Missing installed asset $file" }
           }
-          $env:INTESCHOOL_SCANNER_ORIGINS_FILE = Join-Path $env:TEMP 'inteschool-ci-origins.json'
+          $pairedAfterInstall = @(Get-Content -Raw $env:INTESCHOOL_SCANNER_ORIGINS_FILE | ConvertFrom-Json)
+          if ($pairedAfterInstall -cnotcontains 'https://inteschool.fwerkor.com') {
+            throw "The installer did not authorize the site after explicit consent"
+          }
+          if ($pairedAfterInstall.Count -ne 1) { throw "Installer authorized unexpected websites" }
           & (Join-Path $dir 'node.exe') --input-type=module -e "import {approveOrigin} from './scripts/scanner-pairing.mjs'; await approveOrigin('https://test.inteschool.example');" 
           $protocolCommand = (Get-ItemProperty -Path 'HKCU:\Software\Classes\inteschool-scanner\shell\open\command').'(default)'
           if ($protocolCommand -notmatch 'scanner-launch.vbs') { throw "Protocol handler not registered" }

@@ -349,15 +349,15 @@ export default function ScannerPage() {
               {bridgeUnavailable && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 text-sm text-ink-800">
                   <p className="font-semibold">连接 Windows 扫描客户端</p>
-                  <p>首次使用：下载安装包 → 点击“授权连接本站”，在浏览器和 Windows 弹窗中确认 → 刷新设备。安装包已包含运行环境，无需配置 Node.js。</p>
+                  <p>首次使用：下载安装包，在安装程序中勾选“授权 InteSchool 网站使用本机扫描仪”，安装完成后点击“刷新设备”，无需手动输入网址或配置 Node.js。其他学校网址可点击“授权连接本站”并确认。</p>
                   <div className="flex flex-wrap gap-3 items-center">
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href="https://github.com/caosuoming/InteSchool/releases/download/scanner-bridge-latest/InteSchool-Scanner-Setup.exe"><Download className="h-4 w-4" />下载 Windows 安装包</a>
                     <a className="inline-flex items-center gap-1 text-teal-700 underline font-medium" href={`inteschool-scanner://connect?origin=${encodeURIComponent(window.location.origin)}`}>授权连接本站</a>
                     <a className="text-ink-600 underline" href="https://github.com/caosuoming/InteSchool/blob/main/docs/scanner-bridge.md" target="_blank" rel="noopener noreferrer">安装说明及故障排查</a>
                   </div>
                   <div className="space-y-2 rounded-md border border-amber-200 bg-white/70 p-3">
-                    <p className="font-medium">点击后没有弹窗？可直接从右下角托盘授权</p>
-                    <p>右键 InteSchool 扫描图标（可能在「^」中）→ 选择「授权网站」→ 粘贴本站网址并确认。菜单顶部灰色的服务状态仅用于显示，不是授权按钮。</p>
+                    <p className="font-medium">没有授权菜单或点击后没有弹窗？</p>
+                    <p>先重新下载安装最新版客户端，并在安装程序中勾选本站授权（仅限 InteSchool 官方网站）。也可以右键 InteSchool 托盘图标（可能在「^」中），选择「授权网站」粘贴网址；没有该菜单说明客户端版本较旧。菜单顶部灰色的服务状态仅用于显示，不是授权按钮。</p>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => void copyScannerOrigin()}>复制本站网址</Button>
                       <code className="break-all text-xs text-ink-700">{window.location.origin}</code>
