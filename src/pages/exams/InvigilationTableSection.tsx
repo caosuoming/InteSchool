@@ -906,7 +906,7 @@ export function InvigilationTableSection({
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-ink-900">表一、文印室统计表</h2>
-            <p className="mt-1 text-sm text-ink-500">{selectedArrangement.name} · 按考场统计各科试卷份数，空白格表示该考场无需该科试卷。</p>
+            <p className="mt-1 text-sm text-ink-500">{selectedArrangement.name} · 按考场统计各科试卷份数，灰色格表示该考场没有该科考生。</p>
           </div>
           <Badge>{statistics.rooms.length} 个考场</Badge>
         </div>
@@ -923,15 +923,10 @@ export function InvigilationTableSection({
                 {statistics.rooms.map((room) => <td key={room.roomId} className="border-b border-r border-ink-100 px-4 py-3 text-center text-ink-700 last:border-r-0">{room.roomLocation}</td>)}
                 <td className="border-b border-ink-100 px-4 py-3" />
               </tr>
-              <tr>
-                <th className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-700">组合</th>
-                {statistics.rooms.map((room) => <td key={room.roomId} className="border-b border-r border-ink-100 px-4 py-3 text-center font-medium text-ink-800 last:border-r-0">{room.selectionLabel}</td>)}
-                <td className="border-b border-ink-100 px-4 py-3" />
-              </tr>
               {statistics.rows.map((row) => (
                 <tr key={row.label}>
                   <th scope="row" className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-800">{row.label}</th>
-                  {row.counts.map((count, index) => <td key={statistics.rooms[index].roomId} className={cn("border-b border-r border-ink-100 px-4 py-3 text-center tabular-nums text-ink-800", count === 0 && "bg-amber-100/70")}>{count || ""}</td>)}
+                  {row.counts.map((count, index) => <td key={statistics.rooms[index].roomId} className={cn("border-b border-r border-ink-100 px-4 py-3 text-center tabular-nums", count === 0 ? "bg-ink-100 text-ink-400" : "text-ink-800")}>{count || ""}</td>)}
                   <td className="border-b border-ink-100 px-4 py-3 text-center font-semibold tabular-nums text-ink-900">{row.total}</td>
                 </tr>
               ))}

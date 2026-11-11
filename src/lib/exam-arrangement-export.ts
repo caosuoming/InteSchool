@@ -189,7 +189,7 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
   });
   const countCell = (value: number) => ({
     ...centeredCell(value || ""),
-    backgroundColor: value ? undefined : "#FFF59D",
+    backgroundColor: value ? undefined : "#E5E7EB",
   });
   const totalCell = (value: number) => ({
     ...centeredCell(value),
@@ -207,14 +207,13 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
     data: [
       [header("考场号"), ...statistics.rooms.map((room) => header(room.roomNumber)), header("合计")],
       [header("考试地点"), ...statistics.rooms.map((room) => centeredCell(room.roomLocation)), centeredCell("")],
-      [header("组合"), ...statistics.rooms.map((room) => centeredCell(room.selectionLabel)), centeredCell("")],
       ...statistics.rows.map((row) => [
         header(row.label),
         ...row.counts.map(countCell),
         totalCell(row.total),
       ]),
     ],
-    stickyRowsCount: 3,
+    stickyRowsCount: 2,
     columns: [
       { width: 16 },
       ...statistics.rooms.map(() => ({ width: 14 })),
