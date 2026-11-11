@@ -303,7 +303,9 @@ export const boardService = {
       ...existing,
       title: existing.kind === "master" ? "总导图" : (patch.title || existing.title).trim().slice(0, 180),
       nodes, edges,
-      updatedAt: new Date().toISOString(),
+      // Timestamps double as optimistic-lock revisions; consecutive writes in the same millisecond
+      // must still produce distinct values so stale edits cannot silently overwrite newer ones.
+      updatedAt: new Date(Math.max(Date.now(), (Date.parse(existing.updatedAt) || 0) + 1)).toISOString(),
     };
     if (!updated.title) throw new Error("板书标题不能为空");
     db.update("boards", (current: BoardDocument[]) => [...current.filter((board) => board.id !== id), updated]);
