@@ -191,13 +191,21 @@ describe("StudentInteractionPage", () => {
     expect(desktopStudentList).toBeInTheDocument();
   });
 
-  it("lets the interaction timeline use the remaining detail-pane height", async () => {
+  it("scrolls the right detail pane and puts the editor beside the timeline on wide screens", async () => {
     render(<StudentInteractionPage embedded />);
 
     const timelineTitle = await screen.findByText(/互动记录时间线/);
-    const timelineCard = timelineTitle.parentElement;
+    const detailPane = screen.getByRole("region", { name: "学生互动详情" });
 
-    expect(timelineCard).toHaveClass("flex-1", "min-h-0", "overflow-auto");
+    expect(detailPane).toHaveClass(
+      "grid", "h-full", "min-h-0", "grid-cols-1", "overflow-y-auto",
+      "overscroll-contain", "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]",
+    );
+    expect(detailPane.children).toHaveLength(3);
+    expect(detailPane.children[0]).toHaveClass("xl:col-span-2");
+    expect(detailPane.children[1]).toContainElement(screen.getByRole("button", { name: "添加记录" }));
+    expect(detailPane.children[2]).toContainElement(timelineTitle);
+    expect(timelineTitle.parentElement).toHaveClass("min-w-0", "p-4");
   });
 
   it("groups students by class and toggles groups from a collapsed state", async () => {
