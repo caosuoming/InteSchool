@@ -2010,6 +2010,60 @@ function normalizeBlockFillBlankArea(block: DocumentBlock): void {
   block.content = content;
 }
 
+const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用).{0,100}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
+
+/** Recover later prompts from interleaved math worked examples. */
+function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
+  if (subject?.trim() !== "数学") return blocks;
+  for (const block of blocks) {
+    if (block.type !== "question" || !["essay", "comprehensive"].includes(block.questionType || "")) continue;
+    const stemMarkers = block.content.split("\n")
+      .map((line) => leadingNestedSubQuestionIndex(line))
+      .filter((value): value is number => value !== undefined);
+    if (!stemMarkers.includes(1)) continue;
+
+    let expected = Math.max(...stemMarkers) + 1;
+    for (const field of ["analysis", "answer"] as const) {
+      const value = block[field];
+      if (!value) continue;
+      const solutionLines: string[][] = [[]];
+      const movedPrompts: string[] = [];
+      const lines = value.split("\n");
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const marker = /^\s*[（(]\s*(\d{1,3})\s*[）)]\s*(.*)$/.exec(line);
+        const next = lines[index + 1]?.trim() || "";
+        if (marker && Number(marker[1]) === expected && (
+          essayPromptAfterNumber.test(marker[2].trim())
+          || (!marker[2].trim() && essayPromptAfterNumber.test(next))
+        )) {
+          const standaloneNumber = !marker[2].trim();
+          movedPrompts.push(standaloneNumber ? `${line.trim()} ${next}` : line.trim());
+          if (standaloneNumber) index += 1;
+          solutionLines.push([]);
+          expected += 1;
+        } else {
+          solutionLines[solutionLines.length - 1].push(line);
+        }
+      }
+      if (!movedPrompts.length) continue;
+      block.content = [block.content, ...movedPrompts].join("\n");
+      const firstNumber = expected - movedPrompts.length - 1;
+      block[field] = solutionLines
+        .map((lines, index) => {
+          const solution = lines.join("\n").trim();
+          return solution
+            ? leadingNestedSubQuestionIndex(solution) === firstNumber + index
+              ? solution : `（${firstNumber + index}）${solution}`
+            : "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+  }
+  return blocks;
+}
+
 function normalizeInlineDocumentAnswers(blocks: DocumentBlock[]): DocumentBlock[] {
   for (const block of blocks) {
     if (block.type === "knowledge") {
@@ -2557,7 +2611,7 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     });
     const requiredMatches = kind === "answer" && config.subject?.trim() !== "地理"
       ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config);
+    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(blocks, config.subject)), config.subject), content, config);
   }
 
   // Some scans omit the answer-key heading. Only a numbering restart with
@@ -2568,12 +2622,12 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     const blocks = parseDocumentBlocksCore(lines.slice(0, restartedAnswerIndex).join("\n"), config);
     if (mergeTrailingSolutions(blocks, solutions, config, { allowPositionalFallback: false }) >= 2) {
       return refineGeographyBlocks(
-        normalizeFillBlankAreas(normalizeInlineDocumentAnswers(blocks), config.subject), content, config,
+        normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(blocks, config.subject)), config.subject), content, config,
       );
     }
   }
 
-  const fallback = refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(parseDocumentBlocksCore(content, config)), config.subject), content, config);
+  const fallback = refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(parseDocumentBlocksCore(content, config), config.subject)), config.subject), content, config);
   if (config.subject?.trim() !== "英语") return fallback;
   let sectionType: QuestionType | undefined;
   for (const block of fallback) {
