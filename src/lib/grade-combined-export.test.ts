@@ -15,7 +15,7 @@ import {
   exportGradeTotalScoreSegmentReport,
   exportGradeTablesOneToFive,
 } from "./grade-spreadsheet";
-import { buildGradeClassStatisticsReport } from "./grade-class-statistics";
+import { buildGradeClassStatisticsReport, DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS, sortGradeClassStatisticsReport } from "./grade-class-statistics";
 import { buildGradeTotalScoreRankingReport } from "./grade-total-score-ranking";
 
 const { writeXlsxFile, toFile } = vi.hoisted(() => ({
@@ -470,6 +470,24 @@ describe("combined grade exports", () => {
     expect(sheets[0].data[2].map((cell) => cell.value)).toEqual([
       "高三（1）班", "张三", 120, 80, 90,
     ]);
+  });
+
+
+  it("preserves the selected sorting in each exported class sheet", async () => {
+    const more = [
+      { ...exam.records[0], id: "r3", studentId: "s3", studentNo: "003", studentName: "赵六",
+        scores: { 语文: 95, 化学: 80 }, assignedScores: { 语文: 95, 化学: 90 } },
+      { ...exam.records[1], id: "r4", studentId: "s4", studentNo: "004", studentName: "钱七",
+        scores: { 语文: 130, 化学: 75 }, assignedScores: { 语文: 130, 化学: 85 } },
+    ];
+    const report = buildGradeClassStatisticsReport({ ...exam, records: [...exam.records, ...more] }, [],
+      DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS);
+    const sorted = sortGradeClassStatisticsReport(report, { columnKey: "exam-1:subject:语文", direction: "desc" });
+    await exportGradeClassStatisticsReport(sorted, exam.name);
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ data: Array<Array<{ value?: string | number }>> }>;
+    expect(sheets.map((sheet) => sheet.data.slice(2).map((row) => row[1].value)))
+      .toEqual([["张三", "赵六"], ["钱七", "李四"]]);
+    expect(report.classes[1].rows.map((row) => row.studentId)).toEqual(["s2", "s4"]);
   });
 
   it("adds a merged title above each custom score template", async () => {

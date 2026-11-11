@@ -20,7 +20,6 @@ interface GradeExamAdjustmentPanelProps {
   statisticsSavedAt?: string;
   statisticsSaving?: boolean;
   onDownloadTablesOneToFive?: () => Promise<void>;
-  onDownloadClassStatistics?: () => Promise<void>;
   onPrintTablesOneToFive?: () => void;
   readOnly?: boolean;
   teachers?: GradeTeacherOption[];
@@ -141,7 +140,6 @@ export function GradeExamAdjustmentPanel({
   statisticsSavedAt,
   statisticsSaving = false,
   onDownloadTablesOneToFive,
-  onDownloadClassStatistics,
   onPrintTablesOneToFive,
   readOnly = false,
   teachers = [],
@@ -160,7 +158,7 @@ export function GradeExamAdjustmentPanel({
   const [studentSearch, setStudentSearch] = useState("");
   const [savingScore, setSavingScore] = useState<string | null>(null);
   const [publicationSaving, setPublicationSaving] = useState(false);
-  const [downloading, setDownloading] = useState<"summary" | "classes" | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [publishToParents, setPublishToParents] = useState(Boolean(exam.publication?.publishToParents));
   const published = Boolean(exam.publication);
   const shareUrl = exam.publication
@@ -312,17 +310,16 @@ export function GradeExamAdjustmentPanel({
     }
   };
 
-  const download = async (kind: "summary" | "classes") => {
-    const action = kind === "summary" ? onDownloadTablesOneToFive : onDownloadClassStatistics;
-    if (!action) return;
-    setDownloading(kind);
+  const download = async () => {
+    if (!onDownloadTablesOneToFive) return;
+    setDownloading(true);
     try {
-      await action();
-      toast.success(kind === "summary" ? "表一至表五已下载" : "各班成绩统计已下载");
+      await onDownloadTablesOneToFive();
+      toast.success("表一至表五已下载");
     } catch (error) {
       toast.error("下载失败", error instanceof Error ? error.message : undefined);
     } finally {
-      setDownloading(null);
+      setDownloading(false);
     }
   };
 
@@ -487,21 +484,11 @@ export function GradeExamAdjustmentPanel({
             {onDownloadTablesOneToFive && (
               <Button
                 variant="outline"
-                onClick={() => void download("summary")}
-                loading={downloading === "summary"}
-                disabled={downloading !== null}
+                onClick={() => void download()}
+                loading={downloading}
+                disabled={downloading}
               >
                 <Download className="h-4 w-4" />一键下载表一-表五
-              </Button>
-            )}
-            {onDownloadClassStatistics && (
-              <Button
-                variant="outline"
-                onClick={() => void download("classes")}
-                loading={downloading === "classes"}
-                disabled={downloading !== null}
-              >
-                <Download className="h-4 w-4" />下载表六、各班成绩统计
               </Button>
             )}
             {onPrintTablesOneToFive && (

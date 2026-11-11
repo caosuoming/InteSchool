@@ -65,6 +65,8 @@ import {
   buildGradeClassStatisticsReport,
   DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
   type GradeClassStatisticsOptions,
+  type GradeClassStatisticsSort,
+  sortGradeClassStatisticsReport,
 } from "@/lib/grade-class-statistics";
 
 export type MyExamsSection = "rooms" | "invigilation" | "grades" | "schedule";
@@ -544,7 +546,7 @@ function GradePreprocessing({
     }
   }, []);
 
-  const downloadClassStatistics = useCallback(async () => {
+  const downloadClassStatistics = useCallback(async (sort: GradeClassStatisticsSort | null) => {
     if (!selectedExam) throw new Error("请选择需要导出的考试");
     const report = buildGradeClassStatisticsReport(
       previewExam!,
@@ -552,7 +554,7 @@ function GradePreprocessing({
       classStatisticsOptions,
     );
     await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-    await exportGradeClassStatisticsReport(report, selectedExam.name, previewExam!);
+    await exportGradeClassStatisticsReport(sortGradeClassStatisticsReport(report, sort), selectedExam.name, previewExam!);
   }, [classStatisticsOptions, previousExams, previewExam, selectedExam, teacherId]);
 
   const copy = async () => {
@@ -761,7 +763,6 @@ function GradePreprocessing({
               statisticsSavedAt={selectedExam.statisticsSavedAt}
               statisticsSaving={saving}
               onDownloadTablesOneToFive={canManageExams ? downloadTablesOneToFive : undefined}
-              onDownloadClassStatistics={canManageExams ? downloadClassStatistics : undefined}
               onPrintTablesOneToFive={classAverageTemplate && totalScoreSegmentTemplate
                 ? printTablesOneToFive
                 : undefined}
@@ -827,6 +828,7 @@ function GradePreprocessing({
               comparisonExams={previousExams}
               options={classStatisticsOptions}
               onOptionsChange={setClassStatisticsOptions}
+              onDownload={canManageExams ? downloadClassStatistics : undefined}
             />
           )}
             </>

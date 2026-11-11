@@ -1,14 +1,18 @@
 import { GradeReportNotes } from "./GradeReportNotes";
 import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useEffect, useMemo, useState } from "react";
-import { GitCompareArrows, TableProperties } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, GitCompareArrows, TableProperties } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Select } from "@/components/ui/Input";
 import {
   buildGradeClassStatisticsReport,
   type GradeClassStatisticsOptions,
+  type GradeClassStatisticsSort,
+  sortGradeClassStatisticsReport,
 } from "@/lib/grade-class-statistics";
+import { toast } from "@/stores/ui";
 import type { GradeExam } from "@/types";
 import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 
@@ -17,6 +21,7 @@ interface GradeClassStatisticsTableProps {
   comparisonExams: GradeExam[];
   options: GradeClassStatisticsOptions;
   onOptionsChange: (options: GradeClassStatisticsOptions) => void;
+  onDownload?: (sort: GradeClassStatisticsSort | null) => Promise<void>;
 }
 
 function displayValue(value: string | number | null | undefined): string {
@@ -29,12 +34,19 @@ export function GradeClassStatisticsTable({
   comparisonExams,
   options,
   onOptionsChange,
+  onDownload,
 }: GradeClassStatisticsTableProps) {
   const report = useMemo(
     () => buildGradeClassStatisticsReport(exam, comparisonExams, options),
     [comparisonExams, exam, options],
   );
   const [selectedClassId, setSelectedClassId] = useState(report.classes[0]?.classId || "");
+  const [sort, setSort] = useState<GradeClassStatisticsSort | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const activeSort = sort && report.columns.some((column) => column.key === sort.columnKey) ? sort : null;
+  const sortedReport = useMemo(() => sortGradeClassStatisticsReport(report, activeSort), [report, activeSort]);
+
+  useEffect(() => { setSort(null); }, [exam.id]);
 
   useEffect(() => {
     setSelectedClassId((current) => (
@@ -44,7 +56,24 @@ export function GradeClassStatisticsTable({
     ));
   }, [exam.id, report.classes]);
 
-  const selectedClass = report.classes.find((item) => item.classId === selectedClassId) || report.classes[0];
+  const selectedClass = sortedReport.classes.find((item) => item.classId === selectedClassId) || sortedReport.classes[0];
+  const toggleSort = (columnKey: string) => {
+    setSort((current) => current?.columnKey !== columnKey
+      ? { columnKey, direction: "asc" }
+      : current.direction === "asc" ? { columnKey, direction: "desc" } : null);
+  };
+  const download = async () => {
+    if (!onDownload || downloading) return;
+    setDownloading(true);
+    try {
+      await onDownload(activeSort);
+      toast.success("各班成绩统计已下载");
+    } catch (error) {
+      toast.error("下载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setDownloading(false);
+    }
+  };
   const patchOptions = (patch: Partial<GradeClassStatisticsOptions>) => {
     onOptionsChange({ ...options, ...patch });
   };
@@ -66,18 +95,25 @@ export function GradeClassStatisticsTable({
           <div>
             <div className="font-medium text-ink-900">表六、各班成绩统计</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              每个学生固定展示班级、姓名和各科成绩；可选择选修科目原始分/赋分、单科排名、总分及排名，并与历史考试对比。年级排名按单独排名和统一排名分组计算。
+              每个学生固定展示班级、姓名和各科成绩；点击表头可升序、降序或恢复默认顺序，下载时按当前字段对所有班级分别排序。年级排名按单独排名和统一排名分组计算。
             </div>
           </div>
         </div>
         {report.classes.length > 0 && (
-          <div className="w-full lg:w-60">
-            <Select
-              label="查看班级"
-              value={selectedClass?.classId || ""}
-              onChange={(event) => setSelectedClassId(event.target.value)}
-              options={report.classes.map((item) => ({ value: item.classId, label: item.className }))}
-            />
+          <div className="flex w-full flex-wrap items-end gap-2 lg:w-auto">
+            <div className="min-w-40 flex-1 lg:w-60">
+              <Select
+                label="查看班级"
+                value={selectedClass?.classId || ""}
+                onChange={(event) => setSelectedClassId(event.target.value)}
+                options={report.classes.map((item) => ({ value: item.classId, label: item.className }))}
+              />
+            </div>
+            {onDownload && (
+              <Button variant="outline" onClick={() => void download()} loading={downloading} disabled={downloading}>
+                <Download className="h-4 w-4" />下载各班成绩统计
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -175,9 +211,24 @@ export function GradeClassStatisticsTable({
                 {report.columns.map((column) => (
                   <th
                     key={column.key}
+                    scope="col"
+                    aria-label={column.label}
+                    aria-sort={activeSort?.columnKey === column.key
+                      ? activeSort.direction === "asc" ? "ascending" : "descending"
+                      : "none"}
                     className="whitespace-nowrap border-b border-r border-ink-100 px-3 py-2.5 text-center font-medium last:border-r-0"
                   >
-                    {column.label}
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center gap-1 rounded px-1 py-0.5 hover:bg-ink-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600"
+                      aria-label={`按${column.label}${activeSort?.columnKey !== column.key ? "升序" : activeSort.direction === "asc" ? "降序" : "默认顺序"}排序`}
+                      onClick={() => toggleSort(column.key)}
+                    >
+                      {column.label}
+                      {activeSort?.columnKey !== column.key ? <ArrowUpDown className="h-3.5 w-3.5 text-ink-400" />
+                        : activeSort.direction === "asc" ? <ArrowUp className="h-3.5 w-3.5" />
+                          : <ArrowDown className="h-3.5 w-3.5" />}
+                    </button>
                   </th>
                 ))}
               </tr>

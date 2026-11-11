@@ -342,10 +342,9 @@ describe("GradeExamAdjustmentPanel", () => {
     expect(screen.getByRole("textbox", { name: "考试名称" })).toBeEnabled();
   });
 
-  it("offers downloads and one-click printing in the publication area", async () => {
+  it("offers summary download and printing in the publication area", async () => {
     const user = userEvent.setup();
     const downloadSummary = vi.fn().mockResolvedValue(undefined);
-    const downloadClasses = vi.fn().mockResolvedValue(undefined);
     const printSummary = vi.fn();
 
     render(
@@ -353,15 +352,12 @@ describe("GradeExamAdjustmentPanel", () => {
         exam={buildExam()}
         onExamUpdated={vi.fn()}
         onDownloadTablesOneToFive={downloadSummary}
-        onDownloadClassStatistics={downloadClasses}
         onPrintTablesOneToFive={printSummary}
       />,
     );
 
     await user.click(screen.getByRole("button", { name: "一键下载表一-表五" }));
     await waitFor(() => expect(downloadSummary).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole("button", { name: "下载表六、各班成绩统计" }));
-    await waitFor(() => expect(downloadClasses).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "一键打印表一-表五" }));
     expect(printSummary).toHaveBeenCalledTimes(1);
   });
