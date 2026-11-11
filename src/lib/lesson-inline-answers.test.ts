@@ -45,3 +45,22 @@ describe("inline answer extraction and animation", () => {
     expect(extracted.answers).toEqual([]);
   });
 });
+
+describe("document answers with image and Word math runs", () => {
+  it("extracts a complete interval-union answer across separate underline runs", () => {
+    const content = String.raw`解集为 ____ $(-\infty,-\frac12)$ ____ <u>$\cup$</u> ____ $(\frac14,+\infty)$ ____。`;
+    const extracted = extractUnderlinedAnswers(content);
+    expect(extracted.answers).toEqual([String.raw`$(-\infty,-\frac12)$ $\cup$ $(\frac14,+\infty)$`]);
+    expect(extracted.content).toBe("解集为 ____。");
+  });
+
+  it("extracts a choice answer before a floated image", () => {
+    const image = "![文档图片](/api/files/diagram.png)";
+    expect(extractParenthesizedChoiceAnswer(`正确的是（D）。\n${image}`, "single"))
+      .toEqual({ stem: `正确的是（    ）。\n${image}`, answer: "D" });
+    expect(extractParenthesizedChoiceAnswer(String.raw`正确的是（$\mathrm{B}$）。`, "single"))
+      .toEqual({ stem: "正确的是（    ）。", answer: "B" });
+    expect(extractParenthesizedChoiceAnswer("正确的是（$C$）。", "single"))
+      .toEqual({ stem: "正确的是（    ）。", answer: "C" });
+  });
+});

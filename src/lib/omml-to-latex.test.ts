@@ -428,3 +428,10 @@ y=2
   });
 
 });
+
+describe("Word group character vector accents", () => {
+  it("places an imported vector arrow above both point letters", () => {
+    const xml = `<m:oMath xmlns:m="${MATH_NS}"><m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:pos m:val="bot"/></m:groupChrPr><m:e><m:r><m:t>AE</m:t></m:r></m:e></m:groupChr></m:oMath>`;
+    expect(ommlToLatex(xml)).toBe(String.raw`\overrightarrow{AE}`);
+  });
+});

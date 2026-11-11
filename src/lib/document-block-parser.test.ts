@@ -2732,3 +2732,66 @@ describe("math question numbering", () => {
     }]);
   });
 });
+
+describe("issue 1424: inline answers and math subquestion regrouping", () => {
+  it("collects later math essay prompts and numbers interleaved solutions", () => {
+    const blocks = parseDocumentBlocks([
+      "一、解答题",
+      "例2 已知正方体 ABCD-A1B1C1D1，如图所示。",
+      "![文档图片](/api/files/example.png)",
+      "（1）判断 A、C、M 三点是否共面；",
+      "解析：连接 AC，由三点确定一个平面，故共面。",
+      "![文档图片](/api/files/solution.png)",
+      "（2）求证 EF 平面 ABCD。",
+      "连接 E、F，利用平行关系即可证明。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const question = blocks.find((block) => block.type === "question");
+    expect(question?.content).toContain("（1）判断");
+    expect(question?.content).toContain("（2）求证");
+    expect(question?.analysis).toContain("（1）连接 AC");
+    expect(question?.analysis).toContain("（2）连接 E、F");
+    expect(question?.analysis).not.toContain("（2）求证");
+  });
+
+  it("keeps analysis references that do not introduce new questions", () => {
+    const blocks = parseDocumentBlocks([
+      "一、解答题",
+      "例1 求下列函数的值。",
+      "（1）求 f(0)。",
+      "解析：代入即可。",
+      "（2）在图中的曲线仍然连续。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const question = blocks.find((block) => block.type === "question");
+    expect(question?.analysis).toContain("（2）在图中的曲线");
+    expect(question?.content).not.toContain("（2）在图中的曲线");
+  });
+
+  it("extracts math choice answer when an image follows it", () => {
+    const blocks = parseDocumentBlocks([
+      "一、选择题",
+      "28. 如图已知四边形，正确选项是（D）。",
+      "![文档图片](/api/files/diagram.png)",
+      "A. 2/3 B. 1/4 C. 1/3 D. 1/2",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks[1]).toMatchObject({ questionType: "single", answer: "D" });
+    expect(blocks[1].content).toContain("![文档图片]");
+  });
+});
+
+describe("math document standalone subquestion labels", () => {
+  it("moves a standalone second label and its next prompt out of analysis", () => {
+    const blocks = parseDocumentBlocks([
+      "一、解答题",
+      "例1 已知正方体。",
+      "（1）证明 AC 与 EF 平行。",
+      "解析：由平行公理可得。",
+      "（2）",
+      "求直线 AB 与平面 DEF 的距离。",
+      "利用平面法向量可得距离。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const question = blocks.find((block) => block.type === "question");
+    expect(question?.content).toContain("（2） 求直线 AB");
+    expect(question?.analysis).toContain("（1）由平行公理可得。");
+    expect(question?.analysis).toContain("（2）利用平面法向量");
+  });
+});
