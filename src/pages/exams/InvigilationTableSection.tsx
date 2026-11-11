@@ -930,7 +930,7 @@ export function InvigilationTableSection({
               </tr>
               {statistics.rows.map((row) => (
                 <tr key={row.label}>
-                  <th className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-800">{row.label}</th>
+                  <th scope="row" className="sticky left-0 z-10 border-b border-r border-ink-100 bg-paper px-4 py-3 text-left font-medium text-ink-800">{row.label}</th>
                   {row.counts.map((count, index) => <td key={statistics.rooms[index].roomId} className={cn("border-b border-r border-ink-100 px-4 py-3 text-center tabular-nums text-ink-800", count === 0 && "bg-amber-100/70")}>{count || ""}</td>)}
                   <td className="border-b border-ink-100 px-4 py-3 text-center font-semibold tabular-nums text-ink-900">{row.total}</td>
                 </tr>

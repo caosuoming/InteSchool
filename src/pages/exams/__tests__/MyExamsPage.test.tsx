@@ -374,7 +374,11 @@ describe("MyExamsPage", () => {
     expect(screen.getByLabelText("选择文印室统计表考试")).toHaveDisplayValue("高三期中考试 · 2026-10-20");
     expect(screen.getAllByText("高三1班教室").length).toBeGreaterThan(0);
     expect(screen.getAllByText("物化生").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("语数外").length).toBeGreaterThan(0);
+    const printRoomTable = within(tableOneHeading.closest(".card-base") as HTMLElement);
+    for (const subject of ["语文", "数学", "英语", "物理", "化学", "生物"]) {
+      expect(printRoomTable.getByRole("rowheader", { name: subject })).toBeInTheDocument();
+    }
+    expect(printRoomTable.queryByRole("rowheader", { name: "语数外" })).not.toBeInTheDocument();
     const tableTwoHeading = screen.getByRole("heading", { name: "表二、监考表" });
     const invigilationCard = tableTwoHeading.closest(".card-base");
     expect(invigilationCard).not.toBeNull();
