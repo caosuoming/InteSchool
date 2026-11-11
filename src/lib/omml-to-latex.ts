@@ -719,6 +719,11 @@ function convertGroupChr(el: Element): string {
 
   const e = getMathChild(el, "e");
 
+  // Word's group-character arrow is a vector accent. Its m:pos is not
+  // reliable after MathType conversion; always place this arrow above points.
+  if (["→", "⃗", "⟶", "⇀"].includes(chr)) return `\\overrightarrow{${e}}`;
+  if (["←", "⃖", "⟵", "↼"].includes(chr)) return `\\overleftarrow{${e}}`;
+
   if (chr === "⏟" || chr === "_") {
     return `\\underbrace{${e}}`;
   } else if (chr === "⏞" || chr === "^") {
