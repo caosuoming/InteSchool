@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
   type GradeClassStatisticsOptions,
@@ -81,6 +81,33 @@ function Harness() {
 }
 
 describe("GradeClassStatisticsTable", () => {
+  it("sorts table headers and passes the same sorting to the adjacent export button", async () => {
+    const user = userEvent.setup();
+    const onDownload = vi.fn().mockResolvedValue(undefined);
+    render(<GradeClassStatisticsTable
+      exam={{ ...current, records: [
+        scoreRecord("s1", "c1", "高三（1）班", "张三", "001", 120),
+        scoreRecord("s2", "c1", "高三（1）班", "李四", "002", 110),
+        scoreRecord("s3", "c1", "高三（1）班", "王五", "003", 130),
+      ] }} comparisonExams={[]}
+      options={DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS} onOptionsChange={vi.fn()} onDownload={onDownload}
+    />);
+    const names = () => within(screen.getByRole("table")).getAllByRole("row")
+      .slice(1).map((row) => within(row).getAllByRole("cell")[1].textContent);
+    expect(names()).toEqual(["张三", "李四", "王五"]);
+    await user.click(screen.getByRole("button", { name: "按语文升序排序" }));
+    expect(screen.getByRole("columnheader", { name: "语文" })).toHaveAttribute("aria-sort", "ascending");
+    expect(names()).toEqual(["李四", "张三", "王五"]);
+    await user.click(screen.getByRole("button", { name: "按语文降序排序" }));
+    expect(names()).toEqual(["王五", "张三", "李四"]);
+    await user.click(screen.getByRole("button", { name: "下载各班成绩统计" }));
+    expect(onDownload).toHaveBeenCalledWith({ columnKey: "current:subject:语文", direction: "desc" });
+    await user.click(screen.getByRole("button", { name: "按语文默认顺序排序" }));
+    expect(names()).toEqual(["张三", "李四", "王五"]);
+    await user.click(screen.getByRole("button", { name: "按姓名升序排序" }));
+    expect(screen.getByRole("columnheader", { name: "姓名" })).toHaveAttribute("aria-sort", "ascending");
+  });
+
   it("switches classes and exposes only required fields by default", async () => {
     const user = userEvent.setup();
     render(<Harness />);

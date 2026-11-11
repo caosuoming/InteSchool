@@ -3,6 +3,7 @@ import type { GradeExam, GradeScoreRecord } from "../types/index.js";
 import {
   buildGradeClassStatisticsReport,
   DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
+  sortGradeClassStatisticsReport,
 } from "./grade-class-statistics.js";
 
 function record(
@@ -69,6 +70,41 @@ const previous = exam("previous", "期中考试", "2026-05-01", [
 ]);
 
 describe("grade class statistics", () => {
+  it("sorts all classes by numeric and natural-text fields without mutating report rows", () => {
+    const tested = exam("sorted", "排序测试", "2026-07-01", [
+      record("s1", "c1", "一班", "001", "学生10", 120, 80, 90, 200, 210),
+      record("s2", "c1", "一班", "002", "学生2", 100, 80, 90, 180, 190),
+      record("s3", "c2", "二班", "003", "学生9", 110, 80, 90, 190, 200),
+      record("s4", "c2", "二班", "004", "学生1", 130, 80, 90, 210, 220),
+    ]);
+    const report = buildGradeClassStatisticsReport(tested, [], DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS);
+    const originalOrder = report.classes.map((table) => table.rows.map((row) => row.studentId));
+    const descending = sortGradeClassStatisticsReport(report, { columnKey: "sorted:subject:语文", direction: "desc" });
+    expect(Object.fromEntries(descending.classes.map((table) => [table.classId, table.rows.map((row) => row.studentId)])))
+      .toEqual({ c1: ["s1", "s2"], c2: ["s4", "s3"] });
+    const names = sortGradeClassStatisticsReport(report, { columnKey: "studentName", direction: "asc" });
+    expect(Object.fromEntries(names.classes.map((table) => [table.classId, table.rows.map((row) => row.studentId)])))
+      .toEqual({ c1: ["s2", "s1"], c2: ["s4", "s3"] });
+    expect(report.classes.map((table) => table.rows.map((row) => row.studentId))).toEqual(originalOrder);
+    expect(sortGradeClassStatisticsReport(report, { columnKey: "removed-column", direction: "asc" })).toBe(report);
+  });
+
+  it("sorts missing values last in both directions, with stable ties and valid zero", () => {
+    const tested = exam("sorted", "排序测试", "2026-07-01", [
+      record("s1", "c1", "一班", "001", "甲", 0, 80, 90, 0, 90),
+      record("s2", "c1", "一班", "002", "乙", 0, 80, 90, 0, 90),
+      record("s3", "c1", "一班", "003", "丙", 1, 80, 90, 1, 91),
+      { ...record("s4", "c1", "一班", "004", "丁", 2, 80, 90, 2, 92),
+        scores: { 语文: null, 化学: 80 }, assignedScores: { 语文: null, 化学: 90 } },
+    ]);
+    const report = buildGradeClassStatisticsReport(tested, [], DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS);
+    const ids = (direction: "asc" | "desc") => sortGradeClassStatisticsReport(report, {
+      columnKey: "sorted:subject:语文", direction,
+    }).classes[0].rows.map((row) => row.studentId);
+    expect(ids("asc")).toEqual(["s1", "s2", "s3", "s4"]);
+    expect(ids("desc")).toEqual(["s3", "s1", "s2", "s4"]);
+  });
+
   it("always includes class, name and current subject scores", () => {
     const report = buildGradeClassStatisticsReport(current, [], {
       ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,

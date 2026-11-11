@@ -72,6 +72,37 @@ export interface GradeClassStatisticsReport {
   options: GradeClassStatisticsOptions;
 }
 
+export interface GradeClassStatisticsSort {
+  columnKey: string;
+  direction: "asc" | "desc";
+}
+
+/** Keep missing scores at the end in both directions; never change rank values. */
+export function sortGradeClassStatisticsReport(
+  report: GradeClassStatisticsReport,
+  sort: GradeClassStatisticsSort | null,
+): GradeClassStatisticsReport {
+  if (!sort || !report.columns.some((column) => column.key === sort.columnKey)) return report;
+  const compare = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+  const missing = (value: string | number | null | undefined) =>
+    value === null || value === undefined || value === "" || (typeof value === "number" && !Number.isFinite(value));
+  return {
+    ...report,
+    classes: report.classes.map((classTable) => ({
+      ...classTable,
+      rows: [...classTable.rows].sort((left, right) => {
+        const a = left.values[sort.columnKey];
+        const b = right.values[sort.columnKey];
+        if (missing(a) || missing(b)) return Number(missing(a)) - Number(missing(b));
+        const order = typeof a === "number" && typeof b === "number"
+          ? a - b
+          : compare.compare(String(a), String(b));
+        return sort.direction === "asc" ? order : -order;
+      }),
+    })),
+  };
+}
+
 interface ExamRankedRecord {
   subjectScores: Record<string, number | null>;
   rawSubjectScores: Record<string, number | null>;
