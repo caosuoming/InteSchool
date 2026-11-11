@@ -2,6 +2,7 @@ import { rpcCall } from "./api";
 import type {
   BoardDocument,
   ClassroomDeviceAccessPolicy,
+  ClassroomDeviceBindingEvent,
   ClassroomDevice,
   ClassroomDeviceSession,
   ClassroomDeviceSnapshot,
@@ -84,6 +85,10 @@ export const classroomDeviceService = {
 
   async listManagedDevices(targetSchoolId?: string): Promise<ClassroomDevice[]> {
     return rpcCall("classroomDevice", "listManagedDevices", [targetSchoolId]) as any;
+  },
+
+  async listBindingHistory(targetSchoolId?: string): Promise<ClassroomDeviceBindingEvent[]> {
+    return rpcCall("classroomDevice", "listBindingHistory", [targetSchoolId]) as any;
   },
 
   async unlockDevice(deviceId: string): Promise<ClassroomDevice> {

@@ -344,15 +344,72 @@ describe("classroomDeviceService", () => {
         canUnlock: true,
         canLock: false,
         canClose: false,
-        canUnbind: false,
+        canUnbind: true,
       });
       await expect(classroomDeviceService.listManagedDevices(undefined, pick(state, "other"))).resolves.toEqual([]);
+      await expect(classroomDeviceService.unbindDevice(boundId(subjectDevices), pick(state, "other"))).rejects.toThrow("无权");
       await expect(classroomDeviceService.lockDevice(boundId(subjectDevices), pick(state, "subject"))).rejects.toThrow("无权");
 
       const deviceId = boundId(subjectDevices);
       await expect(classroomDeviceService.lockDevice(deviceId, pick(state, "homeroom"))).resolves.toMatchObject({ effectiveState: "locked" });
       await expect(classroomDeviceService.closeDevice(deviceId, pick(state, "homeroom"))).resolves.toMatchObject({ effectiveState: "closed" });
       await expect(classroomDeviceService.unlockDevice(deviceId, pick(state, "subject"))).resolves.toMatchObject({ effectiveState: "active" });
+    });
+  });
+
+  it("lets assigned subject and homeroom teachers unbind their class and logs both operations", async () => {
+    const state = makeState();
+    await runWithState(state, async () => {
+      const first = await bindClassOne();
+      const subject = pick(state, "subject");
+      const admin = pick(state, "admin");
+      const boundHistory = await classroomDeviceService.listBindingHistory(undefined, admin);
+      expect(boundHistory).toHaveLength(1);
+      expect(boundHistory[0]).toMatchObject({
+        action: "bind", deviceId: first.id, installationId: first.installationId,
+        classId: "class-1", boundByTeacherName: "设备自助绑定", actorName: "设备自助绑定",
+      });
+      expect(JSON.stringify(boundHistory)).not.toContain("deviceTokenHash");
+      await expect(classroomDeviceService.listBindingHistory(undefined, subject)).rejects.toThrow("仅学校管理员");
+      await expect(classroomDeviceService.listBindingHistory("school-2", admin)).rejects.toThrow("其他学校");
+      await expect(classroomDeviceService.unbindDevice(first.id, pick(state, "other"))).rejects.toThrow("无权");
+
+      await classroomDeviceService.unbindDevice(first.id, subject);
+      await expect(classroomDeviceService.getDeviceSession(TOKEN_1)).rejects.toThrow("尚未绑定");
+      const afterUnbind = await classroomDeviceService.listBindingHistory(undefined, admin);
+      expect(afterUnbind).toHaveLength(2);
+      expect(afterUnbind[0]).toMatchObject({
+        action: "unbind", deviceId: first.id, classId: "class-1", actorId: "subject", actorName: "subject",
+      });
+      expect(afterUnbind[1].action).toBe("bind");
+
+      const rebound = await bindClassOne();
+      const homeroom = pick(state, "homeroom");
+      expect((await classroomDeviceService.listManagedDevices(undefined, homeroom))[0].permissions?.canUnbind).toBe(true);
+      await classroomDeviceService.unbindDevice(rebound.id, homeroom);
+      expect((await classroomDeviceService.listBindingHistory(undefined, admin))[0]).toMatchObject({
+        action: "unbind", actorId: "homeroom",
+      });
+    });
+  });
+
+  it("keeps the binding audit scoped to schools, including anonymous device self-service cleanup", async () => {
+    const state = makeState();
+    await runWithState(state, async () => {
+      const first = await bindClassOne();
+      const otherSchool = await classroomDeviceService.bindDevice({
+        schoolId: "school-2", classId: "class-3", deviceToken: TOKEN_2,
+        installationId: "installation-class-three",
+      });
+      await classroomDeviceService.clearInstallationBinding(first.installationId);
+      const adminHistory = await classroomDeviceService.listBindingHistory(undefined, pick(state, "admin"));
+      expect(adminHistory).toHaveLength(2);
+      expect(adminHistory[0]).toMatchObject({ action: "unbind", actorName: "设备自助解绑", deviceId: first.id });
+      const platform = pick(state, "platform");
+      expect(await classroomDeviceService.listBindingHistory(undefined, platform)).toEqual([]);
+      expect((await classroomDeviceService.listBindingHistory("school-2", platform))).toEqual([
+        expect.objectContaining({ action: "bind", deviceId: otherSchool.id, schoolId: "school-2" }),
+      ]);
     });
   });
 

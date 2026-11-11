@@ -221,7 +221,7 @@ export default function ClassroomLoginPage() {
         <form onSubmit={handleSubmit} className="p-7 space-y-4">
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-relaxed text-amber-900">
             <div className="flex items-center gap-1.5 font-medium"><MonitorCheck className="h-4 w-4" />绑定后本机会直接进入上课首页</div>
-            <p className="mt-1 text-amber-800">班级列表包含“公共教室”；公共教室进入后可切换本校班级。学校管理员可在“我的教室”中解绑设备。</p>
+            <p className="mt-1 text-amber-800">班级列表包含“公共教室”；公共教室进入后可切换本校班级。任课教师和学校管理员可在“我的教室”中解绑设备。</p>
           </div>
 
           <div className="relative">
