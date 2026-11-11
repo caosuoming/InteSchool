@@ -14,6 +14,7 @@ vi.mock("@/services/classroomDevice", () => ({
     lockDevice: vi.fn(),
     closeDevice: vi.fn(),
     unbindDevice: vi.fn(),
+    listBindingHistory: vi.fn(),
     updateDeviceSchedule: vi.fn(),
     updateDeviceAccessPolicy: vi.fn(),
   },
@@ -86,20 +87,21 @@ function device(permissions: ClassroomDevice["permissions"]): ClassroomDevice {
 describe("MyClassroomsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(classroomDeviceService.listBindingHistory).mockResolvedValue([]);
     vi.mocked(schoolService.listSchools).mockResolvedValue([
       { id: "school-1", name: "第一中学", code: "S1", logo: "", description: "", teacherCount: 1, studentCount: 1, city: "南京" },
       { id: "school-2", name: "第二中学", code: "S2", logo: "", description: "", teacherCount: 1, studentCount: 1, city: "南京" },
     ]);
   });
 
-  it("shows an assigned teacher only the view and unlock actions granted by the server", async () => {
+  it("lets an assigned teacher unbind but keeps school-wide controls and audit hidden", async () => {
     setTeacher("teacher");
     vi.mocked(classroomDeviceService.listManagedDevices).mockResolvedValue([device({
       canView: true,
       canUnlock: true,
       canLock: false,
       canClose: false,
-      canUnbind: false,
+      canUnbind: true,
       canEditSchedule: false,
     })]);
     render(<MyClassroomsPage />);
@@ -108,7 +110,13 @@ describe("MyClassroomsPage", () => {
     expect(screen.getByRole("button", { name: /解锁/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /锁定/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /关闭页面/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /解绑/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("绑定与解绑记录")).not.toBeInTheDocument();
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(classroomDeviceService.unbindDevice).mockResolvedValue(undefined);
+    await userEvent.setup().click(screen.getByRole("button", { name: /解绑/ }));
+    await waitFor(() => expect(classroomDeviceService.unbindDevice).toHaveBeenCalledWith("device-1"));
+    expect(classroomDeviceService.listBindingHistory).not.toHaveBeenCalled();
+    confirmation.mockRestore();
   });
 
   it("shows school-wide controls and schedule editing to a school administrator", async () => {
@@ -144,6 +152,26 @@ describe("MyClassroomsPage", () => {
         whitelist: [expect.objectContaining({ kind: "website", target: "https://school.example.com" })],
       }),
     ));
+  });
+
+  it("shows the audit on the right for an administrator even if no device remains bound", async () => {
+    setTeacher("school_admin");
+    vi.mocked(classroomDeviceService.listManagedDevices).mockResolvedValue([]);
+    vi.mocked(classroomDeviceService.listBindingHistory).mockResolvedValue([{
+      id: "event-1", schoolId: "school-1", deviceId: "device-1",
+      installationId: "installation-1", deviceName: "高一1班一体机",
+      classId: "class-1", className: "1班", grade: "高一",
+      action: "unbind", boundByTeacherName: "设备自助绑定",
+      actorId: "subject", actorName: "王老师", occurredAt: "2026-11-11T10:00:00.000Z",
+      createdAt: "2026-11-11T10:00:00.000Z",
+    }]);
+    render(<MyClassroomsPage />);
+    expect(await screen.findByText("绑定与解绑记录")).toBeInTheDocument();
+    expect(screen.getByText(/一体机 ID：device-1/)).toBeInTheDocument();
+    expect(screen.getByText(/解绑班级：高一 · 1班/)).toBeInTheDocument();
+    expect(screen.getByText(/解绑老师：王老师/)).toBeInTheDocument();
+    expect(screen.getByText("暂无可管理的一体机")).toBeInTheDocument();
+    expect(classroomDeviceService.listBindingHistory).toHaveBeenCalledWith(undefined);
   });
 
   it("lets a platform administrator switch schools while exposing unlock/unbind but not lock/close", async () => {

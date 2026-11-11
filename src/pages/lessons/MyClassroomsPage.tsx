@@ -14,6 +14,7 @@ import { toast } from "@/stores/ui";
 import type {
   ClassroomDevice,
   ClassroomDeviceAccessPolicy,
+  ClassroomDeviceBindingEvent,
   ClassroomDeviceAccessRule,
   ClassroomDeviceTimeRange,
   School,
@@ -54,9 +55,11 @@ export default function MyClassroomsPage() {
   const role = affiliation?.role || teacher?.role;
   const platform = isPlatformAdminAccount(teacher);
   const schoolAdmin = role === "school_admin";
+  const showHistory = schoolAdmin || platform;
   const [schools, setSchools] = useState<School[]>([]);
   const [schoolId, setSchoolId] = useState(affiliation?.schoolId || "");
   const [devices, setDevices] = useState<ClassroomDevice[]>([]);
+  const [bindingHistory, setBindingHistory] = useState<ClassroomDeviceBindingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [scheduleDevice, setScheduleDevice] = useState<ClassroomDevice | null>(null);
@@ -76,18 +79,24 @@ export default function MyClassroomsPage() {
     if (!teacher) return;
     if (platform && !schoolId) {
       setDevices([]);
+      setBindingHistory([]);
       setLoading(false);
       return;
     }
     if (!silent) setLoading(true);
     try {
-      setDevices(await classroomDeviceService.listManagedDevices(platform ? schoolId : undefined));
+      const [managedDevices, history] = await Promise.all([
+        classroomDeviceService.listManagedDevices(platform ? schoolId : undefined),
+        showHistory ? classroomDeviceService.listBindingHistory(platform ? schoolId : undefined) : Promise.resolve([]),
+      ]);
+      setDevices(managedDevices);
+      setBindingHistory(history);
     } catch (error) {
       if (!silent) toast.error("教室一体机加载失败", error instanceof Error ? error.message : undefined);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [platform, schoolId, teacher]);
+  }, [platform, schoolId, showHistory, teacher]);
 
   useEffect(() => {
     void load();
@@ -190,11 +199,14 @@ export default function MyClassroomsPage() {
         <Card><div className="py-10 text-center text-sm text-ink-500">请切换到学校身份后查看“我的教室”。</div></Card>
       ) : loading ? (
         <div className="flex min-h-64 items-center justify-center"><Spinner size={32} /></div>
-      ) : devices.length === 0 ? (
-        <Card><div className="py-12 text-center"><Monitor className="mx-auto mb-3 h-10 w-10 text-ink-300" /><div className="font-medium text-ink-700">暂无可管理的一体机</div><p className="mt-1 text-sm text-ink-400">首次在教室设备点击登录页“我要上课”，选择学校和班级即可绑定。</p></div></Card>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-2">
-          {devices.map((device) => (
+        <div className={showHistory ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]" : ""}>
+          <div className="min-w-0">
+            {devices.length === 0 ? (
+              <Card><div className="py-12 text-center"><Monitor className="mx-auto mb-3 h-10 w-10 text-ink-300" /><div className="font-medium text-ink-700">暂无可管理的一体机</div><p className="mt-1 text-sm text-ink-400">首次在教室设备点击登录页“我要上课”，选择学校和班级即可绑定。</p></div></Card>
+            ) : (
+              <div className={showHistory ? "grid gap-5" : "grid gap-5 xl:grid-cols-2"}>
+                {devices.map((device) => (
             <Card key={device.id} className="overflow-hidden p-0">
               <div className="grid md:grid-cols-[minmax(0,1fr)_16rem]">
                 <div className="p-5">
@@ -236,7 +248,45 @@ export default function MyClassroomsPage() {
                 </div>
               </div>
             </Card>
-          ))}
+                ))}
+              </div>
+            )}
+          </div>
+          {showHistory && (
+            <Card className="min-w-0 self-start">
+              <div className="mb-4 flex items-center gap-2">
+                <Clock3 className="h-4 w-4 text-ink-500" />
+                <h2 className="font-medium text-ink-900">绑定与解绑记录</h2>
+              </div>
+              <p className="mb-4 text-xs text-ink-500">本校最近 100 条记录，按时间倒序排列。</p>
+              {bindingHistory.length === 0 ? (
+                <p className="py-6 text-center text-sm text-ink-400">暂无绑定或解绑记录</p>
+              ) : (
+                <div className="max-h-[48rem] space-y-3 overflow-y-auto pr-1">
+                  {bindingHistory.map((event) => {
+                    const classroom = event.publicClassroom
+                      ? `公共教室 ${event.publicClassroomNumber ?? ""}号`
+                      : `${event.grade} · ${event.className}`;
+                    return (
+                      <div key={event.id} className="rounded-lg border border-ink-100 p-3 text-xs leading-relaxed">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={event.action === "bind" ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+                            {event.action === "bind" ? "绑定" : "解绑"}
+                          </span>
+                          <time className="text-ink-400">{new Date(event.occurredAt).toLocaleString("zh-CN")}</time>
+                        </div>
+                        <div className="mt-2 break-all text-ink-500">一体机 ID：{event.deviceId}</div>
+                        <div className="mt-1 break-all text-ink-500">安装标识：{event.installationId}</div>
+                        <div className="mt-1 text-ink-700">{event.action === "bind" ? "绑定班级" : "解绑班级"}：{classroom}</div>
+                        <div className="mt-1 text-ink-700">绑定老师：{event.boundByTeacherName}</div>
+                        {event.action === "unbind" && <div className="mt-1 text-ink-700">解绑老师：{event.actorName}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
         </div>
       )}
 
