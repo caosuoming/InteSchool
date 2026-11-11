@@ -2,12 +2,14 @@ import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { Link, useNavigate } from "react-router";
 import {
-  FileText, Plus, Search, FileQuestion, Users, BookOpen,
+  FileText, Plus, Search, FileQuestion, Users, BookOpen, MonitorPlay,
   Calendar, Edit3, Eye, GraduationCap, Lightbulb,
   ArrowUpDown, Clock, ListFilter,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { lectureService } from "@/services/lecture";
+import { lessonCoursewareService } from "@/services/lessonCourseware";
+import { toast } from "@/stores/ui";
 import { knowledgeService } from "@/services/knowledge";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { QuestionAnnotationSummary } from "@/components/resources/QuestionAnnotationSummary";
@@ -17,7 +19,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SearchableTree } from "@/components/tree/SearchableTree";
-import type { Lecture, TreeNode, Chapter, KnowledgePoint, FilterLogic } from "@/types";
+import type { Lecture, LessonCourseware, TreeNode, Chapter, KnowledgePoint, FilterLogic } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,8 @@ export default function LectureListPage() {
   const { teacher } = useAuthStore();
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [loading, setLoading] = useState(true);
+  const [linkedCoursewares, setLinkedCoursewares] = useState<Record<string, LessonCourseware>>({});
+  const [sendingLectureId, setSendingLectureId] = useState<string | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "published">("all");
 
@@ -89,6 +93,52 @@ export default function LectureListPage() {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [teacher, keyword, checkedChapters, checkedKnowledge, chapterLogic, knowledgeLogic, statusFilter]);
+
+  useEffect(() => {
+    if (!teacher?.schoolId) return;
+    let cancelled = false;
+    lessonCoursewareService.listCoursewares({
+      teacherId: teacher.id,
+      schoolId: teacher.schoolId,
+      sourceType: "lecture",
+    }).then((coursewares) => {
+      if (cancelled) return;
+      setLinkedCoursewares(Object.fromEntries(
+        coursewares
+          .filter((courseware) => courseware.sourceId && courseware.lifecycleStatus !== "trashed")
+          .map((courseware) => [courseware.sourceId!, courseware]),
+      ));
+    }).catch(() => {
+      if (!cancelled) setLinkedCoursewares({});
+    });
+    return () => { cancelled = true; };
+  }, [teacher?.id, teacher?.schoolId]);
+
+  const handleSendToMyCourseware = async (lecture: Lecture) => {
+    if (!teacher?.schoolId || sendingLectureId) return;
+    setSendingLectureId(lecture.id);
+    try {
+      // Recheck the source before creating, so another tab cannot cause a duplicate.
+      const existing = await lessonCoursewareService.getCoursewareBySource(
+        teacher.id, teacher.schoolId, "lecture", lecture.id,
+      );
+      if (existing && existing.lifecycleStatus !== "trashed") {
+        setLinkedCoursewares((current) => ({ ...current, [lecture.id]: existing }));
+        navigate(`/my-lessons/${existing.id}/edit?preview=1`);
+        return;
+      }
+      const created = await lessonCoursewareService.createFromLecture(
+        teacher.id, teacher.schoolId, lecture.id,
+      );
+      setLinkedCoursewares((current) => ({ ...current, [lecture.id]: created }));
+      toast.success("已发送到我的课件", "正在进入课件编辑...");
+      navigate(`/my-lessons/${created.id}/edit`);
+    } catch (error) {
+      toast.error("发送失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setSendingLectureId(null);
+    }
+  };
 
   const sortedLectures = useMemo(() => {
     const sorted = [...lectures];
@@ -364,18 +414,28 @@ export default function LectureListPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-3 border-t border-ink-100">
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-ink-100">
                     <Link to={`/lectures/${lec.id}/edit`} className="flex-1" target="_blank" rel="noreferrer">
                       <Button variant="outline" size="sm" className="w-full">
                         <Edit3 className="w-3.5 h-3.5" />
                         编辑
                       </Button>
                     </Link>
-                    <Link to={`/lectures/${lec.id}/edit?preview=1`} target="_blank" rel="noreferrer">
-                      <Button variant="ghost" size="sm">
+                    <Link to={`/lectures/${lec.id}/preview`} target="_blank" rel="noreferrer">
+                      <Button variant="ghost" size="sm" title="预览讲义">
                         <Eye className="w-3.5 h-3.5" />
                       </Button>
                     </Link>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      loading={sendingLectureId === lec.id}
+                      disabled={Boolean(sendingLectureId && sendingLectureId !== lec.id)}
+                      onClick={() => void handleSendToMyCourseware(lec)}
+                    >
+                      <MonitorPlay className="w-3.5 h-3.5" />
+                      {linkedCoursewares[lec.id] ? "查看课件" : "发送到我的课件"}
+                    </Button>
                   </div>
                 </Card>
               ))}

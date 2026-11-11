@@ -46,12 +46,19 @@ export function recordClassroomQuestionProgress(input: ClassroomQuestionProgress
   if (scored && participants.length === 0) throw new Error("学生不属于该班级");
 
   let documentId = courseware.id;
+  let isSourceLectureQuestion = false;
   if (courseware.sourceType === "lecture" && courseware.sourceId) {
     const lecture = (db.read("lectures") as Lecture[]).find((item) => (
       item.id === courseware.sourceId && item.schoolId === schoolId
     ));
     if (!lecture) throw new Error("来源讲义不存在");
-    documentId = lecture.id;
+    const containsQuestion = (sections: Lecture["sections"]): boolean => sections.some(
+      (section) => (section.type === "question" && section.questionId === input.questionId)
+        || containsQuestion(section.children || []),
+    );
+    isSourceLectureQuestion = containsQuestion(lecture.sections || []);
+    // Additional questions inserted into the lesson must not alter the source handout.
+    if (isSourceLectureQuestion) documentId = lecture.id;
   } else if (courseware.sourceType === "examPaper" && courseware.sourceId) {
     documentId = courseware.sourceId;
   }
@@ -87,7 +94,7 @@ export function recordClassroomQuestionProgress(input: ClassroomQuestionProgress
     return [...records.map((record) => updates.get(record.id) || record), ...additions];
   });
 
-  if (!scored && courseware.sourceType === "lecture" && courseware.sourceId) {
+  if (!scored && isSourceLectureQuestion) {
     db.update("lectures", (lectures) => lectures.map((lecture) => (
       lecture.id === documentId && !lecture.classIds.includes(input.classId)
         ? { ...lecture, classIds: [...lecture.classIds, input.classId], updatedAt: now }
