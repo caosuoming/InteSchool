@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, GitBranchPlus, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, GitBranchPlus, Pin, PinOff, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { genId } from "@/lib/service-utils";
 import { boardService } from "@/services/board";
 import { BoardCanvas } from "@/components/board/BoardCanvas";
+import { BoardRichTextField } from "@/components/board/BoardRichTextField";
 import type { BoardDocument, BoardEdge, BoardNode } from "@/types";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "未知错误";
 }
 
-function newEdge(from: string, to: string): BoardEdge {
-  return { id: `parent:${to}`, from, to, style: "solid", arrow: "forward", route: "straight" };
+function newEdge(from: string, to: string, kind: BoardDocument["kind"]): BoardEdge {
+  return { id: `parent:${to}`, from, to, style: "solid", arrow: "forward",
+    route: kind === "master" ? "curve" : "elbow" };
 }
 
 export function BoardLibrary() {
@@ -114,7 +116,7 @@ export function BoardLibrary() {
     const id = genId("board-node");
     const node: BoardNode = { id, label: title.trim(), parentId: selected.id,
       x: Math.min(94, selected.x + 15), y: Math.min(94, selected.y + 17) };
-    patch({ nodes: [...board.nodes, node], edges: [...board.edges, newEdge(selected.id, id)] });
+    patch({ nodes: [...board.nodes, node], edges: [...board.edges, newEdge(selected.id, id, board.kind)] });
     setSelectedNodeId(id);
   };
 
@@ -125,10 +127,15 @@ export function BoardLibrary() {
       node.parentId === selected.id ? { ...node, parentId } : node);
     const edges = board.edges.filter((item) => item.from !== selected.id && item.to !== selected.id);
     for (const node of nodes.filter((item) => item.parentId === parentId && board.nodes.find((previous) => previous.id === item.id)?.parentId === selected.id)) {
-      edges.push(newEdge(parentId, node.id));
+      edges.push(newEdge(parentId, node.id, board.kind));
     }
     patch({ nodes, edges });
     setSelectedNodeId(parentId);
+  };
+
+  const changeNode = (change: Partial<BoardNode>) => {
+    if (!board || !selected) return;
+    patch({ nodes: board.nodes.map((node) => node.id === selected.id ? { ...node, ...change } : node) });
   };
 
   const changeEdge = (change: Partial<BoardEdge>) => {
@@ -136,10 +143,23 @@ export function BoardLibrary() {
     patch({ edges: board.edges.map((item) => item.id === edge.id ? { ...item, ...change } : item) });
   };
 
+  const uploadImage = (file?: File) => {
+    if (!file || !selected) return;
+    if (!/^(image\/(png|jpeg|gif|webp))$/.test(file.type) || file.size > 280000) {
+      toast.error("请选择 280KB 以内的 PNG、JPEG、GIF 或 WebP 图片"); return;
+    }
+    const targetId = selected.id;
+    const reader = new FileReader();
+    reader.onload = () => setBoard((current) => current ? ({ ...current,
+      nodes: current.nodes.map((node) => node.id === targetId ? { ...node, imageUrl: String(reader.result) } : node),
+    }) : current);
+    reader.readAsDataURL(file);
+  };
+
   const addLink = () => {
     if (!board || !selected || !linkTargetId || linkTargetId === selected.id) return;
     const id = genId("link");
-    patch({ edges: [...board.edges, { ...newEdge(selected.id, linkTargetId), id }] });
+    patch({ edges: [...board.edges, { ...newEdge(selected.id, linkTargetId, board.kind), id }] });
     setSelectedEdgeId(id);
     setLinkTargetId("");
   };
@@ -181,7 +201,7 @@ export function BoardLibrary() {
           onChange={setBoard} />
       </div>
       <div className="border-t border-ink-100 px-4 py-2 text-xs text-ink-500">
-        {board.kind === "master" ? "点击节点切换中心；拖动节点到另一节点可更改父级（不改动原知识树）。" : "拖动普通节点自由布局；连线样式可在右侧修改。"}
+        {board.kind === "master" ? "点击节点切换中心；从空心连接点拖至另一节点连接；在右侧可隐藏或固定节点。" : "拖动节点调整位置；空心连接点可建立层级或横向关联。"}
       </div>
     </section>
 
@@ -204,6 +224,40 @@ export function BoardLibrary() {
             className="mt-1 w-full rounded-md border border-ink-200 px-2 py-2 text-sm disabled:bg-mist" />
         </label>
         {board.kind === "master" && selected.sourceKnowledgeId && <p className="text-xs text-ink-400">该节点来自知识树，名称随知识树同步。</p>}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-label={selected.pinned ? "取消图钉" : "添加图钉"}
+            onClick={() => changeNode({ pinned: !selected.pinned })}
+            className="flex items-center gap-1 rounded-md border border-ink-200 px-2 py-1.5 text-xs">
+            {selected.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+            {selected.pinned ? "取消图钉" : "添加图钉"}
+          </button>
+          {selected.id !== board.rootNodeId && <button type="button" aria-label={selected.hidden ? "显示节点" : "隐藏节点"}
+            onClick={() => changeNode({ hidden: !selected.hidden })}
+            className="flex items-center gap-1 rounded-md border border-ink-200 px-2 py-1.5 text-xs">
+            {selected.hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            {selected.hidden ? "显示节点" : "隐藏节点"}
+          </button>}
+        </div>
+        <label className="block text-xs text-ink-500">节点字号
+          <input type="number" aria-label="节点字号" min={10} max={48}
+            value={selected.fontSize ?? (board.kind === "master" ? 17 : 18)}
+            onChange={(e) => changeNode({ fontSize: Math.max(10, Math.min(48, Number(e.target.value) || 10)) })}
+            className="mt-1 w-full rounded-md border border-ink-200 p-2 text-sm" />
+        </label>
+        <BoardRichTextField key={`node:${selected.id}`} label="节点富文本" value={selected.richText}
+          onChange={(richText) => changeNode({ richText })} />
+        <label className="block text-xs text-ink-500">节点图片 URL（支持 https）
+          <input aria-label="节点图片 URL" value={selected.imageUrl?.startsWith("data:") ? "" : selected.imageUrl || ""}
+            placeholder={selected.imageUrl?.startsWith("data:") ? "已使用上传图片" : "https://..."}
+            onChange={(e) => changeNode({ imageUrl: e.target.value })}
+            className="mt-1 w-full rounded-md border border-ink-200 p-2 text-sm" />
+        </label>
+        <label className="flex cursor-pointer items-center gap-1 rounded-md border border-ink-200 px-2 py-1.5 text-xs">
+          <Upload className="h-3.5 w-3.5" />上传图片（280KB 内）
+          <input aria-label="上传节点图片" type="file" accept="image/png,image/jpeg,image/gif,image/webp"
+            className="sr-only" onChange={(e) => { uploadImage(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+        {selected.imageUrl && <button type="button" className="text-xs text-red-600" onClick={() => changeNode({ imageUrl: undefined })}>移除图片</button>}
         <div className="flex gap-2">
           <button onClick={addNode} className="flex items-center gap-1 rounded-md border border-ink-200 px-2 py-1.5 text-xs"><GitBranchPlus className="h-3.5 w-3.5" />添加子节点</button>
           {(board.kind === "structure" || !selected.sourceKnowledgeId) && selected.id !== board.rootNodeId &&
@@ -228,9 +282,17 @@ export function BoardLibrary() {
           <select aria-label="箭头方向" value={edge.arrow} onChange={(e) => changeEdge({ arrow: e.target.value as BoardEdge["arrow"] })} className="mt-1 w-full rounded-md border p-2 text-sm">
             <option value="none">无箭头</option><option value="forward">单箭头 →</option><option value="reverse">单箭头 ←</option><option value="both">双箭头 ↔</option>
           </select></label>
+        <label className="block text-xs text-ink-500">连线文字字号
+          <input type="number" aria-label="连线文字字号" min={10} max={48}
+            value={edge.fontSize || 13}
+            onChange={(e) => changeEdge({ fontSize: Math.max(10, Math.min(48, Number(e.target.value) || 10)) })}
+            className="mt-1 w-full rounded-md border p-2 text-sm" />
+        </label>
+        <BoardRichTextField key={`edge:${edge.id}`} label="连线富文本" value={edge.richText}
+          onChange={(richText) => changeEdge({ richText })} />
         <label className="block text-xs text-ink-500">连线形状
           <select aria-label="连线形状" value={edge.route} onChange={(e) => changeEdge({ route: e.target.value as BoardEdge["route"] })} className="mt-1 w-full rounded-md border p-2 text-sm">
-            <option value="straight">直线</option><option value="elbow">折线（7 字型）</option>
+            <option value="straight">直线</option><option value="elbow">直角折线</option><option value="curve">平滑曲线</option>
           </select></label>
         {!edge.id.startsWith("parent:") && <button type="button" className="text-xs text-red-600" onClick={() => {
           patch({ edges: board.edges.filter((item) => item.id !== edge.id) }); setSelectedEdgeId(null);
