@@ -22,12 +22,17 @@ function state(): AppState {
       { id: "inactive", classId: "class-1", schoolId: "school-1", status: "graduated" },
       { id: "outsider", classId: "class-2", schoolId: "school-1", status: "active" },
     ] as AppState["students"],
-    questions: [{ id: "question-1", schoolId: "school-1" }] as AppState["questions"],
-    lectures: [{ id: "lecture-1", teacherId: "teacher-1", schoolId: "school-1", classIds: [] }] as AppState["lectures"],
+    questions: [{ id: "question-1", schoolId: "school-1" },
+      { id: "extra-question", schoolId: "school-1" }] as AppState["questions"],
+    lectures: [{ id: "lecture-1", teacherId: "teacher-1", schoolId: "school-1", classIds: [],
+      sections: [{ id: "sec-1", type: "chapter", children: [{
+        id: "sec-2", type: "question", questionId: "question-1", children: [],
+      }] }] }] as AppState["lectures"],
     lessonCoursewares: [{ id: "course-1", teacherId: "teacher-1", schoolId: "school-1", sourceType: "lecture",
       sourceId: "lecture-1", classIds: ["class-1"], status: "published", slides: [
         { id: "slide-1", type: "question", questionId: "question-1" },
         { id: "slide-2", type: "question", questionId: "hidden", hiddenClassIds: ["class-1"] },
+        { id: "slide-extra", type: "question", questionId: "extra-question" },
       ] }] as AppState["lessonCoursewares"],
     classroomDevices: [{ id: "device", classId: "class-1", schoolId: "school-1",
       deviceTokenHash: createHash("sha256").update(token).digest("hex") }] as AppState["classroomDevices"],
@@ -56,6 +61,21 @@ describe("classroom example progress", () => {
         .toMatchObject([{ studentId: "bob", score: "correct", isCorrect: true }]);
       expect(recordClassroomQuestionProgress(input, "school-1")).toEqual([]);
       expect((snapshot.answerRecords as AnswerRecord[]).find((item) => item.studentId === "bob")?.score).toBe("correct");
+    });
+  });
+
+  it("keeps questions added directly to a lesson separate from its source handout", async () => {
+    const snapshot = state();
+    await runWithState(snapshot, async () => {
+      const records = recordClassroomQuestionProgress({
+        ...input, questionId: "extra-question",
+      }, "school-1");
+      expect(records).toHaveLength(2);
+      expect(records.every((record) => record.lectureId === "course-1")).toBe(true);
+      expect(snapshot.lectures[0].classIds).toEqual([]);
+      expect((snapshot.answerRecords as AnswerRecord[]).filter(
+        (record) => record.lectureId === "lecture-1",
+      )).toHaveLength(1);
     });
   });
 
