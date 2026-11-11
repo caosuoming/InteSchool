@@ -16,6 +16,50 @@ const group = [
 ].join("\n");
 
 describe("geography paper subquestion numbering", () => {
+  it("recovers unnumbered subquestions from repeated option sets and numbers them in the question bank", () => {
+    const unnumbered = [
+      "阅读地理材料，据此完成16—18题。", "<img src=\"/map.png\">",
+      "长顺镇兴起主要得益于（ ）", "A. 充足水源", "B. 地势平坦", "C. 交通便利", "D. 人口众多",
+      "老城区内道路宽窄不一且不规则，原因是（ ）", "A. 地形", "B. 河流", "C. 土壤", "D. 气候",
+      "长顺镇城镇空间结构演变模式为（ ）", "A. 团块", "B. 带状", "C. 环形", "D. 放射",
+    ].join("\n");
+    const group = splitGeographyChoiceGroup(unnumbered);
+    expect(group?.originalNumbers).toEqual([16, 17, 18]);
+    expect(group?.introduction).toContain('<img src="/map.png">');
+    expect(group?.questions.map((question) => question.match(/^\d+\./)?.[0])).toEqual(["16.", "17.", "18."]);
+    expect(geographyPaperQuestionCount(unnumbered, "single", "地理")).toBe(3);
+    expect(renumberGeographyPaperStem(unnumbered, "single", "地理", 4)).toContain("4. 长顺镇兴起");
+    expect(renumberGeographyPaperStem(unnumbered, "single", "地理", 4)).toContain("6. 长顺镇城镇");
+    expect(renumberGeographyPaperAnswer(unnumbered, "（1）A\n（2）B\n（3）C", "single", "地理", 4))
+      .toBe("（4）A\n（5）B\n（6）C");
+    expect([...geographyPaperNumberMap([
+      { id: "group", stem: unnumbered, type: "single" },
+      { id: "next", stem: "20. 后续选择题", type: "single" },
+    ], "地理").values()]).toEqual([1, 4]);
+  });
+
+  it("distinguishes original and local answer labels when inferred original numbers overlap", () => {
+    const stem = "完成2—4题。\n甲地气候？\nA. 甲\nB. 乙\nC. 丙\n乙地气候？\nA. 甲\nB. 乙\nC. 丙\n丙地气候？\nA. 甲\nB. 乙\nC. 丙";
+    expect(splitGeographyChoiceGroup(stem)?.originalNumbers).toEqual([2, 3, 4]);
+    expect(renumberGeographyPaperAnswer(stem, "（2）A\n（3）B\n（4）C", "single", "地理", 8))
+      .toBe("（8）A\n（9）B\n（10）C");
+    expect(renumberGeographyPaperAnswer(stem, "（1）A\n（2）B\n（3）C", "single", "地理", 8))
+      .toBe("（8）A\n（9）B\n（10）C");
+  });
+
+  it("does not infer a group from one choice set or a numbered multi-question stem with gaps", () => {
+    expect(splitGeographyChoiceGroup("甲地气候（ ）\nA. 东\nB. 西\nC. 南\nD. 北")).toBeNull();
+    expect(splitGeographyChoiceGroup("1. 甲地\nA. 东\nB. 西\nC. 南\nD. 北\n3. 乙地\nA. 甲\nB. 乙\nC. 丙\nD. 丁")).toBeNull();
+  });
+
+  it("replaces a standalone choice question's source number with the paper number", () => {
+    const original = "16. 农耕聚落空间布局是？";
+    expect(renumberGeographyPaperStem(original, "single", "地理", 4)).toBe("农耕聚落空间布局是？");
+    expect(renumberGeographyPaperStem(original, "single", "历史", 4)).toBe(original);
+    expect(geographyPaperQuestionCount(original, "single", "地理")).toBe(1);
+    expect(renumberGeographyPaperStem("普通选择题", "single", "地理", 4)).toBe("普通选择题");
+  });
+
   it("treats a selection group as three numbered questions without changing source text", () => {
     expect(splitGeographyChoiceGroup(group)).toMatchObject({
       introduction: "读图完成下面4—6题。",

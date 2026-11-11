@@ -1090,7 +1090,7 @@ async function appendExamQuestion(
         ...(markMultiple && needsMultipleChoiceMarker(question.type === "multiple" || linkedQuestion?.type === "multiple", stem)
           ? [textRun("（多选）", { bold: true, size: 24 })]
           : []),
-        ...await documentRichChildren(stem, { size: 24 }),
+        ...await documentRichChildren(displayStem, { size: 24 }),
       ],
       alignment: AlignmentType.LEFT,
       spacing: { before: 240, after: 120, line: 360 },

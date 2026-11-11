@@ -195,6 +195,29 @@ describe("generateExamPaperDocx", () => {
     expect(answersXml).toContain("2.");
   });
 
+  it("prints continuous geography numbers without retaining a standalone source number", async () => {
+    const paper: ExamPaper = {
+      ...structuredPaper,
+      subject: "地理",
+      contentBlocks: [],
+      isExtractCopy: false,
+      layoutMode: "flat",
+      questions: [
+        { ...structuredPaper.questions[0], id: "group", type: "single", stem: "据图完成16—17题。\n16. 甲地气候\n17. 乙地地形", answer: "（16）A\n（17）B" },
+        { ...structuredPaper.questions[0], id: "single", type: "single", stem: "20. 单独选择题", answer: "C" },
+      ],
+    };
+    const blob = await buildExamPaperDocxBlob(paper, {}, { mode: "student" });
+    const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    const content = new DOMParser().parseFromString(xml, "application/xml").documentElement.textContent || "";
+    expect(content).toContain("1. 甲地气候");
+    expect(content).toContain("2. 乙地地形");
+    expect(content).toContain("3. 单独选择题");
+    expect(content).not.toContain("20. 单独选择题");
+    expect(content).not.toContain("16. 甲地气候");
+  });
+
   it("renumbers geography groups and their answers consistently in Word exports", async () => {
     const stem = "读图完成下面4—6题。\n4. 第一题\n5. 第二题\n6. 第三题";
     const paper: ExamPaper = {

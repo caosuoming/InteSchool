@@ -51,6 +51,22 @@ describe("ExtractedQuestionContent", () => {
     expect(screen.getByText(/（3）A/)).toHaveTextContent("（3）A （4）B");
   });
 
+  it("shows only the new global number for a standalone geography choice question", () => {
+    render(
+      <ExtractedQuestionContent
+        number={4}
+        geographySubject="地理"
+        questionType="single"
+        stem="16. 农耕聚落的空间布局是什么？"
+        answer="A"
+        analysis="沿河分布"
+      />,
+    );
+    const question = screen.getByRole("button", { name: "第 4 题，点击展开答案和解析" });
+    expect(question).toHaveTextContent(/4\.\s*农耕聚落的空间布局是什么？/);
+    expect(question).not.toHaveTextContent("16.");
+  });
+
   it("supports keyboard expansion", () => {
     render(
       <ExtractedQuestionContent

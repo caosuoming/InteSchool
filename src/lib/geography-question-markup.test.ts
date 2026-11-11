@@ -37,6 +37,15 @@ describe("geography question presentation", () => {
     expect(container.querySelectorAll(".geography-subquestion")[1]).toHaveTextContent("5. 乙地");
   });
 
+  it("shows missing geography subquestion numbers in the question-bank rendering", () => {
+    const stem = "据此完成下列小题。\n第一问是什么？\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n第二问是什么？\nA. 东\nB. 西\nC. 南\nD. 北";
+    const html = renderGeographyChoiceGroups(stem, (value) => value, true);
+    const container = element(html);
+    expect(container.querySelectorAll(".geography-subquestion")).toHaveLength(2);
+    expect(container.querySelectorAll(".geography-subquestion")[0]).toHaveTextContent("1. 第一问");
+    expect(container.querySelectorAll(".geography-subquestion")[1]).toHaveTextContent("2. 第二问");
+  });
+
   it("never reinterprets formula nodes or inserts unescaped HTML text", () => {
     const html = emphasizeGeographyLabels('<span class="katex">A. 数学公式</span>\n1. 题干 &lt;script&gt;bad&lt;/script&gt;');
     const container = element(html);

@@ -18,6 +18,24 @@ const questions = (text: string, subject = "地理") => parseDocumentBlocks(text
   .filter((item) => item.type === "question");
 
 describe("geography paper decomposition", () => {
+  it.each([false, true])("keeps a shared illustrated passage once (duplicate in source: %s)", (duplicateInSource) => {
+    const passage = "川渝地区的乡村聚落形态多样，据此完成下面小题。";
+    const image = '<img src="/api/files/map-1">';
+    const parsed = questions([
+      "一、单选题", passage, image,
+      ...(duplicateInSource ? [passage] : []),
+      "16. 甲地聚落空间布局是？ A. 沿河 B. 沿山 C. 沿路 D. 集中",
+      "17. 乙地聚落主要影响因素是？ A. 季风 B. 洋流 C. 地形 D. 纬度",
+    ].join("\n"));
+
+    expect(parsed).toHaveLength(1);
+    const stem = parsed[0].content;
+    expect(stem.split(passage)).toHaveLength(2);
+    expect(stem.split(image)).toHaveLength(2);
+    expect(stem).toContain("16. 甲地聚落");
+    expect(stem).toContain("17. 乙地聚落");
+  });
+
   it("groups consecutive numbered choice questions under a reading passage and respects blank-line boundaries", () => {
     const parsed = questions([
       "一、单选题", "", "读图回答下列1—2题。",
