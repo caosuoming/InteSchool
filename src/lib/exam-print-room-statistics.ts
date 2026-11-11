@@ -58,10 +58,6 @@ function selectionLabel(subjects: string[]): string {
   return displaySubjects.map(shortSubject).join("") || "—";
 }
 
-function sameCounts(left: number[], right: number[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
 function countSubjectByRoom(
   arrangement: ExamArrangement,
   subject: string,
@@ -136,23 +132,5 @@ export function buildExamPrintRoomStatistics(arrangement: ExamArrangement): Exam
     } satisfies ExamPrintRoomStatisticsRow;
   });
 
-  const coreRows = CORE_SUBJECTS
-    .map((subject) => subjectRows.find((row) => row.label === subject))
-    .filter((row): row is ExamPrintRoomStatisticsRow => Boolean(row));
-  const canGroupCore = coreRows.length === CORE_SUBJECTS.length
-    && coreRows.slice(1).every((row) => sameCounts(coreRows[0].counts, row.counts));
-
-  const rows = canGroupCore
-    ? [
-        {
-          label: "语数外",
-          subjects: [...CORE_SUBJECTS],
-          counts: [...coreRows[0].counts],
-          total: coreRows[0].total,
-        },
-        ...subjectRows.filter((row) => !CORE_SUBJECTS.includes(row.label)),
-      ]
-    : subjectRows;
-
-  return { rooms, rows };
+  return { rooms, rows: subjectRows };
 }

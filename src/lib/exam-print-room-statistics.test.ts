@@ -105,7 +105,9 @@ describe("exam print-room statistics", () => {
       },
     ]);
     expect(report.rows.map((row) => row.label)).toEqual([
-      "语数外",
+      "语文",
+      "数学",
+      "英语",
       "物理",
       "化学",
       "生物",
@@ -113,12 +115,18 @@ describe("exam print-room statistics", () => {
       "政治",
       "地理",
     ]);
-    expect(report.rows[0]).toMatchObject({ counts: [1, 1], total: 2 });
+    for (const subject of ["语文", "数学", "英语"]) {
+      expect(report.rows.find((row) => row.label === subject)).toMatchObject({
+        subjects: [subject],
+        counts: [1, 1],
+        total: 2,
+      });
+    }
     expect(report.rows.find((row) => row.label === "物理")).toMatchObject({ counts: [1, 0], total: 1 });
     expect(report.rows.find((row) => row.label === "历史")).toMatchObject({ counts: [0, 1], total: 1 });
   });
 
-  it("uses the actual subject session rooms and avoids grouping core subjects when their counts differ", () => {
+  it("uses the actual subject session rooms even when core-subject counts differ", () => {
     const source = arrangement({
       separateSubjects: ["语文"],
       assignments: [
@@ -180,7 +188,12 @@ describe("exam print-room statistics", () => {
       "考试地点",
       "组合",
     ]);
-    expect(workbook[0].data[3].map((cell: { value: unknown }) => cell.value)).toEqual(["语数外", 1, 1, 2]);
+    expect(workbook[0].data.slice(3).map((row: Array<{ value: unknown }>) => row[0].value)).toEqual([
+      "语文", "数学", "英语", "物理", "化学", "生物", "历史", "政治", "地理",
+    ]);
+    expect(workbook[0].data[3].map((cell: { value: unknown }) => cell.value)).toEqual(["语文", 1, 1, 2]);
+    expect(workbook[0].data[4].map((cell: { value: unknown }) => cell.value)).toEqual(["数学", 1, 1, 2]);
+    expect(workbook[0].data[5].map((cell: { value: unknown }) => cell.value)).toEqual(["英语", 1, 1, 2]);
   });
   it("exports wrapped room headers, multiple outside teachers, and the shared footer note", async () => {
     const source = arrangement({
