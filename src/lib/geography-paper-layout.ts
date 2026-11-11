@@ -6,6 +6,60 @@ export interface GeographyChoiceGroup {
   introduction: string;
   questions: string[];
   originalNumbers: number[];
+  inferred?: boolean;
+}
+
+/** Some imported Word lists lose their number markers but retain each A–D set. */
+function splitUnnumberedGeographyChoiceGroup(lines: string[]): GeographyChoiceGroup | null {
+  if (lines.some((line) => lineStart.test(line))) return null;
+
+  const optionLine = /^\s*(?:<(?:p|div|li|span)\b[^>]*>\s*)*([A-Da-d])\s*[.．、:：)）]\s*\S/i;
+  const optionGroups: Array<{ start: number; end: number }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (optionLine.exec(lines[index])?.[1].toUpperCase() !== "A") continue;
+    let end = index;
+    let nextLetter = 1;
+    while (nextLetter < 4) {
+      const next = lines[end + 1];
+      if (!next) break;
+      const marker = optionLine.exec(next)?.[1].toUpperCase();
+      if (marker !== String.fromCharCode(65 + nextLetter)) break;
+      end += 1;
+      nextLetter += 1;
+    }
+    if (nextLetter < 3) continue;
+    optionGroups.push({ start: index, end });
+    index = end;
+  }
+  if (optionGroups.length < 2) return null;
+
+  const firstOption = optionGroups[0].start;
+  let firstQuestion = firstOption - 1;
+  while (firstQuestion >= 0 && (!lines[firstQuestion].trim() || /^\s*(?:<img\b|!\[)/i.test(lines[firstQuestion]))) {
+    firstQuestion -= 1;
+  }
+  if (firstQuestion < 0 || firstQuestion === optionGroups[0].start) return null;
+
+  const questions: string[] = [];
+  for (let index = 0; index < optionGroups.length; index += 1) {
+    const start = index === 0 ? firstQuestion : optionGroups[index - 1].end + 1;
+    const body = lines.slice(start, optionGroups[index].end + 1).join("\n").trim();
+    if (!body || !lines.slice(start, optionGroups[index].start).some((line) => line.trim()
+      && !optionLine.test(line) && !/^\s*(?:<img\b|!\[)/i.test(line))) return null;
+    questions.push(body);
+  }
+
+  const introduction = lines.slice(0, firstQuestion).join("\n").trim();
+  const range = /(?:完成|回答|作答)\s*(?:下[列面]\s*)?(\d{1,3})\s*[—–～~至到-]\s*(\d{1,3})\s*题/.exec(introduction);
+  const firstNumber = range && Number(range[2]) - Number(range[1]) + 1 === questions.length
+    ? Number(range[1]) : 1;
+  const originalNumbers = questions.map((_, index) => firstNumber + index);
+  return {
+    introduction,
+    questions: questions.map((question, index) => `${originalNumbers[index]}. ${question}`),
+    originalNumbers,
+    inferred: true,
+  };
 }
 
 /**
@@ -19,7 +73,8 @@ export function splitGeographyChoiceGroup(stem: string): GeographyChoiceGroup | 
     const match = lineStart.exec(line);
     if (match) starts.push({ index, number: Number(match[2].normalize("NFKC")) });
   });
-  if (starts.length < 2 || starts.some((item, index) => (
+  if (starts.length < 2) return splitUnnumberedGeographyChoiceGroup(lines);
+  if (starts.some((item, index) => (
     index > 0 && item.number !== starts[index - 1].number + 1
   ))) return null;
 
@@ -46,7 +101,9 @@ export function renumberGeographyPaperStem(
 ): string {
   if (subject?.trim() !== "地理" || type !== "single") return stem;
   const group = splitGeographyChoiceGroup(stem);
-  if (!group) return stem;
+  // Standalone questions receive their number from the paper layout. Avoid
+  // displaying both the source-paper number and the new continuous number.
+  if (!group) return stem.replace(lineStart, (_match, prefix: string) => prefix);
   const first = group.originalNumbers[0];
   const last = group.originalNumbers[group.originalNumbers.length - 1];
   // Update reading prompts such as “完成下面4—6题” to match the displayed numbering.
@@ -67,6 +124,14 @@ export function renumberGeographyPaperAnswer(
   if (!group) return field;
   const aligned = alignGeographyGroupAnswerNumbers(stem, field);
   const originalToNew = new Map(group.originalNumbers.map((number, index) => [number, startNumber + index]));
+  if (group.inferred) {
+    const labels = [...aligned.matchAll(/(?:^|\n)\s*[（(]\s*([\d０-９]{1,4})\s*[）)]/g)]
+      .map((match) => Number(match[1].normalize("NFKC")));
+    if (labels.length && labels.every((number, index) => number === index + 1)) {
+      originalToNew.clear();
+      group.originalNumbers.forEach((_, index) => originalToNew.set(index + 1, startNumber + index));
+    }
+  }
   return aligned.replace(/(^|\n)([ \t]*[（(][ \t]*)([\d０-９]{1,4})([ \t]*[）)])/g,
     (match, breakText: string, prefix: string, numberText: string, suffix: string) => {
       const replacement = originalToNew.get(Number(numberText.normalize("NFKC")));

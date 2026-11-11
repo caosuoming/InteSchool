@@ -2236,6 +2236,22 @@ function groupGeographyChoiceQuestions(blocks: DocumentBlock[], source: string, 
   return result;
 }
 
+function mergeGeographyReadingPassage(passage: string, stem: string): string {
+  const lines = stem.split("\n");
+  const questionStart = lines.findIndex((line) => /^\s*[\d０-９]{1,4}\s*[.．、]\s*\S/.test(line));
+  if (questionStart < 0) return passage.trim() + "\n" + stem;
+
+  const seen = new Set<string>();
+  const introduction = [...passage.split("\n"), ...lines.slice(0, questionStart)]
+    .filter((line) => {
+      const normalized = line.trim().replace(/\s+/g, " ");
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  return [...introduction, ...lines.slice(questionStart)].join("\n");
+}
+
 function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: DocumentParseConfig): DocumentBlock[] {
   if (config.subject?.trim() !== "地理") return blocks;
   const grouped = groupGeographyChoiceQuestions(blocks, source, config);
@@ -2244,7 +2260,7 @@ function refineGeographyBlocks(blocks: DocumentBlock[], source: string, config: 
     if (block.type !== "knowledge") continue;
     const next = grouped[index + 1];
     if (next?.type === "question") {
-      next.content = block.content.trim() + "\n" + next.content;
+      next.content = mergeGeographyReadingPassage(block.content, next.content);
       grouped.splice(index, 1);
       index -= 1;
     } else {
