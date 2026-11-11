@@ -70,6 +70,9 @@ type DeskLabelRow = {
   roomId: string;
   labels: DeskLabel[];
 };
+type DeskLabelSpacing = "regular" | "condensed";
+type DeskLabelPage = { rows: DeskLabelRow[]; spacing: DeskLabelSpacing };
+type DeskRowHeights = { regular: number[]; condensed: number[] };
 
 function getDeskLabelDensity(maxAssignments: number): PrintDensity {
   return Math.max(1, maxAssignments) <= 2 ? "normal" : "compact";
@@ -120,44 +123,74 @@ function buildDeskLabelRows(labels: DeskLabel[], columns = DESK_LABEL_COLUMNS): 
 
 function paginateDeskLabels(
   rows: DeskLabelRow[],
-  measuredRowHeights?: number[],
+  measuredRowHeights?: DeskRowHeights,
   startEachRoomOnNewPage = false,
 ): {
   columns: number;
   density: PrintDensity;
-  pages: DeskLabelRow[][];
+  pages: DeskLabelPage[];
 } {
   const columns = DESK_LABEL_COLUMNS;
   const maxAssignments = Math.max(...rows.flatMap((row) => row.labels).map((label) => label.assignments.length), 1);
   const density = getDeskLabelDensity(maxAssignments);
   const gap = density === "normal" ? 1.4 : 1;
   const availableHeight = DESK_LABEL_PAGE_HEIGHT_MM - DESK_LABEL_PAGE_MARGIN_MM * 2;
-  const pages: DeskLabelRow[][] = [];
-  let page: DeskLabelRow[] = [];
-  let usedHeight = 0;
+  const pages: DeskLabelPage[] = [];
 
-  for (const [index, row] of rows.entries()) {
-    const startsNewRoom = index > 0 && rows[index - 1].roomId !== row.roomId;
-    if (page.length > 0 && startEachRoomOnNewPage && startsNewRoom) {
-      pages.push(page);
-      page = [];
-      usedHeight = 0;
-    }
-    const measuredHeight = measuredRowHeights?.[index];
-    const rowHeight = measuredHeight && measuredHeight > 0
+  const rowHeight = (row: DeskLabelRow, index: number, spacing: DeskLabelSpacing) => {
+    const measuredHeight = measuredRowHeights?.[spacing][index];
+    if (spacing === "condensed" && !(measuredHeight && measuredHeight > 0)) return Infinity;
+    return measuredHeight && measuredHeight > 0
       ? measuredHeight
       : Math.max(...row.labels.map((label) => estimateDeskLabelHeight(label, density)));
-    const nextHeight = usedHeight + (page.length > 0 ? gap : 0) + rowHeight;
-    if (page.length > 0 && nextHeight > availableHeight) {
-      pages.push(page);
-      page = [];
-      usedHeight = 0;
+  };
+
+  const splitPages = (first: number, end: number): DeskLabelPage[] => {
+    const result: DeskLabelPage[] = [];
+    let page: DeskLabelRow[] = [];
+    let usedHeight = 0;
+    for (let index = first; index < end; index++) {
+      const row = rows[index];
+      const nextHeight = usedHeight + (page.length > 0 ? gap : 0) + rowHeight(row, index, "regular");
+      if (page.length > 0 && nextHeight > availableHeight) {
+        result.push({ rows: page, spacing: "regular" });
+        page = [];
+        usedHeight = 0;
+      }
+      if (page.length > 0) usedHeight += gap;
+      page.push(row);
+      usedHeight += rowHeight(row, index, "regular");
     }
-    if (page.length > 0) usedHeight += gap;
-    page.push(row);
-    usedHeight += rowHeight;
+    if (page.length > 0) result.push({ rows: page, spacing: "regular" });
+    return result;
+  };
+
+  if (!startEachRoomOnNewPage) {
+    pages.push(...splitPages(0, rows.length));
+  } else {
+    for (let first = 0; first < rows.length;) {
+      let end = first + 1;
+      while (end < rows.length && rows[end].roomId === rows[first].roomId) end++;
+      const regularPages = splitPages(first, end);
+      const overflowRows = end - first - (regularPages[0]?.rows.length || 0);
+      // Only tighten the student-record spacing when an entire room narrowly
+      // misses one sheet. A larger overflow keeps the original pagination.
+      if (regularPages.length > 1 && overflowRows >= 1 && overflowRows <= 2) {
+        let condensedHeight = 0;
+        for (let index = first; index < end; index++) {
+          condensedHeight += rowHeight(rows[index], index, "condensed") + (index > first ? gap : 0);
+        }
+        if (condensedHeight <= availableHeight - 0.25) {
+          pages.push({ rows: rows.slice(first, end), spacing: "condensed" });
+        } else {
+          pages.push(...regularPages);
+        }
+      } else {
+        pages.push(...regularPages);
+      }
+      first = end;
+    }
   }
-  if (page.length > 0) pages.push(page);
 
   return {
     columns,
@@ -947,7 +980,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const deskMeasureRef = useRef<HTMLDivElement>(null);
   const examGroupRoomSectionRef = useRef<HTMLDivElement>(null);
   const [examGroupRoomSectionVisible, setExamGroupRoomSectionVisible] = useState(false);
-  const [deskRowMeasurement, setDeskRowMeasurement] = useState<{ signature: string; heights: number[] } | null>(null);
+  const [deskRowMeasurement, setDeskRowMeasurement] = useState<{ signature: string; heights: DeskRowHeights } | null>(null);
 
   const selectedArrangement = arrangements.find((item) => item.id === selectedArrangementId) || null;
   const canEditSelected = Boolean(
@@ -975,8 +1008,11 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const deskMeasurementSignature = useMemo(() => [
     showDeskStudentNo ? "student-no" : "no-student-no",
     showDeskAdmissionNo ? "admission-no" : "no-admission-no",
-    ...deskLabelRows.map((row) => `${row.key}:${row.labels.map((label) => label.key).join(",")}`),
-  ].join("|"), [deskLabelRows, showDeskAdmissionNo, showDeskStudentNo]);
+    selectedArrangement?.id || "",
+    selectedArrangement?.name || "",
+    selectedArrangement?.examDate || "",
+    ...deskLabelRows.map((row) => `${row.key}:${row.labels.map((label) => `${label.key}:${label.assignments.map((assignment) => `${assignment.id}:${assignment.studentName}:${assignment.className}:${assignment.subjectLabel}:${assignment.studentNo}:${assignment.admissionNo}`).join(";")}`).join(",")}`),
+  ].join("|"), [deskLabelRows, selectedArrangement, showDeskAdmissionNo, showDeskStudentNo]);
   const deskPrintLayout = useMemo(() => paginateDeskLabels(
     deskLabelRows,
     deskRowMeasurement?.signature === deskMeasurementSignature ? deskRowMeasurement.heights : undefined,
@@ -992,16 +1028,25 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     const measure = () => {
       if (cancelled) return;
       const hostWidth = host.getBoundingClientRect().width;
-      const rowElements = [...host.querySelectorAll<HTMLElement>("[data-desk-measure-row]")];
-      if (hostWidth <= 0 || rowElements.length !== deskLabelRows.length) return;
+      if (hostWidth <= 0) return;
       const contentWidthMm = 260 - DESK_LABEL_PAGE_MARGIN_MM * 2;
       const mmPerPx = contentWidthMm / hostWidth;
-      const heights = rowElements.map((row) => Math.round(row.getBoundingClientRect().height * mmPerPx * 100) / 100);
-      if (heights.some((height) => height <= 0)) return;
+      const measureSpacing = (spacing: DeskLabelSpacing) => {
+        const rowElements = [...host.querySelectorAll<HTMLElement>(`[data-desk-measure-row][data-spacing="${spacing}"]`)];
+        if (rowElements.length !== deskLabelRows.length) return null;
+        const heights = rowElements.map((row) => Math.round(row.getBoundingClientRect().height * mmPerPx * 100) / 100);
+        return heights.every((height) => height > 0) ? heights : null;
+      };
+      const regular = measureSpacing("regular");
+      const condensed = measureSpacing("condensed");
+      if (!regular || !condensed) return;
+      const heights = { regular, condensed };
       setDeskRowMeasurement((current) => {
         if (current?.signature === deskMeasurementSignature
-          && current.heights.length === heights.length
-          && current.heights.every((height, index) => Math.abs(height - heights[index]) < 0.05)) {
+          && (Object.keys(heights) as DeskLabelSpacing[]).every((spacing) => (
+            current.heights[spacing].length === heights[spacing].length
+            && current.heights[spacing].every((height, index) => Math.abs(height - heights[spacing][index]) < 0.05)
+          ))) {
           return current;
         }
         return { signature: deskMeasurementSignature, heights };
@@ -2573,11 +2618,12 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           {previewMode === "desk" && selectedDeskLabels.length > 0 && selectedArrangement && (
             <>
               <div ref={deskMeasureRef} className="exam-desk-label-measure" aria-hidden="true">
-                {deskLabelRows.map((row, rowIndex) => (
+                {(["regular", "condensed"] as DeskLabelSpacing[]).flatMap((spacing) => deskLabelRows.map((row, rowIndex) => (
                   <div
-                    key={`desk-label-measure-row-${row.key}`}
+                    key={`desk-label-measure-row-${spacing}-${row.key}`}
                     className="exam-desk-label-page exam-desk-label-measure-row"
                     data-density={deskPrintLayout.density}
+                    data-spacing={spacing}
                     data-desk-measure-row={rowIndex}
                     style={{
                       gridTemplateColumns: `repeat(${deskPrintLayout.columns}, minmax(0, 1fr))`,
@@ -2596,14 +2642,15 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                       />
                     ))}
                   </div>
-                ))}
+                )))}
               </div>
               <div ref={deskPrintRef} className="print-only exam-desk-label-sheet" aria-hidden="true">
-                {deskPrintLayout.pages.map((pageRows, pageIndex) => (
+                {deskPrintLayout.pages.map(({ rows: pageRows, spacing }, pageIndex) => (
                   <div
                     key={`desk-label-page-${pageIndex}`}
                     className="exam-desk-label-page"
                     data-density={deskPrintLayout.density}
+                    data-spacing={spacing}
                     data-columns={deskPrintLayout.columns}
                     data-rows={pageRows.length}
                     data-page-index={pageIndex + 1}

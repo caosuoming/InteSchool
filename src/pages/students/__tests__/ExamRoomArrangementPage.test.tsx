@@ -940,6 +940,60 @@ describe("ExamRoomArrangementPage", () => {
     }
   });
 
+  it.each([
+    { count: 40, condensedHeight: 33, expectedPages: 1, spacing: "regular" },
+    { count: 45, condensedHeight: 33, expectedPages: 1, spacing: "condensed" },
+    { count: 50, condensedHeight: 33, expectedPages: 1, spacing: "condensed" },
+    { count: 55, condensedHeight: 33, expectedPages: 2, spacing: "regular" },
+    { count: 45, condensedHeight: 38, expectedPages: 2, spacing: "regular" },
+  ])("compresses only a near-fitting desk-label room ($count labels)", async ({
+    count, condensedHeight, expectedPages, spacing,
+  }) => {
+    const pxPerMm = 96 / 25.4;
+    const rect = (height: number): DOMRect => ({
+      x: 0, y: 0, width: 234.6 * pxPerMm, height, top: 0, right: 234.6 * pxPerMm,
+      bottom: height, left: 0, toJSON: () => ({}),
+    });
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect() {
+      if (this.classList.contains("exam-desk-label-measure")) return rect(0);
+      if (this.hasAttribute("data-desk-measure-row")) {
+        return rect((this.getAttribute("data-spacing") === "condensed" ? condensedHeight : 40) * pxPerMm);
+      }
+      return originalRect.call(this);
+    });
+    try {
+      const user = userEvent.setup();
+      const assignments = Array.from({ length: count }, (_, index) => ({
+        ...savedArrangement.assignments[0],
+        id: `combined:student-${index + 1}`,
+        studentId: `student-${index + 1}`,
+        studentName: `学生${index + 1}`,
+        studentNo: String(index + 1).padStart(3, "0"),
+        seatNo: index + 1,
+        admissionNo: `20260510${String(index + 1).padStart(6, "0")}`,
+      }));
+      vi.mocked(examArrangementService.listArrangements).mockResolvedValue([{
+        ...savedArrangement,
+        rooms: [{ ...savedArrangement.rooms[0], capacity: count }],
+        assignments,
+      }]);
+      renderPage();
+      await user.selectOptions(await screen.findByLabelText("选择考场安排"), savedArrangement.id);
+      await user.click(await screen.findByRole("tab", { name: "桌贴预览" }));
+      await waitFor(() => {
+        const printPages = screen.getAllByTestId("desk-label-print-page");
+        expect(printPages).toHaveLength(expectedPages);
+        expect(printPages[0]).toHaveAttribute("data-spacing", spacing);
+      });
+      const printPages = screen.getAllByTestId("desk-label-print-page");
+      expect(printPages.reduce((sum, page) => sum + page.querySelectorAll(".exam-desk-label").length, 0)).toBe(count);
+      if (expectedPages === 2) expect(printPages[1]).toHaveAttribute("data-spacing", "regular");
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
   it("keeps a class on one A4 page whenever the estimated layout fits", async () => {
     const user = userEvent.setup();
     const students = Array.from({ length: 67 }, (_, index) => ({
