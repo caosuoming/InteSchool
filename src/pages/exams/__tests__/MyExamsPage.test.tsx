@@ -328,7 +328,7 @@ describe("MyExamsPage", () => {
         studentNo: "002",
         classId: "class-1",
         className: "高三（1）班",
-        subjectLabel: "语文 / 数学 / 英语 / 物理 / 化学 / 生物",
+        subjectLabel: "语文 / 数学 / 英语",
         sessionKey: "combined",
         roomId: "room-2",
         roomName: "2考场",
@@ -373,12 +373,17 @@ describe("MyExamsPage", () => {
     const tableOneHeading = await screen.findByRole("heading", { name: "表一、文印室统计表" });
     expect(screen.getByLabelText("选择文印室统计表考试")).toHaveDisplayValue("高三期中考试 · 2026-10-20");
     expect(screen.getAllByText("高三1班教室").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("物化生").length).toBeGreaterThan(0);
     const printRoomTable = within(tableOneHeading.closest(".card-base") as HTMLElement);
+    expect(printRoomTable.queryByRole("rowheader", { name: "组合" })).not.toBeInTheDocument();
     for (const subject of ["语文", "数学", "英语", "物理", "化学", "生物"]) {
       expect(printRoomTable.getByRole("rowheader", { name: subject })).toBeInTheDocument();
     }
     expect(printRoomTable.queryByRole("rowheader", { name: "语数外" })).not.toBeInTheDocument();
+    const physicsRow = printRoomTable.getByRole("rowheader", { name: "物理" }).closest("tr") as HTMLElement;
+    const roomCells = within(physicsRow).getAllByRole("cell");
+    expect(roomCells[0]).toHaveTextContent("1");
+    expect(roomCells[1]).toHaveClass("bg-ink-100");
+    expect(roomCells[1]).toHaveTextContent("");
     const tableTwoHeading = screen.getByRole("heading", { name: "表二、监考表" });
     const invigilationCard = tableTwoHeading.closest(".card-base");
     expect(invigilationCard).not.toBeNull();

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExamArrangement, ExamSeatAssignment } from "@/types";
+import type { ExamArrangement, ExamArrangementContext, ExamSeatAssignment } from "@/types";
+import { generateExamAssignments } from "./exam-arrangement";
 import {
   buildExamPrintRoomStatistics,
 } from "./exam-print-room-statistics";
@@ -87,7 +88,7 @@ describe("exam print-room statistics", () => {
     writeXlsxFile.mockReturnValue({ toFile });
   });
 
-  it("builds room headers, elective combinations, subject counts, and totals", () => {
+  it("builds room headers, subject counts, and totals", () => {
     const report = buildExamPrintRoomStatistics(arrangement());
 
     expect(report.rooms).toEqual([
@@ -95,13 +96,11 @@ describe("exam print-room statistics", () => {
         roomId: "room-1",
         roomNumber: "1考场",
         roomLocation: "高三1班教室",
-        selectionLabel: "物化生",
       },
       {
         roomId: "room-2",
         roomNumber: "2考场",
         roomLocation: "高三2班教室",
-        selectionLabel: "史政地",
       },
     ]);
     expect(report.rows.map((row) => row.label)).toEqual([
@@ -177,23 +176,75 @@ describe("exam print-room statistics", () => {
     expect(report.rows.find((row) => row.label === "数学")).toMatchObject({ counts: [1, 1], total: 2 });
   });
 
-  it("exports the same three header rows and subject totals to xlsx", async () => {
+  it("counts actual seat assignments across new and legacy session keys without duplicate students", () => {
+    const source = arrangement({
+      subjects: ["语文", "数学", "英语", "物理", "历史", "化学"],
+      sameSeatSubjectGroups: [["语文", "数学", "英语"], ["物理", "历史"], ["化学"]],
+      assignments: [
+        assignment({ id: "core-1", sessionKey: "seat:语文|数学|英语", subjectLabel: "语文 / 数学 / 英语" }),
+        assignment({ id: "physics-1", sessionKey: "seat-session:物理|历史|化学", subjectLabel: "物理" }),
+        assignment({ id: "physics-repeat", sessionKey: "seat-session:物理|历史|化学", subjectLabel: "物理" }),
+        assignment({ id: "history-2", studentId: "student-2", roomId: "room-2", roomName: "2考场",
+          sessionKey: "simultaneous:物理|历史", subjectLabel: "历史" }),
+        assignment({ id: "chemistry-2", studentId: "student-2", roomId: "room-2", roomName: "2考场",
+          sessionKey: "subject:化学", subjectLabel: "化学" }),
+      ],
+    });
+    const report = buildExamPrintRoomStatistics(source);
+    expect(report.rows.find((row) => row.label === "语文")).toMatchObject({ counts: [1, 0], total: 1 });
+    expect(report.rows.find((row) => row.label === "物理")).toMatchObject({ counts: [1, 0], total: 1 });
+    expect(report.rows.find((row) => row.label === "历史")).toMatchObject({ counts: [0, 1], total: 1 });
+    expect(report.rows.find((row) => row.label === "化学")).toMatchObject({ counts: [0, 1], total: 1 });
+  });
+
+  it("counts assignments created by the current same-seat seating generator", () => {
+    const source = arrangement({
+      subjects: ["物理", "化学"],
+      sameSeatSubjectGroups: [["物理", "化学"]],
+      studentSubjects: [
+        { studentId: "student-1", subjects: ["物理", "化学"] },
+        { studentId: "student-2", subjects: ["化学"] },
+      ],
+      assignments: [],
+    });
+    const context = {
+      cohort: { key: "grad-2027", label: "2027届高三", grade: "高三", gradYear: 2027,
+        classIds: ["class-1", "class-2"], studentCount: 2 },
+      classes: [
+        { id: "class-1", schoolId: "school-1", name: "高三（1）班", type: "school", grade: "高三", studentCount: 1 },
+        { id: "class-2", schoolId: "school-1", name: "高三（2）班", type: "school", grade: "高三", studentCount: 1 },
+      ],
+      students: [
+        { id: "student-1", schoolId: "school-1", classId: "class-1", name: "甲", studentNo: "001", status: "active" },
+        { id: "student-2", schoolId: "school-1", classId: "class-2", name: "乙", studentNo: "002", status: "active" },
+      ],
+    } as ExamArrangementContext;
+    const assignments = generateExamAssignments(source, context);
+    expect(assignments).toHaveLength(2);
+    expect(assignments.every((item) => item.sessionKey === "seat:物理|化学")).toBe(true);
+
+    const report = buildExamPrintRoomStatistics({ ...source, assignments });
+    expect(report.rows.find((row) => row.label === "物理")?.total).toBe(1);
+    expect(report.rows.find((row) => row.label === "化学")?.total).toBe(2);
+  });
+
+  it("exports two header rows, gray empty cells, and correct subject totals to xlsx", async () => {
     await downloadExamPrintRoomStatistics(arrangement());
 
     expect(toFile).toHaveBeenCalledWith("高三期中考试_文印室统计表.xlsx");
     const workbook = writeXlsxFile.mock.calls[0]?.[0];
     expect(workbook[0].sheet).toBe("表一、文印室统计表");
-    expect(workbook[0].data.slice(0, 3).map((row: Array<{ value: unknown }>) => row[0].value)).toEqual([
-      "考场号",
-      "考试地点",
-      "组合",
+    expect(workbook[0].stickyRowsCount).toBe(2);
+    expect(workbook[0].data.slice(0, 2).map((row: Array<{ value: unknown }>) => row[0].value)).toEqual([
+      "考场号", "考试地点",
     ]);
-    expect(workbook[0].data.slice(3).map((row: Array<{ value: unknown }>) => row[0].value)).toEqual([
+    expect(workbook[0].data.slice(2).map((row: Array<{ value: unknown }>) => row[0].value)).toEqual([
       "语文", "数学", "英语", "物理", "化学", "生物", "历史", "政治", "地理",
     ]);
-    expect(workbook[0].data[3].map((cell: { value: unknown }) => cell.value)).toEqual(["语文", 1, 1, 2]);
-    expect(workbook[0].data[4].map((cell: { value: unknown }) => cell.value)).toEqual(["数学", 1, 1, 2]);
-    expect(workbook[0].data[5].map((cell: { value: unknown }) => cell.value)).toEqual(["英语", 1, 1, 2]);
+    expect(workbook[0].data[2].map((cell: { value: unknown }) => cell.value)).toEqual(["语文", 1, 1, 2]);
+    expect(workbook[0].data[3].map((cell: { value: unknown }) => cell.value)).toEqual(["数学", 1, 1, 2]);
+    expect(workbook[0].data[4].map((cell: { value: unknown }) => cell.value)).toEqual(["英语", 1, 1, 2]);
+    expect(workbook[0].data[5][2]).toMatchObject({ value: "", backgroundColor: "#E5E7EB" });
   });
   it("exports wrapped room headers, multiple outside teachers, and the shared footer note", async () => {
     const source = arrangement({
