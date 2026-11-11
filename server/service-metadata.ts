@@ -94,6 +94,10 @@ export const serviceParameters = {
       "targetSchoolId",
       "teacher"
     ],
+    "listBindingHistory": [
+      "targetSchoolId",
+      "teacher"
+    ],
     "unlockDevice": [
       "deviceId",
       "teacher"

@@ -3,6 +3,7 @@ import type {
   BoardDocument,
   ClassroomDevice,
   ClassroomDeviceAccessPolicy,
+  ClassroomDeviceBindingEvent,
   ClassroomDeviceAccessRule,
   ClassroomDeviceControlState,
   ClassroomDeviceCurrentPage,
@@ -296,10 +297,41 @@ function managerPermissions(teacher: Teacher, device: StoredClassroomDevice): Cl
     canUnlock: canView,
     canLock: schoolAdmin || homeroomTeacher,
     canClose: schoolAdmin || homeroomTeacher,
-    canUnbind: platform || schoolAdmin,
+    canUnbind: platform || schoolAdmin || homeroomTeacher || subjectTeacher,
     canEditSchedule: schoolAdmin,
     canEditAccessPolicy: schoolAdmin,
   };
+}
+
+function appendBindingEvent(
+  device: StoredClassroomDevice,
+  action: ClassroomDeviceBindingEvent["action"],
+  actorId: string,
+  actorName: string,
+): void {
+  const events = (db.read("classroomDeviceEvents") || []) as ClassroomDeviceBindingEvent[];
+  const latestTime = events.reduce((latest, event) => Math.max(latest, Date.parse(event.occurredAt) || 0), 0);
+  // Preserve operation order even if two actions happen within the same millisecond.
+  const occurredAt = new Date(Math.max(Date.now(), latestTime + 1)).toISOString();
+  const record: ClassroomDeviceBindingEvent = {
+    id: genId("classroom-device-event"),
+    schoolId: device.schoolId,
+    deviceId: device.id,
+    installationId: device.installationId,
+    deviceName: device.deviceName,
+    classId: device.classId,
+    className: device.className,
+    grade: device.grade,
+    ...(device.publicClassroom ? { publicClassroom: true } : {}),
+    ...(device.publicClassroomNumber !== undefined ? { publicClassroomNumber: device.publicClassroomNumber } : {}),
+    action,
+    boundByTeacherName: device.boundByTeacherName,
+    actorId,
+    actorName,
+    occurredAt,
+    createdAt: occurredAt,
+  };
+  db.update("classroomDeviceEvents", (items: ClassroomDeviceBindingEvent[] = []) => [...items, record]);
 }
 
 function requireDevicePermission(
@@ -572,6 +604,10 @@ export const classroomDeviceService = {
     const devices = db.read("classroomDevices") as StoredClassroomDevice[];
     const exists = devices.some((item) => item.installationId === installationId);
     if (!exists) return false;
+    // The installation self-service flow also counts as an unbinding operation.
+    for (const device of devices.filter((item) => item.installationId === installationId)) {
+      appendBindingEvent(device, "unbind", "self-service", "设备自助解绑");
+    }
     db.update("classroomDevices", (items: StoredClassroomDevice[]) => (
       items.filter((item) => item.installationId !== installationId)
     ));
@@ -662,6 +698,7 @@ export const classroomDeviceService = {
       ...items.filter((item) => item.id !== record.id),
       record,
     ]);
+    appendBindingEvent(record, "bind", record.boundByTeacherId, record.boundByTeacherName);
     return publicDevice(record);
   },
 
@@ -680,6 +717,23 @@ export const classroomDeviceService = {
       .filter(({ permissions }) => permissions.canView)
       .map(({ device, permissions }) => publicDevice(device, permissions))
       .sort((a, b) => `${a.grade}${a.className}`.localeCompare(`${b.grade}${b.className}`, "zh-CN"));
+  },
+
+  async listBindingHistory(targetSchoolId: string | undefined, teacher: Teacher): Promise<ClassroomDeviceBindingEvent[]> {
+    const role = accountRole(teacher);
+    const schoolId = currentSchoolId(teacher);
+    if (role !== "platform_admin" && role !== "school_admin") {
+      throw new Error("仅学校管理员可以查看一体机绑定记录");
+    }
+    if (role !== "platform_admin" && targetSchoolId && targetSchoolId !== schoolId) {
+      throw new Error("无权查看其他学校的绑定记录");
+    }
+    const requestedSchoolId = role === "platform_admin" ? targetSchoolId : schoolId;
+    if (!requestedSchoolId) return [];
+    return ((db.read("classroomDeviceEvents") || []) as ClassroomDeviceBindingEvent[])
+      .filter((event) => event.schoolId === requestedSchoolId)
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id))
+      .slice(0, 100);
   },
 
   async unlockDevice(deviceId: string, teacher: Teacher): Promise<ClassroomDevice> {
@@ -737,7 +791,8 @@ export const classroomDeviceService = {
   },
 
   async unbindDevice(deviceId: string, teacher: Teacher): Promise<void> {
-    requireDevicePermission(teacher, deviceId, "canUnbind");
+    const device = requireDevicePermission(teacher, deviceId, "canUnbind");
+    appendBindingEvent(device, "unbind", teacher.id, teacher.name);
     db.update("classroomDevices", (items: StoredClassroomDevice[]) => items.filter((item) => item.id !== deviceId));
   },
 };

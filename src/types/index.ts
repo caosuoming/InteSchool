@@ -541,6 +541,26 @@ export interface ClassroomDevice {
   permissions?: ClassroomDevicePermissions;
 }
 
+/** 设备绑定与解绑操作审计记录。历史记录不包含设备令牌。 */
+export interface ClassroomDeviceBindingEvent {
+  id: string;
+  schoolId: string;
+  deviceId: string;
+  installationId: string;
+  deviceName: string;
+  classId: string;
+  className: string;
+  grade: string;
+  publicClassroom?: boolean;
+  publicClassroomNumber?: number;
+  action: "bind" | "unbind";
+  boundByTeacherName: string;
+  actorId: string;
+  actorName: string;
+  occurredAt: string;
+  createdAt: string;
+}
+
 export interface ClassroomDeviceSession {
   device: ClassroomDevice;
   classroom: SchoolClass;
