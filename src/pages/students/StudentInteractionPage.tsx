@@ -498,9 +498,15 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
         }
       >
           {selectedStudent ? (
-            <div className="h-full flex flex-col gap-4">
+            <div
+              className="grid h-full min-h-0 grid-cols-1 content-start gap-4 overflow-y-auto overscroll-contain pr-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+              role="region"
+              aria-label="学生互动详情"
+              tabIndex={0}
+              data-testid="interaction-detail-scroll"
+            >
               {/* 学生信息卡片：右侧仅显示当前单科成绩趋势 */}
-              <Card className="p-4">
+              <Card className="p-4 xl:col-span-2">
                 <div className="flex flex-wrap items-start gap-4">
                   <div className="w-14 h-14 shrink-0 rounded-full bg-gradient-to-br from-gold-300 to-gold-500 flex items-center justify-center text-xl font-medium text-ink-900">
                     {selectedStudent.name.slice(0, 1)}
@@ -540,7 +546,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               </Card>
 
               {/* 新增记录 */}
-              <Card className="p-4">
+              <Card className="min-w-0 p-4">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <div className="flex rounded-lg border border-ink-200 p-0.5">
@@ -578,7 +584,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                   </div>
 
                   {newType === "attitude" && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs text-ink-600">态度评分：</span>
                       {attitudeOptions.map((opt) => {
                         const Icon = opt.icon;
@@ -659,7 +665,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
                     <label className="inline-flex items-start gap-2 text-xs text-ink-600 cursor-pointer">
                       <input
                         type="checkbox"
@@ -689,7 +695,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               </Card>
 
               {/* 互动时间线 */}
-              <Card className="flex-1 min-h-0 p-4 overflow-auto">
+              <Card className="min-w-0 p-4">
                 <div className="text-sm font-medium text-ink-700 mb-3 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-ink-400" />
                   互动记录时间线（{timelineEntries.length} 条）
@@ -778,7 +784,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
                               : it.type === "attitude" ? "bg-teal-400"
                                 : "bg-emerald-400",
                           )} />
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
                             <Badge variant={
                               it.type === "chat" ? "gold"
                                 : it.type === "attitude" ? "teal"
@@ -844,7 +850,7 @@ export function StudentInteractionPage({ embedded = false }: { embedded?: boolea
               </Card>
             </div>
           ) : selectedGroup ? (
-            <div className="h-full space-y-4">
+            <div className="h-full min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
               <Card className="p-5">
                 <div className="text-lg font-serif font-semibold text-ink-900">{selectedGroup.name} · 历次考试班级名次</div>
                 <div className="mt-1 text-xs text-ink-500">
