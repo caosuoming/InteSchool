@@ -57,6 +57,33 @@ describe("board library", () => {
     });
   });
 
+  it("persists visual options and sanitizes rich text and image URLs", async () => {
+    await runWithState(fixture(), async () => {
+      const master = (await boardService.listBoards("alice"))[0];
+      const nodes = master.nodes.map((node) => node.id === "b" ? { ...node,
+        hidden: true, pinned: true, fontSize: 30,
+        richText: '<b>重点</b><img src=x onerror=alert(1)><script>alert(1)</script>',
+        imageUrl: "https://example.com/pic.png",
+      } : node);
+      const edges = master.edges.map((edge) => edge.to === "b" ? { ...edge,
+        route: "curve" as const, fromPort: "bottom-left" as const, toPort: "top-right" as const,
+        fontSize: 20, richText: "<i>重要关系</i><script>alert(2)</script>",
+      } : edge);
+      await boardService.saveBoard(master.id, "alice", { ...patch(master), nodes, edges });
+      const updated = await boardService.getBoard(master.id, "alice");
+      expect(updated.nodes.find((n) => n.id === "b")).toMatchObject({
+        hidden: true, pinned: true, fontSize: 30, richText: "<b>重点</b>", imageUrl: "https://example.com/pic.png",
+      });
+      expect(updated.edges.find((e) => e.to === "b")).toMatchObject({
+        route: "curve", fromPort: "bottom-left", toPort: "top-right", fontSize: 20,
+        richText: "<i>重要关系</i>",
+      });
+      await expect(boardService.saveBoard(master.id, "alice", {
+        ...patch(updated), nodes: updated.nodes.map((n) => n.id === "b" ? { ...n, imageUrl: "javascript:alert(1)" } : n),
+      })).rejects.toThrow(/图片地址/);
+    });
+  });
+
   it("creates independent structures and rejects cross-owner access and invalid graphs", async () => {
     await runWithState(fixture(), async () => {
       const board = await boardService.createBoard("alice", "b");

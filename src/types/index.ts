@@ -2891,7 +2891,8 @@ export interface QuestionReference {
 // ============ 导图库 / 结构板书 ============
 export type BoardLineStyle = "solid" | "double" | "dashed";
 export type BoardArrow = "none" | "forward" | "reverse" | "both";
-export type BoardLineRoute = "straight" | "elbow";
+export type BoardLineRoute = "straight" | "elbow" | "curve";
+export type BoardPort = "top-left" | "top-right" | "bottom-left" | "bottom-right" | "left" | "right";
 
 export interface BoardNode {
   id: string;
@@ -2902,6 +2903,12 @@ export interface BoardNode {
   /** 结构板书画布坐标，0—100。 */
   x: number;
   y: number;
+  pinned?: boolean;
+  hidden?: boolean;
+  /** 作为节点标题下方附加说明的安全富文本。 */
+  richText?: string;
+  imageUrl?: string;
+  fontSize?: number;
 }
 
 export interface BoardEdge {
@@ -2911,6 +2918,10 @@ export interface BoardEdge {
   style: BoardLineStyle;
   arrow: BoardArrow;
   route: BoardLineRoute;
+  fromPort?: BoardPort;
+  toPort?: BoardPort;
+  richText?: string;
+  fontSize?: number;
 }
 
 export interface BoardDocument {

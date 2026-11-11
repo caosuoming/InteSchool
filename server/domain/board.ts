@@ -1,5 +1,6 @@
-import type { BoardDocument, BoardEdge, BoardNode, TreeNode } from "../../src/types/index.js";
+import type { BoardDocument, BoardEdge, BoardNode, BoardPort, BoardLineRoute, TreeNode } from "../../src/types/index.js";
 import type { TeacherRecord } from "../types.js";
+import sanitizeHtml from "sanitize-html";
 import { selectedSubject } from "../lib/resource-subject.js";
 import { personalResourceScopeId } from "../../src/lib/personal-resource-scope.js";
 import { db } from "../runtime-db.js";
@@ -8,6 +9,27 @@ import { knowledgeService } from "./knowledge.js";
 
 const MAX_NODES = 600;
 const MAX_EDGES = 1200;
+const PORTS: readonly BoardPort[] = ["top-left", "top-right", "bottom-left", "bottom-right", "left", "right"];
+const RICH_TEXT_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: ["b", "strong", "i", "em", "u", "s", "p", "div", "br", "span", "ul", "ol", "li", "code"],
+  allowedAttributes: { span: ["style"] },
+  allowedStyles: { span: { "color": [/^#[0-9a-fA-F]{3,8}$/], "font-size": [/^(?:[1-9]|[1-4][0-9])px$/] } },
+};
+function safeRichText(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return sanitizeHtml(value.slice(0, 12000), RICH_TEXT_OPTIONS).slice(0, 12000);
+}
+function safeImage(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  if (value.length > 400000) throw new Error("节点图片过大");
+  if (/^https?:\/\/[^\s<>]+$/i.test(value) || /^data:image\/(?:png|jpeg|webp|gif);base64,[a-zA-Z0-9+/=]+$/.test(value)) return value;
+  throw new Error("节点图片地址不合法");
+}
+function safeFontSize(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isInteger(value) || (value as number) < 10 || (value as number) > 48) throw new Error("文字字号应介于 10 至 48");
+  return value as number;
+}
 const EPOCH = "1970-01-01T00:00:00.000Z";
 
 type BoardPatch = Pick<BoardDocument, "nodes" | "edges"> & { title?: string; expectedUpdatedAt?: string };
@@ -29,10 +51,10 @@ function masterId(teacherId: string, subject: string): string {
   return `master:${teacherId}:${encodeURIComponent(subject)}`;
 }
 
-function hierarchyEdges(nodes: BoardNode[]): BoardEdge[] {
+function hierarchyEdges(nodes: BoardNode[], route: BoardLineRoute = "elbow"): BoardEdge[] {
   return nodes.flatMap((node): BoardEdge[] => node.parentId
     ? [{ id: `parent:${node.id}`, from: node.parentId, to: node.id,
-      style: "solid", arrow: "forward", route: "straight" }]
+      style: "solid", arrow: "forward", route }]
     : []);
 }
 
@@ -80,6 +102,11 @@ function normalizeNodes(raw: BoardNode[], rootNodeId: string): BoardNode[] {
       ...(typeof node.sourceKnowledgeId === "string" ? { sourceKnowledgeId: node.sourceKnowledgeId } : {}),
       x: Math.max(0, Math.min(100, x)),
       y: Math.max(0, Math.min(100, y)),
+      ...(node.pinned === true ? { pinned: true } : {}),
+      ...(node.hidden === true && node.id !== rootNodeId ? { hidden: true } : {}),
+      ...(safeRichText(node.richText) ? { richText: safeRichText(node.richText) } : {}),
+      ...(safeImage(node.imageUrl) ? { imageUrl: safeImage(node.imageUrl) } : {}),
+      ...(safeFontSize(node.fontSize) ? { fontSize: safeFontSize(node.fontSize) } : {}),
     };
   });
   if (result.find((node) => node.id === rootNodeId)?.parentId !== null) throw new Error("根节点不可移动到其他节点下");
@@ -108,8 +135,16 @@ function normalizeEdges(raw: BoardEdge[], nodes: BoardNode[]): BoardEdge[] {
     if (!ids.has(edge.from) || !ids.has(edge.to) || edge.from === edge.to) throw new Error("连线端点不存在");
     if (!["solid", "double", "dashed"].includes(edge.style)
       || !["none", "forward", "reverse", "both"].includes(edge.arrow)
-      || !["straight", "elbow"].includes(edge.route)) throw new Error("连线类型不合法");
-    return { id: edge.id, from: edge.from, to: edge.to, style: edge.style, arrow: edge.arrow, route: edge.route };
+      || !["straight", "elbow", "curve"].includes(edge.route)) throw new Error("连线类型不合法");
+    if ((edge.fromPort && !PORTS.includes(edge.fromPort)) || (edge.toPort && !PORTS.includes(edge.toPort))) {
+      throw new Error("连线连接点不合法");
+    }
+    return { id: edge.id, from: edge.from, to: edge.to, style: edge.style, arrow: edge.arrow, route: edge.route,
+      ...(edge.fromPort ? { fromPort: edge.fromPort } : {}),
+      ...(edge.toPort ? { toPort: edge.toPort } : {}),
+      ...(safeRichText(edge.richText) ? { richText: safeRichText(edge.richText) } : {}),
+      ...(safeFontSize(edge.fontSize) ? { fontSize: safeFontSize(edge.fontSize) } : {}),
+    };
   });
 }
 
@@ -131,7 +166,13 @@ async function getMaster(teacherId: string): Promise<BoardDocument> {
   const merged = nodes.map((node) => {
     const custom = storedNodes.get(node.id);
     return custom ? { ...node, parentId: node.id === "root" ? null : custom.parentId,
-      x: custom.x, y: custom.y } : node;
+      x: custom.x, y: custom.y,
+      ...(custom.pinned ? { pinned: true } : {}),
+      ...(custom.hidden ? { hidden: true } : {}),
+      ...(custom.richText ? { richText: custom.richText } : {}),
+      ...(custom.imageUrl ? { imageUrl: custom.imageUrl } : {}),
+      ...(custom.fontSize ? { fontSize: custom.fontSize } : {}),
+    } : node;
   });
   for (const custom of stored?.nodes || []) {
     if (!sourceIds.has(custom.id) && !custom.sourceKnowledgeId) merged.push(custom);
@@ -161,7 +202,7 @@ async function getMaster(teacherId: string): Promise<BoardDocument> {
     return from ? { ...node, x: from.x, y: from.y } : node;
   });
   const savedEdges = stored?.edges.filter((edge) => allIds.has(edge.from) && allIds.has(edge.to)) || [];
-  const parentEdges = hierarchyEdges(savedPositions).map((edge) =>
+  const parentEdges = hierarchyEdges(savedPositions, "curve").map((edge) =>
     savedEdges.find((saved) => saved.id === edge.id) || edge);
   return {
     id, kind: "master", teacherId, ...context,

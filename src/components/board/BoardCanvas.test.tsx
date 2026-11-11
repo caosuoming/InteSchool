@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { BoardDocument } from "@/types";
 import { BoardCanvas } from "./BoardCanvas";
@@ -25,6 +25,17 @@ describe("board canvas focus view", () => {
     expect(location("parent").y).toBeLessThan(location("focus").y);
     expect(location("child").y).toBeGreaterThan(location("focus").y);
     expect(location("leaf").distance).toBe(2);
+  });
+
+  it("exposes six ports and searches hidden nodes without displaying them", () => {
+    const modified = { ...board, nodes: board.nodes.map((node) => node.id === "child" ? { ...node, hidden: true, pinned: true } : node) };
+    const result = render(<BoardCanvas board={modified} selectedNodeId="focus" onSelectNode={() => {}} onChange={() => {}} />);
+    expect(screen.queryByRole("button", { name: "导图节点 子节点" })).toBeNull();
+    expect(screen.getByText("隐藏节点")).toBeInTheDocument();
+    expect(screen.getByText("图钉节点")).toBeInTheDocument();
+    expect(result.container.querySelectorAll('[data-board-port="top-left"]')).toHaveLength(3);
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索导图节点" }), { target: { value: "子节点" } });
+    expect(screen.getByRole("button", { name: "子节点（已隐藏）" })).toBeInTheDocument();
   });
 
   it("renders focus labels and SVG links", () => {
