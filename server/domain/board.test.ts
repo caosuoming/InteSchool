@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppState, TeacherRecord } from "../types.js";
 import type { BoardDocument, KnowledgePoint, LessonCourseware } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
@@ -100,10 +100,29 @@ describe("board library", () => {
         edges: board.edges.map((edge) => ({ ...edge, style: "dashed", route: "elbow", arrow: "both" })),
       });
       expect(updated.title).toBe("导数基础");
+      expect(Date.parse(updated.updatedAt)).toBeGreaterThan(Date.parse(board.updatedAt));
       expect(updated.edges[0]).toEqual(expect.objectContaining({ style: "dashed", route: "elbow", arrow: "both" }));
       await expect(boardService.saveBoard(board.id, "alice", { ...patch(board), title: "冲突覆盖" }))
         .rejects.toThrow(/已在其他位置修改/);
     });
+  });
+
+  it("advances the optimistic-lock revision even when the clock does not tick", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
+    try {
+      await runWithState(fixture(), async () => {
+        const board = await boardService.createBoard("alice", "b");
+        const first = await boardService.saveBoard(board.id, "alice", { ...patch(board), title: "第一次" });
+        expect(Date.parse(first.updatedAt)).toBeGreaterThan(Date.parse(board.updatedAt));
+        await expect(boardService.saveBoard(board.id, "alice", { ...patch(board), title: "过期写入" }))
+          .rejects.toThrow(/已在其他位置修改/);
+        const second = await boardService.saveBoard(board.id, "alice", { ...patch(first), title: "第二次" });
+        expect(Date.parse(second.updatedAt)).toBeGreaterThan(Date.parse(first.updatedAt));
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deletes associations without touching other board IDs", async () => {
