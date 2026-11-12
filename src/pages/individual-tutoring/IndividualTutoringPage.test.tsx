@@ -20,7 +20,7 @@ vi.mock("@/services/question", () => ({ questionService: { listQuestions: vi.fn(
 vi.mock("@/services/analytics", () => ({ analyticsService: { getKnowledgeMastery: vi.fn(), getStudentAnswerDetails: vi.fn() } }));
 vi.mock("@/services/lecture", () => ({ lectureService: { listLectures: vi.fn(), createLecture: vi.fn() } }));
 vi.mock("@/services/examPaper", () => ({ examPaperService: { listPapers: vi.fn() } }));
-vi.mock("@/services/lessonCourseware", () => ({ lessonCoursewareService: { listCoursewares: vi.fn(), createFromLecture: vi.fn(), createFromExamPaper: vi.fn(), updateCourseware: vi.fn(), restoreCourseware: vi.fn() } }));
+vi.mock("@/services/lessonCourseware", () => ({ lessonCoursewareService: { listCoursewares: vi.fn(), createFromLecture: vi.fn(), createFromExamPaper: vi.fn(), updateCourseware: vi.fn(), completeCourseware: vi.fn(), deleteCourseware: vi.fn(), restoreCourseware: vi.fn() } }));
 vi.mock("@/services/basket", () => ({ basketService: { listBaskets: vi.fn(), addQuestion: vi.fn() } }));
 vi.mock("@/services/grade", () => ({ gradeService: { getQueryData: vi.fn() } }));
 vi.mock("@/stores/ui", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -234,10 +234,72 @@ describe("IndividualTutoringPage", () => {
     expect(await screen.findByText("二班独立课件")).toBeInTheDocument();
     expect(screen.queryByText("学校课件")).not.toBeInTheDocument();
     expect(screen.getByLabelText("个人教学班")).toHaveValue("pc-2");
-    fireEvent.click(screen.getByRole("button", { name: "二次编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(await screen.findByTestId("editor-destination")).toHaveTextContent(
       "/my-lessons/personal-manual/edit?classId=pc-2",
     );
+  });
+
+  it("shows all personal classes by default and filters the courseware cards", async () => {
+    vi.mocked(classService.listPersonalClasses).mockResolvedValue([personalClass, secondClass]);
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) =>
+      filter.lifecycleStatus ? [] : [
+        { id: "pc-cw-1", sourceType: "lecture", sourceId: "lec-1", classIds: ["pc-1"],
+          title: "一班课件", slides: [], status: "draft" },
+        { id: "pc-cw-2", sourceType: "manual", classIds: ["pc-2"],
+          title: "二班课件", slides: [], status: "draft" },
+        { id: "school-cw", sourceType: "manual", classIds: ["school-1"],
+          title: "学校课件", slides: [], status: "draft" },
+      ] as never);
+    renderPage("coursewares");
+    expect(await screen.findByText("一班课件")).toBeInTheDocument();
+    expect(screen.getByText("二班课件")).toBeInTheDocument();
+    expect(screen.queryByText("学校课件")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("个人教学班")).toHaveValue("");
+    expect(screen.getByRole("group", { name: "个人教学班快捷筛选" })).toHaveTextContent("个别辅导一班");
+    expect(screen.getByRole("group", { name: "个人教学班快捷筛选" })).toHaveTextContent("个别辅导二班");
+    fireEvent.change(screen.getByLabelText("个人教学班"), { target: { value: "pc-2" } });
+    expect(screen.queryByText("一班课件")).not.toBeInTheDocument();
+    expect(screen.getByText("二班课件")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("个人教学班"), { target: { value: "" } });
+    expect(screen.getByText("一班课件")).toBeInTheDocument();
+  });
+
+  it("marks personal courseware complete, deletes it, and opens linked documents in a new tab", async () => {
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) =>
+      filter.lifecycleStatus ? [] : [
+        { id: "cw-lecture", sourceType: "lecture", sourceId: "lec-1", classIds: ["pc-1"],
+          title: "讲义课件", slides: [], status: "draft" },
+        { id: "cw-paper", sourceType: "examPaper", sourceId: "paper-1", classIds: ["pc-1"],
+          title: "试卷课件", slides: [], status: "draft" },
+      ] as never);
+    vi.mocked(lessonCoursewareService.completeCourseware).mockResolvedValue({
+      id: "cw-lecture", sourceType: "lecture", sourceId: "lec-1", classIds: ["pc-1"],
+      title: "讲义课件", slides: [], status: "draft", lifecycleStatus: "completed",
+    } as never);
+    vi.mocked(lessonCoursewareService.deleteCourseware).mockResolvedValue(undefined);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      renderPage("coursewares");
+      const lecture = (await screen.findByText("讲义课件")).closest("div.flex.flex-wrap");
+      expect(lecture).not.toBeNull();
+      fireEvent.click(within(lecture as HTMLElement).getByRole("button", { name: "关联文档" }));
+      expect(open).toHaveBeenCalledWith("/lectures/lec-1/preview", "_blank", "noopener,noreferrer");
+      fireEvent.click(within(lecture as HTMLElement).getByRole("button", { name: "已上课" }));
+      await waitFor(() => expect(lessonCoursewareService.completeCourseware).toHaveBeenCalledWith("cw-lecture"));
+      expect(await screen.findByText("已上课课件列表（1）")).toBeInTheDocument();
+      const paper = screen.getByText("试卷课件").closest("div.flex.flex-wrap");
+      expect(paper).not.toBeNull();
+      fireEvent.click(within(paper as HTMLElement).getByRole("button", { name: "关联文档" }));
+      expect(open).toHaveBeenCalledWith("/exam-papers/paper-1/preview", "_blank", "noopener,noreferrer");
+      fireEvent.click(within(paper as HTMLElement).getByRole("button", { name: "删除" }));
+      await waitFor(() => expect(lessonCoursewareService.deleteCourseware).toHaveBeenCalledWith("cw-paper"));
+      expect(await screen.findByText("已删除课件列表（1）")).toBeInTheDocument();
+    } finally {
+      confirm.mockRestore();
+      open.mockRestore();
+    }
   });
 
   it("keeps archived personal coursewares visible and allows restoring them", async () => {
@@ -259,9 +321,9 @@ describe("IndividualTutoringPage", () => {
     renderPage("coursewares");
     expect(await screen.findByText("已上课的个人课件")).toBeInTheDocument();
     expect(screen.getByText("删除的个人课件")).toBeInTheDocument();
-    fireEvent.click(within(screen.getByText("已上课课件（1）").closest("div")!).getByRole("button", { name: "恢复" }));
+    fireEvent.click(within(screen.getByText("已上课课件列表（1）").closest("div")!).getByRole("button", { name: "恢复" }));
     await waitFor(() => expect(lessonCoursewareService.restoreCourseware).toHaveBeenCalledWith("completed-pc"));
-    expect(await screen.findByText("已推送的个别辅导课件（1）")).toBeInTheDocument();
+    expect(await screen.findByText("个别辅导课件（1）")).toBeInTheDocument();
     expect(screen.getByText("删除的个人课件")).toBeInTheDocument();
   });
 

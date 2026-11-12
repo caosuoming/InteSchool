@@ -1401,7 +1401,7 @@ export const lessonCoursewareService = {
     if (!examPaper) throw new Error("试卷不存在或无权访问");
     if (personalClassIds !== undefined) {
       const owned = new Set(db.read("personalClasses")
-        .filter((item) => item.teacherId === teacherId && examPaper.classIds?.includes(item.id))
+        .filter((item) => item.teacherId === teacherId)
         .map((item) => item.id));
       if (!personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
         throw new Error("只能将作业推送到本人所属的个人教学班");
@@ -1458,7 +1458,7 @@ export const lessonCoursewareService = {
     if (!lecture) throw new Error("讲义不存在或无权访问");
     if (personalClassIds !== undefined) {
       const owned = new Set(db.read("personalClasses")
-        .filter((item) => item.teacherId === teacherId && lecture.classIds.includes(item.id))
+        .filter((item) => item.teacherId === teacherId)
         .map((item) => item.id));
       if (!personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
         throw new Error("只能将讲义推送到本人所属的个人教学班");
