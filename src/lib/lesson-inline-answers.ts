@@ -61,7 +61,10 @@ export function extractParenthesizedChoiceAnswer(stem: string, type: "single" | 
     // Diagrams are often emitted after the answer parenthesis, even though
     // they are visually floated beside the stem in the original Word file.
     const trailing = stem.slice(match.index! + match[0].length)
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, "");
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+      // A Word diagram's “（第6题）” / “（第10题答）” caption
+      // can appear after the answer parentheses in extraction order.
+      .replace(/[（(]第\s*\d+\s*题(?:答)?[）)]/g, "");
     if (!/^[\s\u3000.,。．!?！？]*$/.test(trailing)) continue;
     return {
       stem: `${stem.slice(0, match.index!)}${match[1]}    ${match[3]}${stem.slice(match.index! + match[0].length)}`,
