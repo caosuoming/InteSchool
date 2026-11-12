@@ -141,6 +141,14 @@ export function LessonEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<LessonSaveState | null>(null);
+  const savedDraftRef = useRef<LessonSaveState | null>(null);
+  const latestDraftRef = useRef<LessonSaveState | null>(null);
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null);
+  const saveOnExitRef = useRef<() => void>(() => undefined);
+  const saveWhenHiddenRef = useRef<() => void>(() => undefined);
+  const [undoDepth, setUndoDepth] = useState(0);
+  const undoHistoryRef = useRef<LessonSaveState[]>([]);
+  const lastUndoStateRef = useRef<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [downloadingOffline, setDownloadingOffline] = useState(false);
 
@@ -184,6 +192,7 @@ export function LessonEditorPage() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedTextRegion, setSelectedTextRegion] = useState<LessonSlideTextRegion | null>(null);
   const [elementClipboard, setElementClipboard] = useState<LessonElementClipboard | null>(null);
+  const systemElementMarkerRef = useRef<string | null>(null);
   const [slideNavigatorWidth, setSlideNavigatorWidth] = useState(SLIDE_NAV_DEFAULT_WIDTH);
   const [slideNavigatorCollapsed, setSlideNavigatorCollapsed] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
@@ -229,8 +238,14 @@ export function LessonEditorPage() {
         }
         : cw;
       setCourseware(editableCourseware);
-      setSavedDraft(lessonSaveStateFromCourseware(editableCourseware));
-      setSlides(cw.slides);
+      const initialDraft = lessonSaveStateFromCourseware(editableCourseware);
+      savedDraftRef.current = initialDraft;
+      latestDraftRef.current = initialDraft;
+      lastUndoStateRef.current = JSON.stringify(initialDraft);
+      undoHistoryRef.current = [];
+      setUndoDepth(0);
+      setSavedDraft(initialDraft);
+      setSlides(editableCourseware.slides);
       // 预加载所有相关题
       const allRelatedIds = Array.from(
         new Set(cw.slides.flatMap((s) => s.relatedQuestionIds || [])),
@@ -531,8 +546,35 @@ export function LessonEditorPage() {
     }
   };
 
+  const addPastedText = (value: string) => {
+    if (!currentSlide || currentSlide.type === "courseware") return;
+    const text = value.trim();
+    if (!text) return;
+    const element: LessonSlideElement = {
+      id: genId("element"),
+      kind: "text",
+      content: text,
+      x: 12,
+      y: 8,
+      width: 52,
+      height: 24,
+      fontSize: 22,
+      textAlign: "left",
+      animation: "none",
+      enterAnimation: "none",
+      actionAnimation: "none",
+      exitAnimation: "none",
+    };
+    updateCurrentElements([...(currentSlide.elements || []), element]);
+    setSelectedElementId(element.id);
+    setSelectedTextRegion(null);
+  };
+
   const handlePaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
     if (!currentSlide || currentSlide.type === "courseware") return;
+    const target = event.target;
+    // Text editors must retain their native paste behaviour.
+    if (target instanceof HTMLElement && target.closest('input, textarea, [contenteditable="true"]')) return;
 
     const clipboardFiles = Array.from(event.clipboardData.files || [])
       .filter((file) => file.type.startsWith("image/"));
@@ -543,9 +585,20 @@ export function LessonEditorPage() {
         .map((item) => item.getAsFile())
         .filter((file): file is File => Boolean(file));
 
-    if (imageFiles.length === 0) return;
-    event.preventDefault();
-    imageFiles.forEach((file, index) => void addImageElement(file, index));
+    if (imageFiles.length > 0) {
+      event.preventDefault();
+      imageFiles.forEach((file, index) => void addImageElement(file, index));
+      return;
+    }
+    const text = event.clipboardData.getData?.("text/plain");
+    if (text?.trim()) {
+      event.preventDefault();
+      if (text.startsWith("inteschool-lesson-element:") && text === systemElementMarkerRef.current && elementClipboard) {
+        void pasteElement();
+      } else {
+        addPastedText(text);
+      }
+    }
   };
 
   const addLinkElement = () => {
@@ -772,36 +825,80 @@ export function LessonEditorPage() {
 
   const copySelectedElement = () => {
     if (!selectedElement || !currentSlide) return;
-    setElementClipboard({
-      element: structuredClone(selectedElement),
-      sourceSlideId: currentSlide.id,
-    });
+    const copied = { element: structuredClone(selectedElement), sourceSlideId: currentSlide.id };
+    setElementClipboard(copied);
+    const marker = `inteschool-lesson-element:${JSON.stringify(copied)}`;
+    systemElementMarkerRef.current = marker;
+    void navigator.clipboard?.writeText?.(marker).catch(() => undefined);
     toast.success("已复制元素");
   };
 
   const cutSelectedElement = () => {
     if (!selectedElement || !currentSlide) return;
-    setElementClipboard({
-      element: structuredClone(selectedElement),
-      sourceSlideId: currentSlide.id,
-    });
+    const copied = { element: structuredClone(selectedElement), sourceSlideId: currentSlide.id };
+    setElementClipboard(copied);
+    const marker = `inteschool-lesson-element:${JSON.stringify(copied)}`;
+    systemElementMarkerRef.current = marker;
+    void navigator.clipboard?.writeText?.(marker).catch(() => undefined);
     updateCurrentElements((currentSlide.elements || []).filter((element) => element.id !== selectedElement.id));
     setSelectedElementId(null);
     toast.success("已剪切元素");
   };
 
-  const pasteElement = () => {
-    if (!currentSlide || currentSlide.type === "courseware" || !elementClipboard) return;
-    const pastedElement: LessonSlideElement = {
-      ...structuredClone(elementClipboard.element),
-      id: genId("element"),
+  const pasteElement = async () => {
+    if (!currentSlide || currentSlide.type === "courseware") return;
+    const pasteInternal = () => {
+      if (!elementClipboard) return false;
+      const pastedElement: LessonSlideElement = {
+        ...structuredClone(elementClipboard.element), id: genId("element"),
+      };
+      updateCurrentElements([...(currentSlide.elements || []), pastedElement]);
+      setSelectedElementId(pastedElement.id);
+      setSelectedTextRegion(null);
+      toast.success(elementClipboard.sourceSlideId === currentSlide.id ? "已粘贴元素" : "已粘贴到当前页面");
+      return true;
     };
-    updateCurrentElements([...(currentSlide.elements || []), pastedElement]);
-    setSelectedElementId(pastedElement.id);
-    setSelectedTextRegion(null);
-    toast.success(
-      elementClipboard.sourceSlideId === currentSlide.id ? "已粘贴元素" : "已粘贴到当前页面",
-    );
+
+    // The system clipboard takes priority if it has changed since the user
+    // copied a deck element. Unsupported/denied clipboard reads still fall
+    // back to the internal cross-slide clipboard.
+    try {
+      const clipboard = navigator.clipboard;
+      if (clipboard?.read) {
+        const items = await clipboard.read();
+        const imageFiles: File[] = [];
+        let text = "";
+        for (const item of items) {
+          const mime = item.types.find((type) => type.startsWith("image/"));
+          if (mime) {
+            const blob = await item.getType(mime);
+            imageFiles.push(new File([blob], `clipboard-${imageFiles.length + 1}.${mime.split("/")[1] || "png"}`, { type: mime }));
+          } else if (!text && item.types.includes("text/plain")) {
+            text = await (await item.getType("text/plain")).text();
+          }
+        }
+        if (imageFiles.length > 0) {
+          imageFiles.forEach((file, index) => void addImageElement(file, index));
+          return;
+        }
+        if (text.startsWith("inteschool-lesson-element:") && text === systemElementMarkerRef.current && pasteInternal()) return;
+        if (text.trim() && !text.startsWith("inteschool-lesson-element:")) {
+          addPastedText(text);
+          return;
+        }
+      }
+      if (clipboard?.readText) {
+        const text = await clipboard.readText();
+        if (text.startsWith("inteschool-lesson-element:") && text === systemElementMarkerRef.current && pasteInternal()) return;
+        if (text.trim() && !text.startsWith("inteschool-lesson-element:")) {
+          addPastedText(text);
+          return;
+        }
+      }
+      if (!pasteInternal()) toast.warning("剪贴板中没有可粘贴的图片或文本");
+    } catch {
+      if (!pasteInternal()) toast.warning("无法读取系统剪贴板，请在课件页面按 Ctrl+V 粘贴");
+    }
   };
 
   const currentSaveState: LessonSaveState | null = courseware ? {
@@ -810,51 +907,134 @@ export function LessonEditorPage() {
     classIds: courseware.classIds,
     boardIds: courseware.boardIds || [],
   } : null;
-  const hasUnsavedChanges = currentSaveState !== null
-    && savedDraft !== null
-    && JSON.stringify(currentSaveState) !== JSON.stringify(savedDraft);
+  const stateJson = currentSaveState ? JSON.stringify(currentSaveState) : null;
+  latestDraftRef.current = currentSaveState;
+  const hasUnsavedChanges = stateJson !== null && savedDraft !== null
+    && stateJson !== JSON.stringify(savedDraft);
+
+  // Keep edit history independent from the last persisted revision, including
+  // automatic and explicit saves. The history resets only on loading a deck.
+  useEffect(() => {
+    if (!stateJson || !currentSaveState) return;
+    if (lastUndoStateRef.current === null) {
+      lastUndoStateRef.current = stateJson;
+    } else if (lastUndoStateRef.current !== stateJson) {
+      undoHistoryRef.current = [...undoHistoryRef.current.slice(-99), JSON.parse(lastUndoStateRef.current) as LessonSaveState];
+      lastUndoStateRef.current = stateJson;
+      setUndoDepth(undoHistoryRef.current.length);
+    }
+  }, [stateJson]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUndo = () => {
-    if (!courseware || !savedDraft) return;
-    setSlides(structuredClone(savedDraft.slides));
-    setCourseware({
-      ...courseware,
-      title: savedDraft.title,
-      classIds: [...savedDraft.classIds],
-      boardIds: [...savedDraft.boardIds],
-    });
+    const previous = undoHistoryRef.current.pop();
+    if (!previous) return;
+    setUndoDepth(undoHistoryRef.current.length);
+    lastUndoStateRef.current = JSON.stringify(previous);
+    setSlides(structuredClone(previous.slides));
+    setCourseware((current) => current ? {
+      ...current,
+      title: previous.title,
+      classIds: [...previous.classIds],
+      boardIds: [...previous.boardIds],
+    } : current);
     setSelectedElementId(null);
     setSelectedTextRegion(null);
-    setCurrentIndex((index) => Math.min(index, Math.max(0, savedDraft.slides.length - 1)));
-    toast.success("已撤销未保存修改");
+    setCurrentIndex((index) => Math.min(index, Math.max(0, previous.slides.length - 1)));
   };
 
-  const handleSave = async (silent = false) => {
-    if (!courseware || saving || !hasUnsavedChanges) return;
-    setSaving(true);
-    try {
-      const updated = await lessonCoursewareService.updateCourseware(courseware.id, {
-        slides,
-        title: courseware.title,
-        classIds: courseware.classIds,
-        boardIds: courseware.boardIds || [],
-      });
-      setCourseware(updated);
-      setSavedDraft(lessonSaveStateFromCourseware(updated));
-      if (!silent) toast.success("已保存");
-    } catch (err) {
-      toast.error(silent ? "自动保存失败" : "保存失败", err instanceof Error ? err.message : undefined);
-    } finally {
-      setSaving(false);
+  // Serialize saves to avoid stale auto-save responses overwriting newer edits.
+  const handleSave = (silent = false): Promise<boolean> => {
+    if (!courseware) return Promise.resolve(false);
+    if (saveInFlightRef.current) return saveInFlightRef.current;
+    const coursewareId = courseware.id;
+    const run = async (): Promise<boolean> => {
+      setSaving(true);
+      try {
+        const draft = latestDraftRef.current;
+        if (!draft || JSON.stringify(draft) === JSON.stringify(savedDraftRef.current)) return true;
+        const snapshot = structuredClone(draft);
+        const updated = await lessonCoursewareService.updateCourseware(coursewareId, snapshot);
+        // Do not replace newer edits with the stale server response.
+        setCourseware((current) => current?.id === coursewareId
+          ? { ...updated, title: current.title, classIds: current.classIds, boardIds: current.boardIds }
+          : current);
+        savedDraftRef.current = snapshot;
+        setSavedDraft(snapshot);
+        if (!silent) toast.success("已保存");
+        return true;
+      } catch (err) {
+        toast.error(silent ? "自动保存失败" : "保存失败", err instanceof Error ? err.message : undefined);
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    };
+    const pending = run();
+    saveInFlightRef.current = pending;
+    void pending.finally(() => {
+      if (saveInFlightRef.current === pending) saveInFlightRef.current = null;
+    });
+    return pending;
+  };
+
+  const saveBeforeLeaving = async (): Promise<boolean> => {
+    // A save already underway may contain an older snapshot. Re-check after
+    // each completion before allowing navigation or download.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (!(await handleSave(true))) return false;
+      if (JSON.stringify(latestDraftRef.current) === JSON.stringify(savedDraftRef.current)) return true;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
+    toast.error("保存未能完成，请重试");
+    return false;
   };
 
   useAutosave({
     enabled: Boolean(courseware),
     dirty: hasUnsavedChanges,
     saving,
-    onSave: () => handleSave(true),
+    delayMs: 5 * 60_000,
+    onSave: () => { void handleSave(true); },
   });
+
+  saveWhenHiddenRef.current = () => {
+    if (JSON.stringify(latestDraftRef.current) !== JSON.stringify(savedDraftRef.current)) {
+      void handleSave(true);
+    }
+  };
+  saveOnExitRef.current = () => {
+    const draft = latestDraftRef.current;
+    if (!courseware || !draft || JSON.stringify(draft) === JSON.stringify(savedDraftRef.current)) return;
+    // keepalive fetch supports up to ~64 KiB of queued request body data.
+    const body = JSON.stringify({ service: "lessonCourseware", method: "updateCourseware", args: [courseware.id, draft] });
+    if (new TextEncoder().encode(body).byteLength > 60_000) return;
+    void lessonCoursewareService.saveOnPageHide(courseware.id, structuredClone(draft)).catch(() => undefined);
+  };
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      const draft = latestDraftRef.current;
+      if (!draft || JSON.stringify(draft) === JSON.stringify(savedDraftRef.current)) return;
+      const request = JSON.stringify({ service: "lessonCourseware", method: "updateCourseware", args: [id, draft] });
+      if (new TextEncoder().encode(request).byteLength > 60_000) {
+        // Browsers cannot queue an oversized keepalive request during teardown.
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") saveWhenHiddenRef.current();
+    };
+    const onPageHide = () => saveOnExitRef.current();
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [id]);
 
   const handlePublish = async () => {
     if (!courseware || !teacher?.schoolId) return;
@@ -888,6 +1068,7 @@ export function LessonEditorPage() {
     if (!courseware) return;
     setPublishing(true);
     try {
+      if (!(await saveBeforeLeaving())) return;
       await lessonCoursewareService.unpublishCourseware(courseware.id);
       toast.success("已撤回发布", "课件已从“我要上课”页面撤回，可修改后重新发布");
       await loadCourseware();
@@ -1171,6 +1352,7 @@ export function LessonEditorPage() {
     if (!courseware || downloadingOffline) return;
     setDownloadingOffline(true);
     try {
+      if (!(await saveBeforeLeaving())) return;
       const title = courseware.title.trim() || "未命名课件";
       const result = await downloadOfflineLessonCourseware({
         ...courseware,
@@ -1206,6 +1388,29 @@ export function LessonEditorPage() {
     }
   };
 
+  const handleReturn = () => {
+    if (isPersonalCourseware) {
+      void saveBeforeLeaving().then((saved) => { if (saved) navigate(returnPath); });
+      return;
+    }
+    if (!hasUnsavedChanges && !saving) {
+      openPage(returnPath);
+      return;
+    }
+    // Open the new tab in the click gesture; waiting for a network save first
+    // would cause popup blockers to suppress the existing new-tab navigation.
+    const target = window.open("about:blank", "_blank");
+    if (target) target.opener = null;
+    void saveBeforeLeaving().then((saved) => {
+      if (!saved) {
+        target?.close();
+        return;
+      }
+      if (target) target.location.replace(returnPath);
+      else navigate(returnPath);
+    });
+  };
+
   if (loading) {
     return (
       <div className="py-20 text-center">
@@ -1218,103 +1423,107 @@ export function LessonEditorPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]" onPaste={handlePaste}>
       {/* 顶部工具栏 */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-ink-200 bg-paper">
-        <Button variant="ghost" size="sm" onClick={() => isPersonalCourseware ? navigate(returnPath) : openPage(returnPath)}>
-          <ChevronLeft className="w-4 h-4" />
-          返回
-        </Button>
-        <div className="h-5 w-px bg-ink-200" />
-        <input
-          aria-label="课件名称"
-          title="修改课件名称"
-          value={courseware?.title || ""}
-          disabled={!courseware}
-          maxLength={120}
-          onChange={(event) => {
-            const title = event.target.value;
-            setCourseware((current) => current ? { ...current, title } : current);
-          }}
-          onBlur={() => {
-            setCourseware((current) => {
-              if (!current) return current;
-              const title = current.title.trim() || "未命名课件";
-              return title === current.title ? current : { ...current, title };
-            });
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-          }}
-          className="h-8 w-72 max-w-[32vw] rounded-md border border-transparent bg-transparent px-2 font-serif font-semibold text-ink-900 outline-none transition-colors hover:border-ink-200 hover:bg-white focus:border-gold-300 focus:bg-white focus:ring-2 focus:ring-gold-100 disabled:cursor-default"
-        />
-        <Badge variant={courseware?.status === "published" ? "green" : "amber"}>
-          {courseware?.status === "published" ? "已发布" : "草稿"}
-        </Badge>
-        <div className="flex-1" />
-        <div className="text-sm text-ink-500">
-          {currentIndex + 1} / {slides.length} 页
+      <div className="shrink-0 border-b border-ink-200 bg-paper px-4 py-2" data-testid="lesson-editor-toolbar">
+        <div className="flex flex-wrap items-center gap-3 pb-2" data-testid="lesson-editor-toolbar-info">
+          <Button variant="ghost" size="sm" onClick={handleReturn}>
+            <ChevronLeft className="w-4 h-4" />
+            返回
+          </Button>
+          <div className="h-5 w-px bg-ink-200" />
+          <input
+            aria-label="课件名称"
+            title="修改课件名称"
+            value={courseware?.title || ""}
+            disabled={!courseware}
+            maxLength={120}
+            onChange={(event) => {
+              const title = event.target.value;
+              setCourseware((current) => current ? { ...current, title } : current);
+            }}
+            onBlur={() => {
+              setCourseware((current) => {
+                if (!current) return current;
+                const title = current.title.trim() || "未命名课件";
+                return title === current.title ? current : { ...current, title };
+              });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+            className="h-8 w-72 max-w-[32vw] rounded-md border border-transparent bg-transparent px-2 font-serif font-semibold text-ink-900 outline-none transition-colors hover:border-ink-200 hover:bg-white focus:border-gold-300 focus:bg-white focus:ring-2 focus:ring-gold-100 disabled:cursor-default"
+          />
+          <Badge variant={courseware?.status === "published" ? "green" : "amber"}>
+            {courseware?.status === "published" ? "已发布" : "草稿"}
+          </Badge>
+          <div className="flex-1" />
+          <div className="text-sm text-ink-500">
+            {currentIndex + 1} / {slides.length} 页
+          </div>
+          <div className="h-5 w-px bg-ink-200" />
+          <Button variant="outline" size="sm" onClick={() => setClassModalOpen(true)}>
+            <School className="w-4 h-4" />
+            授课班级 {courseware?.classIds.length ? `(${courseware.classIds.length})` : ""}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => {
+            if (!teacher) return;
+            setBoardPickerOpen(true);
+            void boardService.listBoards(teacher.id).then((items) =>
+              setBoardOptions(items.filter((item) => item.kind === "structure")),
+            ).catch((err: unknown) => toast.error("获取板书失败", err instanceof Error ? err.message : undefined));
+          }}>
+            <Blocks className="w-4 h-4" />
+            关联板书 {courseware?.boardIds?.length ? `(${courseware.boardIds.length})` : ""}
+          </Button>
         </div>
-        <div className="h-5 w-px bg-ink-200" />
-        <Button variant="outline" size="sm" onClick={() => setClassModalOpen(true)}>
-          <School className="w-4 h-4" />
-          授课班级 {courseware?.classIds.length ? `(${courseware.classIds.length})` : ""}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => {
-          if (!teacher) return;
-          setBoardPickerOpen(true);
-          void boardService.listBoards(teacher.id).then((items) =>
-            setBoardOptions(items.filter((item) => item.kind === "structure")),
-          ).catch((err: unknown) => toast.error("获取板书失败", err instanceof Error ? err.message : undefined));
-        }}>
-          <Blocks className="w-4 h-4" />
-          关联板书 {courseware?.boardIds?.length ? `(${courseware.boardIds.length})` : ""}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleUndo}
-          disabled={!hasUnsavedChanges || saving}
-          title={hasUnsavedChanges ? "撤销到上次保存的内容" : "没有可撤销的修改"}
-        >
-          <RotateCcw className="w-4 h-4" />
-          撤销
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void handleSave()}
-          loading={saving}
-          disabled={!hasUnsavedChanges}
-          title={hasUnsavedChanges ? "保存修改；有未保存修改时会定时自动保存" : "没有需要保存的修改"}
-        >
-          <Save className="w-4 h-4" />
-          保存
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void handleOfflineDownload()}
-          loading={downloadingOffline}
-          disabled={!courseware}
-          title="下载可直接打开的脱机上课页面"
-        >
-          <Download className="w-4 h-4" />
-          下载
-        </Button>
-        <Button variant="outline" size="sm" onClick={openPreview}>
-          <Play className="w-4 h-4" />
-          预览上课
-        </Button>
-        <Button
-          variant={courseware?.status === "published" ? "outline" : "gold"}
-          size="sm"
-          onClick={() => void (courseware?.status === "published" ? handleUnpublish() : handlePublish())}
-          loading={publishing}
-        >
-          {courseware?.status === "published"
-            ? <Undo2 className="w-4 h-4" />
-            : <Send className="w-4 h-4" />}
-          {courseware?.status === "published" ? "撤回发布" : "发布到上课"}
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-100 pt-2" data-testid="lesson-editor-toolbar-actions">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleUndo}
+            disabled={undoDepth === 0}
+            title={undoDepth > 0 ? "撤销上一步编辑（包括已保存的修改）" : "没有可撤销的修改"}
+          >
+            <RotateCcw className="w-4 h-4" />
+            撤销
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleSave()}
+            loading={saving}
+            disabled={!hasUnsavedChanges}
+            title={hasUnsavedChanges ? "保存修改；每五分钟自动保存未保存的修改" : "没有需要保存的修改"}
+          >
+            <Save className="w-4 h-4" />
+            保存
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleOfflineDownload()}
+            loading={downloadingOffline}
+            disabled={!courseware}
+            title="下载可直接打开的脱机上课页面"
+          >
+            <Download className="w-4 h-4" />
+            下载
+          </Button>
+          <Button variant="outline" size="sm" onClick={openPreview}>
+            <Play className="w-4 h-4" />
+            预览上课
+          </Button>
+          <Button
+            variant={courseware?.status === "published" ? "outline" : "gold"}
+            size="sm"
+            onClick={() => void (courseware?.status === "published" ? handleUnpublish() : handlePublish())}
+            loading={publishing}
+          >
+            {courseware?.status === "published"
+              ? <Undo2 className="w-4 h-4" />
+              : <Send className="w-4 h-4" />}
+            {courseware?.status === "published" ? "撤回发布" : "发布到上课"}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -1603,7 +1812,7 @@ export function LessonEditorPage() {
                     relatedQuestionsById={relatedQuestionsMap}
                     canDeleteSlide={slides.length > 1}
                     canMergeSlide={currentIndex < slides.length - 1}
-                    canPasteElement={Boolean(elementClipboard)}
+                    canPasteElement={true}
                     onSelectElement={(elementId) => {
                       setSelectedElementId(elementId);
                       if (elementId) setSelectedTextRegion(null);
@@ -1616,7 +1825,7 @@ export function LessonEditorPage() {
                     onDeleteElement={deleteSelectedElement}
                     onCopyElement={copySelectedElement}
                     onCutElement={cutSelectedElement}
-                    onPasteElement={pasteElement}
+                    onPasteElement={() => void pasteElement()}
                     onUpdateTextStyle={updateSelectedTextStyle}
                     onUpdateSlide={updateCurrentSlide}
                     onAddText={addTextElement}

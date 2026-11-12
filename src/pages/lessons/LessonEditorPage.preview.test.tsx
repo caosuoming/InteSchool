@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Basket, LessonCourseware, LessonSlideElement, Material, Question, Teacher } from "@/types";
@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   getKnowledgeMastery: vi.fn(),
   uploadFile: vi.fn(),
   listLibraryCoursewares: vi.fn(),
+  saveOnPageHide: vi.fn(),
+  offlineDownload: vi.fn(),
 }));
 
 const teacher = {
@@ -65,9 +67,13 @@ vi.mock("@/services/lessonCourseware", () => ({
   lessonCoursewareService: {
     getCourseware: mocks.getCourseware,
     updateCourseware: mocks.updateCourseware,
+    saveOnPageHide: mocks.saveOnPageHide,
     publishCourseware: mocks.publishCourseware,
     unpublishCourseware: mocks.unpublishCourseware,
   },
+}));
+vi.mock("@/lib/lesson-courseware-offline", () => ({
+  downloadOfflineLessonCourseware: mocks.offlineDownload,
 }));
 vi.mock("@/services/class", () => ({
   classService: {
@@ -146,6 +152,9 @@ describe("LessonEditorPage preview query", () => {
     mocks.getKnowledgeMastery.mockResolvedValue([]);
     mocks.uploadFile.mockResolvedValue({ url: "/uploads/pasted.png" });
     mocks.listLibraryCoursewares.mockResolvedValue([]);
+    mocks.saveOnPageHide.mockResolvedValue(courseware);
+    mocks.offlineDownload.mockResolvedValue({ warnings: [], fileName: "lesson.html" });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
   });
 
   it("returns a personal teaching class deck to its tutoring class and keeps its affiliation", async () => {
@@ -247,6 +256,136 @@ describe("LessonEditorPage preview query", () => {
       );
       expect(saveButton).toBeDisabled();
     });
+  });
+
+  it("groups metadata and editing actions into separate toolbar rows", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    await screen.findByRole("textbox", { name: "课件名称" });
+    const info = screen.getByTestId("lesson-editor-toolbar-info");
+    const actions = screen.getByTestId("lesson-editor-toolbar-actions");
+    expect(info).toContainElement(screen.getByRole("button", { name: "授课班级" }));
+    expect(info).toContainElement(screen.getByRole("button", { name: "关联板书" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: "撤销" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: "保存" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: "下载" }));
+    expect(actions).toContainElement(screen.getByRole("button", { name: "预览上课" }));
+  });
+
+  it("retains undo history across a successful manual save", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    const title = await screen.findByRole("textbox", { name: "课件名称" });
+    fireEvent.change(title, { target: { value: "第一版标题" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "撤销" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    expect(title).toHaveValue("函数专题课件");
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalledWith(
+      courseware.id, expect.objectContaining({ title: "函数专题课件" }),
+    ));
+  });
+
+  it("saves a personal lesson before returning to its class page", async () => {
+    mocks.getCourseware.mockResolvedValue({ ...courseware, classIds: ["pc-1"] });
+    mocks.listPersonalClasses.mockResolvedValue([{
+      id: "pc-1", type: "personal", teacherId: teacher.id, name: "个人一班",
+    }]);
+    renderPage(`/my-lessons/${courseware.id}/edit?classId=pc-1`);
+    fireEvent.change(await screen.findByRole("textbox", { name: "课件名称" }), {
+      target: { value: "返回前保存的标题" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalledWith(
+      courseware.id, expect.objectContaining({ title: "返回前保存的标题" }),
+    ));
+    expect(await screen.findByTestId("tutoring-destination")).toHaveTextContent(
+      "/individual-tutoring/coursewares?classId=pc-1",
+    );
+  });
+
+  it("blocks return when the save fails", async () => {
+    mocks.getCourseware.mockResolvedValue({ ...courseware, classIds: ["pc-1"] });
+    mocks.listPersonalClasses.mockResolvedValue([{
+      id: "pc-1", type: "personal", teacherId: teacher.id, name: "个人一班",
+    }]);
+    mocks.updateCourseware.mockRejectedValueOnce(new Error("Network failure"));
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    fireEvent.change(await screen.findByRole("textbox", { name: "课件名称" }), {
+      target: { value: "未能保存的标题" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("tutoring-destination")).not.toBeInTheDocument();
+  });
+
+  it("saves changes before generating the offline download", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    fireEvent.change(await screen.findByRole("textbox", { name: "课件名称" }), {
+      target: { value: "下载前保存的标题" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    await waitFor(() => expect(mocks.offlineDownload).toHaveBeenCalled());
+    expect(mocks.updateCourseware).toHaveBeenCalledWith(
+      courseware.id, expect.objectContaining({ title: "下载前保存的标题" }),
+    );
+    expect(mocks.updateCourseware.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.offlineDownload.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("issues a keepalive save when the document is closed", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    fireEvent.change(await screen.findByRole("textbox", { name: "课件名称" }), {
+      target: { value: "关闭前标题" },
+    });
+    fireEvent(window, new Event("pagehide"));
+    expect(mocks.saveOnPageHide).toHaveBeenCalledWith(
+      courseware.id, expect.objectContaining({ title: "关闭前标题" }),
+    );
+  });
+
+  it("auto-saves dirty content after five minutes", async () => {
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    const title = await screen.findByRole("textbox", { name: "课件名称" });
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(title, { target: { value: "五分钟后保存（最终）" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(5 * 60_000); });
+      expect(mocks.updateCourseware).toHaveBeenCalledWith(
+        courseware.id, expect.objectContaining({ title: "五分钟后保存（最终）" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("pastes a system clipboard image from the inspector button", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { read: vi.fn().mockResolvedValue([{
+        types: ["image/png"],
+        getType: vi.fn().mockResolvedValue(new Blob(["external-image"], { type: "image/png" })),
+      }]) },
+    });
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    await screen.findByRole("textbox", { name: "课件名称" });
+    fireEvent.click(screen.getByRole("button", { name: "粘贴元素" }));
+    await waitFor(() => expect(mocks.uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "clipboard-1.png", type: "image/png" }),
+    ));
+  });
+
+  it("pastes system clipboard text as a slide element via the inspector", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: vi.fn().mockResolvedValue("剪贴板外部文本") },
+    });
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+    await screen.findByRole("textbox", { name: "课件名称" });
+    fireEvent.click(screen.getByRole("button", { name: "粘贴元素" }));
+    expect((await screen.findAllByText("剪贴板外部文本")).length).toBeGreaterThan(0);
   });
 
   it("opens linked courseware directly in preview mode when preview=1", async () => {
