@@ -2795,3 +2795,68 @@ describe("math document standalone subquestion labels", () => {
     expect(question?.analysis).toContain("（2）利用平面法向量");
   });
 });
+
+describe("issue 1439: image-adjacent mixed answer and stem", () => {
+  const math = { ...config, subject: "数学" };
+
+  it("recovers ABC as a multiple choice answer even under a generic choice section, with a diagram", () => {
+    const questions = parseDocumentBlocks([
+      "一、选择题",
+      "6. 如图所示，平面展开图中下列结论正确的是（ABC）",
+      "![文档图片](/api/files/diagram.png)",
+      "（第6题）",
+      "A. 平面 EFGH 平行于平面 ABCD",
+      "B. PA 平行于平面 BDG",
+      "C. EF 平行于平面 PBC",
+      "D. EF 平行于平面 BDG",
+      "解析：如图展开即可。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({ questionType: "multiple", answer: "ABC" });
+    expect(questions[0].content).toContain("正确的是（    ）");
+    expect(questions[0].content).toContain("![文档图片]");
+    expect(questions[0].options).toHaveLength(4);
+  });
+
+  it("does not mistake a geometric plane (ABC) for a multiple-choice answer", () => {
+    const question = parseDocumentBlocks([
+      "一、选择题",
+      "6. 求点到平面（ABC）的距离，并选择正确选项。",
+      "A. 1", "B. 2", "C. 3", "D. 4",
+    ].join("\n"), math).find((block) => block.type === "question")!;
+    expect(question.content).toContain("平面（ABC）");
+    expect(question.answer).toBeUndefined();
+  });
+
+  it("moves the second subquestion from analysis after an inline solution figure and caption", () => {
+    const question = parseDocumentBlocks([
+      "三、解答题",
+      "10. 如图，在三棱柱 ABC-A1B1C1 中，M、N 分别是线段 A1B、AC1 的中点。",
+      "![文档图片](/api/files/question.png)",
+      "（第10题）",
+      "（1）求证：MN 平行于平面 ABC。",
+      "解析：如图，连接 A1C，利用中位线即可证明。",
+      "![文档图片](/api/files/answer.png)（第10题答）",
+      "（2）在线段 BC1 上是否存在一点 P，使得平面 MNP 平行于平面 ABC？若存在，指出点 P 的具体位置；若不存在，请说明理由。",
+      "存在。当 P 为 BC1 的中点时，证明如下。",
+    ].join("\n"), math).find((block) => block.type === "question")!;
+    expect(question.content).toContain("（2）在线段 BC1 上是否存在一点 P");
+    expect(question.analysis).toContain("![文档图片](/api/files/answer.png)");
+    expect(question.analysis).not.toContain("（2）在线段 BC1 上是否存在一点 P");
+    expect(question.analysis).toContain("（2）存在。当 P 为 BC1 的中点时");
+  });
+
+  it("extracts a second prompt that shares a Word paragraph with a preceding image", () => {
+    const question = parseDocumentBlocks([
+      "三、解答题",
+      "10. 如图，设 M 为线段 AB 中点。",
+      "（1）证明直线 MN 平行于平面 ABC。",
+      "解析：由平行关系可得。",
+      "![文档图片](/api/files/answer.png)（第10题答）（2）在线段 BC 上是否存在一点 P，使得 MN 平行于直线 CP？",
+      "存在，P 为中点。",
+    ].join("\n"), math).find((block) => block.type === "question")!;
+    expect(question.content).toContain("（2）在线段 BC 上是否存在一点 P");
+    expect(question.analysis).toContain("![文档图片](/api/files/answer.png)");
+    expect(question.analysis).toContain("（2）存在，P 为中点。");
+  });
+});

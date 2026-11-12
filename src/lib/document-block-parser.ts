@@ -2031,14 +2031,28 @@ function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?:
       const lines = value.split("\n");
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
-        const marker = /^\s*[（(]\s*(\d{1,3})\s*[）)]\s*(.*)$/.exec(line);
-        const next = lines[index + 1]?.trim() || "";
-        if (marker && Number(marker[1]) === expected && (
-          essayPromptAfterNumber.test(marker[2].trim())
-          || (!marker[2].trim() && essayPromptAfterNumber.test(next))
-        )) {
-          const standaloneNumber = !marker[2].trim();
-          movedPrompts.push(standaloneNumber ? `${line.trim()} ${next}` : line.trim());
+        // DOCX can place a floating solution diagram, its caption, and the
+        // following question in the same paragraph. Do not require the next
+        // numbered prompt to be at the beginning of the extracted line.
+        const marker = scanNestedSubQuestionMarkers(line).find((candidate) => {
+          if (candidate.index !== expected) return false;
+          const before = line.slice(0, candidate.start).trim();
+          const after = line.slice(candidate.end).trim();
+          // Only split inside a paragraph when the preceding content ends in
+          // an image/caption. Do not promote references in solution prose.
+          const adjacentToDiagram = /!\[[^\]]*\]\([^)]+\)(?:\s*[（(]第\s*\d+\s*题(?:答)?[）)])?\s*$/.test(before);
+          return (candidate.start === 0 || adjacentToDiagram)
+            && (essayPromptAfterNumber.test(after)
+              || (!after && essayPromptAfterNumber.test(lines[index + 1]?.trim() || "")));
+        });
+        if (marker) {
+          const before = line.slice(0, marker.start).trim();
+          const after = line.slice(marker.end).trim();
+          const standaloneNumber = !after;
+          if (before) solutionLines[solutionLines.length - 1].push(before);
+          movedPrompts.push(standaloneNumber
+            ? `${line.slice(marker.start).trim()} ${lines[index + 1]?.trim() || ""}`.trim()
+            : line.slice(marker.start).trim());
           if (standaloneNumber) index += 1;
           solutionLines.push([]);
           expected += 1;
@@ -2074,7 +2088,21 @@ function normalizeInlineDocumentAnswers(blocks: DocumentBlock[]): DocumentBlock[
     }
     if (block.type !== "question") continue;
     if (block.questionType === "single" || block.questionType === "multiple") {
-      const extracted = extractParenthesizedChoiceAnswer(block.content, block.questionType === "single" ? "single" : "multiple");
+      const multiple = extractParenthesizedChoiceAnswer(block.content, "multiple");
+      // A generic “选择题” heading defaults to single choice. The actual
+      // multi-letter key in the last answer parentheses takes precedence,
+      // even if a floating diagram follows that parentheses in Word.
+      // Require answer-introducing prose and real options so that geometrical
+      // expressions such as 平面（ABC） remain part of the question.
+      const inlineMultiple = block.questionType === "single"
+        && (block.options?.length || 0) >= 2
+        && !block.answer?.trim()
+        && (multiple.answer?.length || 0) >= 2
+        && /(?:是|为|选|应选|填|答案)\s*[（(]\s*(?:<u\b[^>]*>\s*)?[A-Da-d]{2,4}(?:\s*<\/u>)?\s*[）)]/.test(block.content);
+      const extracted = block.questionType === "multiple" || inlineMultiple
+        ? multiple
+        : extractParenthesizedChoiceAnswer(block.content, "single");
+      if (inlineMultiple) block.questionType = "multiple";
       block.content = extracted.stem;
       if (extracted.answer && !block.answer?.trim()) block.answer = extracted.answer;
     } else if (block.questionType === "short") {
