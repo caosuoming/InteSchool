@@ -198,6 +198,11 @@ export const lessonCoursewareService = {
     return rpcCall("lessonCourseware", "updateCourseware", [id, patch]) as any;
   },
 
+  // `keepalive` lets a small final save finish when the document is being closed.
+  async saveOnPageHide(id: string, patch: Partial<LessonCourseware>): Promise<LessonCourseware> {
+    return rpcCall("lessonCourseware", "updateCourseware", [id, patch], { keepalive: true }) as any;
+  },
+
   async deleteCourseware(id: string): Promise<void> {
     return rpcCall("lessonCourseware", "deleteCourseware", [id]) as any;
   },

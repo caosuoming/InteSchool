@@ -85,10 +85,11 @@ export async function apiBlobRequest(path: string, init: RequestInit = {}, useCs
   return response.blob();
 }
 
-export async function rpcCall<T>(service: string, method: string, args: unknown[]): Promise<T> {
+export async function rpcCall<T>(service: string, method: string, args: unknown[], options: { keepalive?: boolean } = {}): Promise<T> {
   const response = await apiRequest<{ result: T }>("/api/rpc", {
     method: "POST",
     body: JSON.stringify({ service, method, args }),
+    ...options,
   }, csrfToken !== null);
   return response.result;
 }
