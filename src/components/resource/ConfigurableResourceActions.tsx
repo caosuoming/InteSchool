@@ -33,6 +33,7 @@ const DOCUMENT_ACTION_PREFS: ActionPrefs = {
     "view",
     "rename",
     "addToLesson",
+    "addToPersonalLesson",
     "answerSheet",
     "convertToLecture",
     "convertToExamPaper",

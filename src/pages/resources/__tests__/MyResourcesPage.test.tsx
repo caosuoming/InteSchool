@@ -501,6 +501,26 @@ describe("ResourceCard", () => {
       .not.toContain("share");
   });
 
+  it("provides separate school and personal courseware actions for documents", () => {
+    const toSchool = vi.fn();
+    const toPersonal = vi.fn();
+    render(<ResourceCard
+      title="专题讲义"
+      meta={[]}
+      updatedAt="2026-07-30T00:00:00.000Z"
+      onAddToLesson={toSchool}
+      onAddToPersonalLesson={toPersonal}
+      lessonActionLabel="添加到学校上课"
+      showAddToLesson
+      configurableActions
+      alwaysShowActions
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "添加到学校上课" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加到个人上课" }));
+    expect(toSchool).toHaveBeenCalledOnce();
+    expect(toPersonal).toHaveBeenCalledOnce();
+  });
+
   it("allows direct document actions to be reordered", async () => {
     render(
       <ResourceCard

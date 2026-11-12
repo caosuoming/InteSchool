@@ -49,7 +49,7 @@ import type {
   CoursewareType, MaterialType, ShareableResourceType,
   Reflection, Basket, AnyClass, Student, AnswerRecord,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
-  ResourceFolder, ResourceFolderType,
+  ResourceFolder, ResourceFolderType, PersonalClass,
   UserQuotaSnapshot,
 } from "@/types";
 import { timeAgo } from "@/lib/service-utils";
@@ -594,6 +594,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [shareScope, setShareScope] = useState<ShareScope>("school");
   const [shareMessage, setShareMessage] = useState("");
   const [sharing, setSharing] = useState(false);
+  const [personalLessonTarget, setPersonalLessonTarget] = useState<{
+    type: "lecture" | "examPaper";
+    resource: Lecture | ExamPaper;
+  } | null>(null);
+  const [personalLessonClasses, setPersonalLessonClasses] = useState<PersonalClass[]>([]);
+  const [selectedPersonalClassIds, setSelectedPersonalClassIds] = useState<string[]>([]);
+  const [personalLessonLoading, setPersonalLessonLoading] = useState(false);
+  const [personalLessonSaving, setPersonalLessonSaving] = useState(false);
   const [prepTarget, setPrepTarget] = useState<{
     resourceType: "examPaper" | "lecture";
     resourceId: string;
@@ -635,6 +643,42 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const extractTasks = useExtractTasksStore((state) => state.tasks);
   const startExtractTask = useExtractTasksStore((state) => state.startTask);
+
+  const openPersonalLesson = async (type: "examPaper" | "lecture", resource: ExamPaper | Lecture) => {
+    if (!teacher || personalLessonLoading) return;
+    setPersonalLessonTarget({ type, resource });
+    setSelectedPersonalClassIds([]);
+    setPersonalLessonClasses([]);
+    setPersonalLessonLoading(true);
+    try {
+      setPersonalLessonClasses(await classService.listPersonalClasses(teacher.id));
+    } catch (error) {
+      toast.error("个人教学班加载失败", error instanceof Error ? error.message : undefined);
+      setPersonalLessonTarget(null);
+    } finally {
+      setPersonalLessonLoading(false);
+    }
+  };
+
+  const addToPersonalLesson = async () => {
+    if (!teacher || !personalLessonTarget || !selectedPersonalClassIds.length || personalLessonSaving) return;
+    setPersonalLessonSaving(true);
+    try {
+      const { type, resource } = personalLessonTarget;
+      const blocks = await fallbackLessonBlocks(resource, type, teacher.subject);
+      await (type === "lecture"
+        ? lessonCoursewareService.createFromLecture(teacher.id, resource.schoolId, resource.id, blocks, selectedPersonalClassIds)
+        : lessonCoursewareService.createFromExamPaper(teacher.id, resource.schoolId, resource.id, blocks, selectedPersonalClassIds));
+      toast.success("已添加到个人上课", "可在「个别辅导课件」中查看和编辑");
+      const targetClassId = selectedPersonalClassIds.length === 1 ? `?classId=${encodeURIComponent(selectedPersonalClassIds[0])}` : "";
+      setPersonalLessonTarget(null);
+      navigate(`/individual-tutoring/coursewares${targetClassId}`);
+    } catch (error) {
+      toast.error("添加失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setPersonalLessonSaving(false);
+    }
+  };
 
   const handleOpenExtract = (resource: ExamPaper | Lecture, type: "examPaper" | "lecture") => {
     if (isPdfDocumentResource(resource)) {
@@ -3886,6 +3930,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       detailsPresentation="titleTooltip"
                       onConvertToExamPaper={() => handleMoveLectureToExamPaper(mainLecture.id)}
                       showAddToLesson
+                      lessonActionLabel="添加到学校上课"
+                      onAddToPersonalLesson={() => void openPersonalLesson("lecture", mainLecture)}
                       titleBadge={hasExtractCopy
                         ? { text: "拆解稿", variant: "gold" }
                         : (!isExtracted && item.originalFileUrl
@@ -3901,7 +3947,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             mainLecture.id,
                             documentBlocks,
                           );
-                          toast.success("已添加到上课", "可在「我的上课」中编辑课件");
+                          toast.success("已添加到学校上课", "可在「我的教学」的上课课件中编辑");
                           navigate(`/my-lessons/${cw.id}/edit`);
                         } catch (err) {
                           toast.error("添加失败", err instanceof Error ? err.message : undefined);
@@ -3999,6 +4045,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           },
                         ]}
                         showAddToLesson
+                        lessonActionLabel="添加到学校上课"
+                        onAddToPersonalLesson={() => void openPersonalLesson("examPaper", copy)}
                         alwaysShowActions
                         compactActions
                         configurableActions
@@ -4014,7 +4062,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               copy.id,
                               documentBlocks,
                             );
-                            toast.success("已添加到上课", "可在「我的上课」中编辑课件");
+                            toast.success("已添加到学校上课", "可在「我的教学」的上课课件中编辑");
                             navigate(`/my-lessons/${cw.id}/edit`);
                           } catch (err) {
                             toast.error("添加失败", err instanceof Error ? err.message : undefined);
@@ -4092,6 +4140,8 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                           onDuplicate={() => openDuplicate("examPaper", item.id, item.title)}
                           showAddToLesson
+                          lessonActionLabel="添加到学校上课"
+                          onAddToPersonalLesson={() => void openPersonalLesson("examPaper", item)}
                           alwaysShowActions
                           compactActions
                           configurableActions
@@ -4126,7 +4176,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 item.id,
                                 documentBlocks,
                               );
-                              toast.success("已添加到上课", "可在「我的上课」中编辑课件");
+                              toast.success("已添加到学校上课", "可在「我的教学」的上课课件中编辑");
                               navigate(`/my-lessons/${cw.id}/edit`);
                             } catch (err) {
                               toast.error("添加失败", err instanceof Error ? err.message : undefined);
@@ -4626,6 +4676,31 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         />
       </Modal>
 
+      <Modal
+        open={personalLessonTarget !== null}
+        onClose={() => { if (!personalLessonSaving) setPersonalLessonTarget(null); }}
+        title="添加到个人上课"
+        description={personalLessonTarget?.resource.title}
+        footer={<>
+          <Button variant="outline" onClick={() => setPersonalLessonTarget(null)} disabled={personalLessonSaving}>取消</Button>
+          <Button variant="gold" onClick={() => void addToPersonalLesson()} disabled={!selectedPersonalClassIds.length || personalLessonLoading} loading={personalLessonSaving}>生成个别辅导课件</Button>
+        </>}
+      >
+        {personalLessonLoading ? <Spinner /> : personalLessonClasses.length ? (
+          <fieldset className="space-y-3">
+            <legend className="text-sm font-medium text-ink-700 mb-2">选择个人教学班（可多选）</legend>
+            {personalLessonClasses.map((item) => <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-ink-100 p-3 text-sm">
+              <input type="checkbox" checked={selectedPersonalClassIds.includes(item.id)}
+                onChange={(event) => setSelectedPersonalClassIds((previous) => event.target.checked
+                  ? [...previous, item.id] : previous.filter((id) => id !== item.id))} />
+              {item.name}
+            </label>)}
+          </fieldset>
+        ) : <div className="space-y-3 text-sm text-ink-500">
+          <p>尚无个人教学班，请先在班级管理中创建。</p>
+          <Button variant="outline" onClick={() => { setPersonalLessonTarget(null); navigate("/individual-tutoring/classes"); }}>前往个人教学班管理</Button>
+        </div>}
+      </Modal>
       <Modal
         open={folderMoveTarget !== null}
         onClose={() => {
@@ -5157,6 +5232,8 @@ interface ResourceCardProps {
   onShare?: () => void;
   onDelete?: () => void;
   onAddToLesson?: () => void;
+  onAddToPersonalLesson?: () => void;
+  lessonActionLabel?: string;
   onAddToPrep?: () => void;
   onDuplicate?: () => void;
   onExplanationVideo?: () => void;
@@ -5183,7 +5260,7 @@ interface ResourceCardProps {
   additionalActions?: ConfigurableResourceAction[];
 }
 
-export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, studentProgress, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
+export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, studentProgress, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPersonalLesson, lessonActionLabel = "添加到上课", onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -5264,10 +5341,17 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
     }] : []),
     ...(showAddToLesson && onAddToLesson ? [{
       key: "addToLesson",
-      label: "添加到上课",
+      label: lessonActionLabel,
       icon: <PlayCircle />,
       onClick: onAddToLesson,
       tone: "gold" as const,
+    }] : []),
+    ...(onAddToPersonalLesson ? [{
+      key: "addToPersonalLesson",
+      label: "添加到个人上课",
+      icon: <Users />,
+      onClick: onAddToPersonalLesson,
+      tone: "teal" as const,
     }] : []),
     ...(onConvertToExamPaper ? [{
       key: "convertToExamPaper",
@@ -5558,9 +5642,18 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
               <button
                 onClick={onAddToLesson}
                 className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-gold-50 hover:text-gold-600")}
-                title="添加到上课"
+                title={lessonActionLabel}
               >
                 <PlayCircle className={actionIconSize} />
+              </button>
+            )}
+            {onAddToPersonalLesson && (
+              <button
+                onClick={onAddToPersonalLesson}
+                className={cn(actionButtonPadding, "rounded text-ink-400 hover:bg-teal-50 hover:text-teal-700")}
+                title="添加到个人上课"
+              >
+                <Users className={actionIconSize} />
               </button>
             )}
             {onConvertToExamPaper && (

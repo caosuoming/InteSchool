@@ -780,10 +780,12 @@ describe("courseware lesson flow", () => {
           "teacher-1", "school-1", paper.id, [], invalid,
         )).rejects.toThrow("只能将作业推送到本人所属的个人教学班");
       }
+      // A document may be copied to another personal class owned by its teacher.
       paper.classIds = ["personal-1"];
-      await expect(lessonCoursewareService.createFromExamPaper(
+      const reused = await lessonCoursewareService.createFromExamPaper(
         "teacher-1", "school-1", paper.id, [], ["personal-2"],
-      )).rejects.toThrow("只能将作业推送到本人所属的个人教学班");
+      );
+      expect(reused.classIds).toEqual(["personal-2"]);
     });
   });
 
@@ -803,6 +805,12 @@ describe("courseware lesson flow", () => {
       );
       expect(generated.classIds).toEqual(["personal-1"]);
       expect(generated.classIds).not.toContain("class-1");
+      // Source documents need not already belong to the target personal class.
+      lecture.classIds = [];
+      const copied = await lessonCoursewareService.createFromLecture(
+        "teacher-1", "school-1", lecture.id, [], ["personal-1"],
+      );
+      expect(copied.classIds).toEqual(["personal-1"]);
       await expect(lessonCoursewareService.createFromLecture(
         "teacher-1", "school-1", lecture.id, [], ["class-1"],
       )).rejects.toThrow("只能将讲义推送到本人所属的个人教学班");
