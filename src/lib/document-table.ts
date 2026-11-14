@@ -8,7 +8,7 @@ export interface DocumentTableCell {
 export type DocumentTable = DocumentTableCell[][];
 
 const TABLE_FRAGMENT_PATTERN = /<table\b[^>]*\bclass=(?:"[^"]*\bdocument-table\b[^"]*"|'[^']*\bdocument-table\b[^']*')[^>]*>[\s\S]*?<\/table>/gi;
-const STRUCTURED_MATH_TAG_PATTERN = /<i\s+class=["']math-(?:variable|vector)["']>|<\/i>|<\/?(?:sub|sup)>/gi;
+const STRUCTURED_INLINE_TAG_PATTERN = /<i\s+class=["']math-(?:variable|vector)["']>|<\/i>|<\/?(?:sub|sup|u)>/gi;
 const STRUCTURED_MATH_PLACEHOLDER_PATTERN = /\uE200(\d+)\uE201/g;
 
 function escapeHtml(value: string): string {
@@ -23,7 +23,7 @@ function escapeHtml(value: string): string {
 export function renderDocumentTableStructuredCell(content: string): string {
   const tags: string[] = [];
   const protectedContent = content.replace(
-    STRUCTURED_MATH_TAG_PATTERN,
+    STRUCTURED_INLINE_TAG_PATTERN,
     (tag) => `\uE200${tags.push(tag) - 1}\uE201`,
   );
 

@@ -178,6 +178,44 @@ describe("ExtractReviewModal", () => {
     ]);
   });
 
+  it("extracts table underline answers when a region is manually set to knowledge", async () => {
+    const user = userEvent.setup();
+    mocks.authState.teacher.subject = "数学";
+    const content = '基本性质 <table class="document-table"><tbody><tr><td>方向 <u>平行</u></td></tr></tbody></table>';
+    render(<ExtractReviewModal
+      open onClose={vi.fn()} resourceId="lecture-1" resourceType="lecture"
+      resourceTitle="数学讲义" chapterIds={[]} knowledgePointIds={[]}
+      grade="高一" schoolYear="2026-2027" semester="上学期"
+      initialBlocks={[{ id: "block-knowledge", type: "documentInfo", content, order: 0, status: "new" }]}
+    />);
+    await user.selectOptions(screen.getByLabelText("调整区域属性"), "knowledge");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledOnce());
+    const saved = mocks.confirmExtract.mock.calls[0][2].knowledgeBlocks[0];
+    expect(saved.inlineAnswers).toEqual(["平行"]);
+    expect(saved.content).toContain('data-answer-index="1"');
+    expect(saved.content).not.toContain("<u>");
+  });
+
+  it("extracts table underlines when a question is changed to short answer", async () => {
+    const user = userEvent.setup();
+    mocks.authState.teacher.subject = "数学";
+    const content = '1. 求值：<table class="document-table"><tbody><tr><td>答案 <u>42</u></td></tr></tbody></table>';
+    render(<ExtractReviewModal
+      open onClose={vi.fn()} resourceId="lecture-1" resourceType="lecture"
+      resourceTitle="数学讲义" chapterIds={[]} knowledgePointIds={[]}
+      grade="高一" schoolYear="2026-2027" semester="上学期"
+      initialBlocks={[{ id: "block-question", type: "question", content, questionType: "essay", order: 0, status: "new" }]}
+    />);
+    await user.selectOptions(screen.getByLabelText("题型选择"), "short");
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledOnce());
+    const saved = mocks.confirmExtract.mock.calls[0][2].questions[0];
+    expect(saved.answer).toBe("42");
+    expect(saved.stem).toContain("<td>答案 ____</td>");
+    expect(saved.stem).not.toContain("<u>");
+  });
+
   it("highlights detected categories, allows rejecting a suggestion and persists the confirmed selection", async () => {
     const user = userEvent.setup();
     render(
