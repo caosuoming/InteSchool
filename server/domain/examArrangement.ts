@@ -323,18 +323,22 @@ export const examArrangementService = {
         durationMinutes: Math.max(1, Math.round(item.durationMinutes || 120)),
       };
     });
+    const availableTeacherIds = new Set(teachers
+      .filter((teacher) => !config.teacherRequirements?.[teacher.id]?.isOnLeave
+        && !config.teacherRequirements?.[teacher.id]?.isExempt)
+      .map((teacher) => teacher.id));
     const requestedPatrolTeacherIds = config.patrolTeacherIds ?? [
       ...teachers.filter((teacher) => teacher.isLeader).map((teacher) => teacher.id),
       ...Object.values(config.overrides || {}).flatMap((override) => override.patrolTeacherId ? [override.patrolTeacherId] : []),
     ];
-    const patrolTeacherIds = [...new Set(requestedPatrolTeacherIds)].filter((id) => teacherIds.has(id));
+    const patrolTeacherIds = [...new Set(requestedPatrolTeacherIds)].filter((id) => availableTeacherIds.has(id));
     const validOverrides = Object.fromEntries(Object.entries(config.overrides || {}).map(([key, override]) => [
       key,
       {
         roomTeacherIds: Object.fromEntries(Object.entries(override.roomTeacherIds || {}).filter(([, teacherId]) => (
-          teacherId === null || teacherIds.has(teacherId)
+          teacherId === null || availableTeacherIds.has(teacherId)
         ))),
-        ...(override.outsideTeacherId === null || (override.outsideTeacherId && teacherIds.has(override.outsideTeacherId))
+        ...(override.outsideTeacherId === null || (override.outsideTeacherId && availableTeacherIds.has(override.outsideTeacherId))
           ? { outsideTeacherId: override.outsideTeacherId }
           : {}),
       },
@@ -367,6 +371,7 @@ export const examArrangementService = {
       const normalized: NonNullable<ExamInvigilationConfig["teacherRequirements"]>[string] = {};
       if (requirement.sameDay === "yes" || requirement.sameDay === "no") normalized.sameDay = requirement.sameDay;
       if (requirement.isOnLeave === true) normalized.isOnLeave = true;
+      if (requirement.isExempt === true) normalized.isExempt = true;
       return Object.keys(normalized).length ? [[teacherId, normalized]] : [];
     }));
     const footerNote = config.footerNote?.trim() || "";

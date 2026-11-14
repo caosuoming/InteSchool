@@ -195,10 +195,10 @@ function normalizeOverride(
 ): ExamInvigilationSlotOverride {
   const outsideTeacherId = validManualTeacherId(override?.outsideTeacherId, teachers);
   return {
-    roomTeacherIds: Object.fromEntries(Object.entries(override?.roomTeacherIds || {}).map(([roomId, teacherId]) => [
-      roomId,
-      validManualTeacherId(teacherId, teachers) ?? null,
-    ])),
+    roomTeacherIds: Object.fromEntries(Object.entries(override?.roomTeacherIds || {}).flatMap(([roomId, teacherId]) => {
+      const valid = validManualTeacherId(teacherId, teachers);
+      return valid === undefined ? [] : [[roomId, valid]];
+    })),
     ...(outsideTeacherId !== undefined ? { outsideTeacherId } : {}),
   };
 }
@@ -215,6 +215,7 @@ function resolvePatrolTeacherIds(
     ];
   return [...new Set(requested)].filter((teacherId) => (
     teachers.has(teacherId) && !config.teacherRequirements?.[teacherId]?.isOnLeave
+      && !config.teacherRequirements?.[teacherId]?.isExempt
   ));
 }
 
@@ -261,7 +262,11 @@ export function buildExamInvigilationTable(
   config: ExamInvigilationConfig,
   options: BuildExamInvigilationTableOptions = {},
 ): ExamInvigilationTable {
-  const teachers = new Map(config.teachers.map((teacher) => [teacher.id, teacher]));
+  const eligibleTeachers = config.teachers.filter((teacher) => (
+    !config.teacherRequirements?.[teacher.id]?.isOnLeave
+    && !config.teacherRequirements?.[teacher.id]?.isExempt
+  ));
+  const teachers = new Map(eligibleTeachers.map((teacher) => [teacher.id, teacher]));
   const teacherMinutes = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
   const teacherPriorityMinutes = new Map(config.teachers.map((teacher) => [
     teacher.id,
@@ -340,7 +345,7 @@ export function buildExamInvigilationTable(
 
   const matchesTeacherRequirements = (teacher: ExamInvigilationTeacher, date: string) => {
     const requirement = config.teacherRequirements?.[teacher.id];
-    if (requirement?.isOnLeave) return false;
+    if (requirement?.isOnLeave || requirement?.isExempt) return false;
     const sameDay = requirement?.sameDay || "yes";
     const dates = teacherDates.get(teacher.id) || new Set<string>();
     if (sameDay === "no") return !dates.has(date);
@@ -388,29 +393,12 @@ export function buildExamInvigilationTable(
     const date = input.times[0].date;
     const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
     const outsideOverridden = Object.prototype.hasOwnProperty.call(override, "outsideTeacherId");
-    let outsideTeacherIds: string[] = outsideOverridden
-      ? (override.outsideTeacherId ? [override.outsideTeacherId] : [])
-      : config.teachers
-        .filter((teacher) => teacher.isPrepLeader && input.subjectSet.has(teacher.subject) && !unavailable.has(teacher.id) && requirement(teacher))
-        .sort((left, right) => (
-          (teacherPriorityMinutes.get(left.id) || 0) - (teacherPriorityMinutes.get(right.id) || 0)
-          || left.name.localeCompare(right.name, "zh-CN")
-        ))
-        .map((teacher) => teacher.id);
-
-    if (!outsideOverridden && outsideTeacherIds.length === 0) {
-      const fallbackOutside = chooseTeacher(
-        config.teachers.filter((teacher) => teacher.isPrepLeader),
-        unavailable,
-        teacherPriorityMinutes,
-        requirement,
-      );
-      if (fallbackOutside) outsideTeacherIds = [fallbackOutside.id];
-    }
-    outsideTeacherIds.forEach((teacherId) => {
-      unavailable.add(teacherId);
-      markOwnSubjectAssignment(teacherId, input.subjectSet);
-    });
+    // Explicit outside overrides reserve their teacher. Automatic outside duty
+    // must wait until occupied rooms have a supervisor; otherwise a shortage of
+    // teachers creates empty classrooms while staff are assigned outside.
+    let outsideTeacherIds: string[] = outsideOverridden && override.outsideTeacherId
+      ? [override.outsideTeacherId]
+      : [];
 
     const subjectPriorityRoomTeachers = new Map<string, string>();
     if ((config.autoArrangePriority || "duration") === "subject") {
@@ -485,18 +473,32 @@ export function buildExamInvigilationTable(
       }
     }
 
-    if (!outsideOverridden && outsideTeacherIds.length === 0) {
-      const fallbackOutside = chooseTeacher(
-        config.teachers.filter((teacher) => !teacher.isLeader),
-        unavailable,
-        teacherPriorityMinutes,
-        requirement,
-      );
-      if (fallbackOutside) {
-        outsideTeacherIds = [fallbackOutside.id];
-        unavailable.add(fallbackOutside.id);
-        markOwnSubjectAssignment(fallbackOutside.id, input.subjectSet);
+    if (!outsideOverridden) {
+      outsideTeacherIds = eligibleTeachers
+        .filter((teacher) => teacher.isPrepLeader && input.subjectSet.has(teacher.subject) && !unavailable.has(teacher.id) && requirement(teacher))
+        .sort((left, right) => (
+          (teacherPriorityMinutes.get(left.id) || 0) - (teacherPriorityMinutes.get(right.id) || 0)
+          || left.name.localeCompare(right.name, "zh-CN")
+        ))
+        .map((teacher) => teacher.id);
+      if (outsideTeacherIds.length === 0) {
+        const fallback = chooseTeacher(
+          eligibleTeachers.filter((teacher) => teacher.isPrepLeader && !teacher.isLeader),
+          unavailable,
+          teacherPriorityMinutes,
+          requirement,
+        ) || chooseTeacher(
+          eligibleTeachers.filter((teacher) => !teacher.isLeader),
+          unavailable,
+          teacherPriorityMinutes,
+          requirement,
+        );
+        if (fallback) outsideTeacherIds = [fallback.id];
       }
+      outsideTeacherIds.forEach((teacherId) => {
+        unavailable.add(teacherId);
+        markOwnSubjectAssignment(teacherId, input.subjectSet);
+      });
     }
 
     const outsideTeacherId = outsideTeacherIds[0] || null;
@@ -533,7 +535,7 @@ export function buildExamInvigilationTable(
     } satisfies ExamInvigilationSlotRow;
   });
 
-  const teacherStats = config.teachers.map((teacher) => ({
+  const teacherStats = eligibleTeachers.map((teacher) => ({
     teacherId: teacher.id,
     name: teacher.name,
     subject: teacher.subject,

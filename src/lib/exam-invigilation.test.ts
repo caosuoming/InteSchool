@@ -238,9 +238,54 @@ describe("exam invigilation table", () => {
     expect(table.patrolTeacherIds).toEqual([]);
     expect(table.rows.some((row) => Object.values(row.roomTeacherIds).includes("physics"))).toBe(false);
     expect(table.rows.some((row) => row.outsideTeacherId === "prep")).toBe(false);
-    expect(table.teacherStats.find((item) => item.teacherId === "physics")?.minutes).toBe(0);
-    expect(table.teacherStats.find((item) => item.teacherId === "prep")?.minutes).toBe(0);
-    expect(table.teacherStats.find((item) => item.teacherId === "leader")?.minutes).toBe(0);
+    expect(table.teacherStats.some((item) => item.teacherId === "physics")).toBe(false);
+    expect(table.teacherStats.some((item) => item.teacherId === "prep")).toBe(false);
+    expect(table.teacherStats.some((item) => item.teacherId === "leader")).toBe(false);
+  });
+
+  it.each(["duration", "subject"] as const)("fills occupied rooms before optional outside duty with %s priority", (priority) => {
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "room-teacher", name: "任课教师", subject: "物理" },
+        { id: "prep-teacher", name: "场外教师", subject: "历史", isPrepLeader: true },
+      ],
+      subjectTimes: [
+        { subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
+        { subject: "历史", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
+      ],
+      autoArrangePriority: priority,
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const row = buildExamInvigilationTable(arrangement(), settings).rows[0];
+    expect(Object.values(row.roomTeacherIds).filter(Boolean)).toHaveLength(2);
+    expect(new Set(Object.values(row.roomTeacherIds).filter(Boolean)).size).toBe(2);
+    expect(row.outsideTeacherIds).toEqual([]);
+    expect(row.duplicateTeacherIds).toEqual([]);
+  });
+
+  it("excludes exempt and on-leave teachers from patrol, manual assignments and rankings", () => {
+    const settings = config();
+    const key = invigilationSlotKey(settings.subjectTimes.slice(0, 2));
+    settings.teacherRequirements = {
+      physics: { isExempt: true },
+      history: { isOnLeave: true },
+      leader: { isExempt: true },
+    };
+    settings.overrides = {
+      [key]: {
+        roomTeacherIds: { "room-1": "physics", "room-2": "history" },
+        outsideTeacherId: "physics",
+      },
+    };
+    const table = buildExamInvigilationTable(arrangement(), settings);
+    expect(table.patrolTeacherIds).toEqual([]);
+    expect(table.teacherStats.map((stat) => stat.teacherId)).toEqual(["prep"]);
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("prep");
+    expect(table.rows[0].roomTeacherIds["room-2"]).toBeNull();
+    expect(table.rows[0].outsideTeacherIds).toEqual([]);
+    expect(table.rows[0].duplicateTeacherIds).toEqual([]);
   });
 
   it("assigns every designated outside teacher for the subject and counts each duration", () => {
