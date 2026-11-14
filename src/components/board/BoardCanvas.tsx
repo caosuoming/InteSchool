@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Eye, Pin, Search, X } from "lucide-react";
 import sanitizeHtml from "sanitize-html";
+import { cleanBoardRichText } from "@/lib/board-rich-text";
 import type { BoardDocument, BoardNode, BoardPort } from "@/types";
 import { focusBoardNodes, type PositionedNode } from "./board-layout";
 import { canReparent, connectBoardPorts, edgeGeometry, portPoint, PORTS, type NodeBounds, type Point } from "./board-routing";
@@ -27,11 +28,7 @@ const portPositions: Record<BoardPort, { left: string; top: string }> = {
 };
 
 function htmlNotes(html?: string) {
-  return sanitizeHtml(html || "", {
-    allowedTags: ["b", "strong", "i", "em", "u", "s", "p", "div", "br", "span", "ul", "ol", "li", "code"],
-    allowedAttributes: { span: ["style"] },
-    allowedStyles: { span: { color: [/^#[0-9a-fA-F]{3,8}$/], "font-size": [/^(?:[1-9]|[1-4][0-9])px$/] } },
-  });
+  return cleanBoardRichText(html || "");
 }
 
 export function BoardCanvas({
@@ -78,7 +75,7 @@ export function BoardCanvas({
 
   const bounds = (entry: PositionedNode): NodeBounds => measured[entry.node.id] || {
     cx: entry.x * 10, cy: entry.y * 6,
-    width: Math.min(190, Math.max(90, entry.node.label.length * 14 + 24)),
+    width: Math.min(190, Math.max(90, (entry.node.hideLabel ? 0 : entry.node.label.length) * 14 + 24)),
     height: entry.node.richText || entry.node.imageUrl ? 105 : 46,
   };
   const lines = board.edges.flatMap((edge) => {
@@ -223,10 +220,11 @@ export function BoardCanvas({
                   : "border-ink-200 bg-white text-ink-700",
               !readonly && node.id !== board.rootNodeId && "cursor-grab active:cursor-grabbing")}
             style={{ fontSize }}>
-            <span className="block break-words">{node.label}</span>
+            {!node.hideLabel && <span className="block break-words">{node.label}</span>}
             {node.pinned && <Pin size={12} aria-label="已固定" className="ml-auto text-amber-600" />}
             {node.imageUrl && <img src={node.imageUrl} alt={node.label} className="mt-1 max-h-24 w-full rounded object-contain" draggable={false} />}
-            {node.richText && <span className="mt-1 block break-words text-left font-normal"
+            {node.hideLabel && !node.richText && !node.imageUrl && <span aria-hidden="true">{"\u00a0"}</span>}
+            {node.richText && <span className="mt-1 block break-words text-left font-normal [&_img]:max-h-48 [&_img]:max-w-full [&_img]:object-contain"
               dangerouslySetInnerHTML={{ __html: htmlNotes(node.richText) }} />}
           </button>
           {!readonly && onChange && PORTS.map((port) => <button type="button" key={port}

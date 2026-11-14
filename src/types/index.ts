@@ -2905,6 +2905,8 @@ export interface BoardNode {
   y: number;
   pinned?: boolean;
   hidden?: boolean;
+  /** 仅隐藏画布上的节点名称，仍保留节点内容及搜索/编辑能力。 */
+  hideLabel?: boolean;
   /** 作为节点标题下方附加说明的安全富文本。 */
   richText?: string;
   imageUrl?: string;
@@ -2932,6 +2934,8 @@ export interface BoardDocument {
   subject: string;
   title: string;
   rootNodeId: string;
+  /** 关联到教师当前章节课目录的节点 ID（仅结构板书）。 */
+  chapterId?: string;
   nodes: BoardNode[];
   edges: BoardEdge[];
   createdAt: string;

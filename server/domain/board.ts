@@ -1,6 +1,6 @@
 import type { BoardDocument, BoardEdge, BoardNode, BoardPort, BoardLineRoute, TreeNode } from "../../src/types/index.js";
 import type { TeacherRecord } from "../types.js";
-import sanitizeHtml from "sanitize-html";
+import { cleanBoardRichText } from "../../src/lib/board-rich-text.js";
 import { selectedSubject } from "../lib/resource-subject.js";
 import { personalResourceScopeId } from "../../src/lib/personal-resource-scope.js";
 import { db } from "../runtime-db.js";
@@ -10,14 +10,9 @@ import { knowledgeService } from "./knowledge.js";
 const MAX_NODES = 600;
 const MAX_EDGES = 1200;
 const PORTS: readonly BoardPort[] = ["top-left", "top-right", "bottom-left", "bottom-right", "left", "right"];
-const RICH_TEXT_OPTIONS: sanitizeHtml.IOptions = {
-  allowedTags: ["b", "strong", "i", "em", "u", "s", "p", "div", "br", "span", "ul", "ol", "li", "code"],
-  allowedAttributes: { span: ["style"] },
-  allowedStyles: { span: { "color": [/^#[0-9a-fA-F]{3,8}$/], "font-size": [/^(?:[1-9]|[1-4][0-9])px$/] } },
-};
-function safeRichText(value: unknown): string | undefined {
+function safeRichText(value: unknown, allowImages = true): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
-  return sanitizeHtml(value.slice(0, 12000), RICH_TEXT_OPTIONS).slice(0, 12000);
+  return cleanBoardRichText(value, allowImages) || undefined;
 }
 function safeImage(value: unknown): string | undefined {
   if (typeof value !== "string" || !value) return undefined;
@@ -32,7 +27,7 @@ function safeFontSize(value: unknown): number | undefined {
 }
 const EPOCH = "1970-01-01T00:00:00.000Z";
 
-type BoardPatch = Pick<BoardDocument, "nodes" | "edges"> & { title?: string; expectedUpdatedAt?: string };
+type BoardPatch = Pick<BoardDocument, "nodes" | "edges"> & { title?: string; chapterId?: string | null; expectedUpdatedAt?: string };
 
 function teacherContext(teacherId: string) {
   const teacher = (db.read("teachers") as TeacherRecord[]).find((item) => item.id === teacherId);
@@ -104,6 +99,7 @@ function normalizeNodes(raw: BoardNode[], rootNodeId: string): BoardNode[] {
       y: Math.max(0, Math.min(100, y)),
       ...(node.pinned === true ? { pinned: true } : {}),
       ...(node.hidden === true && node.id !== rootNodeId ? { hidden: true } : {}),
+      ...(node.hideLabel === true ? { hideLabel: true } : {}),
       ...(safeRichText(node.richText) ? { richText: safeRichText(node.richText) } : {}),
       ...(safeImage(node.imageUrl) ? { imageUrl: safeImage(node.imageUrl) } : {}),
       ...(safeFontSize(node.fontSize) ? { fontSize: safeFontSize(node.fontSize) } : {}),
@@ -142,7 +138,7 @@ function normalizeEdges(raw: BoardEdge[], nodes: BoardNode[]): BoardEdge[] {
     return { id: edge.id, from: edge.from, to: edge.to, style: edge.style, arrow: edge.arrow, route: edge.route,
       ...(edge.fromPort ? { fromPort: edge.fromPort } : {}),
       ...(edge.toPort ? { toPort: edge.toPort } : {}),
-      ...(safeRichText(edge.richText) ? { richText: safeRichText(edge.richText) } : {}),
+      ...(safeRichText(edge.richText, false) ? { richText: safeRichText(edge.richText, false) } : {}),
       ...(safeFontSize(edge.fontSize) ? { fontSize: safeFontSize(edge.fontSize) } : {}),
     };
   });
@@ -169,6 +165,7 @@ async function getMaster(teacherId: string): Promise<BoardDocument> {
       x: custom.x, y: custom.y,
       ...(custom.pinned ? { pinned: true } : {}),
       ...(custom.hidden ? { hidden: true } : {}),
+      ...(custom.hideLabel ? { hideLabel: true } : {}),
       ...(custom.richText ? { richText: custom.richText } : {}),
       ...(custom.imageUrl ? { imageUrl: custom.imageUrl } : {}),
       ...(custom.fontSize ? { fontSize: custom.fontSize } : {}),
@@ -299,10 +296,23 @@ export const boardService = {
       nodes = nodes.map(({ sourceKnowledgeId: _source, ...node }) => node);
     }
     const edges = normalizeEdges(patch.edges, nodes);
+    let chapterId = existing.chapterId;
+    if (existing.kind === "structure" && patch.chapterId !== undefined) {
+      if (patch.chapterId !== null && (typeof patch.chapterId !== "string" || !patch.chapterId.trim())) {
+        throw new Error("章节课目录节点不合法");
+      }
+      chapterId = patch.chapterId || undefined;
+      if (chapterId) {
+        const tree = await knowledgeService.getChapterTree(teacherId, false);
+        const contains = (node: TreeNode): boolean => node.id === chapterId || node.children.some(contains);
+        if (chapterId === "root" || !contains(tree)) throw new Error("章节课目录节点不存在或不属于当前教师");
+      }
+    }
     const updated: BoardDocument = {
       ...existing,
       title: existing.kind === "master" ? "总导图" : (patch.title || existing.title).trim().slice(0, 180),
       nodes, edges,
+      ...(existing.kind === "structure" ? { chapterId } : {}),
       // Timestamps double as optimistic-lock revisions; consecutive writes in the same millisecond
       // must still produce distinct values so stale edits cannot silently overwrite newer ones.
       updatedAt: new Date(Math.max(Date.now(), (Date.parse(existing.updatedAt) || 0) + 1)).toISOString(),

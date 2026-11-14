@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Eye, EyeOff, GitBranchPlus, Pin, PinOff, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, FolderTree, GitBranchPlus, Pin, PinOff, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { genId } from "@/lib/service-utils";
 import { boardService } from "@/services/board";
+import { knowledgeService } from "@/services/knowledge";
+import { TreeView } from "@/components/tree/TreeView";
+import { Modal } from "@/components/ui/Modal";
 import { BoardCanvas } from "@/components/board/BoardCanvas";
 import { BoardRichTextField } from "@/components/board/BoardRichTextField";
-import type { BoardDocument, BoardEdge, BoardNode } from "@/types";
+import type { BoardDocument, BoardEdge, BoardNode, TreeNode } from "@/types";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "未知错误";
@@ -17,8 +20,23 @@ function newEdge(from: string, to: string, kind: BoardDocument["kind"]): BoardEd
     route: kind === "master" ? "curve" : "elbow" };
 }
 
+function chapterPath(tree: TreeNode | null, id?: string): string | null {
+  if (!tree || !id) return null;
+  const walk = (node: TreeNode, parents: string[]): string | null => {
+    const parts = node.id === "root" ? parents : [...parents, node.name];
+    if (node.id === id) return parts.join(" / ");
+    for (const child of node.children) {
+      const found = walk(child, parts);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(tree, []);
+}
+
 export function BoardLibrary() {
   const { teacher } = useAuthStore();
+  const teacherId = teacher?.id;
   const [list, setList] = useState<BoardDocument[]>([]);
   const [board, setBoard] = useState<BoardDocument | null>(null);
   const [saved, setSaved] = useState<BoardDocument | null>(null);
@@ -27,6 +45,9 @@ export function BoardLibrary() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [linkTargetId, setLinkTargetId] = useState("");
+  const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
+  const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
+  const [richEditorOpen, setRichEditorOpen] = useState(false);
   const dirty = !!board && !!saved && JSON.stringify(board) !== JSON.stringify(saved);
 
   const reload = useCallback(async (preferredId?: string) => {
@@ -48,6 +69,15 @@ export function BoardLibrary() {
   }, [teacher]);
 
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (!teacherId) return;
+    let active = true;
+    setChapterTree(null);
+    void knowledgeService.getChapterTree(teacherId, false)
+      .then((tree) => { if (active) setChapterTree(tree); })
+      .catch((err) => { if (active) toast.error("加载章节课目录失败", errorMessage(err)); });
+    return () => { active = false; };
+  }, [teacherId]);
 
   const selectBoard = async (id: string) => {
     if (!teacher || !board || id === board.id) return;
@@ -177,7 +207,10 @@ export function BoardLibrary() {
         {list.map((item) => <button key={item.id} type="button" onClick={() => void selectBoard(item.id)}
           className={`w-full rounded-lg px-3 py-2 text-left text-sm ${item.id === board.id ? "bg-amber-50 text-amber-900" : "text-ink-600 hover:bg-mist"}`}>
           <span className="block truncate font-medium">{item.title}</span>
-          <span className="text-[11px] text-ink-400">{item.kind === "master" ? "知识树实时同步 · 总导图" : "结构板书"}</span>
+          <span className="block text-[11px] text-ink-400">{item.kind === "master" ? "知识树实时同步 · 总导图" : "结构板书"}</span>
+          {item.kind === "structure" && item.chapterId && <span className="block truncate text-[11px] text-amber-700" title={chapterPath(chapterTree, item.chapterId) || "章节节点已失效"}>
+            章节：{chapterPath(chapterTree, item.chapterId) || "节点已失效"}
+          </span>}
         </button>)}
       </div>
       <button type="button" onClick={() => void create()} disabled={busy} className="mt-4 flex w-full items-center justify-center gap-1 rounded-lg border border-ink-200 py-2 text-xs text-ink-700 hover:bg-mist disabled:opacity-50">
@@ -187,7 +220,14 @@ export function BoardLibrary() {
 
     <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-ink-100 bg-paper">
       <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink-800">{board.title}</span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-ink-800">{board.title}</div>
+          {board.kind === "structure" && board.chapterId && <div className="truncate text-[11px] text-amber-700">章节：{chapterPath(chapterTree, board.chapterId) || "节点已失效"}</div>}
+        </div>
+        {board.kind === "structure" && <button type="button" aria-label="关联章节课目录" onClick={() => setChapterPickerOpen(true)}
+          className="flex shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2 py-1.5 text-xs text-ink-700 hover:bg-mist">
+          <FolderTree className="h-3.5 w-3.5" />章节课目录
+        </button>}
         {dirty && <span className="text-xs text-amber-700">未保存</span>}
         {board.kind === "structure" && <button aria-label="删除结构板书" onClick={() => void remove()} className="rounded p-2 text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>}
         <button type="button" onClick={() => void save()} disabled={!dirty || busy} className="flex items-center gap-1 rounded-lg bg-ink-900 px-3 py-2 text-xs text-paper disabled:opacity-40">
@@ -223,6 +263,11 @@ export function BoardLibrary() {
             })}
             className="mt-1 w-full rounded-md border border-ink-200 px-2 py-2 text-sm disabled:bg-mist" />
         </label>
+        <label className="flex items-center gap-2 text-xs text-ink-600">
+          <input type="checkbox" aria-label="不显示节点名称" checked={!!selected.hideLabel}
+            onChange={(e) => changeNode({ hideLabel: e.target.checked })} />
+          不显示节点名称（保留文本框内容）
+        </label>
         {board.kind === "master" && selected.sourceKnowledgeId && <p className="text-xs text-ink-400">该节点来自知识树，名称随知识树同步。</p>}
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-label={selected.pinned ? "取消图钉" : "添加图钉"}
@@ -244,6 +289,8 @@ export function BoardLibrary() {
             onChange={(e) => changeNode({ fontSize: Math.max(10, Math.min(48, Number(e.target.value) || 10)) })}
             className="mt-1 w-full rounded-md border border-ink-200 p-2 text-sm" />
         </label>
+        <button type="button" className="rounded-md border border-ink-200 px-2 py-1.5 text-xs text-ink-700 hover:bg-mist"
+          aria-label="打开节点文本编辑器" onClick={() => setRichEditorOpen(true)}>展开节点文本编辑器</button>
         <BoardRichTextField key={`node:${selected.id}`} label="节点富文本" value={selected.richText}
           onChange={(richText) => changeNode({ richText })} />
         <label className="block text-xs text-ink-500">节点图片 URL（支持 https）
@@ -300,5 +347,24 @@ export function BoardLibrary() {
       </div>}
       {!selected && !edge && <p className="text-xs text-ink-400">点击节点或连线查看编辑选项。</p>}
     </aside>
+    <Modal open={chapterPickerOpen && board.kind === "structure"} onClose={() => setChapterPickerOpen(false)} title="添加到章节课目录" size="lg">
+      <div className="space-y-3 p-4">
+        {chapterTree ? <TreeView data={chapterTree} selectedId={board.chapterId}
+          onSelect={(node) => { patch({ chapterId: node.id }); setChapterPickerOpen(false); }}
+          showCount={false} expandLevel={2} className="max-h-[55vh] overflow-y-auto" />
+          : <p className="text-sm text-ink-500">章节课目录加载中...</p>}
+        <div className="flex items-center justify-between border-t border-ink-100 pt-3">
+          <button type="button" onClick={() => { patch({ chapterId: undefined }); setChapterPickerOpen(false); }}
+            className="text-xs text-red-600">清除关联</button>
+          <span className="text-xs text-ink-400">选择节点后点击“保存”以生效</span>
+        </div>
+      </div>
+    </Modal>
+    <Modal open={richEditorOpen && !!selected} onClose={() => setRichEditorOpen(false)} title={`编辑节点文本：${selected?.label || ""}`} size="lg">
+      <div className="p-5">
+        {selected && <BoardRichTextField key={`expanded:${selected.id}`} label="节点文本编辑器" expanded
+          value={selected.richText} onChange={(richText) => changeNode({ richText })} />}
+      </div>
+    </Modal>
   </div>;
 }

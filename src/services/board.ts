@@ -8,6 +8,7 @@ export const boardService = {
   createBoard: (teacherId: string, sourceNodeId: string) => rpcCall<BoardDocument>("board", "createBoard", [teacherId, sourceNodeId]),
   saveBoard: (board: BoardDocument) => rpcCall<BoardDocument>("board", "saveBoard", [board.id, board.teacherId, {
     title: board.title,
+    chapterId: board.chapterId ?? null,
     nodes: board.nodes,
     edges: board.edges,
     expectedUpdatedAt: board.updatedAt,

@@ -84,6 +84,46 @@ describe("board library", () => {
     });
   });
 
+  it("links structure boards to an owned chapter node and supports clearing it", async () => {
+    await runWithState(fixture(), async () => {
+      const chapter = await knowledgeService.addChapter("alice", null, "第一章");
+      const foreign = await knowledgeService.addChapter("bob", null, "其他教师章节");
+      const board = await boardService.createBoard("alice", "a");
+      const linked = await boardService.saveBoard(board.id, "alice", { ...patch(board), chapterId: chapter.id });
+      expect(linked.chapterId).toBe(chapter.id);
+      expect((await boardService.listBoards("alice")).find((item) => item.id === board.id)?.chapterId).toBe(chapter.id);
+      await expect(boardService.saveBoard(linked.id, "alice", { ...patch(linked), chapterId: foreign.id }))
+        .rejects.toThrow(/章节课目录节点不存在/);
+      await expect(boardService.saveBoard(linked.id, "alice", { ...patch(linked), chapterId: "root" }))
+        .rejects.toThrow(/章节课目录节点不存在/);
+      const unlinked = await boardService.saveBoard(linked.id, "alice", { ...patch(linked), chapterId: null });
+      expect(unlinked.chapterId).toBeUndefined();
+      const master = (await boardService.listBoards("alice"))[0];
+      const masterUpdated = await boardService.saveBoard(master.id, "alice", { ...patch(master), chapterId: chapter.id });
+      expect(masterUpdated.chapterId).toBeUndefined();
+    });
+  });
+
+  it("keeps a hidden label and pasted inline images while rejecting active HTML", async () => {
+    await runWithState(fixture(), async () => {
+      const board = await boardService.createBoard("alice", "a");
+      const image = "data:image/png;base64," + Buffer.from("sample").toString("base64");
+      const richText = `<p>文字<img src="${image}" onerror="alert(1)" alt="说明"><img src="javascript:alert(1)"><script>alert(2)</script></p>`;
+      const saved = await boardService.saveBoard(board.id, "alice", { ...patch(board),
+        nodes: board.nodes.map((node) => node.id === "b" ? { ...node, hideLabel: true, richText } : node),
+      });
+      const node = saved.nodes.find((entry) => entry.id === "b")!;
+      expect(node.hideLabel).toBe(true);
+      expect(node.richText).toContain(image);
+      expect(node.richText).not.toMatch(/onerror|script|javascript|alert/);
+      const loaded = await boardService.getBoard(board.id, "alice");
+      expect(loaded.nodes.find((entry) => entry.id === "b")?.hideLabel).toBe(true);
+      await expect(boardService.saveBoard(board.id, "alice", { ...patch(saved),
+        nodes: saved.nodes.map((entry) => entry.id === "b" ? { ...entry, richText: "a".repeat(1000001) } : entry),
+      })).rejects.toThrow(/内容过大/);
+    });
+  });
+
   it("creates independent structures and rejects cross-owner access and invalid graphs", async () => {
     await runWithState(fixture(), async () => {
       const board = await boardService.createBoard("alice", "b");
