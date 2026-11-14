@@ -290,6 +290,19 @@ describe("ommlToLatex", () => {
     expect(latex).not.toContain("\\right)");
   });
 
+  it("does not invent a closing parenthesis for a one-sided equation system", () => {
+    const withoutEndCharacter = piecewiseFunction().replace(
+      '<m:endChr m:val="."/>', "",
+    );
+    const latex = ommlToLatex(withoutEndCharacter);
+    expect(latex).toContain(String.raw`\left\{`);
+    expect(latex).toContain(String.raw`\right.`);
+    expect(latex).not.toContain(String.raw`\right)`);
+
+    // An explicit right delimiter still carries the author's intent.
+    expect(ommlToLatex(piecewiseFunction(")"))).toContain(String.raw`\right)`);
+  });
+
   it("preserves an explicitly empty one-sided delimiter", () => {
     const latex = ommlToLatex(piecewiseFunction(""));
 

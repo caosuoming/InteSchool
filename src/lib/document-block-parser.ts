@@ -519,7 +519,26 @@ function mathQuestionNumber(text: string, confirmedNumbers: number[] = []): stri
   return undefined;
 }
 
+/**
+ * Numbered examples in math lectures use a chapter-example index (例1-2).
+ * Keep the complete marker: treating this as "例1" makes （1）/（2） look
+ * detached and routes later prompts into the previous answer/analysis field.
+ */
+function mathCompoundExampleMarker(
+  text: string,
+  config: DocumentParseConfig,
+): { end: number; number: string } | null {
+  if (config.subject?.trim() !== "数学") return null;
+  const match = /^(?:[【［[]\s*)?例(?:题)?\s*([\d０-９]{1,3})\s*[-－‑–—]\s*([\d０-９]{1,3})(?![\d０-９A-Za-z-－‑–—])(?:\s*[】］\]])?\s*/.exec(text);
+  if (!match) return null;
+  return {
+    end: match[0].length,
+    number: `例${normalizeQuestionNumber(match[1])}-${normalizeQuestionNumber(match[2])}`,
+  };
+}
+
 function isQuestionStart(text: string, config: DocumentParseConfig): boolean {
+  if (mathCompoundExampleMarker(text, config)) return true;
   if (config.subject?.trim() === "数学" && mathQuestionNumber(text, config.confirmedMathQuestionNumbers)) return true;
   if (/^第\s*[\d０-９]+\s*题(?:\s|[、.．:：)）]|$)/.test(text)) return true;
   if (/^[\d０-９]{1,4}\s*(?:[、.．)）]|题[、.．:：)）]?)(?:\s*\S|\s*$)/.test(text)) return true;
@@ -725,6 +744,8 @@ function topLevelQuestionRemainder(
   text: string,
   config: DocumentParseConfig,
 ): { start: number; text: string } | null {
+  const compound = mathCompoundExampleMarker(text, config);
+  if (compound) return { start: compound.end, text: text.slice(compound.end) };
   const directPatterns = [
     /^第\s*[\d０-９]{1,4}\s*题(?:\s*[、.．:：)）])?\s*/,
     /^[\d０-９]{1,4}\s*(?:[、.．:：)）]|题[、.．:：)）]?)\s*/,
@@ -1062,6 +1083,8 @@ function isNestedTrailingAnswerLine(
 }
 
 function extractQuestionNumber(text: string, config: DocumentParseConfig): string | undefined {
+  const compound = mathCompoundExampleMarker(text, config);
+  if (compound) return compound.number;
   const direct = extractLeadingQuestionNumber(text);
   if (direct) return direct.number;
   if (config.subject?.trim() === "数学") {
