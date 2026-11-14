@@ -3,7 +3,7 @@ export const serviceParameters = {
     "listBoards": ["teacherId"],
     "getBoard": ["boardId", "teacherId"],
     "getLessonBoards": ["coursewareId", "teacher"],
-    "createBoard": ["teacherId", "sourceNodeId"],
+    "createBoard": ["teacherId", "sourceNodeId", "chapterId"],
     "saveBoard": ["boardId", "teacherId", "patch"],
     "deleteBoard": ["boardId", "teacherId"]
   },

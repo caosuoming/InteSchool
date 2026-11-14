@@ -25,9 +25,26 @@ function safeFontSize(value: unknown): number | undefined {
   if (!Number.isInteger(value) || (value as number) < 10 || (value as number) > 48) throw new Error("文字字号应介于 10 至 48");
   return value as number;
 }
+function safeBorderColor(value: unknown): string {
+  if (typeof value !== "string" || !/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error("节点边框颜色不合法");
+  return value.toLowerCase();
+}
 const EPOCH = "1970-01-01T00:00:00.000Z";
 
 type BoardPatch = Pick<BoardDocument, "nodes" | "edges"> & { title?: string; chapterId?: string | null; expectedUpdatedAt?: string };
+
+
+async function validChapter(teacherId: string, chapterId?: string | null): Promise<string | undefined> {
+  if (chapterId !== undefined && chapterId !== null
+    && (typeof chapterId !== "string" || !chapterId.trim())) throw new Error("章节课目录节点不合法");
+  if (!chapterId) return undefined;
+  const tree = await knowledgeService.getChapterTree(teacherId, false);
+  const visit = (node: TreeNode, depth: number): boolean =>
+    (depth > 0 && depth <= 3 && node.id === chapterId) ||
+    (depth < 3 && node.children.some((child) => visit(child, depth + 1)));
+  if (!visit(tree, 0)) throw new Error("章节课目录节点不存在或不属于当前教师");
+  return chapterId;
+}
 
 function teacherContext(teacherId: string) {
   const teacher = (db.read("teachers") as TeacherRecord[]).find((item) => item.id === teacherId);
@@ -103,6 +120,8 @@ function normalizeNodes(raw: BoardNode[], rootNodeId: string): BoardNode[] {
       ...(safeRichText(node.richText) ? { richText: safeRichText(node.richText) } : {}),
       ...(safeImage(node.imageUrl) ? { imageUrl: safeImage(node.imageUrl) } : {}),
       ...(safeFontSize(node.fontSize) ? { fontSize: safeFontSize(node.fontSize) } : {}),
+      ...(node.borderVisible === false ? { borderVisible: false } : {}),
+      ...(node.borderColor !== undefined ? { borderColor: safeBorderColor(node.borderColor) } : {}),
     };
   });
   if (result.find((node) => node.id === rootNodeId)?.parentId !== null) throw new Error("根节点不可移动到其他节点下");
@@ -169,6 +188,8 @@ async function getMaster(teacherId: string): Promise<BoardDocument> {
       ...(custom.richText ? { richText: custom.richText } : {}),
       ...(custom.imageUrl ? { imageUrl: custom.imageUrl } : {}),
       ...(custom.fontSize ? { fontSize: custom.fontSize } : {}),
+      ...(custom.borderVisible === false ? { borderVisible: false } : {}),
+      ...(custom.borderColor ? { borderColor: custom.borderColor } : {}),
     } : node;
   });
   for (const custom of stored?.nodes || []) {
@@ -245,7 +266,7 @@ export const boardService = {
       && board.kind === "structure" && board.teacherId === lesson.teacherId);
   },
 
-  async createBoard(teacherId: string, sourceNodeId: string): Promise<BoardDocument> {
+  async createBoard(teacherId: string, sourceNodeId: string, chapterId?: string): Promise<BoardDocument> {
     const master = await getMaster(teacherId);
     const root = master.nodes.find((node) => node.id === sourceNodeId);
     if (!root) throw new Error("源导图节点不存在");
@@ -267,7 +288,8 @@ export const boardService = {
     const board: BoardDocument = {
       id: genId("board"), kind: "structure", teacherId,
       schoolId: master.schoolId, subject: master.subject, title: root.label,
-      rootNodeId: root.id, nodes, edges: hierarchyEdges(nodes),
+      rootNodeId: root.id, ...(await validChapter(teacherId, chapterId) ? { chapterId } : {}),
+      nodes, edges: hierarchyEdges(nodes),
       createdAt: now, updatedAt: now,
     };
     db.update("boards", (current: BoardDocument[]) => [...current, board]);
@@ -296,18 +318,9 @@ export const boardService = {
       nodes = nodes.map(({ sourceKnowledgeId: _source, ...node }) => node);
     }
     const edges = normalizeEdges(patch.edges, nodes);
-    let chapterId = existing.chapterId;
-    if (existing.kind === "structure" && patch.chapterId !== undefined) {
-      if (patch.chapterId !== null && (typeof patch.chapterId !== "string" || !patch.chapterId.trim())) {
-        throw new Error("章节课目录节点不合法");
-      }
-      chapterId = patch.chapterId || undefined;
-      if (chapterId) {
-        const tree = await knowledgeService.getChapterTree(teacherId, false);
-        const contains = (node: TreeNode): boolean => node.id === chapterId || node.children.some(contains);
-        if (chapterId === "root" || !contains(tree)) throw new Error("章节课目录节点不存在或不属于当前教师");
-      }
-    }
+    const chapterId = existing.kind === "structure"
+      ? await validChapter(teacherId, patch.chapterId === undefined ? existing.chapterId : patch.chapterId)
+      : undefined;
     const updated: BoardDocument = {
       ...existing,
       title: existing.kind === "master" ? "总导图" : (patch.title || existing.title).trim().slice(0, 180),
