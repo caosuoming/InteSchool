@@ -1435,7 +1435,7 @@ export function InvigilationTableSection({
           <div className={cn(
             "flex flex-wrap items-start justify-between gap-2",
             durationListCollapsed ? "mb-0" : "mb-3",
-            tableTwoVisible && "sticky top-0 z-30 rounded-md bg-paper py-1",
+            tableTwoVisible && "sticky top-10 z-30 rounded-md bg-paper py-1",
             tableTwoVisible && durationListCollapsed && "px-8",
           )}>
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
