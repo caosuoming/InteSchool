@@ -83,6 +83,7 @@ import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { useDocumentTypeOptions } from "@/hooks/useDocumentTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { alignGeographyQuestionAnswer, isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 import { BatchQuestionAttributesModal, type QuestionAttributePatch } from "@/components/question/BatchQuestionAttributesModal";
 import { QuestionVideoModal } from "@/components/question/QuestionVideoModal";
@@ -3289,7 +3290,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                               >
                                 <div className="flex items-start gap-2">
                                   <div className="flex-1 min-w-0">
-                                    <MathHtml className="whitespace-pre-wrap text-sm text-ink-800">{q.stem}</MathHtml>
+                                    <MathHtml geographyLabels={q.subject?.trim() === "地理"} geographyChoiceGroup={isGeographyChoiceGroup(q.stem, q.type, q.subject)} className="whitespace-pre-wrap text-sm text-ink-800">{q.stem}</MathHtml>
                                     {q.options && q.options.length > 0 && (
                                       <div
                                         data-testid={`basket-question-options-${q.id}`}
@@ -3321,11 +3322,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 <div className="mt-3 grid gap-3 rounded-md border border-ink-100 bg-paper/70 p-3">
                                   <div>
                                     <div className="text-xs font-medium text-ink-500 mb-1">答案</div>
-                                    <MathHtml className="question-answer-content text-sm text-ink-800">{q.answer || "暂无答案"}</MathHtml>
+                                    <MathHtml className="question-answer-content text-sm text-ink-800">{alignGeographyQuestionAnswer(q.stem, q.answer || "暂无答案", q.type, q.subject)}</MathHtml>
                                   </div>
                                   <div>
                                     <div className="text-xs font-medium text-ink-500 mb-1">解析</div>
-                                    <MathHtml className="text-sm text-ink-800">{q.analysis || "暂无解析"}</MathHtml>
+                                    <MathHtml className="text-sm text-ink-800">{alignGeographyQuestionAnswer(q.stem, q.analysis || "暂无解析", q.type, q.subject)}</MathHtml>
                                   </div>
                                   <div>
                                     <div className="text-xs font-medium text-ink-500 mb-1">总结</div>
@@ -5139,7 +5140,7 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             onClick={onToggle}
             role="button"
           >
-            <MathHtml emphasizeEnglishQuestions={question.subject === "英语" || teacher?.subject === "英语"} className="whitespace-pre-wrap">{question.stem}</MathHtml>
+            <MathHtml emphasizeEnglishQuestions={question.subject === "英语" || teacher?.subject === "英语"} geographyLabels={question.subject?.trim() === "地理"} geographyChoiceGroup={isGeographyChoiceGroup(question.stem, question.type, question.subject)} className="whitespace-pre-wrap">{question.stem}</MathHtml>
           </div>
 
           {question.options && question.options.length > 0 && expanded && (
@@ -5163,12 +5164,12 @@ export function QuestionListItem({ question, expanded, onToggle, onShare, onDele
             <div className="text-xs text-ink-600 space-y-1.5 mt-2 bg-mist/40 p-2 rounded">
               <div>
                 <span className="text-ink-400">答案：</span>
-                <MathHtml className="question-answer-content text-ink-800">{question.answer}</MathHtml>
+                <MathHtml className="question-answer-content text-ink-800">{alignGeographyQuestionAnswer(question.stem, question.answer, question.type, question.subject)}</MathHtml>
               </div>
               {question.analysis && (
                 <div>
                   <span className="text-ink-400">解析：</span>
-                  <MathHtml className="text-ink-700">{question.analysis}</MathHtml>
+                  <MathHtml className="text-ink-700">{alignGeographyQuestionAnswer(question.stem, question.analysis, question.type, question.subject)}</MathHtml>
                 </div>
               )}
               {question.remark && (

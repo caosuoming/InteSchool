@@ -24,10 +24,24 @@ describe("geography grouped answer numbering", () => {
     expect(alignGeographyGroupAnswerNumbers(stem, "（1）B\n（3）D")).toBe("（1）B\n（3）D");
     expect(alignGeographyGroupAnswerNumbers(stem, "（4）B\n（2）A\n（6）D"))
       .toBe("（4）B\n（2）A\n（6）D");
+    expect(alignGeographyGroupAnswerNumbers(stem, "（7）B\n（8）A\n（9）D"))
+      .toBe("（7）B\n（8）A\n（9）D");
   });
 
   it("supports HTML-wrapped and full-width question numbers", () => {
     expect(alignGeographyGroupAnswerNumbers("<p>４．甲</p><p>５．乙</p>", "（1）A\n（2）B"))
       .toBe("（4）A\n（5）B");
+  });
+
+  it("aligns complete imported keys numbered from another source, including inline answers and analyses", () => {
+    const newlyNumbered = "1. 影响鲭鱼洄游路线\n2. 产卵场优势\n3. 势力增强的年份";
+    expect(alignGeographyGroupAnswerNumbers(newlyNumbered, "（7）B\n（8）D\n（9）B", [1, 2, 3]))
+      .toBe("（1）B\n（2）D\n（3）B");
+    expect(alignGeographyGroupAnswerNumbers(newlyNumbered, "（7）B （8）D （9）B", [1, 2, 3]))
+      .toBe("（1）B （2）D （3）B");
+    expect(alignGeographyGroupAnswerNumbers(newlyNumbered, "<p>（7）气候</p><p>（8）洋流</p><p>（9）位置</p>", [1, 2, 3]))
+      .toBe("<p>（1）气候</p><p>（2）洋流</p><p>（3）位置</p>");
+    expect(alignGeographyGroupAnswerNumbers(newlyNumbered, "（7）B （9）D", [1, 2, 3]))
+      .toBe("（7）B （9）D");
   });
 });

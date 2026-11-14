@@ -6,6 +6,7 @@ import { MathHtml } from "@/components/ui/MathHtml";
 import { Modal } from "@/components/ui/Modal";
 import { parseSchoolResourceSnapshot } from "@/lib/school-resource-snapshot";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
+import { geographyPaperNumberMap } from "@/lib/geography-paper-layout";
 import type {
   Courseware,
   ExamPaper,
@@ -92,6 +93,7 @@ function hasMatchingLeadingQuestionNumber(stem: string, expectedNumber: number):
 }
 
 export function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
+  const geographyNumbers = geographyPaperNumberMap(paper.questions, paper.subject);
   return (
     <div className="space-y-4">
       {paper.description && (
@@ -109,7 +111,11 @@ export function ExamPaperPreview({ paper }: { paper: ExamPaper }) {
           {paper.questions.map((question, index) => (
             <div key={question.id} className="py-3">
               <ExtractedQuestionContent
-                number={hasMatchingLeadingQuestionNumber(question.stem, index + 1) ? undefined : index + 1}
+                number={paper.subject?.trim() === "地理"
+                  ? geographyNumbers.get(question.id)
+                  : hasMatchingLeadingQuestionNumber(question.stem, index + 1) ? undefined : index + 1}
+                geographySubject={paper.subject}
+                questionType={question.type}
                 stem={question.stem}
                 options={question.options}
                 answer={question.answer}

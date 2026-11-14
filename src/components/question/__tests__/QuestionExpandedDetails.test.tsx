@@ -4,6 +4,16 @@ import { describe, expect, it } from "vitest";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
 
 describe("QuestionExpandedDetails", () => {
+  it("displays the geography answer and analysis with the grouped stem's numbers", () => {
+    const { container } = render(<QuestionExpandedDetails question={{
+      id: "geography-1", type: "single", subject: "地理",
+      stem: "阅读材料\n1. 第一题\n2. 第二题\n3. 第三题",
+      answer: "（7）B\n（8）D\n（9）B",
+      analysis: "（7）温度\n（8）洋流\n（9）地形",
+    }} />);
+    expect(container.querySelector(".question-answer-content")).toHaveTextContent("（1）B （2）D （3）B");
+    expect(screen.getByText(/（1）温度/)).toHaveTextContent("（1）温度 （2）洋流 （3）地形");
+  });
   it("renders the question summary after answer and analysis", () => {
     render(
       <QuestionExpandedDetails

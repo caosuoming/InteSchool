@@ -24,6 +24,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { useQuestionTypeOptions } from "@/hooks/useQuestionTypeOptions";
 import { MathHtml } from "@/components/ui/MathHtml";
+import { alignGeographyQuestionAnswer, isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { BasketAudiencePicker } from "@/components/basket/BasketAudiencePicker";
 import { basketAudienceLabel, resolveBasketAudienceStudentIds } from "@/lib/basket-audience";
 import type { AnswerRecord, AnyClass, Basket, Question, Student } from "@/types";
@@ -701,7 +702,7 @@ function BasketQuestionCard({
             !expanded && !/<img\b/i.test(question.stem) && "line-clamp-2"
           )}
         >
-          <MathHtml>{question.stem}</MathHtml>
+          <MathHtml geographyLabels={question.subject?.trim() === "地理"} geographyChoiceGroup={isGeographyChoiceGroup(question.stem, question.type, question.subject)}>{question.stem}</MathHtml>
         </div>
 
         {usedByAudience && (
@@ -751,13 +752,13 @@ function BasketQuestionCard({
 
             {/* 答案 */}
             <div className="p-2 rounded-md bg-emerald-50/40 border border-emerald-200 text-xs text-emerald-900 font-medium">
-              <span>答案：</span><MathHtml className="question-answer-content">{question.answer}</MathHtml>
+              <span>答案：</span><MathHtml className="question-answer-content">{alignGeographyQuestionAnswer(question.stem, question.answer, question.type, question.subject)}</MathHtml>
             </div>
 
             {/* 解析 */}
             <div className="p-2 rounded-md bg-gold-50/30 border border-gold-200 text-xs text-ink-700 leading-relaxed">
               <span className="font-bold text-gold-700">解析：</span>
-              <MathHtml>{question.analysis}</MathHtml>
+              <MathHtml>{alignGeographyQuestionAnswer(question.stem, question.analysis, question.type, question.subject)}</MathHtml>
             </div>
           </div>
         )}

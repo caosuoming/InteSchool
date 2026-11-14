@@ -9,6 +9,23 @@ vi.mock("@/components/ui/MathHtml", () => ({
 }));
 
 describe("ExtractedQuestionContent", () => {
+  it("renumbers inline legacy answers and explanations after a grouped geography question is moved", () => {
+    const stem = "据此完成下列问题\n1. 第一小题\nA. 甲\nB. 乙\n2. 第二小题\nA. 丙\nB. 丁\n3. 第三小题";
+    render(<ExtractedQuestionContent
+      number={8}
+      geographySubject="地理"
+      questionType="single"
+      stem={stem}
+      answer="（7）B （8）D （9）B"
+      analysis="（7）温度 （8）洋流 （9）地形"
+    />);
+    const group = screen.getByRole("button", { name: "第 8 至 10 题，点击展开答案和解析" });
+    expect(group).toHaveTextContent("8. 第一小题");
+    expect(group).toHaveTextContent("10. 第三小题");
+    fireEvent.click(group);
+    expect(screen.getByText(/（8）B （9）D （10）B/)).toBeInTheDocument();
+    expect(screen.getByText(/（8）温度 （9）洋流 （10）地形/)).toBeInTheDocument();
+  });
   it("shows the complete read-only stem and expands answer and analysis from the stem", () => {
     const stem = "第一段题干\n第二段题干\n第三段题干";
     render(

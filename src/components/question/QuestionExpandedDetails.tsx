@@ -1,10 +1,12 @@
 import { MathHtml } from "@/components/ui/MathHtml";
+import { alignGeographyQuestionAnswer } from "@/lib/geography-paper-layout";
 import { cn } from "@/lib/utils";
 import type { Question } from "@/types";
 import { QuestionSupplementaryDetails } from "@/components/question/QuestionSupplementaryDetails";
 
 type QuestionExpandedDetailsProps = {
-  question: Pick<Question, "id" | "answer" | "analysis" | "summary" | "board" | "boardImages" | "links" | "explanationVideo" | "listeningAudios">;
+  question: Pick<Question, "id" | "answer" | "analysis" | "summary" | "board" | "boardImages" | "links" | "explanationVideo" | "listeningAudios">
+    & Partial<Pick<Question, "stem" | "type" | "subject">>;
   wideLayout?: boolean;
 };
 
@@ -13,6 +15,8 @@ export function QuestionExpandedDetails({
   wideLayout = false,
 }: QuestionExpandedDetailsProps) {
   const contentClassName = wideLayout ? "text-base" : "text-sm";
+  const displayAnswer = alignGeographyQuestionAnswer(question.stem || "", question.answer, question.type || "", question.subject);
+  const displayAnalysis = alignGeographyQuestionAnswer(question.stem || "", question.analysis, question.type || "", question.subject);
 
   return (
     <div className="space-y-3 mb-3 animate-fade-in">
@@ -28,7 +32,7 @@ export function QuestionExpandedDetails({
             contentClassName,
           )}
         >
-          <MathHtml className="question-answer-content">{question.answer}</MathHtml>
+          <MathHtml className="question-answer-content">{displayAnswer}</MathHtml>
         </div>
       </div>
 
@@ -40,7 +44,7 @@ export function QuestionExpandedDetails({
             contentClassName,
           )}
         >
-          <MathHtml>{question.analysis}</MathHtml>
+          <MathHtml>{displayAnalysis}</MathHtml>
         </div>
       </div>
 
