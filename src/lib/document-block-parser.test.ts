@@ -2543,6 +2543,37 @@ describe("inline answers in mathematics documents", () => {
     expect(unchanged.find((block) => block.type === "question")?.content).toContain("(A)");
   });
 
+  it("extracts mathematics fill-in answers inside structured document tables", () => {
+    const table = '<table class="document-table"><tbody><tr>'
+      + '<td>顶点为 <u>（2，3）</u></td><td>最大值 <u>9</u></td>'
+      + '</tr></tbody></table>';
+    const blocks = parseDocumentBlocks(`二、填空题\n2. 填写下表：\n${table}`, {
+      ...config,
+      subject: "数学",
+    });
+    const question = blocks.find((block) => block.type === "question")!;
+    expect(question.questionType).toBe("short");
+    expect(question.answer).toBe("（2，3）；9");
+    expect(question.content).toMatch(/<td>顶点为 _{4,}<\/td>/);
+    expect(question.content).toContain("<td>最大值 ____</td>");
+    expect(question.content).not.toContain("<u>");
+  });
+
+  it("extracts underlined knowledge answers inside document tables in reading order", () => {
+    const table = '<table class="document-table"><tbody><tr>'
+      + '<td>概念 <u>平行</u></td><td>结论 <u>$x^2$</u></td>'
+      + '</tr></tbody></table>';
+    const blocks = parseDocumentBlocks(`【知识点1】基本性质\n${table}`, {
+      ...config,
+      subject: "数学",
+    });
+    const knowledge = blocks.find((block) => block.type === "knowledge")!;
+    expect(knowledge.inlineAnswers).toEqual(["平行", "$x^2$"]);
+    expect(knowledge.content).toContain('<td>概念 <span class="knowledge-answer-blank" data-answer-index="1">____</span></td>');
+    expect(knowledge.content).toContain('<td>结论 <span class="knowledge-answer-blank" data-answer-index="2">____</span></td>');
+    expect(knowledge.content).not.toContain("<u>");
+  });
+
   it("extracts each underlined fill answer, keeping the blank positions", () => {
     const blocks = parseDocumentBlocks("二、填空题\n2. 解为 <u>2</u>，根的个数是 <u>两个</u>。", config);
     const question = blocks.find((block) => block.type === "question")!;

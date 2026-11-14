@@ -405,6 +405,29 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("keeps real underlined answers in table cells while escaping unrelated markup", async () => {
+    const data = await makeDocx(`
+      <w:tbl>
+        <w:tr>
+          <w:tc><w:p>
+            <w:r><w:t>顶点坐标：</w:t></w:r>
+            <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>（2，3）</w:t></w:r>
+          </w:p></w:tc>
+          <w:tc><w:p>
+            <w:r><w:t>普通文本&lt;script&gt;x&lt;/script&gt;</w:t></w:r>
+            <w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>最大值</w:t></w:r>
+          </w:p></w:tc>
+        </w:tr>
+      </w:tbl>
+    `);
+    expect(await extractDocxStructuredText(data)).toBe(
+      '<table class="document-table"><tbody><tr>'
+      + '<td>顶点坐标：<u>（2，3）</u></td>'
+      + '<td>普通文本&lt;script&gt;x&lt;/script&gt;<u>最大值</u></td>'
+      + '</tr></tbody></table>',
+    );
+  });
+
   it("preserves horizontal and vertical merged table cells", async () => {
     const data = await makeDocx(`
       <w:tbl>

@@ -34,6 +34,7 @@ import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { renderExtractText } from "@/lib/extract-text-renderer";
 import { ensureFillBlankAnswerArea, restoreFillBlankAnswerArea } from "@/lib/fill-blank";
+import { extractUnderlinedAnswers } from "@/lib/lesson-inline-answers";
 import { stripLeadingScoreLabels } from "@/lib/question-text-cleanup";
 import { AUTO_QUESTION_CATEGORIES, detectQuestionCategories } from "@/lib/question-category-detection";
 import {
@@ -676,6 +677,11 @@ export function ExtractReviewModal({
           updated.analysis = "";
           updated.difficulty = 3;
         }
+        if (type === "knowledge" && b.type !== "knowledge") {
+          const extracted = extractUnderlinedAnswers(updated.content, true);
+          updated.content = extracted.content;
+          if (extracted.answers.length) updated.inlineAnswers = extracted.answers;
+        }
         if (type === "knowledge" && !updated.knowledgeTitle) {
           updated.knowledgeTitle = truncate(b.content, 20);
         }
@@ -704,8 +710,13 @@ export function ExtractReviewModal({
         if (
           updated.type === "question"
           && updated.questionType === "short"
-          && (field.questionType === "short" || field.answer !== undefined)
+          && (field.questionType === "short" || field.answer !== undefined || (field.content !== undefined && /<u\b/i.test(field.content)))
         ) {
+          const extracted = extractUnderlinedAnswers(updated.content);
+          if (extracted.answers.length) {
+            updated.content = extracted.content;
+            if (!updated.answer?.trim()) updated.answer = extracted.answers.join("；");
+          }
           const normalized = ensureFillBlankAnswerArea(updated.content, updated.answer);
           if (normalized !== updated.content) updated.fillBlankOriginalContent ??= updated.content;
           updated.content = normalized;
