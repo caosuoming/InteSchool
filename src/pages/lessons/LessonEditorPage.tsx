@@ -1452,9 +1452,13 @@ export function LessonEditorPage() {
             }}
             className="h-8 w-72 max-w-[32vw] rounded-md border border-transparent bg-transparent px-2 font-serif font-semibold text-ink-900 outline-none transition-colors hover:border-ink-200 hover:bg-white focus:border-gold-300 focus:bg-white focus:ring-2 focus:ring-gold-100 disabled:cursor-default"
           />
-          <Badge variant={courseware?.status === "published" ? "green" : "amber"}>
-            {courseware?.status === "published" ? "已发布" : "草稿"}
-          </Badge>
+          {isPersonalCourseware ? (
+            <Badge variant="ink">个人课件</Badge>
+          ) : (
+            <Badge variant={courseware?.status === "published" ? "green" : "amber"}>
+              {courseware?.status === "published" ? "已发布" : "草稿"}
+            </Badge>
+          )}
           <div className="flex-1" />
           <div className="text-sm text-ink-500">
             {currentIndex + 1} / {slides.length} 页
@@ -1512,17 +1516,19 @@ export function LessonEditorPage() {
             <Play className="w-4 h-4" />
             预览上课
           </Button>
-          <Button
-            variant={courseware?.status === "published" ? "outline" : "gold"}
-            size="sm"
-            onClick={() => void (courseware?.status === "published" ? handleUnpublish() : handlePublish())}
-            loading={publishing}
-          >
-            {courseware?.status === "published"
-              ? <Undo2 className="w-4 h-4" />
-              : <Send className="w-4 h-4" />}
-            {courseware?.status === "published" ? "撤回发布" : "发布到上课"}
-          </Button>
+          {!isPersonalCourseware && (
+            <Button
+              variant={courseware?.status === "published" ? "outline" : "gold"}
+              size="sm"
+              onClick={() => void (courseware?.status === "published" ? handleUnpublish() : handlePublish())}
+              loading={publishing}
+            >
+              {courseware?.status === "published"
+                ? <Undo2 className="w-4 h-4" />
+                : <Send className="w-4 h-4" />}
+              {courseware?.status === "published" ? "撤回发布" : "发布到上课"}
+            </Button>
+          )}
         </div>
       </div>
 

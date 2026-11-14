@@ -327,6 +327,21 @@ describe("IndividualTutoringPage", () => {
     expect(screen.getByText("删除的个人课件")).toBeInTheDocument();
   });
 
+  it("offers direct teaching for personal class decks without a publication step", async () => {
+    vi.mocked(lessonCoursewareService.listCoursewares).mockImplementation(async (filter = {}) =>
+      filter.lifecycleStatus ? [] : [{
+        id: "lc-personal", classIds: ["pc-1"], sourceType: "lecture", sourceId: "lec-1",
+        title: "个别辅导讲义课件", slides: [], status: "draft",
+      } as never]);
+    renderPage("coursewares");
+
+    expect(await screen.findByText("个别辅导讲义课件")).toBeInTheDocument();
+    expect(screen.getByText(/0 页 · 可直接上课/)).toBeInTheDocument();
+    expect(screen.queryByText("草稿")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "上课" }));
+    expect(await screen.findByTestId("editor-destination")).toHaveTextContent("preview=1");
+  });
+
   it("pushes homework only to personal classes not yet covered by a lesson deck", async () => {
     vi.mocked(classService.listPersonalClasses).mockResolvedValue([personalClass, secondClass]);
     vi.mocked(examPaperService.listPapers).mockResolvedValue([{ ...homework, classIds: ["pc-1", "pc-2"] }]);
