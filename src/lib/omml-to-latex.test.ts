@@ -442,6 +442,36 @@ y=2
 
 });
 
+describe("Vector arrows from Word lower-limit and accent layouts", () => {
+  const f2 = '<m:sSub><m:e><m:r><m:t>F</m:t></m:r></m:e><m:sub><m:r><m:t>2</m:t></m:r></m:sub></m:sSub>';
+  const vectorBase = (start: string, end: string) => start === "A"
+    ? `<m:r><m:t>${start}</m:t></m:r>${f2}`
+    : `${f2}<m:r><m:t>${end}</m:t></m:r>`;
+
+  it.each([
+    ["A", "F", String.raw`\overrightarrow{A{F}_{2}}`],
+    ["F", "B", String.raw`\overrightarrow{{F}_{2}B}`],
+  ])("moves imported lower-limit vector %s%s above both letters", (start, end, expected) => {
+    const xml = `<m:oMath xmlns:m="${MATH_NS}"><m:limLow><m:e>${vectorBase(start, end)}</m:e><m:lim><m:r><m:t>→</m:t></m:r></m:lim></m:limLow></m:oMath>`;
+    expect(ommlToLatex(xml)).toBe(expected);
+  });
+
+  it("normalizes a Word subscript arrow attached to an entire point pair", () => {
+    const xml = `<m:oMath xmlns:m="${MATH_NS}"><m:sSub><m:e><m:r><m:t>A</m:t></m:r>${f2}</m:e><m:sub><m:r><m:t>→</m:t></m:r></m:sub></m:sSub></m:oMath>`;
+    expect(ommlToLatex(xml)).toBe(String.raw`\overrightarrow{A{F}_{2}}`);
+  });
+
+  it("keeps mathematical lower limits intact when they are not vector arrows", () => {
+    const xml = `<m:oMath xmlns:m="${MATH_NS}"><m:limLow><m:e><m:r><m:t>lim</m:t></m:r></m:e><m:lim><m:r><m:t>x→0</m:t></m:r></m:lim></m:limLow></m:oMath>`;
+    expect(ommlToLatex(xml)).toBe(String.raw`{lim}_{x\rightarrow 0}`);
+  });
+
+  it("stretches explicit Word accents across a two-letter subscripted vector", () => {
+    const xml = `<m:oMath xmlns:m="${MATH_NS}"><m:acc><m:accPr><m:chr m:val="→"/></m:accPr><m:e><m:r><m:t>A</m:t></m:r>${f2}</m:e></m:acc></m:oMath>`;
+    expect(ommlToLatex(xml)).toBe(String.raw`\overrightarrow{A{F}_{2}}`);
+  });
+});
+
 describe("Word group character vector accents", () => {
   it("places an imported vector arrow above both point letters", () => {
     const xml = `<m:oMath xmlns:m="${MATH_NS}"><m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:pos m:val="bot"/></m:groupChrPr><m:e><m:r><m:t>AE</m:t></m:r></m:e></m:groupChr></m:oMath>`;

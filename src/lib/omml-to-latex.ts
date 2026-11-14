@@ -317,7 +317,8 @@ function convertSub(el: Element): string {
   if (!sub || sub.trim() === "") {
     return e;
   }
-  return `{${e}}_{${sub}}`;
+  const vector = vectorLimitAccent(sub, e);
+  return vector || `{${e}}_{${sub}}`;
 }
 
 /**
@@ -628,6 +629,37 @@ function hasMathAncestor(element: Element, localName: string): boolean {
   return false;
 }
 
+const RIGHT_VECTOR_GLYPHS = new Set(["→", "⃗", "⟶", "⇀"]);
+const LEFT_VECTOR_GLYPHS = new Set(["←", "⃖", "⟵", "↼"]);
+
+function spanningVectorAccent(glyph: string, body: string): string | null {
+  if (RIGHT_VECTOR_GLYPHS.has(glyph)) return `\\overrightarrow{${body}}`;
+  if (LEFT_VECTOR_GLYPHS.has(glyph)) return `\\overleftarrow{${body}}`;
+  return null;
+}
+
+function isPointPair(body: string): boolean {
+  // Word can encode AF₂ as "A{F}_{2}" or F₂B as "{F}_{2}B".
+  // Do not convert ordinary limits, variables, or arbitrarily long expressions.
+  const labels = body.trim()
+    .replace(/\{([A-Z])\}/g, "$1")
+    .replace(/_\{\d+\}|_\d+/g, "")
+    .replace(/\s+/g, "");
+  return /^[A-Z]{2}$/.test(labels);
+}
+
+function vectorLimitAccent(limit: string, body: string): string | null {
+  if (!isPointPair(body)) return null;
+  const normalized = limit.trim();
+  if (/^\\(?:long)?rightarrow$/.test(normalized) || RIGHT_VECTOR_GLYPHS.has(normalized)) {
+    return spanningVectorAccent("→", body);
+  }
+  if (/^\\(?:long)?leftarrow$/.test(normalized) || LEFT_VECTOR_GLYPHS.has(normalized)) {
+    return spanningVectorAccent("←", body);
+  }
+  return null;
+}
+
 /**
  * 重音符号 m:acc
  * 如向量、帽子等
@@ -638,15 +670,11 @@ function convertAcc(el: Element): string {
   const chr = chrEl?.getAttribute("m:val") || chrEl?.getAttribute("val") || "⃗";
 
   const e = getMathChild(el, "e");
-  if (chr === "⃗" || chr === "⃖") {
-    const direction = chr === "⃖" ? "left" : "right";
-    const accent = /^[A-Za-z0-9]$/.test(e)
-      ? "\\vec"
-      : direction === "left"
-        ? "\\overleftarrow"
-        : "\\overrightarrow";
-    return `${accent}{${e}}`;
+  if (chr === "⃗" && /^[A-Za-z0-9]$/.test(e)) {
+    return `\\vec{${e}}`;
   }
+  const vectorAccent = spanningVectorAccent(chr, e);
+  if (vectorAccent) return vectorAccent;
   const accent = mapAccent(chr);
   if (accent) return `${accent}{${e}}`;
 
@@ -701,7 +729,10 @@ function convertLimLow(el: Element): string {
   const e = getMathChild(el, "e");
   const lim = getMathChild(el, "lim");
 
-  return `{${e}}_{${lim}}`;
+  // Certain imported MathType/Word vectors use a lower-limit arrow instead
+  // of an accent, yielding a tiny arrow beneath AF₂ or F₂B.
+  const vector = vectorLimitAccent(lim, e);
+  return vector || `{${e}}_{${lim}}`;
 }
 
 /**
@@ -710,8 +741,8 @@ function convertLimLow(el: Element): string {
 function convertLimUpp(el: Element): string {
   const e = getMathChild(el, "e");
   const lim = getMathChild(el, "lim");
-
-  return `{${e}}^{${lim}}`;
+  const vector = vectorLimitAccent(lim, e);
+  return vector || `{${e}}^{${lim}}`;
 }
 
 /**
@@ -725,10 +756,10 @@ function convertGroupChr(el: Element): string {
 
   const e = getMathChild(el, "e");
 
-  // Word's group-character arrow is a vector accent. Its m:pos is not
-  // reliable after MathType conversion; always place this arrow above points.
-  if (["→", "⃗", "⟶", "⇀"].includes(chr)) return `\\overrightarrow{${e}}`;
-  if (["←", "⃖", "⟵", "↼"].includes(chr)) return `\\overleftarrow{${e}}`;
+  // Word's group-character arrow can be marked as a bottom attachment
+  // even when it represents a vector accent above the point labels.
+  const vector = spanningVectorAccent(chr, e);
+  if (vector) return vector;
 
   if (chr === "⏟" || chr === "_") {
     return `\\underbrace{${e}}`;
