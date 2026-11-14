@@ -155,6 +155,17 @@ describe("DOCX structure-aware text extraction", () => {
     );
   });
 
+  it("puts Word lower-limit arrows above AF₂ and F₂B throughout DOCX extraction", async () => {
+    const f2 = '<m:sSub><m:e><m:r><m:t>F</m:t></m:r></m:e><m:sub><m:r><m:t>2</m:t></m:r></m:sub></m:sSub>';
+    const arrow = (body: string) => `<m:limLow><m:e>${body}</m:e><m:lim><m:r><m:t>→</m:t></m:r></m:lim></m:limLow>`;
+    const data = await makeDocx(`
+      <w:p><w:r><w:t>(2) 若 </w:t></w:r><m:oMath>${arrow(`<m:r><m:t>A</m:t></m:r>${f2}`)}<m:r><m:t>=2</m:t></m:r>${arrow(`${f2}<m:r><m:t>B</m:t></m:r>`)}</m:oMath><w:r><w:t>。</w:t></w:r></w:p>
+    `);
+    await expect(extractDocxStructuredText(data)).resolves.toBe(
+      String.raw`(2) 若 $\overrightarrow{A{F}_{2}}=2\overrightarrow{{F}_{2}B}$。`,
+    );
+  });
+
   it("preserves statistical mean overbars during document decomposition", async () => {
     const data = await makeDocx(`
       <w:p>
