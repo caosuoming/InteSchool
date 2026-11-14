@@ -566,7 +566,7 @@ export default function IndividualTutoringPage() {
                 <div>
                   <div className="font-medium text-sm">{courseware.title}</div>
                   <div className="text-xs text-ink-400">
-                    {courseware.slides.length} 页 · {courseware.status === "published" ? "已发布" : "草稿"}
+                    {courseware.slides.length} 页 · 可直接上课
                     {" · "}{courseware.classIds.filter((id) => classIds.has(id)).map((id) => classes.find((item) => item.id === id)?.name).filter(Boolean).join("、")}
                   </div>
                 </div>

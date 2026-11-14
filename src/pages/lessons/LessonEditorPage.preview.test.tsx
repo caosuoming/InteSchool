@@ -172,10 +172,34 @@ describe("LessonEditorPage preview query", () => {
     expect(await screen.findByText("个人一班")).toBeInTheDocument();
     expect(screen.getByText("个人二班")).toBeInTheDocument();
     expect(screen.getByText("授课班级 (2)")).toBeInTheDocument();
+    expect(screen.getByText("个人课件")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发布到上课" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "撤回发布" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预览上课" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(await screen.findByTestId("tutoring-destination")).toHaveTextContent(
       "/individual-tutoring/coursewares?classId=pc-2",
     );
+  });
+
+  it("does not offer withdrawal for an already published personal class deck", async () => {
+    mocks.getCourseware.mockResolvedValue({
+      ...courseware,
+      classIds: ["pc-1"],
+      status: "published",
+      publishedAt: "2026-11-01T12:00:00.000Z",
+    });
+    mocks.listPersonalClasses.mockResolvedValue([
+      { id: "pc-1", type: "personal", teacherId: teacher.id, name: "个人一班" },
+    ]);
+    renderPage(`/my-lessons/${courseware.id}/edit`);
+
+    expect(await screen.findByText("个人课件")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "撤回发布" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发布到上课" })).not.toBeInTheDocument();
+    expect(screen.queryByText("已发布")).not.toBeInTheDocument();
+    expect(mocks.publishCourseware).not.toHaveBeenCalled();
+    expect(mocks.unpublishCourseware).not.toHaveBeenCalled();
   });
 
   it("inserts an existing GGB courseware slide and persists its file reference", async () => {
