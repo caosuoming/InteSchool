@@ -239,6 +239,7 @@ export function InvigilationTableSection({
   const [importingTeachers, setImportingTeachers] = useState(false);
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [durationHighlight, setDurationHighlight] = useState<"longest" | "shortest" | null>(null);
   const [selectedCells, setSelectedCells] = useState<InvigilationCellTarget[]>([]);
   const teacherFileInputRef = useRef<HTMLInputElement>(null);
   const tableTwoRef = useRef<HTMLDivElement>(null);
@@ -385,6 +386,21 @@ export function InvigilationTableSection({
       return left.name.localeCompare(right.name, "zh-CN");
     });
   }, [cumulativeTeacherStats, statsSort]);
+  const durationExtremes = useMemo(() => {
+    const minutes = cumulativeTeacherStats.map((stat) => stat.cumulativeMinutes);
+    const shortest = Math.min(...minutes);
+    const longest = Math.max(...minutes);
+    return {
+      shortest: cumulativeTeacherStats.filter((stat) => stat.cumulativeMinutes === shortest),
+      shortestIds: new Set(cumulativeTeacherStats.filter((stat) => stat.cumulativeMinutes === shortest).map((stat) => stat.teacherId)),
+      longestIds: new Set(cumulativeTeacherStats.filter((stat) => stat.cumulativeMinutes === longest).map((stat) => stat.teacherId)),
+    };
+  }, [cumulativeTeacherStats]);
+  const durationHighlightClass = (teacherId: string | null | undefined) => {
+    if (teacherId && durationHighlight === "longest" && durationExtremes.longestIds.has(teacherId)) return "bg-amber-200";
+    if (teacherId && durationHighlight === "shortest" && durationExtremes.shortestIds.has(teacherId)) return "bg-sky-200";
+    return "";
+  };
   const hasRenderedInvigilationTable = Boolean(selectedArrangement && statistics?.rooms.length && config);
 
   useEffect(() => {
@@ -403,7 +419,7 @@ export function InvigilationTableSection({
 
   useEffect(() => {
     if (!tableTwoVisible || floatingDurationPosition || typeof window === "undefined") return;
-    const width = Math.min(576, Math.max(280, window.innerWidth - 32));
+    const width = Math.min(832, Math.max(280, window.innerWidth - 32));
     setFloatingDurationPosition({
       x: Math.max(16, window.innerWidth - width - 24),
       y: 88,
@@ -436,7 +452,7 @@ export function InvigilationTableSection({
     const drag = durationDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId || typeof window === "undefined") return;
     const rect = floatingDurationRef.current?.getBoundingClientRect();
-    const width = rect?.width || Math.min(576, window.innerWidth - 32);
+    const width = rect?.width || Math.min(832, window.innerWidth - 32);
     const height = rect?.height || 320;
     const maxX = Math.max(8, window.innerWidth - width - 8);
     const maxY = Math.max(8, window.innerHeight - Math.min(height, window.innerHeight - 16) - 8);
@@ -1024,11 +1040,10 @@ export function InvigilationTableSection({
                     <td className="px-1.5 py-1">
                       <Select
                         aria-label={`${teacher.name || `教师 ${index + 1}`}是否在同一天`}
-                        value={config.teacherRequirements?.[teacher.id]?.sameDay || "any"}
+                        value={config.teacherRequirements?.[teacher.id]?.sameDay || "yes"}
                         onChange={(event) => updateConfig((next) => mutateTeacherRequirement(next, teacher.id, (requirement) => {
                           const value = event.target.value as ExamInvigilationSameDayRequirement;
-                          if (value === "any") delete requirement.sameDay;
-                          else requirement.sameDay = value;
+                          requirement.sameDay = value;
                         }))}
                         options={[
                           { value: "yes", label: "是" },
@@ -1144,9 +1159,9 @@ export function InvigilationTableSection({
                     <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">考试安排</th>
                     {invigilation.roomLocationGroups.map((group) => (
                       <th
-                        key={group.roomLocation}
+                        key={group.roomIds.join("|")}
                         aria-label={group.roomLocation}
-                        className="max-w-28 border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center leading-tight"
+                        className="w-[3.75rem] min-w-[3.75rem] max-w-[3.75rem] break-all border-b border-r border-[#b6c7cf] px-0.5 py-1 text-center leading-tight"
                       >
                         {wrapInvigilationHeaderLabel(group.roomLocation).map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}
                       </th>
@@ -1161,9 +1176,9 @@ export function InvigilationTableSection({
                     <th className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">学科</th>
                     {invigilation.roomLocationGroups.map((group) => (
                       <th
-                        key={group.roomLocation}
+                        key={group.roomIds.join("|")}
                         aria-label={group.roomNumbers.join("、")}
-                        className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-1 py-1 text-center font-medium"
+                        className="w-[3.75rem] max-w-[3.75rem] break-all border-b border-r border-[#b6c7cf] px-0.5 py-1 text-center font-medium"
                       >
                         {group.roomNumbers.map((roomNumber) => <div key={roomNumber}>{roomNumber}</div>)}
                       </th>
@@ -1172,7 +1187,7 @@ export function InvigilationTableSection({
                   <tr className="bg-[#eef4f4] text-xs text-ink-700">
                     <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">试场人数</th>
                     {invigilation.roomLocationGroups.map((group) => (
-                      <td key={group.roomLocation} className="border-b border-r border-[#b6c7cf] px-2 py-1.5 text-center">{group.studentCount}</td>
+                      <td key={group.roomIds.join("|")} className="border-b border-r border-[#b6c7cf] px-0.5 py-1 text-center">{group.studentCount}</td>
                     ))}
                   </tr>
                   {invigilation.rows.map((row, rowIndex) => {
@@ -1218,40 +1233,42 @@ export function InvigilationTableSection({
                           const duplicate = Boolean(assignedTeacherId && row.duplicateTeacherIds.includes(assignedTeacherId));
                           return (
                             <td
-                              key={group.roomLocation}
+                              key={group.roomIds.join("|")}
                               className={cn(
-                                "border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors",
+                                "w-[3.75rem] min-w-[3.75rem] max-w-[3.75rem] border-b border-r border-[#b6c7cf] px-0.5 py-0.5 text-center transition-colors",
                                 !count && "bg-ink-50/60",
                                 count && "cursor-pointer hover:bg-gold-50/60",
                                 highlighted && "bg-[#fff86b]",
+                                durationHighlightClass(assignedTeacherId),
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 duplicate && "ring-2 ring-inset ring-red-400",
                               )}
                               onClick={target ? () => toggleCellSelection(target) : undefined}
                             >
                               {target ? (
-                                <div className="relative min-h-8 px-2.5 py-0.5">
+                                <div className="relative min-h-8 pt-2.5">
                                   <input
                                     type="checkbox"
                                     aria-label={`选择 ${row.subjectLabel} ${group.roomLocation}监考单元格`}
-                                    className="absolute left-0 top-0 h-3 w-3 accent-gold-500"
+                                    className="absolute left-0 top-0 h-2.5 w-2.5 accent-gold-500"
                                     checked={selected}
                                     onClick={(event) => event.stopPropagation()}
                                     onChange={() => toggleCellSelection(target)}
                                   />
                                   <button
                                     type="button"
-                                    className="whitespace-nowrap pt-0.5 text-xs font-medium text-ink-800 hover:text-gold-700"
+                                    className={cn("break-all rounded-sm text-xs font-medium leading-tight text-ink-800 hover:text-gold-700", durationHighlightClass(assignedTeacherId))}
                                     onClick={(event) => {
                                       event.stopPropagation();
+                                      toggleCellSelection(target);
                                       if (assignedTeacherId) setSelectedTeacherId(assignedTeacherId);
                                     }}
                                   >
                                     {teacherMap.get(assignedTeacherId || "")?.name || "空缺"}
                                   </button>
-                                  <div className="mt-0.5 space-y-0.5 text-[10px] leading-tight text-ink-400">
+                                  <div className="mt-0.5 space-y-0.5 break-all text-[10px] leading-tight text-ink-400">
                                     {roomDetails.map((detail) => (
-                                      <div key={detail.roomId} className="whitespace-nowrap">
+                                      <div key={detail.roomId}>
                                         {roomDetails.length > 1 && <span>{detail.roomNumber}：</span>}
                                         {detail.countLabel}
                                       </div>
@@ -1272,16 +1289,18 @@ export function InvigilationTableSection({
                               className={cn(
                                 "cursor-pointer border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors hover:bg-gold-50/60",
                                 highlighted && "bg-[#fff86b]",
+                                durationHighlight === "longest" && row.outsideTeacherIds.some((id) => durationExtremes.longestIds.has(id)) && "bg-amber-200",
+                                durationHighlight === "shortest" && row.outsideTeacherIds.some((id) => durationExtremes.shortestIds.has(id)) && "bg-sky-200",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 duplicate && "ring-2 ring-inset ring-red-400",
                               )}
                               onClick={() => toggleCellSelection(target)}
                             >
-                              <div className="relative min-h-8 px-3 py-0.5">
+                              <div className="relative min-h-8 px-2 pt-2.5 pb-0.5">
                                 <input
                                   type="checkbox"
                                   aria-label={`选择 ${row.subjectLabel}场外监考单元格`}
-                                  className="absolute left-0 top-0 h-3 w-3 accent-gold-500"
+                                  className="absolute left-0 top-0 h-2.5 w-2.5 accent-gold-500"
                                   checked={selected}
                                   onClick={(event) => event.stopPropagation()}
                                   onChange={() => toggleCellSelection(target)}
@@ -1291,9 +1310,10 @@ export function InvigilationTableSection({
                                     <button
                                       key={teacherId}
                                       type="button"
-                                      className="whitespace-nowrap text-xs font-medium text-ink-800 hover:text-gold-700"
+                                      className={cn("rounded-sm text-xs font-medium text-ink-800 hover:text-gold-700", durationHighlightClass(teacherId))}
                                       onClick={(event) => {
                                         event.stopPropagation();
+                                        toggleCellSelection(target);
                                         setSelectedTeacherId(teacherId);
                                       }}
                                     >
@@ -1322,6 +1342,7 @@ export function InvigilationTableSection({
                                     <span key={id} className={cn(
                                       "inline-flex items-center rounded-full border border-[#b6c7cf] bg-paper text-xs text-ink-800",
                                       selectedTeacherId === id && "border-yellow-500 bg-[#fff86b]",
+                                      durationHighlightClass(id),
                                     )}>
                                       <button type="button" className="px-2 py-1" onClick={() => setSelectedTeacherId(id)}>{teacher.name}</button>
                                       <button type="button" aria-label={`移除巡考教师 ${teacher.name}`} className="border-l border-[#d5dfe2] px-1.5 py-1 text-ink-400 hover:text-red-600" onClick={() => removePatrolTeacher(id)}>
@@ -1373,7 +1394,7 @@ export function InvigilationTableSection({
 
         <div
           ref={floatingDurationRef}
-          className={cn("relative", tableTwoVisible && "fixed z-50 w-[min(36rem,calc(100vw-2rem))]")}
+          className={cn("relative", tableTwoVisible && "fixed z-50 w-[min(52rem,calc(100vw-2rem))]")}
           style={tableTwoVisible ? {
             ...(floatingDurationPosition
               ? { left: floatingDurationPosition.x, top: floatingDurationPosition.y }
@@ -1406,23 +1427,36 @@ export function InvigilationTableSection({
             </button>
           </>
         )}
-        <Card className={cn(
+        <Card role="region" aria-label="监考时长面板" className={cn(
           durationListCollapsed && "p-3",
           tableTwoVisible && "max-h-[calc(100vh-2rem)] shadow-2xl ring-1 ring-ink-200",
           tableTwoVisible && !durationListCollapsed && "overflow-y-auto pt-10",
         )}>
           <div className={cn(
-            "flex justify-between gap-3",
-            durationListCollapsed ? "mb-0 flex-nowrap items-center" : "mb-4 flex-wrap items-end",
+            "flex flex-wrap items-start justify-between gap-2",
+            durationListCollapsed ? "mb-0" : "mb-3",
+            tableTwoVisible && "sticky top-0 z-30 rounded-md bg-paper py-1",
             tableTwoVisible && durationListCollapsed && "px-8",
           )}>
-            <div className={cn(durationListCollapsed && "min-w-0")}>
-              <h2 className="text-base font-semibold text-ink-900">监考时长</h2>
-              {!durationListCollapsed && (
-                <p className="mt-1 text-xs text-ink-500">自动排表先应用基本要求，再通过表二勾选或交换微调；默认按累计时长最短优先。</p>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <Button size="sm" variant={durationHighlight === "longest" ? "gold" : "outline"}
+                aria-pressed={durationHighlight === "longest"}
+                onClick={() => setDurationHighlight((current) => current === "longest" ? null : "longest")}>最长</Button>
+              <Button size="sm" variant={durationHighlight === "shortest" ? "gold" : "outline"}
+                aria-pressed={durationHighlight === "shortest"}
+                onClick={() => setDurationHighlight((current) => current === "shortest" ? null : "shortest")}>最短</Button>
+              {durationHighlight === "shortest" && (
+                <div className="flex min-w-0 flex-wrap items-center gap-1" aria-label="最短监考老师名单">
+                  {durationExtremes.shortest.map((stat) => (
+                    <button key={stat.teacherId} type="button"
+                      aria-label={`选择最短监考教师 ${stat.name}`}
+                      className="rounded bg-sky-200 px-1.5 py-0.5 text-xs font-medium text-ink-900 hover:bg-sky-300"
+                      onClick={() => assignSelectedTeacher(stat.teacherId)}>{stat.name}</button>
+                  ))}
+                </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               {!durationListCollapsed && (
                 <Select aria-label="监考时长排序" value={statsSort} onChange={(event) => setStatsSort(event.target.value as typeof statsSort)} options={[{ value: "minutes", label: "累计最短" }, { value: "subject", label: "按学科" }, { value: "name", label: "按姓名" }]} className="min-w-24 py-1.5 text-xs" />
               )}
@@ -1438,6 +1472,10 @@ export function InvigilationTableSection({
               </Button>
             </div>
           </div>
+
+          {!durationListCollapsed && (
+            <p className="mb-3 text-xs text-ink-500">自动排表先应用基本要求，再通过表二勾选或交换微调；默认按累计时长最短优先。</p>
+          )}
 
           <div hidden={durationListCollapsed} className="mb-3 rounded-lg border border-ink-100 bg-ink-50 px-3 py-2 text-[11px] text-ink-500">
             {selectedCells.length === 0 && "点击老师姓名可高亮表二中的全部安排；勾选一个单元格后再点击姓名可直接填入。"}
@@ -1468,6 +1506,7 @@ export function InvigilationTableSection({
                         className={cn(
                           "text-left font-medium text-ink-800 hover:text-gold-700",
                           selectedTeacherId === stat.teacherId && "rounded bg-[#fff86b] px-1",
+                          durationHighlightClass(stat.teacherId),
                         )}
                         title={selectedCells.length === 1 && selectedCellUnavailableTeacherIds.has(stat.teacherId) ? "该老师已在本场考试中承担其他监考任务" : undefined}
                         onClick={() => assignSelectedTeacher(stat.teacherId)}

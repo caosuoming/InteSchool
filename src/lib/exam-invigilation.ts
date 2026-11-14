@@ -222,19 +222,29 @@ function groupRoomsByLocation(rooms: ExamInvigilationRoomColumn[]): {
   rooms: ExamInvigilationRoomColumn[];
   groups: ExamInvigilationRoomLocationGroup[];
 } {
-  const grouped = new Map<string, ExamInvigilationRoomColumn[]>();
-  for (const room of rooms) {
-    const current = grouped.get(room.roomLocation) || [];
-    current.push(room);
-    grouped.set(room.roomLocation, current);
+  // Sort by room number before grouping. Only adjacent rooms at the same
+  // location can share a column; otherwise grouping could produce 1, 3, 2.
+  const sortedRooms = [...rooms].sort((left, right) => (
+    left.roomNumber.localeCompare(right.roomNumber, "zh-CN", { numeric: true })
+    || left.roomId.localeCompare(right.roomId)
+  ));
+  const groups: ExamInvigilationRoomLocationGroup[] = [];
+  for (const room of sortedRooms) {
+    const last = groups[groups.length - 1];
+    if (last?.roomLocation === room.roomLocation) {
+      last.roomIds.push(room.roomId);
+      last.roomNumbers.push(room.roomNumber);
+      last.studentCount += room.studentCount;
+    } else {
+      groups.push({
+        roomLocation: room.roomLocation,
+        roomIds: [room.roomId],
+        roomNumbers: [room.roomNumber],
+        studentCount: room.studentCount,
+      });
+    }
   }
-  const groups = [...grouped.entries()].map(([roomLocation, items]) => ({
-    roomLocation,
-    roomIds: items.map((room) => room.roomId),
-    roomNumbers: items.map((room) => room.roomNumber),
-    studentCount: items.reduce((sum, room) => sum + room.studentCount, 0),
-  }));
-  return { rooms: groups.flatMap((group) => group.roomIds.map((roomId) => rooms.find((room) => room.roomId === roomId)!)), groups };
+  return { rooms: sortedRooms, groups };
 }
 
 function duplicateTeacherIds(assignments: Array<string | null | undefined>): string[] {
@@ -331,7 +341,7 @@ export function buildExamInvigilationTable(
   const matchesTeacherRequirements = (teacher: ExamInvigilationTeacher, date: string) => {
     const requirement = config.teacherRequirements?.[teacher.id];
     if (requirement?.isOnLeave) return false;
-    const sameDay = requirement?.sameDay || "any";
+    const sameDay = requirement?.sameDay || "yes";
     const dates = teacherDates.get(teacher.id) || new Set<string>();
     if (sameDay === "no") return !dates.has(date);
     if (sameDay === "yes") return dates.size === 0 || dates.has(date);
