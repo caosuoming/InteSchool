@@ -38,6 +38,16 @@ describe("board canvas focus view", () => {
     expect(screen.getByRole("button", { name: "子节点（已隐藏）" })).toBeInTheDocument();
   });
 
+  it("hides only the visual title and still renders editable node content", () => {
+    const modified = { ...board, nodes: board.nodes.map((node) => node.id === "focus"
+      ? { ...node, hideLabel: true, richText: "<b>保留内容</b>" } : node) };
+    const result = render(<BoardCanvas board={modified} selectedNodeId="focus" readonly />);
+    const focus = result.container.querySelector('[data-board-node-id="focus"]')!;
+    expect(focus.textContent).not.toContain("聚焦");
+    expect(focus.textContent).toContain("保留内容");
+    expect(screen.getByRole("button", { name: "导图节点 聚焦" })).toBeInTheDocument();
+  });
+
   it("renders focus labels and SVG links", () => {
     const result = render(<BoardCanvas board={board} selectedNodeId="focus" readonly />);
     expect(screen.getByRole("button", { name: "导图节点 聚焦" })).toBeInTheDocument();
