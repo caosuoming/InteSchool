@@ -1267,7 +1267,7 @@ describe("owned documents saved under a previous school", () => {
     const state = createState();
     state.teachers[0].schoolId = "school-2";
     state.teachers[0].teachingClassIds = ["class-2"];
-    state.schoolClasses.push({
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
       id: "class-2",
       type: "school",
       schoolId: "school-2",
