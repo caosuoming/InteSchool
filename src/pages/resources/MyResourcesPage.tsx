@@ -95,7 +95,7 @@ import {
 import { documentResourceUsageSummary, isIssuedUnusedDocumentResource } from "@/lib/document-resource-usage";
 import { promptToRemoveReferencedBasketQuestions } from "@/lib/basket-reference";
 import { createBlankLessonCourseware } from "@/lib/lesson-courseware-create";
-import { fallbackLessonBlocks } from "@/lib/lesson-resource-blocks";
+import { createLessonFromOwnedDocument } from "@/lib/document-to-lesson";
 import {
   downloadOfflineLessonCourseware,
   offlineLessonFromLibraryCourseware,
@@ -665,10 +665,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     setPersonalLessonSaving(true);
     try {
       const { type, resource } = personalLessonTarget;
-      const blocks = await fallbackLessonBlocks(resource, type, teacher.subject);
-      await (type === "lecture"
-        ? lessonCoursewareService.createFromLecture(teacher.id, resource.schoolId, resource.id, blocks, selectedPersonalClassIds)
-        : lessonCoursewareService.createFromExamPaper(teacher.id, resource.schoolId, resource.id, blocks, selectedPersonalClassIds));
+      await createLessonFromOwnedDocument(teacher, type, resource, selectedPersonalClassIds);
       toast.success("已添加到个人上课", "可在「个别辅导课件」中查看和编辑");
       const targetClassId = selectedPersonalClassIds.length === 1 ? `?classId=${encodeURIComponent(selectedPersonalClassIds[0])}` : "";
       setPersonalLessonTarget(null);
@@ -677,6 +674,20 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       toast.error("添加失败", error instanceof Error ? error.message : undefined);
     } finally {
       setPersonalLessonSaving(false);
+    }
+  };
+
+  const addToSchoolLesson = async (type: "examPaper" | "lecture", resource: ExamPaper | Lecture) => {
+    if (!teacher?.schoolId) {
+      toast.error("添加失败", "请先完成学校认证");
+      return;
+    }
+    try {
+      const lesson = await createLessonFromOwnedDocument(teacher, type, resource);
+      toast.success("已添加到学校课件", "可在「我的教学」的上课课件中编辑");
+      navigate(`/my-lessons/${lesson.id}/edit`);
+    } catch (error) {
+      toast.error("添加失败", error instanceof Error ? error.message : undefined);
     }
   };
 
@@ -3930,29 +3941,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       detailsPresentation="titleTooltip"
                       onConvertToExamPaper={() => handleMoveLectureToExamPaper(mainLecture.id)}
                       showAddToLesson
-                      lessonActionLabel="添加到学校上课"
+                      lessonActionLabel="添加到学校课件"
                       onAddToPersonalLesson={() => void openPersonalLesson("lecture", mainLecture)}
                       titleBadge={hasExtractCopy
                         ? { text: "拆解稿", variant: "gold" }
                         : (!isExtracted && item.originalFileUrl
                           ? { text: "上传原稿", variant: "amber" }
                           : undefined)}
-                      onAddToLesson={async () => {
-                        if (!teacher) return;
-                        try {
-                          const documentBlocks = await fallbackLessonBlocks(mainLecture, "lecture", teacher?.subject);
-                          const cw = await lessonCoursewareService.createFromLecture(
-                            teacher.id,
-                            teacher.schoolId!,
-                            mainLecture.id,
-                            documentBlocks,
-                          );
-                          toast.success("已添加到学校上课", "可在「我的教学」的上课课件中编辑");
-                          navigate(`/my-lessons/${cw.id}/edit`);
-                        } catch (err) {
-                          toast.error("添加失败", err instanceof Error ? err.message : undefined);
-                        }
-                      }}
+                      onAddToLesson={() => void addToSchoolLesson("lecture", mainLecture)}
                     />
                     {renderGeneratedCoursewareRows(
                       "lecture",
@@ -4045,29 +4041,14 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           },
                         ]}
                         showAddToLesson
-                        lessonActionLabel="添加到学校上课"
+                        lessonActionLabel="添加到学校课件"
                         onAddToPersonalLesson={() => void openPersonalLesson("examPaper", copy)}
                         alwaysShowActions
                         compactActions
                         configurableActions
                         detailsPresentation="titleTooltip"
                         titleBadge={{ text: "拆解稿", variant: "gold" }}
-                        onAddToLesson={async () => {
-                          if (!teacher) return;
-                          try {
-                            const documentBlocks = await fallbackLessonBlocks(copy, "examPaper", teacher?.subject);
-                            const cw = await lessonCoursewareService.createFromExamPaper(
-                              teacher.id,
-                              teacher.schoolId!,
-                              copy.id,
-                              documentBlocks,
-                            );
-                            toast.success("已添加到学校上课", "可在「我的教学」的上课课件中编辑");
-                            navigate(`/my-lessons/${cw.id}/edit`);
-                          } catch (err) {
-                            toast.error("添加失败", err instanceof Error ? err.message : undefined);
-                          }
-                        }}
+                        onAddToLesson={() => void addToSchoolLesson("examPaper", copy)}
                         />
                       </div>
                     ))}
@@ -4140,7 +4121,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           onViewReflections={() => setViewingReflections({ title: item.title, list: reflectionsMap[item.id] || [] })}
                           onDuplicate={() => openDuplicate("examPaper", item.id, item.title)}
                           showAddToLesson
-                          lessonActionLabel="添加到学校上课"
+                          lessonActionLabel="添加到学校课件"
                           onAddToPersonalLesson={() => void openPersonalLesson("examPaper", item)}
                           alwaysShowActions
                           compactActions
@@ -4166,22 +4147,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           titleBadge={!isExtracted && item.originalFileUrl
                             ? { text: "上传原稿", variant: "amber" }
                             : undefined}
-                          onAddToLesson={async () => {
-                            if (!teacher) return;
-                            try {
-                              const documentBlocks = await fallbackLessonBlocks(item, "examPaper", teacher?.subject);
-                              const cw = await lessonCoursewareService.createFromExamPaper(
-                                teacher.id,
-                                teacher.schoolId!,
-                                item.id,
-                                documentBlocks,
-                              );
-                              toast.success("已添加到学校上课", "可在「我的教学」的上课课件中编辑");
-                              navigate(`/my-lessons/${cw.id}/edit`);
-                            } catch (err) {
-                              toast.error("添加失败", err instanceof Error ? err.message : undefined);
-                            }
-                          }}
+                          onAddToLesson={() => void addToSchoolLesson("examPaper", item)}
                         />
                         {item.originalFileUrl && isExtracted && (
                           <div className="flex items-center gap-3 text-xs flex-wrap pl-1">
