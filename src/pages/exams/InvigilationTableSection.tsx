@@ -1497,7 +1497,7 @@ export function InvigilationTableSection({
                       aria-label={"选择最长监考教师 " + stat.name}
                       className={cn("shrink-0 rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-ink-900 hover:bg-amber-300",
                         selectedTeacherId === stat.teacherId && "ring-2 ring-amber-500")}
-                      onClick={() => setSelectedTeacherId(stat.teacherId)}>{stat.name}</button>
+                      onClick={() => assignSelectedTeacher(stat.teacherId)}>{stat.name}</button>
                   ))}
                 </div>
               )}
@@ -1513,7 +1513,7 @@ export function InvigilationTableSection({
                       aria-label={"选择最短监考教师 " + stat.name}
                       className={cn("shrink-0 rounded bg-sky-200 px-1.5 py-0.5 text-xs font-medium text-ink-900 hover:bg-sky-300",
                         selectedTeacherId === stat.teacherId && "ring-2 ring-sky-500")}
-                      onClick={() => setSelectedTeacherId(stat.teacherId)}>{stat.name}</button>
+                      onClick={() => assignSelectedTeacher(stat.teacherId)}>{stat.name}</button>
                   ))}
                 </div>
               )}

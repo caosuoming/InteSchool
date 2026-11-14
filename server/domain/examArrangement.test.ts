@@ -264,7 +264,6 @@ describe("exam arrangement service", () => {
       expect((appState.examArrangements as any[])[0].invigilation.overrides).toEqual({
         "2026-10-20|morning|08:00|物理": {
           roomTeacherIds: { "room-1": "teacher-physics" },
-          outsideTeacherId: "teacher-prep",
         },
       });
       expect((appState.examArrangements as any[])[0].invigilation.teacherNotes).toEqual({
