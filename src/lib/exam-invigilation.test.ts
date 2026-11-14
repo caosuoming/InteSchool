@@ -357,6 +357,38 @@ describe("exam invigilation table", () => {
     expect(table.rows[0].roomTeacherIds["room-2"]).toBeNull();
   });
 
+  it("orders columns by numeric room number instead of assignment insertion order", () => {
+    const input = arrangement();
+    input.rooms[0].number = "10考场";
+    input.rooms[1].number = "2考场";
+    const table = buildExamInvigilationTable(input, config());
+    expect(table.rooms.map((room) => room.roomId)).toEqual(["room-2", "room-1"]);
+    expect(table.roomLocationGroups.map((group) => group.roomNumbers)).toEqual([["2考场"], ["10考场"]]);
+  });
+
+  it("defaults to one-day assignments but accepts explicitly flexible teachers", () => {
+    const input = arrangement();
+    const times: ExamInvigilationConfig["subjectTimes"] = [
+      { subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
+      { subject: "数学", date: "2026-10-21", period: "morning", time: "08:00", durationMinutes: 90 },
+    ];
+    const settings: ExamInvigilationConfig = {
+      teachers: [{ id: "teacher-only", name: "唯一监考老师", subject: "物理" }],
+      subjectTimes: times,
+      patrolTeacherIds: [],
+      overrides: Object.fromEntries(times.map((time) => [
+        invigilationSlotKey([time]), { roomTeacherIds: {}, outsideTeacherId: null },
+      ])),
+    };
+    const defaultTable = buildExamInvigilationTable(input, settings);
+    expect(defaultTable.rows[0].roomTeacherIds["room-1"]).toBe("teacher-only");
+    expect(defaultTable.rows[1].roomTeacherIds["room-1"]).toBeNull();
+
+    settings.teacherRequirements = { "teacher-only": { sameDay: "any" } };
+    const relaxedTable = buildExamInvigilationTable(input, settings);
+    expect(relaxedTable.rows[1].roomTeacherIds["room-1"]).toBe("teacher-only");
+  });
+
   it("collapses a legacy per-room override onto the shared location cell", () => {
     const input = arrangement();
     input.rooms[1].location = input.rooms[0].location;

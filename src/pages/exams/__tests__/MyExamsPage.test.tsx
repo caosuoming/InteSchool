@@ -399,10 +399,9 @@ describe("MyExamsPage", () => {
     expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
     expect(invigilationTable.getAllByRole("checkbox", { name: /高三1班教室监考单元格/ })).toHaveLength(2);
     expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
-    const durationHeading = screen.getByRole("heading", { name: "监考时长" });
+    const durationCard = screen.getByRole("region", { name: "监考时长面板" });
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
     const teacherConfigCard = teachersHeading.closest(".card-base");
-    const durationCard = durationHeading.closest(".card-base");
     expect(teacherConfigCard).not.toBeNull();
     expect(durationCard).not.toBeNull();
     const teacherConfig = within(teacherConfigCard as HTMLElement);
@@ -435,7 +434,7 @@ describe("MyExamsPage", () => {
     expect(tableOneHeading.compareDocumentPosition(teachersHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teachersHeading.compareDocumentPosition(timesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(timesHeading.compareDocumentPosition(tableTwoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(tableTwoHeading.compareDocumentPosition(durationHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tableTwoHeading.compareDocumentPosition(durationCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(teacherConfig.getByRole("columnheader", { name: "往期累计" })).toBeInTheDocument();
     expect(teacherConfig.queryByLabelText("教师姓名 1")).not.toBeInTheDocument();
     fireEvent.click(teacherConfig.getByRole("button", { name: "增加老师" }));
@@ -449,7 +448,7 @@ describe("MyExamsPage", () => {
     expect(teacherConfig.getByRole("columnheader", { name: "是否在同一天" })).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "是否请假" })).toBeInTheDocument();
     expect(teacherConfig.getByRole("columnheader", { name: "备注" })).toBeInTheDocument();
-    expect(teacherConfig.getByLabelText("语文教师甲是否在同一天")).toHaveValue("any");
+    expect(teacherConfig.getByLabelText("语文教师甲是否在同一天")).toHaveValue("yes");
     expect(teacherConfig.getByLabelText("语文教师甲是否请假")).not.toBeChecked();
     expect(durationTable.queryByLabelText("语文教师甲是否在同一天")).not.toBeInTheDocument();
     const footerNote = invigilationTable.getByLabelText("监考表年级说明");
@@ -472,7 +471,7 @@ describe("MyExamsPage", () => {
     });
     const leftDragHandle = await screen.findByRole("button", { name: "从左上角拖动监考时长面板" });
     const rightDragHandle = screen.getByRole("button", { name: "从右上角拖动监考时长面板" });
-    const floatingPanel = durationHeading.closest(".fixed") as HTMLElement | null;
+    const floatingPanel = durationCard.closest(".fixed") as HTMLElement | null;
     expect(floatingPanel).not.toBeNull();
     expect(floatingPanel).toHaveClass("z-50");
     expect(leftDragHandle.parentElement).toBe(floatingPanel);
@@ -499,6 +498,13 @@ describe("MyExamsPage", () => {
     expect(expandButton).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(expandButton);
     expect(within(durationCard as HTMLElement).getByRole("columnheader", { name: "姓名" })).toBeInTheDocument();
+    expect(within(durationCard as HTMLElement).queryByRole("heading", { name: "监考时长" })).not.toBeInTheDocument();
+    fireEvent.click(within(durationCard as HTMLElement).getByRole("button", { name: "最长" }));
+    expect(within(durationCard as HTMLElement).getByRole("button", { name: "最长" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(durationCard as HTMLElement).getByRole("button", { name: "最短" }));
+    expect(within(durationCard as HTMLElement).getByRole("button", { name: "最短" })).toHaveAttribute("aria-pressed", "true");
+    const shortestNames = within(durationCard as HTMLElement).getByLabelText("最短监考老师名单");
+    expect(within(shortestNames).getAllByRole("button", { name: /选择最短监考教师/ }).length).toBeGreaterThan(0);
   });
 
   it("accumulates selected previous invigilation durations", async () => {
@@ -566,9 +572,8 @@ describe("MyExamsPage", () => {
     );
 
     const teachersHeading = await screen.findByRole("heading", { name: "配置一、监考老师名单" });
-    const durationHeading = screen.getByRole("heading", { name: "监考时长" });
+    const durationCard = screen.getByRole("region", { name: "监考时长面板" });
     const teachersCard = teachersHeading.closest(".card-base");
-    const durationCard = durationHeading.closest(".card-base");
     expect(teachersCard).not.toBeNull();
     expect(durationCard).not.toBeNull();
     expect(examArrangementService.getInvigilationProfile).not.toHaveBeenCalled();
@@ -772,5 +777,18 @@ describe("MyExamsPage", () => {
 
     expect(mathRoomCell.closest("td")).toHaveTextContent("B老师");
     expect(physicsRoomCell.closest("td")).toHaveTextContent("B老师");
+
+    // A老师 now has the shortest cumulative duration. Clicking a name in the
+    // schedule must select its cell, even without using its tiny checkbox.
+    await user.click(screen.getByRole("button", { name: "最短" }));
+    const shortestNames = screen.getByLabelText("最短监考老师名单");
+    const shortestTeacher = within(shortestNames).getByRole("button", { name: "选择最短监考教师 A老师" });
+    expect(screen.getByRole("button", { name: "选择监考教师 A老师" })).toHaveClass("bg-sky-200");
+    await user.click(within(mathRoomCell.closest("td") as HTMLElement).getByRole("button", { name: "B老师" }));
+    expect(mathRoomCell).toBeChecked();
+    await user.click(shortestTeacher);
+    expect(mathRoomCell.closest("td")).toHaveTextContent("A老师");
+    expect(physicsRoomCell.closest("td")).toHaveTextContent("B老师");
+    expect(mathRoomCell).not.toBeChecked();
   });
 });
