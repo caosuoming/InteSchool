@@ -4,8 +4,9 @@ import sanitizeHtml from "sanitize-html";
 import { cleanBoardRichText } from "@/lib/board-rich-text";
 import type { BoardDocument, BoardNode, BoardPort } from "@/types";
 import { focusBoardNodes, type PositionedNode } from "./board-layout";
-import { canReparent, connectBoardPorts, edgeGeometry, portPoint, PORTS, type NodeBounds, type Point } from "./board-routing";
+import { addBoardNodeAtPoint, canReparent, connectBoardPorts, edgeGeometry, portPoint, PORTS, type NodeBounds, type Point } from "./board-routing";
 import { cn } from "@/lib/utils";
+import { genId } from "@/lib/service-utils";
 
 interface BoardCanvasProps {
   board: BoardDocument;
@@ -36,7 +37,7 @@ export function BoardCanvas({
 }: BoardCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; startX: number; startY: number; originalX: number; originalY: number; moved: boolean } | null>(null);
-  const connectRef = useRef<{ id: string; port: BoardPort } | null>(null);
+  const connectRef = useRef<{ id: string; port: BoardPort; startX: number; startY: number } | null>(null);
   const [preview, setPreview] = useState<{ start: Point; end: Point } | null>(null);
   const [measured, setMeasured] = useState<Record<string, NodeBounds>>({});
   const [query, setQuery] = useState("");
@@ -128,7 +129,7 @@ export function BoardCanvas({
     const node = byId.get(id);
     if (!node) return;
     const start = portPoint(bounds(node), port);
-    connectRef.current = { id, port };
+    connectRef.current = { id, port, startX: event.clientX, startY: event.clientY };
     setPreview({ start, end: start });
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
@@ -150,9 +151,22 @@ export function BoardCanvas({
     const portButton = element?.closest<HTMLElement>("[data-board-port]");
     const toId = portButton?.dataset.boardNode;
     const toPort = portButton?.dataset.boardPort as BoardPort | undefined;
-    if (!toId || !toPort || !PORTS.includes(toPort)) return;
-    const next = connectBoardPorts(board, source.id, source.port, toId, toPort);
-    if (next !== board) onChange(next);
+    if (toId && toPort && PORTS.includes(toPort)) {
+      const next = connectBoardPorts(board, source.id, source.port, toId, toPort);
+      if (next !== board) onChange(next);
+      return;
+    }
+    // An accidental release over a node body or a sidebar must not create extra nodes.
+    if (element?.closest("[data-board-node-id]") || !containerRef.current ||
+      Math.hypot(event.clientX - source.startX, event.clientY - source.startY) < 8) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (!rect.width || !rect.height || event.clientX < rect.left || event.clientX > rect.right ||
+      event.clientY < rect.top || event.clientY > rect.bottom) return;
+    const id = genId("board-node");
+    onChange(addBoardNodeAtPoint(board, source.id, source.port,
+      { x: (event.clientX - rect.left) / rect.width * 100,
+        y: (event.clientY - rect.top) / rect.height * 100 }, id));
+    onSelectNode?.(id);
   };
   const searchResults = query.trim() ? board.nodes.filter((node) =>
     `${node.label} ${sanitizeHtml(node.richText || "", { allowedTags: [], allowedAttributes: {} })}`
@@ -219,7 +233,8 @@ export function BoardCanvas({
                 : selected ? "border-amber-500 bg-amber-50 font-semibold text-ink-900"
                   : "border-ink-200 bg-white text-ink-700",
               !readonly && node.id !== board.rootNodeId && "cursor-grab active:cursor-grabbing")}
-            style={{ fontSize }}>
+            style={{ fontSize, borderColor: node.borderColor,
+              ...(node.borderVisible === false ? { borderWidth: 0 } : {}) }}>
             {!node.hideLabel && <span className="block break-words">{node.label}</span>}
             {node.pinned && <Pin size={12} aria-label="已固定" className="ml-auto text-amber-600" />}
             {node.imageUrl && <img src={node.imageUrl} alt={node.label} className="mt-1 max-h-24 w-full rounded object-contain" draggable={false} />}
@@ -233,8 +248,8 @@ export function BoardCanvas({
             onPointerDown={(event) => startConnection(event, node.id, port)}
             onPointerMove={moveConnection} onPointerUp={endConnection}
             onPointerCancel={() => { connectRef.current = null; setPreview(null); }}
-            className="pointer-events-auto absolute z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 touch-none rounded-full border-[1.5px] border-amber-600 bg-white hover:scale-125 hover:bg-amber-100"
-            style={portPositions[port]} />)}
+            className="pointer-events-auto absolute z-20 flex h-3 w-3 -translate-x-1/2 -translate-y-1/2 touch-none items-center justify-center rounded-full"
+            style={portPositions[port]}><span aria-hidden="true" className="h-[2.4px] w-[2.4px] rounded-full border-[0.5px] border-amber-700 bg-white group-hover:bg-amber-100" /></button>)}
         </div>;
       })}
       {!readonly && <div className="absolute bottom-3 left-3 z-30 w-52 max-w-[42%]">

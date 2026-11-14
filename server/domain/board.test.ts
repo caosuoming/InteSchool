@@ -124,6 +124,43 @@ describe("board library", () => {
     });
   });
 
+  it("persists border settings and validates chapter associations", async () => {
+    const state = fixture();
+    state.chapters = [
+      { id: "chapter-a", teacherId: "alice", schoolId: "personal-directory:alice",
+        subject: "数学", name: "第一章", parentId: null, order: 1, level: 0 },
+      { id: "chapter-b", teacherId: "bob", schoolId: "personal-directory:bob",
+        subject: "数学", name: "其他教师章节", parentId: null, order: 1, level: 0 },
+    ];
+    await runWithState(state, async () => {
+      const master = (await boardService.listBoards("alice"))[0];
+      const modified = master.nodes.map((node) => node.id === "b"
+        ? { ...node, borderVisible: false, borderColor: "#123abc" } : node);
+      const saved = await boardService.saveBoard(master.id, "alice", { ...patch(master), nodes: modified });
+      expect(saved.nodes.find((node) => node.id === "b")).toMatchObject({
+        borderVisible: false, borderColor: "#123abc",
+      });
+      expect((await boardService.getBoard(master.id, "alice")).nodes.find((node) => node.id === "b"))
+        .toMatchObject({ borderVisible: false, borderColor: "#123abc" });
+      await expect(boardService.saveBoard(saved.id, "alice", { ...patch(saved),
+        nodes: saved.nodes.map((node) => node.id === "b"
+          ? { ...node, borderColor: "javascript:alert(1)" } : node) }))
+        .rejects.toThrow(/边框颜色/);
+
+      const board = await boardService.createBoard("alice", "b", "chapter-a");
+      expect(board.chapterId).toBe("chapter-a");
+      expect((await boardService.getBoard(board.id, "alice")).chapterId).toBe("chapter-a");
+      await expect(boardService.createBoard("alice", "b", "chapter-b"))
+        .rejects.toThrow(/章节课目录/);
+      await expect(boardService.saveBoard(board.id, "alice", { ...patch(board),
+        chapterId: "chapter-b" })).rejects.toThrow(/章节课目录/);
+      const uncategorized = await boardService.saveBoard(board.id, "alice", {
+        ...patch(board), chapterId: null,
+      });
+      expect(uncategorized.chapterId).toBeUndefined();
+    });
+  });
+
   it("creates independent structures and rejects cross-owner access and invalid graphs", async () => {
     await runWithState(fixture(), async () => {
       const board = await boardService.createBoard("alice", "b");

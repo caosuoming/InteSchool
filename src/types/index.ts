@@ -2911,6 +2911,9 @@ export interface BoardNode {
   richText?: string;
   imageUrl?: string;
   fontSize?: number;
+  /** 隐藏节点边框，连接点仍可使用。 */
+  borderVisible?: boolean;
+  borderColor?: string;
 }
 
 export interface BoardEdge {

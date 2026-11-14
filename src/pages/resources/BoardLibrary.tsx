@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Eye, EyeOff, FolderTree, GitBranchPlus, Pin, PinOff, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
+import { ArrowRight, FolderTree, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Expand, Eye, EyeOff, GitBranchPlus, Minimize, Pin, PinOff, Plus, RefreshCw, Save, Trash2, Upload } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { genId } from "@/lib/service-utils";
 import { boardService } from "@/services/board";
 import { knowledgeService } from "@/services/knowledge";
-import { TreeView } from "@/components/tree/TreeView";
+import { BoardChapterTree } from "@/components/board/BoardChapterTree";
+import { chapterOptions } from "@/components/board/board-chapters";
 import { Modal } from "@/components/ui/Modal";
+import { TreeView } from "@/components/tree/TreeView";
 import { BoardCanvas } from "@/components/board/BoardCanvas";
 import { BoardRichTextField } from "@/components/board/BoardRichTextField";
 import type { BoardDocument, BoardEdge, BoardNode, TreeNode } from "@/types";
@@ -36,7 +38,6 @@ function chapterPath(tree: TreeNode | null, id?: string): string | null {
 
 export function BoardLibrary() {
   const { teacher } = useAuthStore();
-  const teacherId = teacher?.id;
   const [list, setList] = useState<BoardDocument[]>([]);
   const [board, setBoard] = useState<BoardDocument | null>(null);
   const [saved, setSaved] = useState<BoardDocument | null>(null);
@@ -46,8 +47,20 @@ export function BoardLibrary() {
   const [loading, setLoading] = useState(true);
   const [linkTargetId, setLinkTargetId] = useState("");
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
   const [richEditorOpen, setRichEditorOpen] = useState(false);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false);
+  const [chaptersCollapsed, setChaptersCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
+  useEffect(() => {
+    if (!fullScreen) return;
+    const exit = (event: KeyboardEvent) => { if (event.key === "Escape") setFullScreen(false); };
+    window.addEventListener("keydown", exit);
+    return () => window.removeEventListener("keydown", exit);
+  }, [fullScreen]);
   const dirty = !!board && !!saved && JSON.stringify(board) !== JSON.stringify(saved);
 
   const reload = useCallback(async (preferredId?: string) => {
@@ -61,6 +74,9 @@ export function BoardLibrary() {
       setSaved(current);
       setSelectedNodeId(current?.rootNodeId || null);
       setSelectedEdgeId(null);
+      setSelectedChapterId(current?.chapterId || null);
+      try { setChapterTree(await knowledgeService.getChapterTree(teacher.id, false)); }
+      catch (error) { setChapterTree(null); toast.error("章节课目录加载失败", errorMessage(error)); }
     } catch (err) {
       toast.error("导图库加载失败", errorMessage(err));
     } finally {
@@ -69,15 +85,6 @@ export function BoardLibrary() {
   }, [teacher]);
 
   useEffect(() => { void reload(); }, [reload]);
-  useEffect(() => {
-    if (!teacherId) return;
-    let active = true;
-    setChapterTree(null);
-    void knowledgeService.getChapterTree(teacherId, false)
-      .then((tree) => { if (active) setChapterTree(tree); })
-      .catch((err) => { if (active) toast.error("加载章节课目录失败", errorMessage(err)); });
-    return () => { active = false; };
-  }, [teacherId]);
 
   const selectBoard = async (id: string) => {
     if (!teacher || !board || id === board.id) return;
@@ -88,6 +95,7 @@ export function BoardLibrary() {
       setSaved(next);
       setSelectedNodeId(next.rootNodeId);
       setSelectedEdgeId(null);
+      setSelectedChapterId(next.chapterId || null);
     } catch (err) { toast.error("打开板书失败", errorMessage(err)); }
   };
 
@@ -109,12 +117,15 @@ export function BoardLibrary() {
     if (dirty) { toast.error("请先保存当前板书"); return; }
     setBusy(true);
     try {
-      const item = await boardService.createBoard(teacher.id, selectedNodeId || board.rootNodeId);
+      const item = await boardService.createBoard(teacher.id,
+        board.nodes.some((node) => node.id === selectedNodeId) ? selectedNodeId! : board.rootNodeId,
+        selectedChapterId || undefined);
       setList((previous) => previous.length ? [previous[0], item, ...previous.slice(1)] : [item]);
       setBoard(item);
       setSaved(item);
       setSelectedNodeId(item.rootNodeId);
       setSelectedEdgeId(null);
+      setSelectedChapterId(item.chapterId || null);
       toast.success("已创建结构板书");
     } catch (err) { toast.error("创建失败", errorMessage(err)); }
     finally { setBusy(false); }
@@ -197,26 +208,58 @@ export function BoardLibrary() {
   if (loading && !board) return <div className="py-16 text-center text-sm text-ink-500">正在加载导图库...</div>;
   if (!board) return <div className="py-12 text-center text-sm text-ink-500">暂无可用板书 <button onClick={() => void reload()} className="underline">重试</button></div>;
 
-  return <div className="grid min-h-[70vh] grid-cols-1 gap-3 lg:grid-cols-[210px_minmax(0,1fr)_240px]">
-    <aside className="rounded-xl border border-ink-100 bg-paper p-3">
-      <div className="mb-3 flex items-center justify-between text-sm font-semibold text-ink-800">
-        <span>导图库</span>
-        <button aria-label="刷新导图库" onClick={() => void reload(board.id)} title="同步知识树" className="rounded-md p-1 hover:bg-mist"><RefreshCw className="h-4 w-4" /></button>
+  const gridColumns = fullScreen ? "lg:grid-cols-1"
+    : leftCollapsed
+      ? rightCollapsed ? "lg:grid-cols-[48px_minmax(0,1fr)_48px]" : "lg:grid-cols-[48px_minmax(0,1fr)_260px]"
+      : rightCollapsed ? "lg:grid-cols-[220px_minmax(0,1fr)_48px]" : "lg:grid-cols-[220px_minmax(0,1fr)_260px]";
+  const availableChapters = chapterTree ? chapterOptions(chapterTree) : [];
+  return <div className={`grid min-h-[70vh] grid-cols-1 gap-3 ${gridColumns} ${fullScreen ? "fixed inset-0 z-[70] overflow-auto bg-paper p-3" : ""}`}>
+    {!fullScreen && <aside className="min-w-0 rounded-xl border border-ink-100 bg-paper p-2">
+      <div className="flex items-center justify-between gap-1">
+        {!leftCollapsed && <span className="px-1 text-sm font-semibold text-ink-800">目录导航</span>}
+        <button type="button" aria-label={leftCollapsed ? "展开左侧目录" : "向左折叠目录"}
+          onClick={() => setLeftCollapsed((value) => !value)}
+          className="rounded p-1.5 hover:bg-mist">{leftCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}</button>
       </div>
-      <div className="space-y-1">
-        {list.map((item) => <button key={item.id} type="button" onClick={() => void selectBoard(item.id)}
-          className={`w-full rounded-lg px-3 py-2 text-left text-sm ${item.id === board.id ? "bg-amber-50 text-amber-900" : "text-ink-600 hover:bg-mist"}`}>
-          <span className="block truncate font-medium">{item.title}</span>
-          <span className="block text-[11px] text-ink-400">{item.kind === "master" ? "知识树实时同步 · 总导图" : "结构板书"}</span>
-          {item.kind === "structure" && item.chapterId && <span className="block truncate text-[11px] text-amber-700" title={chapterPath(chapterTree, item.chapterId) || "章节节点已失效"}>
-            章节：{chapterPath(chapterTree, item.chapterId) || "节点已失效"}
-          </span>}
-        </button>)}
-      </div>
-      <button type="button" onClick={() => void create()} disabled={busy} className="mt-4 flex w-full items-center justify-center gap-1 rounded-lg border border-ink-200 py-2 text-xs text-ink-700 hover:bg-mist disabled:opacity-50">
-        <Plus className="h-3.5 w-3.5" /> 从当前节点新建结构板书
-      </button>
-    </aside>
+      {!leftCollapsed && <>
+        <div className="mt-2 border-t border-ink-100 pt-2">
+          <div className="flex items-center justify-between gap-1">
+            <button type="button" aria-label={libraryCollapsed ? "展开导图库" : "向上折叠导图库"}
+              aria-expanded={!libraryCollapsed} onClick={() => setLibraryCollapsed((value) => !value)}
+              className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-1 text-left text-sm font-semibold text-ink-800 hover:bg-mist">
+              {libraryCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />} 导图库
+            </button>
+            <button aria-label="刷新导图库" onClick={() => void reload(board.id)} title="同步知识树"
+              className="rounded p-1 hover:bg-mist"><RefreshCw className="h-4 w-4" /></button>
+          </div>
+          {!libraryCollapsed && <>
+            <div className="max-h-[40vh] space-y-1 overflow-y-auto">
+              {list.map((item) => <button key={item.id} type="button" onClick={() => void selectBoard(item.id)}
+                className={`w-full rounded-lg px-2 py-2 text-left text-sm ${item.id === board.id ? "bg-amber-50 text-amber-900" : "text-ink-600 hover:bg-mist"}`}>
+                <span className="block truncate font-medium">{item.title}</span>
+                <span className="text-[11px] text-ink-400">{item.kind === "master" ? "总导图" : item.chapterId ? "结构板书 · 已归类" : "结构板书 · 未归类"}</span>
+              </button>)}
+            </div>
+            <button type="button" onClick={() => void create()} disabled={busy}
+              className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-ink-200 px-1 py-2 text-xs text-ink-700 hover:bg-mist disabled:opacity-50">
+              <Plus className="h-3.5 w-3.5 shrink-0" /> 新建结构板书
+            </button>
+          </>}
+        </div>
+        <div className="mt-3 border-t border-ink-100 pt-2">
+          <button type="button" aria-label={chaptersCollapsed ? "展开章节课目录" : "向上折叠章节课目录"}
+            aria-expanded={!chaptersCollapsed} onClick={() => setChaptersCollapsed((value) => !value)}
+            className="flex w-full items-center gap-1 rounded px-1 py-1 text-left text-sm font-semibold text-ink-800 hover:bg-mist">
+            {chaptersCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />} 章节课目录
+          </button>
+          {!chaptersCollapsed && (chapterTree
+            ? <BoardChapterTree tree={chapterTree} boards={list} activeBoardId={board.id}
+                selectedChapterId={selectedChapterId} onSelectChapter={setSelectedChapterId}
+                onSelectBoard={(id) => void selectBoard(id)} />
+            : <p className="p-2 text-xs text-ink-400">暂无章节目录</p>)}
+        </div>
+      </>}
+    </aside>}
 
     <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-ink-100 bg-paper">
       <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-2">
@@ -228,13 +271,18 @@ export function BoardLibrary() {
           className="flex shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2 py-1.5 text-xs text-ink-700 hover:bg-mist">
           <FolderTree className="h-3.5 w-3.5" />章节课目录
         </button>}
+        <button type="button" aria-label={fullScreen ? "退出全屏" : "全屏"} onClick={() => setFullScreen((value) => !value)}
+          className="flex items-center gap-1 rounded p-2 text-xs text-ink-700 hover:bg-mist">
+          {fullScreen ? <Minimize size={15} /> : <Expand size={15} />}
+          {fullScreen ? "退出全屏" : "全屏"}
+        </button>
         {dirty && <span className="text-xs text-amber-700">未保存</span>}
         {board.kind === "structure" && <button aria-label="删除结构板书" onClick={() => void remove()} className="rounded p-2 text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>}
         <button type="button" onClick={() => void save()} disabled={!dirty || busy} className="flex items-center gap-1 rounded-lg bg-ink-900 px-3 py-2 text-xs text-paper disabled:opacity-40">
           <Save className="h-3.5 w-3.5" />保存
         </button>
       </div>
-      <div className="min-h-[480px] flex-1 p-2" style={{ height: "min(72vh, 750px)" }}>
+      <div className="min-h-[480px] flex-1 p-2" style={{ height: fullScreen ? "calc(100vh - 135px)" : "min(72vh, 750px)" }}>
         <BoardCanvas board={board} selectedNodeId={selectedNodeId} selectedEdgeId={selectedEdgeId}
           onSelectNode={(id) => { setSelectedNodeId(id); setSelectedEdgeId(null); }}
           onSelectEdge={(id) => { setSelectedEdgeId(id); setSelectedNodeId(null); }}
@@ -245,13 +293,29 @@ export function BoardLibrary() {
       </div>
     </section>
 
-    <aside className="space-y-4 rounded-xl border border-ink-100 bg-paper p-4">
-      <h3 className="text-sm font-semibold text-ink-900">编辑属性</h3>
+    {!fullScreen && <aside className="min-w-0 space-y-4 rounded-xl border border-ink-100 bg-paper p-3">
+      <div className="flex items-center justify-between gap-1">
+        {!rightCollapsed && <h3 className="text-sm font-semibold text-ink-900">编辑属性</h3>}
+        <button type="button" aria-label={rightCollapsed ? "展开编辑属性" : "向右折叠编辑属性"}
+          onClick={() => setRightCollapsed((value) => !value)} className="rounded p-1.5 hover:bg-mist">
+          {rightCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+        </button>
+      </div>
+      {!rightCollapsed && <>
       {board.kind === "structure" && <label className="block text-xs text-ink-500">板书标题
         <input aria-label="板书标题" value={board.title} maxLength={180}
           onChange={(e) => patch({ title: e.target.value,
             nodes: board.nodes.map((node) => node.id === board.rootNodeId ? { ...node, label: e.target.value } : node) })}
           className="mt-1 w-full rounded-md border border-ink-200 px-2 py-2 text-sm" />
+      </label>}
+      {board.kind === "structure" && <label className="block text-xs text-ink-500">所属章节课
+        <select aria-label="所属章节课" value={board.chapterId || ""}
+          onChange={(event) => { patch({ chapterId: event.target.value || undefined }); setSelectedChapterId(event.target.value || null); }}
+          className="mt-1 w-full rounded-md border border-ink-200 bg-paper p-2 text-sm">
+          <option value="">未归类</option>
+          {availableChapters.map((item) => <option key={item.id} value={item.id}>
+            {"　".repeat(item.depth - 1)}{item.name}</option>)}
+        </select>
       </label>}
       {selected && <div className="space-y-3">
         <label className="block text-xs text-ink-500">节点名称
@@ -283,6 +347,18 @@ export function BoardLibrary() {
             {selected.hidden ? "显示节点" : "隐藏节点"}
           </button>}
         </div>
+        <label className="flex items-center gap-2 text-xs text-ink-500">
+          <input type="checkbox" aria-label="显示节点边框"
+            checked={selected.borderVisible !== false}
+            onChange={(event) => changeNode({ borderVisible: event.target.checked })} />
+          显示节点边框
+        </label>
+        <label className="flex items-center justify-between gap-2 text-xs text-ink-500">
+          节点边框颜色
+          <input type="color" aria-label="节点边框颜色" value={selected.borderColor || "#d1d5db"}
+            onChange={(event) => changeNode({ borderColor: event.target.value })}
+            className="h-8 w-12 cursor-pointer rounded border border-ink-200" />
+        </label>
         <label className="block text-xs text-ink-500">节点字号
           <input type="number" aria-label="节点字号" min={10} max={48}
             value={selected.fontSize ?? (board.kind === "master" ? 17 : 18)}
@@ -346,15 +422,17 @@ export function BoardLibrary() {
         }}>删除连线</button>}
       </div>}
       {!selected && !edge && <p className="text-xs text-ink-400">点击节点或连线查看编辑选项。</p>}
-    </aside>
+      </>}
+    </aside>}
     <Modal open={chapterPickerOpen && board.kind === "structure"} onClose={() => setChapterPickerOpen(false)} title="添加到章节课目录" size="lg">
       <div className="space-y-3 p-4">
         {chapterTree ? <TreeView data={chapterTree} selectedId={board.chapterId}
-          onSelect={(node) => { patch({ chapterId: node.id }); setChapterPickerOpen(false); }}
+          onSelect={(node) => { if (!chapterOptions(chapterTree).some((entry) => entry.id === node.id)) return;
+            patch({ chapterId: node.id }); setSelectedChapterId(node.id); setChapterPickerOpen(false); }}
           showCount={false} expandLevel={2} className="max-h-[55vh] overflow-y-auto" />
           : <p className="text-sm text-ink-500">章节课目录加载中...</p>}
         <div className="flex items-center justify-between border-t border-ink-100 pt-3">
-          <button type="button" onClick={() => { patch({ chapterId: undefined }); setChapterPickerOpen(false); }}
+          <button type="button" onClick={() => { patch({ chapterId: undefined }); setSelectedChapterId(null); setChapterPickerOpen(false); }}
             className="text-xs text-red-600">清除关联</button>
           <span className="text-xs text-ink-400">选择节点后点击“保存”以生效</span>
         </div>

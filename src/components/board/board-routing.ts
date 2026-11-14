@@ -107,3 +107,19 @@ export function connectBoardPorts(board: BoardDocument, fromId: string, fromPort
     fromPort, toPort, route: board.kind === "master" ? "curve" : "elbow",
     style: "solid", arrow: "none" }] };
 }
+
+/** Releasing a port onto the empty canvas creates a connected, editable child node. */
+export function addBoardNodeAtPoint(board: BoardDocument, sourceId: string, fromPort: BoardPort,
+  position: { x: number; y: number }, id: string): BoardDocument {
+  if (!board.nodes.some((node) => node.id === sourceId) || board.nodes.some((node) => node.id === id)) return board;
+  const x = Math.max(4, Math.min(96, position.x));
+  const y = Math.max(5, Math.min(95, position.y));
+  const opposite: BoardPort = fromPort === "left" ? "right" : fromPort === "right" ? "left"
+    : fromPort.startsWith("top") ? fromPort.replace("top", "bottom") as BoardPort
+    : fromPort.replace("bottom", "top") as BoardPort;
+  const node: BoardNode = { id, label: "新节点", parentId: sourceId, x, y };
+  return { ...board,
+    nodes: [...board.nodes, node],
+    edges: [...board.edges, { id: `parent:${id}`, from: sourceId, to: id, fromPort, toPort: opposite,
+      style: "solid", arrow: "forward", route: board.kind === "master" ? "curve" : "elbow" }] };
+}

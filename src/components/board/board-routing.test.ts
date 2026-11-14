@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BoardDocument, BoardEdge } from "@/types";
-import { connectBoardPorts, edgeGeometry, parentConnection, portPoint } from "./board-routing";
+import { addBoardNodeAtPoint, connectBoardPorts, edgeGeometry, parentConnection, portPoint } from "./board-routing";
 
 const bounds = { cx: 100, cy: 150, width: 120, height: 60 };
 const edge: BoardEdge = { id: "parent:b", from: "a", to: "b", style: "solid", arrow: "forward", route: "curve" };
@@ -50,5 +50,27 @@ describe("board connection geometry", () => {
     expect(related.edges[related.edges.length - 1]).toMatchObject({ from: "a", to: "b", fromPort: "right", toPort: "left" });
     expect(related.nodes).toEqual(board.nodes);
     expect(connectBoardPorts(board, "a", "right", "a", "left")).toBe(board);
+  });
+});
+
+
+describe("dragging a port onto empty canvas", () => {
+  it("creates a child and a persisted port-to-port edge without changing existing nodes", () => {
+    const next = addBoardNodeAtPoint(board, "root", "right", { x: 72, y: 41 }, "new");
+    expect(next.nodes).toHaveLength(board.nodes.length + 1);
+    expect(next.nodes.find((node) => node.id === "new")).toMatchObject({
+      label: "新节点", parentId: "root", x: 72, y: 41,
+    });
+    expect(next.edges.find((item) => item.id === "parent:new")).toMatchObject({
+      from: "root", to: "new", fromPort: "right", toPort: "left",
+    });
+    expect(board.nodes.some((node) => node.id === "new")).toBe(false);
+    expect(addBoardNodeAtPoint(board, "absent", "left", { x: 50, y: 50 }, "n")).toBe(board);
+  });
+
+  it("keeps created nodes inside editable canvas bounds", () => {
+    const next = addBoardNodeAtPoint(board, "root", "bottom-left", { x: 101, y: -10 }, "new");
+    expect(next.nodes.at(-1)).toMatchObject({ x: 96, y: 5 });
+    expect(next.edges.at(-1)).toMatchObject({ fromPort: "bottom-left", toPort: "top-left" });
   });
 });
