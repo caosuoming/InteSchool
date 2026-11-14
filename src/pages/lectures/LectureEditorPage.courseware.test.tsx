@@ -49,6 +49,16 @@ const lecture = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 } as Lecture;
 
+const schoolClass = {
+  id: "class-1", type: "school", schoolId: teacher.schoolId,
+  name: "学校一班", grade: "高一", studentCount: 30,
+  createdBy: teacher.id, createdAt: "2026-08-01T00:00:00.000Z",
+};
+const personalClass = {
+  id: "personal-1", type: "personal", teacherId: teacher.id,
+  name: "个人教学班", description: "", studentIds: [], createdAt: "2026-08-01T00:00:00.000Z",
+};
+
 const emptyTree = {
   id: "root",
   name: "目录",
@@ -153,6 +163,7 @@ function renderPage() {
       <Routes>
         <Route path="/lectures/:id/edit" element={<LectureEditorPage />} />
         <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
+        <Route path="/individual-tutoring/coursewares" element={<div>个人上课课件列表</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -228,11 +239,13 @@ describe("LectureEditorPage courseware action", () => {
     expect(screen.getByRole("button", { name: "发布" })).toBeDisabled();
   });
 
-  it("saves current lecture edits before creating courseware from edit mode", async () => {
+  it("saves current lecture edits before creating school courseware from edit mode", async () => {
     const user = userEvent.setup();
+    mocks.getLecture.mockResolvedValue({ ...lecture, classIds: ["class-1"] });
+    mocks.listAllClasses.mockResolvedValue([schoolClass]);
     renderPage();
 
-    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    const sendButton = await screen.findByRole("button", { name: "添加到学校上课" });
     await waitFor(() => expect(sendButton).toBeEnabled());
     await user.click(sendButton);
 
@@ -242,9 +255,7 @@ describe("LectureEditorPage courseware action", () => {
         expect.objectContaining({ title: lecture.title }),
       );
       expect(mocks.createFromLecture).toHaveBeenCalledWith(
-        teacher.id,
-        teacher.schoolId,
-        lecture.id,
+        teacher.id, teacher.schoolId, lecture.id, [], undefined, ["class-1"],
       );
     });
     expect(mocks.updateLecture.mock.invocationCallOrder[0])
@@ -252,14 +263,22 @@ describe("LectureEditorPage courseware action", () => {
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
-  it("changes the action to courseware and opens an existing courseware in preview", async () => {
-    mocks.getCoursewareBySource.mockResolvedValue({ id: "linked-courseware-1" });
+  it("does not offer courseware actions without an audience", async () => {
     renderPage();
+    await screen.findByRole("button", { name: "保存" });
+    expect(screen.queryByRole("button", { name: "添加到学校上课" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加到个人上课" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(await screen.findByRole("button", { name: "课件" }));
-
-    expect(await screen.findByText("课件预览页")).toBeInTheDocument();
-    expect(mocks.createFromLecture).not.toHaveBeenCalled();
+  it("generates a personal tutoring deck for the selected personal class", async () => {
+    mocks.getLecture.mockResolvedValue({ ...lecture, classIds: ["class-1", "personal-1"] });
+    mocks.listAllClasses.mockResolvedValue([schoolClass, personalClass]);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "添加到个人上课" }));
+    await waitFor(() => expect(mocks.createFromLecture).toHaveBeenCalledWith(
+      teacher.id, teacher.schoolId, lecture.id, [], ["personal-1"], undefined,
+    ));
+    expect(await screen.findByText("个人上课课件列表")).toBeInTheDocument();
   });
 
   it("shows another lecture's selectable contents in the right pane", async () => {

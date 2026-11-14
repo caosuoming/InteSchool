@@ -29,6 +29,8 @@ import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { DocumentCoursewareActions } from "@/components/resource/DocumentCoursewareActions";
+import type { DocumentLessonAudience } from "@/lib/document-lesson-audience";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -93,7 +95,6 @@ import type {
   ExtractedDocumentBlock,
   Lecture,
   LectureSection,
-  LessonCourseware,
   PrepResourceComment,
   PrepTask,
   Question,
@@ -304,8 +305,6 @@ export default function ExamPaperEditorPage() {
   const [downloadModes, setDownloadModes] = useState<DocumentDownloadMode[]>(["teacher"]);
   const [duplicating, setDuplicating] = useState(false);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
-  const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
-  const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
   const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
   const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
   const [prepPassword, setPrepPassword] = useState(() =>
@@ -629,30 +628,7 @@ export default function ExamPaperEditorPage() {
     });
   }, [id, teacher, schoolId, loadPaper]);
 
-  useEffect(() => {
-    if (prepTaskId || !paper || !teacher || paper.teacherId !== teacher.id || !teacher.schoolId) {
-      setLinkedCourseware(null);
-      setLinkedCoursewareLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLinkedCoursewareLoading(true);
-    lessonCoursewareService.getCoursewareBySource(
-      teacher.id,
-      teacher.schoolId,
-      "examPaper",
-      paper.id,
-    ).then((courseware) => {
-      if (!cancelled) setLinkedCourseware(courseware);
-    }).catch(() => {
-      if (!cancelled) setLinkedCourseware(null);
-    }).finally(() => {
-      if (!cancelled) setLinkedCoursewareLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [paper, prepTaskId, teacher]);
+
 
   // 当使用班级或时间周期变化时，加载每道题的完成情况和正确率。
   useEffect(() => {
@@ -1584,12 +1560,8 @@ export default function ExamPaperEditorPage() {
     }
   };
 
-  const handleSendToMyCourseware = async () => {
-    if (!paper || !teacher || prepTaskId) return;
-    if (linkedCourseware) {
-      navigate(`/my-lessons/${linkedCourseware.id}/edit?preview=1`);
-      return;
-    }
+  const handleSendToMyCourseware = async (audience: DocumentLessonAudience, classIds: string[]) => {
+    if (!paper || !teacher || prepTaskId || !classIds.length || sendingToCourseware) return;
     setSendingToCourseware(true);
     try {
       if (!isPreview || navigationDraft?.paperId === paper.id) {
@@ -1598,15 +1570,16 @@ export default function ExamPaperEditorPage() {
         setSavedDraft(examPaperSaveStateFromPaper(updated));
       }
       const courseware = await lessonCoursewareService.createFromExamPaper(
-        teacher.id,
-        schoolId,
-        paper.id,
+        teacher.id, schoolId, paper.id, [],
+        audience === "personal" ? classIds : undefined,
+        audience === "school" ? classIds : undefined,
       );
-      setLinkedCourseware(courseware);
-      toast.success("已发送到我的课件", "正在进入课件编辑...");
-      navigate(`/my-lessons/${courseware.id}/edit`);
+      toast.success(audience === "school" ? "已添加到学校上课" : "已添加到个人上课");
+      navigate(audience === "school"
+        ? `/my-lessons/${courseware.id}/edit`
+        : `/individual-tutoring/coursewares?classId=${encodeURIComponent(classIds[0])}`);
     } catch (error) {
-      toast.error("发送失败", error instanceof Error ? error.message : undefined);
+      toast.error("添加失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSendingToCourseware(false);
     }
@@ -1851,16 +1824,13 @@ export default function ExamPaperEditorPage() {
             </Button>
           )}
           {!prepTaskId && paper?.teacherId === teacher?.id && (
-            <Button
-              variant="outline"
-              onClick={handleSendToMyCourseware}
-              loading={sendingToCourseware}
-              disabled={linkedCoursewareLoading}
-            >
-              <BookOpen className="w-4 h-4" />
-              {linkedCourseware ? "课件" : "发送到我的课件"}
-            </Button>
-          )}
+                <DocumentCoursewareActions
+                  classIds={selectedClassIds}
+                  classes={classes}
+                  onAdd={(audience, classIds) => void handleSendToMyCourseware(audience, classIds)}
+                  loading={sendingToCourseware}
+                />
+              )}
           {!prepTaskId && (
             <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
               <Layout className="w-4 h-4" />
@@ -2301,16 +2271,13 @@ export default function ExamPaperEditorPage() {
             </Button>
           )}
           {paper?.teacherId === teacher?.id && (
-            <Button
-              variant="outline"
-              onClick={handleSendToMyCourseware}
-              loading={sendingToCourseware}
-              disabled={linkedCoursewareLoading}
-            >
-              <BookOpen className="w-4 h-4" />
-              {linkedCourseware ? "课件" : "发送到我的课件"}
-            </Button>
-          )}
+                <DocumentCoursewareActions
+                  classIds={selectedClassIds}
+                  classes={classes}
+                  onAdd={(audience, classIds) => void handleSendToMyCourseware(audience, classIds)}
+                  loading={sendingToCourseware}
+                />
+              )}
           <Button variant="outline" onClick={() => openPage(`/exam-papers/${id}/answer-sheet`)}>
             <Layout className="w-4 h-4" />
             制作答题卡

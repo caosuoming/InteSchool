@@ -48,6 +48,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { DocumentDownloadButton } from "@/components/resource/DocumentDownloadButton";
 import { Button } from "@/components/ui/Button";
+import { DocumentCoursewareActions } from "@/components/resource/DocumentCoursewareActions";
+import type { DocumentLessonAudience } from "@/lib/document-lesson-audience";
 import { Badge } from "@/components/ui/Badge";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -70,7 +72,7 @@ import type {
   Lecture, LectureSection, Question, Basket, AnyClass, TreeNode,
   Student, AnswerRecord, AnswerScore, Courseware, Material, SchoolClass, PersonalClass,
   LectureColumnTemplate, LectureType, ResourceSemester, ExamPaper,
-  LessonCourseware, PrepResourceComment, PrepTask,
+  PrepResourceComment, PrepTask,
 } from "@/types";
 import { cn, getOptionsGridCols } from "@/lib/utils";
 import { inferScore } from "@/services/analytics";
@@ -276,8 +278,6 @@ export default function LectureEditorPage() {
   const [savedDraft, setSavedDraft] = useState<LectureSaveState | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
-  const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
-  const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
   const [prepTask, setPrepTask] = useState<PrepTask | null>(null);
   const [prepComments, setPrepComments] = useState<PrepResourceComment[]>([]);
   const [prepPassword, setPrepPassword] = useState(() =>
@@ -562,30 +562,7 @@ export default function LectureEditorPage() {
     void load();
   }, [id, teacher, navigate, defaultGrade, defaultSchoolYear, defaultSemester, resourceOptionsReady, prepPassword, prepTaskId]);
 
-  useEffect(() => {
-    if (prepTaskId || !lecture || !teacher || lecture.teacherId !== teacher.id || !teacher.schoolId) {
-      setLinkedCourseware(null);
-      setLinkedCoursewareLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLinkedCoursewareLoading(true);
-    lessonCoursewareService.getCoursewareBySource(
-      teacher.id,
-      teacher.schoolId,
-      "lecture",
-      lecture.id,
-    ).then((courseware) => {
-      if (!cancelled) setLinkedCourseware(courseware);
-    }).catch(() => {
-      if (!cancelled) setLinkedCourseware(null);
-    }).finally(() => {
-      if (!cancelled) setLinkedCoursewareLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [lecture, prepTaskId, teacher]);
+
 
   // 当学生或时间周期变化时，加载学生在该时间段内做过的题目 ID 集合
   useEffect(() => {
@@ -778,12 +755,8 @@ export default function LectureEditorPage() {
     onSave: () => handleSave(false, true),
   });
 
-  const handleSendToMyCourseware = async () => {
-    if (!lecture || !teacher?.schoolId || prepTaskId) return;
-    if (linkedCourseware) {
-      navigate(`/my-lessons/${linkedCourseware.id}/edit?preview=1`);
-      return;
-    }
+  const handleSendToMyCourseware = async (audience: DocumentLessonAudience, classIds: string[]) => {
+    if (!lecture || !teacher?.schoolId || prepTaskId || !classIds.length || sendingToCourseware) return;
     if (!title.trim()) {
       toast.error("请填写讲义标题");
       return;
@@ -796,15 +769,16 @@ export default function LectureEditorPage() {
         setSavedDraft(lectureSaveStateFromLecture(updated));
       }
       const courseware = await lessonCoursewareService.createFromLecture(
-        teacher.id,
-        teacher.schoolId,
-        lecture.id,
+        teacher.id, teacher.schoolId, lecture.id, [],
+        audience === "personal" ? classIds : undefined,
+        audience === "school" ? classIds : undefined,
       );
-      setLinkedCourseware(courseware);
-      toast.success("已发送到我的课件", "正在进入课件编辑...");
-      navigate(`/my-lessons/${courseware.id}/edit`);
+      toast.success(audience === "school" ? "已添加到学校上课" : "已添加到个人上课");
+      navigate(audience === "school"
+        ? `/my-lessons/${courseware.id}/edit`
+        : `/individual-tutoring/coursewares?classId=${encodeURIComponent(classIds[0])}`);
     } catch (error) {
-      toast.error("发送失败", error instanceof Error ? error.message : undefined);
+      toast.error("添加失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSendingToCourseware(false);
     }
@@ -1862,15 +1836,12 @@ export default function LectureEditorPage() {
                 </Button>
               )}
               {!prepTaskId && lecture?.teacherId === teacher?.id && (
-                <Button
-                  variant="outline"
-                  onClick={handleSendToMyCourseware}
+                <DocumentCoursewareActions
+                  classIds={selectedClassIds}
+                  classes={classes}
+                  onAdd={(audience, classIds) => void handleSendToMyCourseware(audience, classIds)}
                   loading={sendingToCourseware}
-                  disabled={linkedCoursewareLoading}
-                >
-                  <Presentation className="w-4 h-4" />
-                  {linkedCourseware ? "课件" : "发送到我的课件"}
-                </Button>
+                />
               )}
               <Button
                 variant="outline"
@@ -2184,15 +2155,12 @@ export default function LectureEditorPage() {
                 </Button>
               )}
               {!prepTaskId && lecture?.teacherId === teacher?.id && (
-                <Button
-                  variant="outline"
-                  onClick={handleSendToMyCourseware}
+                <DocumentCoursewareActions
+                  classIds={selectedClassIds}
+                  classes={classes}
+                  onAdd={(audience, classIds) => void handleSendToMyCourseware(audience, classIds)}
                   loading={sendingToCourseware}
-                  disabled={linkedCoursewareLoading}
-                >
-                  <Presentation className="w-4 h-4" />
-                  {linkedCourseware ? "课件" : "发送到我的课件"}
-                </Button>
+                />
               )}
               <Button variant="outline" onClick={() => setAudienceClassPickerOpen(true)} disabled={isUsedDocument}>
                 <UserCheck className="w-4 h-4" />

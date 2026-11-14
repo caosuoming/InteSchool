@@ -815,36 +815,24 @@ describe("LecturePreviewPage", () => {
   it("sends a previewed lecture to my courseware and opens the editor", async () => {
     renderPage();
 
-    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    const sendButton = await screen.findByRole("button", { name: "添加到学校上课" });
     await waitFor(() => expect(sendButton).toBeEnabled());
     fireEvent.click(sendButton);
 
     await waitFor(() => {
       expect(lessonCoursewareService.createFromLecture).toHaveBeenCalledWith(
-        teacher.id,
-        teacher.schoolId,
-        lecture.id,
+        teacher.id, teacher.schoolId, lecture.id, [], undefined, ["class-1"],
       );
     });
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
-  it("opens an existing lecture courseware in preview without creating another", async () => {
-    vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue({
-      id: "linked-lesson-courseware",
-    } as any);
+  it("only shows courseware actions for an explicitly selected audience", async () => {
+    vi.mocked(lectureService.getLecture).mockResolvedValue({ ...lecture, classIds: [] });
     renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "课件" }));
-
-    expect(await screen.findByText("课件预览页")).toBeInTheDocument();
-    expect(lessonCoursewareService.createFromLecture).not.toHaveBeenCalled();
-    expect(lessonCoursewareService.getCoursewareBySource).toHaveBeenCalledWith(
-      teacher.id,
-      teacher.schoolId,
-      "lecture",
-      lecture.id,
-    );
+    await screen.findByText("预览：函数专题讲义_2026（拆解版）");
+    expect(screen.queryByRole("button", { name: "添加到学校上课" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加到个人上课" })).not.toBeInTheDocument();
   });
 
 });

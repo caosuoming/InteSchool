@@ -16,6 +16,8 @@ import { toast } from "@/stores/ui";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { DocumentCoursewareActions } from "@/components/resource/DocumentCoursewareActions";
+import type { DocumentLessonAudience } from "@/lib/document-lesson-audience";
 import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
@@ -49,7 +51,6 @@ import type {
   AnyClass,
   Lecture,
   LectureSection,
-  LessonCourseware,
   Question,
   ResourceSemester,
   Student,
@@ -133,8 +134,6 @@ export default function LecturePreviewPage() {
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadModes, setDownloadModes] = useState<DocumentDownloadMode[]>(["teacher"]);
   const [sendingToCourseware, setSendingToCourseware] = useState(false);
-  const [linkedCourseware, setLinkedCourseware] = useState<LessonCourseware | null>(null);
-  const [linkedCoursewareLoading, setLinkedCoursewareLoading] = useState(false);
   const [chapterTree, setChapterTree] = useState<TreeNode | null>(null);
   const [knowledgeTree, setKnowledgeTree] = useState<TreeNode | null>(null);
   const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
@@ -246,30 +245,7 @@ export default function LecturePreviewPage() {
     };
   }, [schoolId, lecture?.teacherId, teacher?.id]);
 
-  useEffect(() => {
-    if (!lecture || !teacher || lecture.teacherId !== teacher.id || !teacher.schoolId) {
-      setLinkedCourseware(null);
-      setLinkedCoursewareLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLinkedCoursewareLoading(true);
-    lessonCoursewareService.getCoursewareBySource(
-      teacher.id,
-      teacher.schoolId,
-      "lecture",
-      lecture.id,
-    ).then((courseware) => {
-      if (!cancelled) setLinkedCourseware(courseware);
-    }).catch(() => {
-      if (!cancelled) setLinkedCourseware(null);
-    }).finally(() => {
-      if (!cancelled) setLinkedCoursewareLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [lecture, teacher]);
+
 
   const sections = useMemo(() => lecture?.sections || [], [lecture]);
   const allSections = useMemo(() => flattenSections(sections), [sections]);
@@ -412,24 +388,21 @@ export default function LecturePreviewPage() {
     }
   };
 
-  const handleSendToMyCourseware = async () => {
-    if (!lecture || !teacher?.schoolId || lecture.teacherId !== teacher.id) return;
-    if (linkedCourseware) {
-      navigate(`/my-lessons/${linkedCourseware.id}/edit?preview=1`);
-      return;
-    }
+  const handleSendToMyCourseware = async (audience: DocumentLessonAudience, classIds: string[]) => {
+    if (!lecture || !teacher?.schoolId || lecture.teacherId !== teacher.id || !classIds.length || sendingToCourseware) return;
     setSendingToCourseware(true);
     try {
       const courseware = await lessonCoursewareService.createFromLecture(
-        teacher.id,
-        teacher.schoolId,
-        lecture.id,
+        teacher.id, teacher.schoolId, lecture.id, [],
+        audience === "personal" ? classIds : undefined,
+        audience === "school" ? classIds : undefined,
       );
-      setLinkedCourseware(courseware);
-      toast.success("已发送到我的课件", "正在进入课件编辑...");
-      navigate(`/my-lessons/${courseware.id}/edit`);
+      toast.success(audience === "school" ? "已添加到学校上课" : "已添加到个人上课");
+      navigate(audience === "school"
+        ? `/my-lessons/${courseware.id}/edit`
+        : `/individual-tutoring/coursewares?classId=${encodeURIComponent(classIds[0])}`);
     } catch (error) {
-      toast.error("发送失败", error instanceof Error ? error.message : undefined);
+      toast.error("添加失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSendingToCourseware(false);
     }
@@ -553,17 +526,14 @@ export default function LecturePreviewPage() {
               <Users className="w-4 h-4" />
               <span className="max-w-48 truncate">{usageTarget === "未指定" ? "添加使用对象" : usageTarget}</span>
             </Button>
-            {lecture.teacherId === teacher?.id && (
-              <Button
-                variant="outline"
-                onClick={handleSendToMyCourseware}
-                loading={sendingToCourseware}
-                disabled={linkedCoursewareLoading}
-              >
-                <BookOpen className="w-4 h-4" />
-                {linkedCourseware ? "课件" : "发送到我的课件"}
-              </Button>
-            )}
+            {lecture?.teacherId === teacher?.id && (
+                <DocumentCoursewareActions
+                  classIds={lecture.classIds}
+                  classes={availableClasses}
+                  onAdd={(audience, classIds) => void handleSendToMyCourseware(audience, classIds)}
+                  loading={sendingToCourseware}
+                />
+              )}
             {lecture.teacherId === teacher?.id && (
               <Button variant="outline" onClick={handleDuplicate} loading={duplicating}>
                 <Copy className="w-4 h-4" />
