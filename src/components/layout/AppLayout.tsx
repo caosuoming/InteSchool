@@ -93,6 +93,7 @@ const allNavItems: NavItem[] = [
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
+  const isLessonEditor = /^\/my-lessons\/[^/]+\/edit\/?$/.test(location.pathname);
   const navigate = useNavigate();
   const { teacher, loading, logout, switchAffiliation, switchSubject, switchPlatformSchool, getAffiliations, getCurrentAffiliation } = useAuthStore();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
@@ -618,7 +619,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       >
         <main className="min-h-screen">
-          <div className="print-content p-6 lg:p-8 animate-fade-in">{children}</div>
+          <div className={cn("print-content animate-fade-in", isLessonEditor ? "p-0" : "p-6 lg:p-8")}>{children}</div>
         </main>
       </div>
 

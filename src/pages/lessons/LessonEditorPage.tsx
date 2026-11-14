@@ -13,7 +13,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Send, Save, RotateCcw, Undo2,
   FileQuestion, Blocks, Check,
-  Play, School, ExternalLink, Download,
+  Play, School, ExternalLink, Download, Maximize2, Minimize2,
   GripVertical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
@@ -173,6 +173,8 @@ export function LessonEditorPage() {
 
   // 预览模式
   const [previewMode, setPreviewMode] = useState(() => searchParams.get("preview") === "1");
+  const [isEditorFullscreen, setIsEditorFullscreen] = useState(false);
+  const editorFullscreenRef = useRef(false);
 
   // 题目公式编辑器（编辑题干/答案/解析）
   const [formulaEditTarget, setFormulaEditTarget] = useState<{
@@ -213,6 +215,44 @@ export function LessonEditorPage() {
       window.screen?.orientation?.removeEventListener?.("change", updateReferenceSize);
     };
   }, []);
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      if (editorFullscreenRef.current && document.fullscreenElement !== document.documentElement) {
+        editorFullscreenRef.current = false;
+        setIsEditorFullscreen(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      if (editorFullscreenRef.current && document.fullscreenElement === document.documentElement) {
+        void document.exitFullscreen().catch(() => undefined);
+      }
+    };
+  }, []);
+
+  const toggleEditorFullscreen = () => {
+    if (isEditorFullscreen) {
+      if (document.fullscreenElement === document.documentElement && document.exitFullscreen) {
+        void document.exitFullscreen().catch(() => toast.error("退出全屏失败"));
+      } else {
+        editorFullscreenRef.current = false;
+        setIsEditorFullscreen(false);
+      }
+      return;
+    }
+    if (!document.documentElement.requestFullscreen) {
+      toast.error("当前浏览器不支持全屏编辑");
+      return;
+    }
+    void document.documentElement.requestFullscreen()
+      .then(() => {
+        editorFullscreenRef.current = true;
+        setIsEditorFullscreen(true);
+      })
+      .catch(() => toast.error("进入全屏失败"));
+  };
 
   const loadCourseware = useCallback(async () => {
     if (!id) return;
@@ -1421,7 +1461,7 @@ export function LessonEditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]" onPaste={handlePaste}>
+    <div className={cn("flex h-dvh min-h-0 flex-col overflow-hidden bg-paper", isEditorFullscreen && "fixed inset-0 z-40 w-screen")} onPaste={handlePaste}>
       {/* 顶部工具栏 */}
       <div className="shrink-0 border-b border-ink-200 bg-paper px-4 py-2" data-testid="lesson-editor-toolbar">
         <div className="flex flex-wrap items-center gap-3 pb-2" data-testid="lesson-editor-toolbar-info">
@@ -1473,6 +1513,16 @@ export function LessonEditorPage() {
           }}>
             <Blocks className="w-4 h-4" />
             关联板书 {courseware?.boardIds?.length ? `(${courseware.boardIds.length})` : ""}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleEditorFullscreen}
+            title={isEditorFullscreen ? "退出全屏编辑（Esc）" : "全屏编辑课件"}
+            aria-pressed={isEditorFullscreen}
+          >
+            {isEditorFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            {isEditorFullscreen ? "退出全屏" : "全屏"}
           </Button>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-100 pt-2" data-testid="lesson-editor-toolbar-actions">
