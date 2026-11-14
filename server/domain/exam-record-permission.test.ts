@@ -155,6 +155,41 @@ describe("exam record ownership and recycle bins", () => {
     });
   });
 
+  it("preserves exemption flags and removes excluded teachers from persisted duties", async () => {
+    await runWithState(state(), async () => {
+      const updated = await examArrangementService.saveInvigilationConfig(
+        "school-1",
+        "arrangement-owned",
+        {
+          ...invigilation,
+          teachers: [
+            { id: "exempt", name: "免监老师", subject: "数学", isLeader: true },
+            { id: "leave", name: "请假老师", subject: "数学" },
+            { id: "active", name: "正常老师", subject: "数学" },
+          ],
+          patrolTeacherIds: ["exempt", "active"],
+          teacherRequirements: {
+            exempt: { isExempt: true },
+            leave: { isOnLeave: true },
+          },
+          overrides: {
+            "slot": {
+              roomTeacherIds: { "room-1": "exempt" },
+              outsideTeacherId: "leave",
+            },
+          },
+        },
+        actor("owner", "school-1"),
+      );
+      expect(updated.invigilation?.teacherRequirements).toEqual({
+        exempt: { isExempt: true },
+        leave: { isOnLeave: true },
+      });
+      expect(updated.invigilation?.patrolTeacherIds).toEqual(["active"]);
+      expect(updated.invigilation?.overrides?.slot).toEqual({ roomTeacherIds: {} });
+    });
+  });
+
   it("soft-deletes each table independently and only same-school admins can restore it", async () => {
     const appState = state();
     const owner = actor("owner", "school-1");

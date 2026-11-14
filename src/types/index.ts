@@ -769,8 +769,10 @@ export interface ExamInvigilationTeacher {
 export interface ExamInvigilationTeacherRequirement {
   /** 是否希望该教师的多场监考集中在同一天。 */
   sameDay?: ExamInvigilationSameDayRequirement;
-  /** 请假教师不参与自动排监考，但保留人工指定结果。 */
+  /** 请假教师不参与监考及本次时长统计。 */
   isOnLeave?: boolean;
+  /** 免监教师不参与监考及本次时长统计。 */
+  isExempt?: boolean;
 }
 
 export interface ExamSubjectExamTime {
