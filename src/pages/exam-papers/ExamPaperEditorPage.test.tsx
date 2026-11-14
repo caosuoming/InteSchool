@@ -276,6 +276,7 @@ function renderPage() {
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
         <Route path="/exam-papers/:id" element={<ExamPaperEditorRouteProbe />} />
         <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
+        <Route path="/individual-tutoring/coursewares" element={<div>个人上课课件列表</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -288,6 +289,7 @@ function renderEditorPage() {
         <Route path="/exam-papers/:id" element={<ExamPaperEditorPage />} />
         <Route path="/exam-papers/:id/preview" element={<ExamPaperEditorPage />} />
         <Route path="/my-lessons/:id/edit" element={<CoursewareRouteProbe />} />
+        <Route path="/individual-tutoring/coursewares" element={<div>个人上课课件列表</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -674,17 +676,16 @@ describe("ExamPaperEditorPage preview", () => {
   });
 
   it("sends a previewed paper to my courseware and opens the courseware editor", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
     renderPage();
 
-    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    const sendButton = await screen.findByRole("button", { name: "添加到学校上课" });
     await waitFor(() => expect(sendButton).toBeEnabled());
     fireEvent.click(sendButton);
 
     await waitFor(() => {
       expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
-        teacher.id,
-        teacher.schoolId,
-        paper.id,
+        teacher.id, teacher.schoolId, paper.id, [], undefined, ["class-1"],
       );
     });
     expect(mocks.updatePaper).not.toHaveBeenCalled();
@@ -719,7 +720,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     const toolbar = await screen.findByRole("toolbar", { name: "试卷预览操作" });
     expect(within(toolbar).getByRole("button", { name: "添加使用对象" })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: "发送到我的课件" })).toBeInTheDocument();
+    expect(within(toolbar).queryByRole("button", { name: "添加到学校上课" })).not.toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "制作答题卡" })).toBeInTheDocument();
     expect(within(toolbar).queryByRole("button", { name: "发布试卷" })).not.toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "创建副本" })).toBeInTheDocument();
@@ -751,13 +752,14 @@ describe("ExamPaperEditorPage preview", () => {
   });
 
   it("persists an unsaved preview before sending it to my courseware", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
     renderEditorPage();
 
     fireEvent.change(await screen.findByLabelText("文档名"), {
       target: { value: "发送前的新标题" },
     });
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
-    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    const sendButton = await screen.findByRole("button", { name: "添加到学校上课" });
     await waitFor(() => expect(sendButton).toBeEnabled());
     fireEvent.click(sendButton);
 
@@ -773,12 +775,13 @@ describe("ExamPaperEditorPage preview", () => {
   });
 
   it("sends directly from edit mode after saving current changes", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["class-1"] });
     renderEditorPage();
 
     fireEvent.change(await screen.findByLabelText("文档名"), {
       target: { value: "编辑状态的新标题" },
     });
-    const sendButton = await screen.findByRole("button", { name: "发送到我的课件" });
+    const sendButton = await screen.findByRole("button", { name: "添加到学校上课" });
     await waitFor(() => expect(sendButton).toBeEnabled());
     fireEvent.click(sendButton);
 
@@ -788,9 +791,7 @@ describe("ExamPaperEditorPage preview", () => {
         expect.objectContaining({ title: "编辑状态的新标题" }),
       );
       expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
-        teacher.id,
-        teacher.schoolId,
-        paper.id,
+        teacher.id, teacher.schoolId, paper.id, [], undefined, ["class-1"],
       );
     });
     expect(mocks.updatePaper.mock.invocationCallOrder[0])
@@ -798,20 +799,19 @@ describe("ExamPaperEditorPage preview", () => {
     expect(await screen.findByText("课件编辑页")).toBeInTheDocument();
   });
 
-  it("opens an existing linked courseware in preview without creating a duplicate", async () => {
-    mocks.getLessonCoursewareBySource.mockResolvedValue({ id: "linked-courseware-1" });
+  it("generates a personal tutoring deck only for the selected personal class", async () => {
+    const personalClass = {
+      id: "personal-1", type: "personal", teacherId: teacher.id,
+      name: "个别辅导班", description: "", studentIds: [], createdAt: timestamp,
+    };
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["personal-1"] });
+    mocks.listAllClasses.mockResolvedValue([personalClass]);
     renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "课件" }));
-
-    expect(await screen.findByText("课件预览页")).toBeInTheDocument();
-    expect(mocks.createLessonFromExamPaper).not.toHaveBeenCalled();
-    expect(mocks.getLessonCoursewareBySource).toHaveBeenCalledWith(
-      teacher.id,
-      teacher.schoolId,
-      "examPaper",
-      paper.id,
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "添加到个人上课" }));
+    await waitFor(() => expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
+      teacher.id, teacher.schoolId, paper.id, [], ["personal-1"], undefined,
+    ));
+    expect(await screen.findByText("个人上课课件列表")).toBeInTheDocument();
   });
 
   it("renders formulas in both editor and preview and exposes publishing in the editor", async () => {

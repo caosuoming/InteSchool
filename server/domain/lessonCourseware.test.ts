@@ -5,6 +5,7 @@ import type {
   ExamPaper,
   Lecture,
   LessonCourseware,
+  SchoolClass,
   LessonDocumentBlock,
   Question,
   Teacher,
@@ -756,6 +757,54 @@ describe("courseware lesson flow", () => {
     });
   });
 
+  it("routes generated exam and lecture slides to selected school classes atomically", async () => {
+    const state = createState();
+    const paper = sourceExamPaper();
+    const lecture = sourceLecture();
+    state.examPapers = [paper];
+    state.lectures = [lecture];
+    (state.schoolClasses as SchoolClass[]).push({
+      id: "class-2", type: "school", schoolId: "school-1", name: "高一(2)班",
+      grade: "高一", studentCount: 20, status: "active", createdBy: "teacher-1", createdAt: now,
+    });
+    (state.schoolClasses as SchoolClass[]).push({
+      id: "other-school-class", type: "school", schoolId: "school-2", name: "外校",
+      grade: "高一", studentCount: 20, status: "active", createdBy: "teacher-2", createdAt: now,
+    });
+    (state.schoolClasses as SchoolClass[]).push({
+      id: "deleted-class", type: "school", schoolId: "school-1", name: "已删除",
+      grade: "高一", studentCount: 20, status: "deleted", createdBy: "teacher-1", createdAt: now,
+    });
+    const before = (state.lessonCoursewares as LessonCourseware[]).length;
+    await runWithState(state, async () => {
+      const schoolPaper = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1", "school-1", paper.id, [], undefined, ["class-2", "class-1", "class-2"],
+      );
+      const schoolLecture = await lessonCoursewareService.createFromLecture(
+        "teacher-1", "school-1", lecture.id, [], undefined, ["class-2"],
+      );
+      expect(schoolPaper.classIds).toEqual(["class-2", "class-1"]);
+      expect(schoolLecture.classIds).toEqual(["class-2"]);
+      expect(schoolPaper.slides.length).toBeGreaterThan(0);
+      expect(schoolLecture.slides.length).toBeGreaterThan(0);
+      // Real RPC JSON.stringify converts the omitted fifth argument to null.
+      const rpcSchoolPaper = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1", "school-1", paper.id, [], null as unknown as undefined, ["class-1"],
+      );
+      expect(rpcSchoolPaper.classIds).toEqual(["class-1"]);
+
+      for (const invalid of [[], ["other-school-class"], ["deleted-class"], ["class-1", "other-school-class"]]) {
+        await expect(lessonCoursewareService.createFromExamPaper(
+          "teacher-1", "school-1", paper.id, [], undefined, invalid,
+        )).rejects.toThrow("只能添加到当前学校的有效班级");
+        await expect(lessonCoursewareService.createFromLecture(
+          "teacher-1", "school-1", lecture.id, [], undefined, invalid,
+        )).rejects.toThrow("只能添加到当前学校的有效班级");
+      }
+      expect((state.lessonCoursewares as LessonCourseware[]).length).toBe(before + 3);
+    });
+  });
+
   it("assigns homework-derived tutoring decks only to owned, linked personal classes", async () => {
     const state = createState();
     const paper = sourceExamPaper();
@@ -773,6 +822,11 @@ describe("courseware lesson flow", () => {
       );
       expect(generated.classIds).toEqual(["personal-1", "personal-2"]);
       expect(generated.sourceType).toBe("examPaper");
+      const rpcPersonalPaper = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1", "school-1", paper.id, [], ["personal-1"], null as unknown as undefined,
+      );
+      expect(rpcPersonalPaper.classIds).toEqual(["personal-1"]);
+
       expect(generated.sourceId).toBe(paper.id);
 
       for (const invalid of [["class-1"], ["other-personal"], [], ["personal-1", "other-personal"]]) {

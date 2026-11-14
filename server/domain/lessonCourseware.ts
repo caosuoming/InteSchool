@@ -1095,6 +1095,41 @@ function normalizedTeachingPlan(teacher: Teacher, now = new Date()): TeacherTeac
   };
 }
 
+function resolveGeneratedDocumentClassIds(
+  teacherId: string,
+  schoolId: string,
+  personalClassIds?: string[],
+  schoolClassIds?: string[],
+  documentKind: "作业" | "讲义" = "讲义",
+): string[] {
+  // RPC JSON serializes omitted array entries as null.
+  // Normalize both omitted forms before enforcing the mutually exclusive targets.
+  personalClassIds = personalClassIds ?? undefined;
+  schoolClassIds = schoolClassIds ?? undefined;
+  if (personalClassIds !== undefined && schoolClassIds !== undefined) {
+    throw new Error("不能混合学校班级与个人教学班生成课件");
+  }
+  if (personalClassIds !== undefined) {
+    const owned = new Set(db.read("personalClasses")
+      .filter((item) => item.teacherId === teacherId)
+      .map((item) => item.id));
+    if (!Array.isArray(personalClassIds) || !personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
+      throw new Error(`只能将${documentKind}推送到本人所属的个人教学班`);
+    }
+    return [...new Set(personalClassIds)];
+  }
+  if (schoolClassIds !== undefined) {
+    const available = new Set(db.read("schoolClasses")
+      .filter((item) => item.schoolId === schoolId && item.status !== "deleted")
+      .map((item) => item.id));
+    if (!Array.isArray(schoolClassIds) || !schoolClassIds.length || schoolClassIds.some((id) => !available.has(id))) {
+      throw new Error("只能添加到当前学校的有效班级");
+    }
+    return [...new Set(schoolClassIds)];
+  }
+  return [];
+}
+
 export const lessonCoursewareService = {
   async getTeachingPlan(teacher: Teacher): Promise<TeacherTeachingPlan> {
     await delay(80);
@@ -1394,20 +1429,14 @@ export const lessonCoursewareService = {
     source: string | Pick<ExamPaper, "id">,
     documentBlocks: LessonDocumentBlock[] = [],
     personalClassIds?: string[],
+    schoolClassIds?: string[],
   ): Promise<LessonCourseware> {
     const sourceId = typeof source === "string" ? source : source.id;
     const examPaper = db.read("examPapers").find((item) =>
       item.id === sourceId && item.teacherId === teacherId);
     if (!examPaper) throw new Error("试卷不存在或无权访问");
-    if (personalClassIds !== undefined) {
-      const owned = new Set(db.read("personalClasses")
-        .filter((item) => item.teacherId === teacherId)
-        .map((item) => item.id));
-      if (!personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
-        throw new Error("只能将作业推送到本人所属的个人教学班");
-      }
-    }
 
+    const targetClassIds = resolveGeneratedDocumentClassIds(teacherId, schoolId, personalClassIds, schoolClassIds, "作业");
     const bodySlides = examPaperSlides(examPaper, db.read("questions"));
     const coverTitle = reviewedDocumentTitle(examPaper.contentBlocks)
       || reviewedDocumentTitle(documentBlocks)
@@ -1432,7 +1461,7 @@ export const lessonCoursewareService = {
       sourceTitle: examPaper.title,
       libraryCoursewareId,
       slides,
-      classIds: personalClassIds ? [...new Set(personalClassIds)] : [],
+      classIds: targetClassIds,
     });
     saveGeneratedCoursewareToLibrary(
       lesson,
@@ -1453,20 +1482,14 @@ export const lessonCoursewareService = {
     source: string | Pick<Lecture, "id">,
     documentBlocks: LessonDocumentBlock[] = [],
     personalClassIds?: string[],
+    schoolClassIds?: string[],
   ): Promise<LessonCourseware> {
     const sourceId = typeof source === "string" ? source : source.id;
     const lecture = db.read("lectures").find((item) =>
       item.id === sourceId && item.teacherId === teacherId);
     if (!lecture) throw new Error("讲义不存在或无权访问");
-    if (personalClassIds !== undefined) {
-      const owned = new Set(db.read("personalClasses")
-        .filter((item) => item.teacherId === teacherId)
-        .map((item) => item.id));
-      if (!personalClassIds.length || personalClassIds.some((id) => !owned.has(id))) {
-        throw new Error("只能将讲义推送到本人所属的个人教学班");
-      }
-    }
 
+    const targetClassIds = resolveGeneratedDocumentClassIds(teacherId, schoolId, personalClassIds, schoolClassIds, "讲义");
     const questions = db.read("questions");
     const coverTitle = reviewedDocumentTitle(lecture.contentBlocks)
       || reviewedDocumentTitle(documentBlocks)
@@ -1534,7 +1557,7 @@ export const lessonCoursewareService = {
       sourceTitle: lecture.title,
       libraryCoursewareId,
       slides,
-      classIds: personalClassIds ? [...new Set(personalClassIds)] : [],
+      classIds: targetClassIds,
     });
     saveGeneratedCoursewareToLibrary(
       lesson,

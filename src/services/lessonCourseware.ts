@@ -229,6 +229,7 @@ export const lessonCoursewareService = {
     examPaperId: string,
     documentBlocks: LessonDocumentBlock[] = [],
     personalClassIds?: string[],
+    schoolClassIds?: string[],
   ): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createFromExamPaper", [
       teacherId,
@@ -236,6 +237,7 @@ export const lessonCoursewareService = {
       examPaperId,
       documentBlocks,
       personalClassIds,
+      schoolClassIds,
     ]) as any;
   },
 
@@ -245,6 +247,7 @@ export const lessonCoursewareService = {
     lectureId: string,
     documentBlocks: LessonDocumentBlock[] = [],
     personalClassIds?: string[],
+    schoolClassIds?: string[],
   ): Promise<LessonCourseware> {
     return rpcCall("lessonCourseware", "createFromLecture", [
       teacherId,
@@ -252,6 +255,7 @@ export const lessonCoursewareService = {
       lectureId,
       documentBlocks,
       personalClassIds,
+      schoolClassIds,
     ]) as any;
   },
 
