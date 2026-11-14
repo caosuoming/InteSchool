@@ -28,22 +28,22 @@ describe("geography paper subquestion numbering", () => {
     const answer = "（7）B （8）D （9）B";
     const analysis = "（7）海水温度\n（8）海水升温\n（9）洋流";
     expect(alignGeographyQuestionAnswer(stem, answer, "single", "地理"))
-      .toBe("（1）B （2）D （3）B");
+      .toBe("1. B 2. D 3. B");
     expect(alignGeographyQuestionAnswer(stem, analysis, "single", "地理"))
-      .toBe("（1）海水温度\n（2）海水升温\n（3）洋流");
+      .toBe("1. 海水温度\n2. 海水升温\n3. 洋流");
     expect(renumberGeographyPaperStem(stem, "single", "地理", 5)).toContain("7. 黑潮势力");
     expect(renumberGeographyPaperAnswer(stem, answer, "single", "地理", 5))
-      .toBe("（5）B （6）D （7）B");
+      .toBe("5. B 6. D 7. B");
     expect(renumberGeographyPaperAnswer(stem, analysis, "single", "地理", 5))
-      .toBe("（5）海水温度\n（6）海水升温\n（7）洋流");
+      .toBe("5. 海水温度\n6. 海水升温\n7. 洋流");
     expect(alignGeographyQuestionAnswer(stem, answer, "single", "历史")).toBe(answer);
   });
 
   it("keeps a standalone geography answer label aligned with the displayed stem and paper number", () => {
     expect(alignGeographyQuestionAnswer("16. 农耕聚落位置", "（7）A", "single", "地理"))
-      .toBe("（16）A");
+      .toBe("16. A");
     expect(renumberGeographyPaperAnswer("16. 农耕聚落位置", "（7）A", "single", "地理", 2))
-      .toBe("（2）A");
+      .toBe("2. A");
     expect(renumberGeographyPaperAnswer("16. 农耕聚落位置", "A", "single", "地理", 2))
       .toBe("A");
   });
@@ -62,7 +62,7 @@ describe("geography paper subquestion numbering", () => {
     expect(renumberGeographyPaperStem(unnumbered, "single", "地理", 4)).toContain("4. 长顺镇兴起");
     expect(renumberGeographyPaperStem(unnumbered, "single", "地理", 4)).toContain("6. 长顺镇城镇");
     expect(renumberGeographyPaperAnswer(unnumbered, "（1）A\n（2）B\n（3）C", "single", "地理", 4))
-      .toBe("（4）A\n（5）B\n（6）C");
+      .toBe("4. A\n5. B\n6. C");
     expect([...geographyPaperNumberMap([
       { id: "group", stem: unnumbered, type: "single" },
       { id: "next", stem: "20. 后续选择题", type: "single" },
@@ -73,9 +73,9 @@ describe("geography paper subquestion numbering", () => {
     const stem = "完成2—4题。\n甲地气候？\nA. 甲\nB. 乙\nC. 丙\n乙地气候？\nA. 甲\nB. 乙\nC. 丙\n丙地气候？\nA. 甲\nB. 乙\nC. 丙";
     expect(splitGeographyChoiceGroup(stem)?.originalNumbers).toEqual([2, 3, 4]);
     expect(renumberGeographyPaperAnswer(stem, "（2）A\n（3）B\n（4）C", "single", "地理", 8))
-      .toBe("（8）A\n（9）B\n（10）C");
+      .toBe("8. A\n9. B\n10. C");
     expect(renumberGeographyPaperAnswer(stem, "（1）A\n（2）B\n（3）C", "single", "地理", 8))
-      .toBe("（8）A\n（9）B\n（10）C");
+      .toBe("8. A\n9. B\n10. C");
   });
 
   it("does not infer a group from one choice set or a numbered multi-question stem with gaps", () => {
@@ -118,11 +118,26 @@ describe("geography paper subquestion numbering", () => {
 
   it("keeps answer labels aligned with the new numbers, including legacy local labels", () => {
     expect(renumberGeographyPaperAnswer(group, "（1）B\n（2）A\n（3）D", "single", "地理", 7))
-      .toBe("（7）B\n（8）A\n（9）D");
+      .toBe("7. B\n8. A\n9. D");
     expect(renumberGeographyPaperAnswer(group, "（4）B\n（5）A\n（6）D", "single", "地理", 1))
-      .toBe("（1）B\n（2）A\n（3）D");
+      .toBe("1. B\n2. A\n3. D");
     expect(renumberGeographyPaperAnswer(group, "（4）B\n（6）D", "single", "地理", 1))
-      .toBe("（1）B\n（3）D");
+      .toBe("1. B\n3. D");
+  });
+
+  it("formats source and already-correct answer numbers like the question stem, without touching other subjects or decimals", () => {
+    const original = "（4）B\n（5）A\n（6）D";
+    const dotted = "4. B\n5. A\n6. D";
+    expect(alignGeographyQuestionAnswer(group, original, "single", "地理")).toBe(dotted);
+    expect(alignGeographyQuestionAnswer(group, dotted, "single", "地理")).toBe(dotted);
+    expect(renumberGeographyPaperAnswer(group, dotted, "single", "地理", 7))
+      .toBe("7. B\n8. A\n9. D");
+    expect(alignGeographyQuestionAnswer(group, original, "single", "数学")).toBe(original);
+    expect(alignGeographyQuestionAnswer(group, "3.14", "single", "地理")).toBe("3.14");
+    expect(alignGeographyQuestionAnswer(group, "参考计算（4）=3.14", "comprehensive", "地理"))
+      .toBe("参考计算（4）=3.14");
+    expect(renumberGeographyPaperAnswer(group, "<p>（4）B</p><p>（5）A</p><p>（6）D</p>", "single", "地理", 7))
+      .toBe("<p>7. B</p><p>8. A</p><p>9. D</p>");
   });
 
   it("supports HTML paragraph boundaries and leaves unrelated subjects intact", () => {

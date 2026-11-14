@@ -23,8 +23,8 @@ describe("ExtractedQuestionContent", () => {
     expect(group).toHaveTextContent("8. 第一小题");
     expect(group).toHaveTextContent("10. 第三小题");
     fireEvent.click(group);
-    expect(screen.getByText(/（8）B （9）D （10）B/)).toBeInTheDocument();
-    expect(screen.getByText(/（8）温度 （9）洋流 （10）地形/)).toBeInTheDocument();
+    expect(screen.getByText(/8\. B 9\. D 10\. B/)).toBeInTheDocument();
+    expect(screen.getByText(/8\. 温度 9\. 洋流 10\. 地形/)).toBeInTheDocument();
   });
   it("shows the complete read-only stem and expands answer and analysis from the stem", () => {
     const stem = "第一段题干\n第二段题干\n第三段题干";
@@ -65,7 +65,7 @@ describe("ExtractedQuestionContent", () => {
     expect(group).toHaveTextContent("4. 地貌");
     expect(group).not.toHaveTextContent("8. 气候");
     fireEvent.click(group);
-    expect(screen.getByText(/（3）A/)).toHaveTextContent("（3）A （4）B");
+    expect(screen.getByText(/3\. A/)).toHaveTextContent("3. A 4. B");
   });
 
   it("shows only the new global number for a standalone geography choice question", () => {

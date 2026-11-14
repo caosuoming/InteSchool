@@ -1,5 +1,5 @@
 import { normalizeLegacyQuestionMeanNotation } from "@/lib/legacy-question-math";
-import { alignGeographyGroupAnswerNumbers } from "@/lib/geography-answer-numbering";
+import { alignGeographyQuestionAnswer } from "@/lib/geography-paper-layout";
 import type {
   ExamPaperQuestion,
   ExtractedDocumentBlock,
@@ -17,17 +17,20 @@ export function resolveExtractedQuestionDisplay(
   paperQuestion: ExamPaperQuestion | undefined,
   linkedQuestion: Question | undefined,
   stemOverride?: string,
+  subject?: string,
 ): ExtractedQuestionDisplay {
   const options = paperQuestion?.options?.length
     ? paperQuestion.options
     : linkedQuestion?.options;
 
   const stem = stemOverride || paperQuestion?.stem || linkedQuestion?.stem || "";
+  const type = paperQuestion?.type || linkedQuestion?.type || "";
+  const geographySubject = subject || linkedQuestion?.subject;
   return normalizeLegacyQuestionMeanNotation({
     stem,
     options,
-    answer: alignGeographyGroupAnswerNumbers(stem, paperQuestion?.answer || linkedQuestion?.answer || ""),
-    analysis: alignGeographyGroupAnswerNumbers(stem, paperQuestion?.analysis || linkedQuestion?.analysis || ""),
+    answer: alignGeographyQuestionAnswer(stem, paperQuestion?.answer || linkedQuestion?.answer || "", type, geographySubject),
+    analysis: alignGeographyQuestionAnswer(stem, paperQuestion?.analysis || linkedQuestion?.analysis || "", type, geographySubject),
   });
 }
 

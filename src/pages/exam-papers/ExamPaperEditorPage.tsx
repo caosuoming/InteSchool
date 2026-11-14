@@ -1965,6 +1965,7 @@ export default function ExamPaperEditorPage() {
                     paperQuestion,
                     linkedQuestion,
                     block.content,
+                    geographySubject,
                   );
                   return (
                     <PreviewQuestionPair
@@ -2503,7 +2504,7 @@ export default function ExamPaperEditorPage() {
                   const linkedQuestionId = paperQuestion?.questionId || block.questionId;
                   const linkedQuestion = linkedQuestionId ? questions[linkedQuestionId] : undefined;
                   const questionDisplay = block.type === "question"
-                    ? resolveExtractedQuestionDisplay(paperQuestion, linkedQuestion, block.content)
+                    ? resolveExtractedQuestionDisplay(paperQuestion, linkedQuestion, block.content, geographySubject)
                     : undefined;
                   const isQuestionGroup = block.type === "groupTitle" || block.type === "heading";
                   const headingCollapsed = isQuestionGroup && collapsedHeadingIds.has(block.id);

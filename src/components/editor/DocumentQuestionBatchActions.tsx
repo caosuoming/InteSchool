@@ -87,12 +87,12 @@ export function DocumentQuestionBatchActions({ schoolId, questionIds, onUpdated,
   return (
     <div className={cn(layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "space-y-2")} data-testid="document-question-batch-actions">
       <div className="text-[11px] font-medium text-ink-500">批量操作（{uniqueIds.length} 题）</div>
-      <div className={cn(layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "flex flex-col items-stretch gap-1.5")}>
+      <div className={cn(layout === "horizontal" ? "flex flex-wrap items-center gap-2" : "grid grid-cols-3 gap-1.5")}>
         {markAllButton}
         {modes.map(({ key, label, icon: Icon }) => (
-          <Button key={key} variant="outline" size="sm" className={cn(layout === "horizontal" ? "justify-start" : "w-full justify-start")} onClick={() => void openPicker(key)}
+          <Button key={key} variant="outline" size="sm" className={cn(layout === "horizontal" ? "justify-start" : "min-w-0 whitespace-nowrap px-1 text-[11px] gap-1")} onClick={() => void openPicker(key)}
             disabled={disabled || !schoolId || uniqueIds.length === 0}>
-            <Icon className="h-3.5 w-3.5" />{label}
+            <Icon className="h-3.5 w-3.5 shrink-0" />{label}
           </Button>
         ))}
       </div>

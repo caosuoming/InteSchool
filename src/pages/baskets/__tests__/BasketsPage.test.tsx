@@ -131,8 +131,8 @@ describe("BasketsPage", () => {
     await screen.findByText(/第一小题/);
     expect(container.querySelector('[data-geography-choice-group="true"]')).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /展开查看答案与解析/ }));
-    expect(screen.getByText("（1）B （2）D")).toBeInTheDocument();
-    expect(screen.getByText("（1）气候 （2）洋流")).toBeInTheDocument();
+    expect(screen.getByText("1. B 2. D")).toBeInTheDocument();
+    expect(screen.getByText("1. 气候 2. 洋流")).toBeInTheDocument();
     expect(screen.queryByText("（7）B （8）D")).not.toBeInTheDocument();
   });
 
