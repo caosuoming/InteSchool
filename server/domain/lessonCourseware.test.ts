@@ -1262,3 +1262,86 @@ describe("knowledge underlined answers in generated courseware", () => {
     });
   });
 });
+describe("owned documents saved under a previous school", () => {
+  it("creates school lessons and library coursewares for the current school's teaching classes", async () => {
+    const state = createState();
+    state.teachers[0].schoolId = "school-2";
+    state.teachers[0].teachingClassIds = ["class-2"];
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "class-2",
+      type: "school",
+      schoolId: "school-2",
+      name: "高一(2)班",
+      grade: "高一",
+      studentCount: 35,
+      status: "active",
+      createdBy: "teacher-1",
+      createdAt: now,
+    });
+    const paper = sourceExamPaper();
+    const lecture = sourceLecture();
+    state.examPapers = [paper];
+    state.lectures = [lecture];
+
+    await runWithState(state, async () => {
+      for (const [type, id] of [["examPaper", paper.id], ["lecture", lecture.id]] as const) {
+        const lesson = type === "examPaper"
+          ? await lessonCoursewareService.createFromExamPaper("teacher-1", "school-2", id)
+          : await lessonCoursewareService.createFromLecture("teacher-1", "school-2", id);
+        expect(lesson).toMatchObject({
+          teacherId: "teacher-1",
+          schoolId: "school-2",
+          sourceType: type,
+          sourceId: id,
+          classIds: ["class-2"],
+          status: "draft",
+          lifecycleStatus: "active",
+        });
+        expect(state.coursewares).toContainEqual(expect.objectContaining({
+          id: lesson.libraryCoursewareId,
+          teacherId: "teacher-1",
+          schoolId: "school-2",
+          lessonCoursewareId: lesson.id,
+          sourceResourceType: type,
+          sourceResourceId: id,
+        }));
+      }
+      // Generation never transfers ownership of the source document.
+      expect(state.examPapers[0].schoolId).toBe("school-1");
+      expect(state.lectures[0].schoolId).toBe("school-1");
+      await expect(lessonCoursewareService.createFromLecture(
+        "teacher-other", "school-2", lecture.id,
+      )).rejects.toThrow("讲义不存在或无权访问");
+    });
+  });
+
+  it("allows a historical personally-owned document in an owned personal class", async () => {
+    const state = createState();
+    state.teachers[0].schoolId = "school-2";
+    state.personalClasses = [{
+      id: "personal-1",
+      type: "personal",
+      teacherId: "teacher-1",
+      name: "个人一班",
+      description: "",
+      studentIds: [],
+      createdAt: now,
+    }];
+    const paper = sourceExamPaper();
+    paper.schoolId = "personal-directory:teacher-1";
+    state.examPapers = [paper];
+
+    await runWithState(state, async () => {
+      const lesson = await lessonCoursewareService.createFromExamPaper(
+        "teacher-1", "school-2", paper.id, [], ["personal-1"],
+      );
+      expect(lesson.classIds).toEqual(["personal-1"]);
+      expect(lesson.schoolId).toBe("school-2");
+      expect(state.coursewares).toContainEqual(expect.objectContaining({
+        lessonCoursewareId: lesson.id,
+        sourceResourceId: paper.id,
+        schoolId: "school-2",
+      }));
+    });
+  });
+});
