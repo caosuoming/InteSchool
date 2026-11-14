@@ -289,10 +289,67 @@ describe("LessonEditorPage preview query", () => {
     const actions = screen.getByTestId("lesson-editor-toolbar-actions");
     expect(info).toContainElement(screen.getByRole("button", { name: "授课班级" }));
     expect(info).toContainElement(screen.getByRole("button", { name: "关联板书" }));
+    expect(info).toContainElement(screen.getByRole("button", { name: "全屏" }));
     expect(actions).toContainElement(screen.getByRole("button", { name: "撤销" }));
     expect(actions).toContainElement(screen.getByRole("button", { name: "保存" }));
     expect(actions).toContainElement(screen.getByRole("button", { name: "下载" }));
     expect(actions).toContainElement(screen.getByRole("button", { name: "预览上课" }));
+  });
+
+  it("opens the editor fullscreen without hiding dialogs and restores layout on exit or Esc", async () => {
+    let fullscreenElement: Element | null = null;
+    const previousElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const previousEnter = Object.getOwnPropertyDescriptor(document.documentElement, "requestFullscreen");
+    const previousExit = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+    const requestFullscreen = vi.fn(async () => {
+      fullscreenElement = document.documentElement;
+      document.dispatchEvent(new Event("fullscreenchange"));
+    });
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+    });
+    Object.defineProperty(document.documentElement, "requestFullscreen", {
+      configurable: true, value: requestFullscreen,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true, value: exitFullscreen,
+    });
+    try {
+      renderPage(`/my-lessons/${courseware.id}/edit`);
+      const fullscreenButton = await screen.findByRole("button", { name: "全屏" });
+      const editor = screen.getByTestId("lesson-editor-toolbar").parentElement!;
+      expect(editor).not.toHaveClass("fixed");
+      fireEvent.click(fullscreenButton);
+      await waitFor(() => expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument());
+      expect(requestFullscreen).toHaveBeenCalledOnce();
+      expect(editor).toHaveClass("fixed", "inset-0", "z-40");
+      fireEvent.click(screen.getByRole("button", { name: "授课班级" }));
+      expect(await screen.findByText("选择授课班级")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "全屏" })).toBeInTheDocument());
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+      expect(editor).not.toHaveClass("fixed");
+      fireEvent.click(screen.getByRole("button", { name: "全屏" }));
+      await screen.findByRole("button", { name: "退出全屏" });
+      fullscreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+      await waitFor(() => expect(screen.getByRole("button", { name: "全屏" })).toBeInTheDocument());
+      expect(editor).not.toHaveClass("fixed");
+    } finally {
+      for (const [target, key, old] of [
+        [document, "fullscreenElement", previousElement],
+        [document.documentElement, "requestFullscreen", previousEnter],
+        [document, "exitFullscreen", previousExit],
+      ] as const) {
+        if (old) Object.defineProperty(target, key, old);
+        else Reflect.deleteProperty(target, key);
+      }
+    }
   });
 
   it("retains undo history across a successful manual save", async () => {
