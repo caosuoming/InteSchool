@@ -1,4 +1,4 @@
-import { isGeographyChoiceGroup, renumberGeographyPaperStem, renumberGeographyPaperAnswer, geographyPaperQuestionCount } from "@/lib/geography-paper-layout";
+import { alignGeographyQuestionAnswer, isGeographyChoiceGroup, renumberGeographyPaperStem, renumberGeographyPaperAnswer, geographyPaperQuestionCount } from "@/lib/geography-paper-layout";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -35,9 +35,9 @@ export function ExtractedQuestionContent({
   const groupedChoice = isGeographyChoiceGroup(stem, questionType, geographySubject);
   const displayStem = number === undefined ? stem
     : renumberGeographyPaperStem(stem, questionType, geographySubject, number);
-  const displayAnswer = number === undefined ? answer
+  const displayAnswer = number === undefined ? alignGeographyQuestionAnswer(stem, answer, questionType, geographySubject)
     : renumberGeographyPaperAnswer(stem, answer, questionType, geographySubject, number);
-  const displayAnalysis = number === undefined ? analysis
+  const displayAnalysis = number === undefined ? alignGeographyQuestionAnswer(stem, analysis, questionType, geographySubject)
     : renumberGeographyPaperAnswer(stem, analysis, questionType, geographySubject, number);
   const endNumber = number === undefined ? undefined
     : number + geographyPaperQuestionCount(stem, questionType, geographySubject) - 1;

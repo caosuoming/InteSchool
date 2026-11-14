@@ -21,8 +21,8 @@ vi.mock("@/hooks/useQuestionTypeOptions", () => ({
   useQuestionTypeOptions: () => ({ getLabel: () => "单选题" }),
 }));
 vi.mock("@/components/ui/MathHtml", () => ({
-  MathHtml: ({ children }: { children: string }) => (
-    <span data-math-rendered={children.includes("$") ? "true" : "false"}>{children}</span>
+  MathHtml: ({ children, geographyChoiceGroup }: { children: string; geographyChoiceGroup?: boolean }) => (
+    <span data-math-rendered={children.includes("$") ? "true" : "false"} data-geography-choice-group={String(Boolean(geographyChoiceGroup))}>{children}</span>
   ),
 }));
 vi.mock("@/services/basket", () => ({
@@ -117,6 +117,25 @@ const basket: Basket = {
 };
 
 describe("BasketsPage", () => {
+  it("shows geography group numbering and aligns answer and analysis labels with the stem", async () => {
+    const grouped = {
+      ...question, id: "geography-1", subject: "地理",
+      stem: "据图回答问题。\n第一小题\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n第二小题\nA. 甲\nB. 乙\nC. 丙\nD. 丁",
+      answer: "（7）B （8）D",
+      analysis: "（7）气候 （8）洋流",
+    };
+    vi.mocked(basketService.listBaskets).mockResolvedValue([{ ...basket, questionIds: [grouped.id] }]);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([grouped]);
+    const { container } = render(<MemoryRouter><BasketsPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "查看详情" }));
+    await screen.findByText(/第一小题/);
+    expect(container.querySelector('[data-geography-choice-group="true"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /展开查看答案与解析/ }));
+    expect(screen.getByText("（1）B （2）D")).toBeInTheDocument();
+    expect(screen.getByText("（1）气候 （2）洋流")).toBeInTheDocument();
+    expect(screen.queryByText("（7）B （8）D")).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({

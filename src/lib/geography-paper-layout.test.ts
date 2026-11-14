@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   geographyPaperNumberMap,
   geographyPaperQuestionCount,
+  alignGeographyQuestionAnswer,
   isGeographyChoiceGroup,
   renumberGeographyPaperAnswer,
   renumberGeographyPaperStem,
@@ -16,6 +17,36 @@ const group = [
 ].join("\n");
 
 describe("geography paper subquestion numbering", () => {
+  it("aligns the issue 1451 imported answer labels to inferred question-bank numbers and paper numbering", () => {
+    const stem = [
+      "阅读海洋资料，据此回答问题。",
+      "影响鲭鱼洄游路线的主要因素是（ ）", "A. 风向", "B. 海水温度", "C. 距离", "D. 种群",
+      "相较于索饵场，产卵场的优势是（ ）", "A. 寒暖流交汇", "B. 上升流强", "C. 盐度低", "D. 升温快",
+      "黑潮势力增强的年份是（ ）", "A. 甲", "B. 乙", "C. 丙", "D. 丁",
+    ].join("\n");
+    expect(splitGeographyChoiceGroup(stem)?.originalNumbers).toEqual([1, 2, 3]);
+    const answer = "（7）B （8）D （9）B";
+    const analysis = "（7）海水温度\n（8）海水升温\n（9）洋流";
+    expect(alignGeographyQuestionAnswer(stem, answer, "single", "地理"))
+      .toBe("（1）B （2）D （3）B");
+    expect(alignGeographyQuestionAnswer(stem, analysis, "single", "地理"))
+      .toBe("（1）海水温度\n（2）海水升温\n（3）洋流");
+    expect(renumberGeographyPaperStem(stem, "single", "地理", 5)).toContain("7. 黑潮势力");
+    expect(renumberGeographyPaperAnswer(stem, answer, "single", "地理", 5))
+      .toBe("（5）B （6）D （7）B");
+    expect(renumberGeographyPaperAnswer(stem, analysis, "single", "地理", 5))
+      .toBe("（5）海水温度\n（6）海水升温\n（7）洋流");
+    expect(alignGeographyQuestionAnswer(stem, answer, "single", "历史")).toBe(answer);
+  });
+
+  it("keeps a standalone geography answer label aligned with the displayed stem and paper number", () => {
+    expect(alignGeographyQuestionAnswer("16. 农耕聚落位置", "（7）A", "single", "地理"))
+      .toBe("（16）A");
+    expect(renumberGeographyPaperAnswer("16. 农耕聚落位置", "（7）A", "single", "地理", 2))
+      .toBe("（2）A");
+    expect(renumberGeographyPaperAnswer("16. 农耕聚落位置", "A", "single", "地理", 2))
+      .toBe("A");
+  });
   it("recovers unnumbered subquestions from repeated option sets and numbers them in the question bank", () => {
     const unnumbered = [
       "阅读地理材料，据此完成16—18题。", "<img src=\"/map.png\">",

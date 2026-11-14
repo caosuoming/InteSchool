@@ -2680,7 +2680,9 @@ export default function ExamPaperEditorPage() {
                       )}
                       {block.type === "question" && questionDisplay ? (
                         <ExtractedQuestionContent
-                          number={paperQuestionIndex >= 0 ? paperQuestionIndex + 1 : undefined}
+                          number={paperDisplayNumbers.get(block.id) ?? (paperQuestionIndex >= 0 ? paperQuestionIndex + 1 : undefined)}
+                          geographySubject={geographySubject}
+                          questionType={paperQuestion?.type || block.questionType || "short"}
                           stem={questionDisplay.stem}
                           options={questionDisplay.options}
                           answer={questionDisplay.answer}

@@ -1,4 +1,4 @@
-import { isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
+import { alignGeographyQuestionAnswer, isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { type Question } from "@/types";
 import { cn } from "@/lib/utils";
@@ -122,7 +122,7 @@ export function QuestionCard({
             使用 {question.usageCount} 次
           </span>
         </div>
-        <span>答案：{question.answer.slice(0, 20)}</span>
+        <span>答案：{alignGeographyQuestionAnswer(question.stem, question.answer, question.type, question.subject).slice(0, 20)}</span>
       </div>
     </div>
   );

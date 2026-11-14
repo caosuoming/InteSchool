@@ -1,4 +1,4 @@
-import { isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
+import { alignGeographyQuestionAnswer, isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { useEffect, useState } from "react";
@@ -175,7 +175,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">答案</div>
         <div className="p-3 rounded-md bg-emerald-50/40 border border-emerald-200 text-sm text-emerald-900 font-medium whitespace-pre-wrap">
-          <MathHtml className="question-answer-content">{question.answer}</MathHtml>
+          <MathHtml className="question-answer-content">{alignGeographyQuestionAnswer(question.stem, question.answer, question.type, question.subject)}</MathHtml>
         </div>
       </div>
 
@@ -183,7 +183,7 @@ export function QuestionDetail({ question, onUpdated }: QuestionDetailProps) {
       <div>
         <div className="text-xs font-medium text-ink-500 mb-1.5">解析</div>
         <div className="p-3 rounded-md bg-gold-50/30 border border-gold-200 text-sm text-ink-900 leading-relaxed whitespace-pre-wrap">
-          <MathHtml>{question.analysis}</MathHtml>
+          <MathHtml>{alignGeographyQuestionAnswer(question.stem, question.analysis, question.type, question.subject)}</MathHtml>
         </div>
       </div>
 
