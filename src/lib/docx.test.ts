@@ -239,12 +239,12 @@ describe("generateExamPaperDocx", () => {
       const zip = await JSZip.loadAsync(await blobToArrayBuffer(blob));
       const xml = await zip.file("word/document.xml")!.async("string");
       const content = new DOMParser().parseFromString(xml, "application/xml").documentElement.textContent || "";
-      expect(content).toContain("（1）B");
-      expect(content).toContain("（2）A");
-      expect(content).toContain("（3）D");
-      expect(content).not.toContain("（4）B");
+      expect(content).toContain("1. B");
+      expect(content).toContain("2. A");
+      expect(content).toContain("3. D");
+      expect(content).not.toContain("4. B");
       if (mode === "teacher" || mode === "normal") {
-        expect(content).toContain("（1）地形");
+        expect(content).toContain("1. 地形");
       }
     }
   });
@@ -264,12 +264,12 @@ describe("generateExamPaperDocx", () => {
       const xml = await (await JSZip.loadAsync(await blobToArrayBuffer(blob)))
         .file("word/document.xml")!.async("string");
       const content = new DOMParser().parseFromString(xml, "application/xml").documentElement.textContent || "";
-      expect(content).toContain("（2）B （3）D （4）B");
-      expect(content).not.toContain("（7）B");
+      expect(content).toContain("2. B 3. D 4. B");
+      expect(content).not.toContain("7. B");
       if (mode !== "answers") {
         expect(content).toContain("2. 第一小题");
         expect(content).toContain("4. 第三小题");
-        expect(content).toContain("（2）温度 （3）洋流 （4）地形");
+        expect(content).toContain("2. 温度 3. 洋流 4. 地形");
       }
     }
   });
@@ -312,8 +312,8 @@ describe("generateExamPaperDocx", () => {
     const readingParagraph = paragraphs.find((paragraph) => paragraph.textContent?.includes("读图完成1—2题。"));
     expect(readingParagraph?.getElementsByTagName("w:rFonts")[0]?.getAttribute("w:ascii")).toBe("楷体");
     const text = xml.documentElement.textContent || "";
-    expect(text).toContain("（1）A");
-    expect(text).toContain("（2）B");
+    expect(text).toContain("1. A");
+    expect(text).toContain("2. B");
   });
 
   it("supports student, normal, and answer-only paper variants", async () => {

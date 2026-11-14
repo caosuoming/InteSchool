@@ -11,8 +11,8 @@ describe("QuestionExpandedDetails", () => {
       answer: "（7）B\n（8）D\n（9）B",
       analysis: "（7）温度\n（8）洋流\n（9）地形",
     }} />);
-    expect(container.querySelector(".question-answer-content")).toHaveTextContent("（1）B （2）D （3）B");
-    expect(screen.getByText(/（1）温度/)).toHaveTextContent("（1）温度 （2）洋流 （3）地形");
+    expect(container.querySelector(".question-answer-content")).toHaveTextContent("1. B 2. D 3. B");
+    expect(screen.getByText(/1\. 温度/)).toHaveTextContent("1. 温度 2. 洋流 3. 地形");
   });
   it("renders the question summary after answer and analysis", () => {
     render(

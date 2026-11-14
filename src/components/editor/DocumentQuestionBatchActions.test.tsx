@@ -46,6 +46,13 @@ describe("question directory batch semantics", () => {
     expect(questionService.updateQuestion).toHaveBeenCalledWith("q-1", { chapterIds: ["new"] });
     await waitFor(() => expect(onUpdated).toHaveBeenCalledTimes(1));
   });
+  it("keeps all three editing batch buttons on one grid row", () => {
+    const { getByTestId } = render(<DocumentQuestionBatchActions schoolId="school" questionIds={["q-1"]} onUpdated={vi.fn()} />);
+    const controls = getByTestId("document-question-batch-actions").children[1];
+    expect(controls).toHaveClass("grid", "grid-cols-3");
+    expect(controls.children).toHaveLength(3);
+  });
+
   it("disables modifications for locked documents", () => {
     render(<DocumentQuestionBatchActions schoolId="school" questionIds={["q-1"]} onUpdated={vi.fn()} disabled />);
     expect(screen.getByRole("button", { name: "修改章节课" })).toBeDisabled();

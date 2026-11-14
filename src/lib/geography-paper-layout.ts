@@ -1,4 +1,4 @@
-import { alignGeographyGroupAnswerNumbers } from "./geography-answer-numbering";
+import { alignGeographyGroupAnswerNumbers, geographyAnswerLabelNumbers, rewriteGeographyAnswerLabels } from "./geography-answer-numbering";
 
 const lineStart = /^([ \t]*(?:<(?:p|div|li|span|strong)\b[^>]*>[ \t]*)*)([\d０-９]{1,4})[ \t]*[.．、][ \t]*(?=\S)/i;
 
@@ -98,12 +98,12 @@ export function alignGeographyQuestionAnswer(
   const group = splitGeographyChoiceGroup(stem);
   if (group) return alignGeographyGroupAnswerNumbers(stem, field, group.originalNumbers);
 
-  // A standalone question can also carry an old paper-numbered answer.
+  // A standalone choice question can carry an old source-paper number.
   const leading = /^\s*(?:<p\b[^>]*>\s*)?([\d０-９]{1,4})\s*[.．、]\s*\S/i.exec(stem);
   if (!leading) return field;
-  const marker = /^(\s*(?:<p\b[^>]*>\s*)?[（(]\s*)([\d０-９]{1,4})(\s*[）)])/i;
-  return field.replace(marker, (_match, prefix: string, _old: string, suffix: string) =>
-    `${prefix}${Number(leading[1].normalize("NFKC"))}${suffix}`);
+  const marker = /^(\s*(?:<p\b[^>]*>\s*)?)(?:[（(][ \t]*[\d０-９]{1,4}[ \t]*[）)]|[\d０-９]{1,4}[ \t]*[.．、])[ \t]*/i;
+  return field.replace(marker, (_match, prefix: string) =>
+    `${prefix}${Number(leading[1].normalize("NFKC"))}. `);
 }
 
 export function geographyPaperQuestionCount(stem: string, type: string, subject?: string): number {
@@ -138,27 +138,23 @@ export function renumberGeographyPaperAnswer(
   if (subject?.trim() !== "地理" || type !== "single") return field;
   const group = splitGeographyChoiceGroup(stem);
   if (!group) {
-    const aligned = alignGeographyQuestionAnswer(stem, field, type, subject);
-    return /^\s*(?:<p\b[^>]*>\s*)?[\d０-９]{1,4}\s*[.．、]\s*\S/i.test(stem)
-      ? aligned.replace(/^(\s*(?:<p\b[^>]*>\s*)?[（(]\s*)([\d０-９]{1,4})(\s*[）)])/i,
-        (_match, prefix: string, _old: string, suffix: string) => `${prefix}${startNumber}${suffix}`)
-      : field;
+    // Preserve unnumbered standalone answers; their prefix might be part of
+    // the explanation rather than a question number.
+    const leading = /^\s*(?:<p\b[^>]*>\s*)?[\d０-９]{1,4}\s*[.．、]\s*\S/i.test(stem);
+    if (!leading) return field;
+    const marker = /^(\s*(?:<p\b[^>]*>\s*)?)(?:[（(][ \t]*[\d０-９]{1,4}[ \t]*[）)]|[\d０-９]{1,4}[ \t]*[.．、])[ \t]*/i;
+    return field.replace(marker, (_match, prefix: string) => `${prefix}${startNumber}. `);
   }
   const aligned = alignGeographyQuestionAnswer(stem, field, type, subject);
   const originalToNew = new Map(group.originalNumbers.map((number, index) => [number, startNumber + index]));
   if (group.inferred) {
-    const labels = [...aligned.matchAll(/(?:^|\n)\s*[（(]\s*([\d０-９]{1,4})\s*[）)]/g)]
-      .map((match) => Number(match[1].normalize("NFKC")));
+    const labels = geographyAnswerLabelNumbers(aligned);
     if (labels.length && labels.every((number, index) => number === index + 1)) {
       originalToNew.clear();
       group.originalNumbers.forEach((_, index) => originalToNew.set(index + 1, startNumber + index));
     }
   }
-  return aligned.replace(/([（(]\s*)([\d０-９]{1,4})(\s*[）)])/g,
-    (match, prefix: string, numberText: string, suffix: string) => {
-      const replacement = originalToNew.get(Number(numberText.normalize("NFKC")));
-      return replacement === undefined ? match : `${prefix}${replacement}${suffix}`;
-    });
+  return rewriteGeographyAnswerLabels(aligned, (number) => originalToNew.get(number));
 }
 
 export function geographyPaperNumberMap<T extends { id: string; stem: string; type: string }>(
