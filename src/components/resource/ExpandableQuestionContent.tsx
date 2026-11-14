@@ -1,4 +1,5 @@
 import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
+import { isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { MathHtml } from "@/components/ui/MathHtml";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
@@ -40,7 +41,7 @@ export function ExpandableQuestionContent({
             ? <ChevronDown className="h-4 w-4" />
             : <ChevronRight className="h-4 w-4" />}
         </span>
-        <MathHtml geographyLabels={question.subject?.trim() === "地理"} className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
+        <MathHtml geographyLabels={question.subject?.trim() === "地理"} geographyChoiceGroup={isGeographyChoiceGroup(question.stem, question.type, question.subject)} className="min-w-0 flex-1 whitespace-pre-wrap">{question.stem}</MathHtml>
       </div>
 
       {question.options && question.options.length > 0 && (

@@ -510,12 +510,12 @@ describe("ResourceCard", () => {
       updatedAt="2026-07-30T00:00:00.000Z"
       onAddToLesson={toSchool}
       onAddToPersonalLesson={toPersonal}
-      lessonActionLabel="添加到学校上课"
+      lessonActionLabel="添加到学校课件"
       showAddToLesson
       configurableActions
       alwaysShowActions
     />);
-    fireEvent.click(screen.getByRole("button", { name: "添加到学校上课" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加到学校课件" }));
     fireEvent.click(screen.getByRole("button", { name: "添加到个人上课" }));
     expect(toSchool).toHaveBeenCalledOnce();
     expect(toPersonal).toHaveBeenCalledOnce();

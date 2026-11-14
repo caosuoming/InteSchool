@@ -249,6 +249,31 @@ describe("generateExamPaperDocx", () => {
     }
   });
 
+  it("exports legacy inline group answer numbers after a geography group is moved", async () => {
+    const stem = "阅读洋流材料\n第一小题\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n第二小题\nA. 甲\nB. 乙\nC. 丙\nD. 丁\n第三小题\nA. 甲\nB. 乙\nC. 丙\nD. 丁";
+    const paper: ExamPaper = {
+      ...structuredPaper, subject: "地理", isExtractCopy: false, contentBlocks: [], layoutMode: "flat",
+      questions: [
+        { ...structuredPaper.questions[0], id: "preceding", type: "single", stem: "一道前置单选题", answer: "A" },
+        { ...structuredPaper.questions[0], id: "group", type: "single", stem,
+          answer: "（7）B （8）D （9）B", analysis: "（7）温度 （8）洋流 （9）地形" },
+      ],
+    };
+    for (const mode of ["teacher", "normal", "answers"] as const) {
+      const blob = await buildExamPaperDocxBlob(paper, {}, { mode });
+      const xml = await (await JSZip.loadAsync(await blobToArrayBuffer(blob)))
+        .file("word/document.xml")!.async("string");
+      const content = new DOMParser().parseFromString(xml, "application/xml").documentElement.textContent || "";
+      expect(content).toContain("（2）B （3）D （4）B");
+      expect(content).not.toContain("（7）B");
+      if (mode !== "answers") {
+        expect(content).toContain("2. 第一小题");
+        expect(content).toContain("4. 第三小题");
+        expect(content).toContain("（2）温度 （3）洋流 （4）地形");
+      }
+    }
+  });
+
   it("exports geography reading in KaiTi with separate subquestions and continuous comprehensive numbering", async () => {
     const paper: ExamPaper = {
       ...structuredPaper,

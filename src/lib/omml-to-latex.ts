@@ -405,6 +405,12 @@ function convertDelimiter(el: Element): string {
     ? delimiterCharacter(separatorElement, "")
     : "";
   const e = expressions.join(separator ? escapeLatex(separator) : "");
+  // A matrix framed only by a left brace denotes a one-sided equation system.
+  // Word can omit m:endChr here; falling back to ")" adds a spurious bracket.
+  if (beginChr === "{" && !dPr?.getElementsByTagNameNS(MATH_NS, "endChr")[0]
+    && /\\begin\{(?:matrix|aligned|cases)\}/.test(e)) {
+    endChr = "";
+  }
 
   const leftDelim = mapDelimiter(beginChr);
   const rightDelim = mapDelimiter(endChr);

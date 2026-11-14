@@ -1446,6 +1446,8 @@ export const lessonCoursewareService = {
       ...(bodySlides.length > 0 ? bodySlides : documentBlockSlides(documentBlocks)),
     ];
 
+    // Also creates a library record: check its quota before persisting a lesson.
+    assertResourceCapacity(teacherId, "courseware");
     const libraryCoursewareId = genId("cw");
     const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${examPaper.title}（上课课件）`,
@@ -1541,6 +1543,7 @@ export const lessonCoursewareService = {
       slides.push(...documentBlockSlides(documentBlocks, { showQuestionNumbers: false }));
     }
 
+    assertResourceCapacity(teacherId, "courseware");
     const libraryCoursewareId = genId("cw");
     const lesson = await this.createCourseware(teacherId, schoolId, {
       title: `${lecture.title}（上课课件）`,

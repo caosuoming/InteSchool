@@ -90,6 +90,22 @@ export function isGeographyChoiceGroup(stem: string, type: string, subject?: str
   return subject?.trim() === "地理" && type === "single" && splitGeographyChoiceGroup(stem) !== null;
 }
 
+/** Normalize displayed answer/analysis labels without changing persisted source data. */
+export function alignGeographyQuestionAnswer(
+  stem: string, field: string, type: string, subject?: string,
+): string {
+  if (subject?.trim() !== "地理" || type !== "single") return field;
+  const group = splitGeographyChoiceGroup(stem);
+  if (group) return alignGeographyGroupAnswerNumbers(stem, field, group.originalNumbers);
+
+  // A standalone question can also carry an old paper-numbered answer.
+  const leading = /^\s*(?:<p\b[^>]*>\s*)?([\d０-９]{1,4})\s*[.．、]\s*\S/i.exec(stem);
+  if (!leading) return field;
+  const marker = /^(\s*(?:<p\b[^>]*>\s*)?[（(]\s*)([\d０-９]{1,4})(\s*[）)])/i;
+  return field.replace(marker, (_match, prefix: string, _old: string, suffix: string) =>
+    `${prefix}${Number(leading[1].normalize("NFKC"))}${suffix}`);
+}
+
 export function geographyPaperQuestionCount(stem: string, type: string, subject?: string): number {
   return subject?.trim() === "地理" && type === "single"
     ? splitGeographyChoiceGroup(stem)?.questions.length ?? 1 : 1;
@@ -121,8 +137,14 @@ export function renumberGeographyPaperAnswer(
 ): string {
   if (subject?.trim() !== "地理" || type !== "single") return field;
   const group = splitGeographyChoiceGroup(stem);
-  if (!group) return field;
-  const aligned = alignGeographyGroupAnswerNumbers(stem, field);
+  if (!group) {
+    const aligned = alignGeographyQuestionAnswer(stem, field, type, subject);
+    return /^\s*(?:<p\b[^>]*>\s*)?[\d０-９]{1,4}\s*[.．、]\s*\S/i.test(stem)
+      ? aligned.replace(/^(\s*(?:<p\b[^>]*>\s*)?[（(]\s*)([\d０-９]{1,4})(\s*[）)])/i,
+        (_match, prefix: string, _old: string, suffix: string) => `${prefix}${startNumber}${suffix}`)
+      : field;
+  }
+  const aligned = alignGeographyQuestionAnswer(stem, field, type, subject);
   const originalToNew = new Map(group.originalNumbers.map((number, index) => [number, startNumber + index]));
   if (group.inferred) {
     const labels = [...aligned.matchAll(/(?:^|\n)\s*[（(]\s*([\d０-９]{1,4})\s*[）)]/g)]
@@ -132,10 +154,10 @@ export function renumberGeographyPaperAnswer(
       group.originalNumbers.forEach((_, index) => originalToNew.set(index + 1, startNumber + index));
     }
   }
-  return aligned.replace(/(^|\n)([ \t]*[（(][ \t]*)([\d０-９]{1,4})([ \t]*[）)])/g,
-    (match, breakText: string, prefix: string, numberText: string, suffix: string) => {
+  return aligned.replace(/([（(]\s*)([\d０-９]{1,4})(\s*[）)])/g,
+    (match, prefix: string, numberText: string, suffix: string) => {
       const replacement = originalToNew.get(Number(numberText.normalize("NFKC")));
-      return replacement === undefined ? match : `${breakText}${prefix}${replacement}${suffix}`;
+      return replacement === undefined ? match : `${prefix}${replacement}${suffix}`;
     });
 }
 

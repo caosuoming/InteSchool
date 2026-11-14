@@ -2891,3 +2891,85 @@ describe("issue 1439: image-adjacent mixed answer and stem", () => {
     expect(question.analysis).toContain("（2）存在，P 为中点。");
   });
 });
+
+
+describe("issue 1454: mathematics compound example numbering", () => {
+  const math = { ...config, subject: "数学" };
+
+  it("recognizes 例1-1, 例2-1 and 例1-2 as distinct top-level questions", () => {
+    const blocks = parseDocumentBlocks([
+      "例1-1 求函数 f(x) 的定义域。",
+      "答案：全体实数。",
+      "例2-1 已知双曲线，求离心率。",
+      "解析：由定义可得。",
+      "例1-2 求双曲线的渐近线。",
+      "答案：y=2x。",
+    ].join("\n"), math);
+    expect(blocks.filter((block) => block.type === "question")).toMatchObject([
+      { content: "例1-1 求函数 f(x) 的定义域。", answer: "全体实数。" },
+      { content: "例2-1 已知双曲线，求离心率。", analysis: "由定义可得。" },
+      { content: "例1-2 求双曲线的渐近线。", answer: "y=2x。" },
+    ]);
+    expect(findMathQuestionNumberGaps(blocks, math)).toEqual([]);
+  });
+
+  it("splits immediately following numbered subquestions with separate solutions", () => {
+    const blocks = parseDocumentBlocks([
+      "例1-2（1）若双曲线过点 P，求方程。",
+      "答案：x²-y²=1。",
+      "解析：代入坐标。",
+      "（2）已知离心率，求另一方程。",
+      "答案：x²-2y²=1。",
+      "解析：根据离心率计算。",
+      "例1-3（1）计算新的例题。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+    expect(blocks).toMatchObject([
+      { content: "例1-2（1）若双曲线过点 P，求方程。", answer: "x²-y²=1。", analysis: "代入坐标。" },
+      { content: "（2）已知离心率，求另一方程。", answer: "x²-2y²=1。", analysis: "根据离心率计算。" },
+      { content: "例1-3（1）计算新的例题。" },
+    ]);
+  });
+
+  it("splits same-paragraph numbered parts and distributes their labelled answers", () => {
+    const blocks = parseDocumentBlocks([
+      "例2-1（1）求第一式。（2）求第二式。",
+      "答案：（1）x=1。（2）x=2。",
+      "解析：（1）移项。（2）化简。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+    expect(blocks).toMatchObject([
+      { content: "例2-1（1）求第一式。", answer: "x=1。", analysis: "移项。" },
+      { content: "（2）求第二式。", answer: "x=2。", analysis: "化简。" },
+    ]);
+  });
+
+  it("regroups an essay's later prompts from analysis and labels their solutions", () => {
+    const blocks = parseDocumentBlocks([
+      "一、解答题",
+      "例3-2（2025·淄博期末）已知双曲线 C，离心率为根号5/2。",
+      "（1）求双曲线 C 的标准方程；",
+      "解析：由条件计算，方程为 x²/4-y²=1。",
+      "（2）若 F1、F2 为焦点，求直线方程。",
+      "由题意联立方程，可得直线斜率。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].content).toContain("例3-2（2025·淄博期末）");
+    expect(blocks[0].content).toContain("（1）求双曲线");
+    expect(blocks[0].content).toContain("（2）若 F1、F2 为焦点");
+    expect(blocks[0].analysis).toContain("（1）由条件计算");
+    expect(blocks[0].analysis).toContain("（2）由题意联立");
+    expect(blocks[0].analysis).not.toContain("（2）若 F1");
+  });
+
+  it("does not mistake subtraction or subject-specific labels for compound examples", () => {
+    const source = [
+      "例1 求值。",
+      "3-2=1。",
+      "例1-2 求新题。",
+    ].join("\n");
+    const blocks = parseDocumentBlocks(source, math).filter((block) => block.type === "question");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].content).toContain("3-2=1。");
+    expect(parseDocumentBlocks("例1-2 求新题。", { ...config, subject: "地理" }))
+      .toHaveLength(1);
+  });
+});
