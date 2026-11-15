@@ -2973,3 +2973,65 @@ describe("issue 1454: mathematics compound example numbering", () => {
       .toHaveLength(1);
   });
 });
+
+describe("issue 1470: math essay subquestions alternating with worked solutions", () => {
+  const math = { ...config, subject: "数学" };
+
+  it("collects all prompts and numbers every 【解答】 segment", () => {
+    const questions = parseDocumentBlocks([
+      "三、解答题",
+      "例3 已知四面体 P-ABC，求以下空间角。",
+      "（1）求直线 PA 与 BC 所成的角。",
+      "【解答】取 M 为 AB 中点，连接 PM。",
+      "根据向量关系求得 $\\cos\\theta=1/2$。",
+      "（2）计算直线 PA 与平面 ABC 所成的角。",
+      "【解答】建立空间直角坐标系。",
+      "所以该角为 $30^\\circ$。",
+      "（3）证明平面 PAB 垂直平面 PAC。",
+      "【解答】由法向量垂直可证。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].content).toContain("（1）求直线");
+    expect(questions[0].content).toContain("（2）计算直线");
+    expect(questions[0].content).toContain("（3）证明平面");
+    expect(questions[0].content).not.toContain("取 M 为");
+    expect(questions[0].analysis).toContain("（1）取 M 为 AB 中点");
+    expect(questions[0].analysis).toContain("（2）建立空间直角坐标系");
+    expect(questions[0].analysis).toContain("（3）由法向量垂直可证");
+    expect(questions[0].analysis).not.toContain("（2）计算直线");
+  });
+
+  it("handles first subquestion on the shared-stem line", () => {
+    const questions = parseDocumentBlocks([
+      "三、解答题",
+      "例4 如图，在正四面体中，（1）求直线 AB 与 CD 的夹角。",
+      "【解答】由空间向量数量积得角为直角。",
+      "（2）求直线 AB 与平面 BCD 所成的角。",
+      "【解答】建立法向量后得结果。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0].content).toContain("（2）求直线 AB");
+    expect(questions[0].analysis).toContain("（1）由空间向量数量积");
+    expect(questions[0].analysis).toContain("（2）建立法向量");
+    expect(questions[0].analysis).not.toContain("（2）求直线 AB");
+  });
+});
+
+describe("issue 1470: long rich-text math essay prompts", () => {
+  it("recovers the second subquestion even when a Word-imported math expression is very long", () => {
+    const longCondition = '<i class="math-variable">OA</i>＝2<i class="math-variable">OD</i>＝2，直线<i class="math-variable">DC</i>与平面<i class="math-variable">PBC</i>所成角的正弦值为$\\frac{4\\sqrt{5}}{15}$，';
+    const blocks = parseDocumentBlocks([
+      "四、解答题",
+      "9．已知底面为菱形的四棱锥 P-ABCD，完成下面两个小问。",
+      "(1) 求证：PO⊥平面 ABCD。",
+      "【解答】由面面垂直得 PO⊥平面 ABCD。",
+      `(2) 若${longCondition}求平面 PAC 与平面 PBC 夹角的余弦值。`,
+      "【解答】建立坐标系，求得两平面法向量的夹角。",
+    ].join("\n"), { ...config, subject: "数学" }).filter((block) => block.type === "question");
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].content).toContain("(2) 若");
+    expect(blocks[0].analysis).toContain("（1）由面面垂直");
+    expect(blocks[0].analysis).toContain("（2）建立坐标系");
+    expect(blocks[0].analysis).not.toContain("(2) 若");
+  });
+});

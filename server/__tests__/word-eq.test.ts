@@ -88,3 +88,39 @@ describe("legacy Word EQ fields", () => {
     expect(wordEqFieldToLatex("DATE \\@ yyyy-MM-dd")).toBeNull();
   });
 });
+
+describe("issue 1470: vector arrows and one-sided equation braces in authentic EQ fields", () => {
+  it.each([
+    [String.raw`eq \o(CB,\s\up6(→))`, String.raw`\overrightarrow{CB}`],
+    [String.raw`eq \o(DC1,\s\up6(→))`, String.raw`\overrightarrow{DC1}`],
+    [String.raw`eq \o(AB,\s\up6(←))`, String.raw`\overleftarrow{AB}`],
+  ])("places EQ overstrike arrow above the whole point pair: %s", (source, expected) => {
+    expect(wordEqFieldToLatex(source)).toBe(expected);
+  });
+
+  it("preserves the blank right delimiter of a legacy equation system", () => {
+    const source = String.raw`eq \b\lc\{\rc\ (\a\vs4\al\co1(\a\vs4\al\co1(m·\o(PB,\s\up6(→))＝y－tz＝0，,m·\o(CB,\s\up6(→))＝2x＋y＝0，)))`;
+    const latex = wordEqFieldToLatex(source)!;
+    expect(latex).toContain(String.raw`\left\{`);
+    expect(latex).toContain(String.raw`\overrightarrow{PB}`);
+    expect(latex).toContain(String.raw`\overrightarrow{CB}`);
+    expect(latex).toContain(String.raw`\right.`);
+    expect(latex).not.toContain(String.raw`\right)`);
+    expect(() => katex.renderToString(latex, { throwOnError: true, strict: false })).not.toThrow();
+  });
+
+  it("keeps a genuine explicit right parenthesis", () => {
+    expect(wordEqFieldToLatex(String.raw`eq \b\lc\{\rc\)(x)`))
+      .toBe(String.raw`\left\{x\right)`);
+  });
+});
+
+describe("issue 1470: Word EQ vector arrow with indexed endpoint", () => {
+  it("keeps the arrow over a two-letter vector whose digit is formatted as a subscript run", () => {
+    expect(wordEqFieldRunsToLatex([
+      { text: String.raw` eq \o(DC` },
+      { text: "1", verticalAlign: "subscript" },
+      { text: String.raw`,\s\up6(→))` },
+    ])).toBe(String.raw`\overrightarrow{DC{}_{1}}`);
+  });
+});

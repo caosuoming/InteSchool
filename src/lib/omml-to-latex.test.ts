@@ -478,3 +478,30 @@ describe("Word group character vector accents", () => {
     expect(ommlToLatex(xml)).toBe(String.raw`\overrightarrow{AE}`);
   });
 });
+
+describe("issue 1470: Word math import without invented delimiters or lower arrows", () => {
+  const m = (inner: string) => `<m:oMath xmlns:m="${MATH_NS}">${inner}</m:oMath>`;
+  const r = (value: string) => `<m:r><m:t>${value}</m:t></m:r>`;
+
+  it("keeps a vector arrow above its two letters in sub-superscript OMML", () => {
+    const source = m(`<m:sSubSup><m:e>${r("AB")}</m:e><m:sub>${r("→")}</m:sub><m:sup>${r("2")}</m:sup></m:sSubSup>`);
+    expect(ommlToLatex(source)).toBe(String.raw`\overrightarrow{AB}^{2}`);
+  });
+
+  it("does not invent a right parenthesis for a one-sided brace with non-matrix expressions", () => {
+    const source = m(`<m:d><m:dPr><m:begChr m:val="{"/></m:dPr><m:e>${r("x=1")}</m:e><m:e>${r("y=2")}</m:e></m:d>`);
+    expect(ommlToLatex(source)).toBe(String.raw`\left\{x=1y=2\right.`);
+  });
+
+  it("keeps a deliberately specified closing parenthesis", () => {
+    const source = m(`<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=")"/></m:dPr><m:e>${r("x=1")}</m:e></m:d>`);
+    expect(ommlToLatex(source)).toBe(String.raw`\left\{x=1\right)`);
+  });
+
+  it("does not turn normal paired parentheses or genuine subscripts into arrows", () => {
+    const delimited = m(`<m:d><m:dPr><m:begChr m:val="("/></m:dPr><m:e>${r("x+1")}</m:e></m:d>`);
+    const indexed = m(`<m:sSubSup><m:e>${r("AB")}</m:e><m:sub>${r("n")}</m:sub><m:sup>${r("2")}</m:sup></m:sSubSup>`);
+    expect(ommlToLatex(delimited)).toBe(String.raw`\left(x+1\right)`);
+    expect(ommlToLatex(indexed)).toBe(String.raw`AB_{n}^{2}`);
+  });
+});
