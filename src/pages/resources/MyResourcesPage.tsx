@@ -153,6 +153,12 @@ type ResourceListUnit =
   | { kind: "folder"; folder: ResourceFolder; items: ResourceListItem[] }
   | { kind: "resource"; item: ResourceListItem };
 
+function chapterNamesFor(chapterIds: string[], names: Map<string, string>): string[] {
+  return chapterIds
+    .map((id) => names.get(id))
+    .filter((name): name is string => Boolean(name));
+}
+
 function resourceListTitle(item: ResourceListItem): string {
   return "title" in item ? item.title : item.stem;
 }
@@ -858,6 +864,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       : [],
     [selectedBasket, audienceClasses, audienceStudents],
   );
+  const chapterNameMap = useMemo(() => treeNameMap(chapterTree), [chapterTree]);
   const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
   const basketMasteryMap = useMemo(
     () => new Map(basketMastery.map((item) => [item.knowledgePointId, item])),
@@ -3874,6 +3881,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                       key={mainLecture.id}
                       {...batchSelectionCardProps("lecture", mainLecture.id)}
                       title={mainLecture.title}
+                      chapterNames={chapterNamesFor(mainLecture.chapterIds, chapterNameMap)}
                       remark={mainLecture.description}
                       description={documentDescription(mainLecture)}
                       studentProgress={studentProgressDescription(mainLecture)}
@@ -4003,6 +4011,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                         {...batchSelectionCardProps("examPaper", copy.id)}
                         title={copy.title}
+                        chapterNames={chapterNamesFor(copy.chapterIds, chapterNameMap)}
                         remark={copy.description}
                         description={documentDescription(copy)}
                         studentProgress={studentProgressDescription(copy)}
@@ -4058,6 +4067,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                         <ResourceCard
                           {...batchSelectionCardProps("examPaper", item.id)}
                           title={item.title}
+                          chapterNames={chapterNamesFor(item.chapterIds, chapterNameMap)}
                           remark={item.description}
                           description={documentDescription(item)}
                           studentProgress={studentProgressDescription(item)}
@@ -5187,6 +5197,7 @@ interface ResourceCardProps {
   titleIcon?: React.ReactNode;
   titleActions?: React.ReactNode;
   primaryActions?: React.ReactNode;
+  chapterNames?: string[];
   description?: string;
   studentProgress?: string;
   remark?: string;
@@ -5227,7 +5238,7 @@ interface ResourceCardProps {
   additionalActions?: ConfigurableResourceAction[];
 }
 
-export function ResourceCard({ title, titleIcon, titleActions, primaryActions, description, studentProgress, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPersonalLesson, lessonActionLabel = "添加到上课", onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
+export function ResourceCard({ title, titleIcon, titleActions, primaryActions, chapterNames, description, studentProgress, remark, meta, content, updatedAt, onClick, onRename, onEditProperties, onShare, onDelete, onAddToLesson, onAddToPersonalLesson, lessonActionLabel = "添加到上课", onAddToPrep, onDuplicate, onExplanationVideo, onConvertToExamPaper, onViewReflections, reflections, fileUrl, type, showAddToLesson, showAddToBasket, basketResourceType, basketResourceId, onBasketChanged, className, titleBadge, selected, donated, donationLocked, onToggleSelection, alwaysShowActions, compactActions, configurableActions, detailsPresentation = "inline", additionalActions = [] }: ResourceCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [knowledgeExpanded, setKnowledgeExpanded] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -5471,6 +5482,11 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, d
                 </div>
               )}
             </div>
+            {chapterNames && chapterNames.length > 0 && (
+              <div data-testid="resource-card-chapters" className="mb-1 text-xs text-ink-600" title={chapterNames.join("、")}>
+                <span className="text-ink-400">章节课：</span>{chapterNames.join("、")}
+              </div>
+            )}
             {remark?.trim() && (
               <div data-testid="resource-card-remark" className="mb-1 text-xs text-ink-600 line-clamp-2">
                 <span className="text-ink-400">备注：</span>{remark.trim()}
