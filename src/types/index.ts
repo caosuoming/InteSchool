@@ -178,8 +178,10 @@ export interface Teacher {
   currentAffiliationId: string | null;
   /** 是否在作业点名与上课历史作业中凸显关注学生，未设置时默认开启。 */
   highlightFollowedHomeworkStudents?: boolean;
-  /** 个人知识树显示开关；旧用户缺省启用章节、知识点。 */
+  /** 旧版知识树显示开关；保留用于兼容旧账号的原任教学科设置。 */
   knowledgeTreeEnabled?: Partial<Record<TreeNodeType, boolean>>;
+  /** 按学科保存的个人知识树显示开关，不随学校身份变化。 */
+  knowledgeTreeEnabledBySubject?: Record<string, Partial<Record<TreeNodeType, boolean>>>;
   /** 教师在“我的上课”中维护的周课表。 */
   lessonSchedule?: TeacherLessonSchedule;
   /** 教师按学期维护的教学计划与一体机自动采集的实际教学记录。 */

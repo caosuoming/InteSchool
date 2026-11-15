@@ -37,7 +37,7 @@ import type {
   DirectoryNodeAssociation,
 } from "@/types";
 import { cn } from "@/lib/utils";
-import { isKnowledgeTreeEnabled, knowledgeTreeKinds } from "@/lib/knowledge-tree-visibility";
+import { isKnowledgeTreeEnabled, knowledgeTreeKinds, knowledgeTreeSubject } from "@/lib/knowledge-tree-visibility";
 
 type TreeKind = "chapter" | "knowledge" | "method" | "error";
 
@@ -730,6 +730,7 @@ export default function KnowledgeTreePage() {
     <div>
       <PageHeader
         title="知识树"
+        titleAction={<Badge variant="ink">当前学科：{knowledgeTreeSubject(teacher) || "未选择"}</Badge>}
         description="以树形结构浏览章节、知识点、思想方法与错因字典，每个目录前可复选筛选题目"
         icon={<GitBranch className="w-5 h-5" />}
         action={

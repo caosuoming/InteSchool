@@ -237,6 +237,24 @@ describe("KnowledgeTreePage", () => {
     });
   });
 
+  it("shows the current subject beside the page title after a subject switch", async () => {
+    useAuthStore.setState({ teacher: {
+      ...useAuthStore.getState().teacher!,
+      subject: "数学",
+      currentAffiliationId: "aff-1",
+      affiliations: [{ id: "aff-1", schoolId: "school-1", subject: "数学", isCurrent: true }],
+    } as Teacher });
+    render(<MemoryRouter><KnowledgeTreePage /></MemoryRouter>);
+    expect(screen.getByText("当前学科：数学")).toBeInTheDocument();
+    const original = useAuthStore.getState().teacher!;
+    useAuthStore.setState({ teacher: {
+      ...original,
+      subject: "英语",
+      affiliations: original.affiliations.map((affiliation) => ({ ...affiliation, subject: "英语" })),
+    } });
+    await waitFor(() => expect(screen.getByText("当前学科：英语")).toBeInTheDocument());
+  });
+
   it("starts with two knowledge-tree categories enabled and saves each user's switch", async () => {
     const updateProfile = vi.fn(async (patch: { knowledgeTreeEnabled?: Record<string, boolean> }) => {
       const old = useAuthStore.getState().teacher!;
