@@ -369,7 +369,7 @@ export const questionService = {
     teacher: TeacherRecord,
   ): Promise<{ items: Question[]; total: number }> {
     const requiresCurrentUsageSort = sortKey === "usage" || sortKey === "weakness";
-    if (!requiresCurrentUsageSort && !filter.subject) {
+    if (!requiresCurrentUsageSort && (!filter.subject || filter.teacherId)) {
       const indexed = await db.searchQuestionPage(filter, page, pageSize, sortKey, teacher.id);
       if (indexed) {
         return {

@@ -1,7 +1,7 @@
 import { isGeographyChoiceGroup } from "@/lib/geography-paper-layout";
 import { geographyOptionLabelClass } from "@/lib/geography-question-markup";
 import { openPage } from "@/lib/navigation";
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Search, X, FileQuestion, BookOpen, Lightbulb,
@@ -37,16 +37,8 @@ import { Badge } from "@/components/ui/Badge";
 import { PaginationBar } from "@/components/ui/PaginationBar";
 import { ResizableSidebarLayout } from "@/components/layout/ResizableSidebarLayout";
 import { SearchableTree } from "@/components/tree/SearchableTree";
-import { QuestionDetail } from "@/components/question/QuestionDetail";
 import { QuestionExpandedDetails } from "@/components/question/QuestionExpandedDetails";
-import { QuestionEditor } from "@/components/question/QuestionEditor";
-import { RelatedQuestionsModal } from "@/components/question/RelatedQuestionsModal";
-import { QuickEditModal } from "@/components/question/QuickEditModal";
-import { ShareModal } from "@/components/question/ShareModal";
 import { QuestionActionsBar } from "@/components/question/QuestionActionsBar";
-import { QuestionAdaptationModal } from "@/components/question/QuestionAdaptationModal";
-import { QuestionLinksModal } from "@/components/question/QuestionLinksModal";
-import { QuestionVideoModal } from "@/components/question/QuestionVideoModal";
 import { TagSettings } from "@/components/question/TagSettings";
 import { useTagPrefsStore } from "@/stores/tagPrefs";
 import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
@@ -59,6 +51,15 @@ import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { inferScore } from "@/services/analytics";
 import { generateQuestionDocx } from "@/lib/docx";
 import { treeNameMap } from "@/lib/basket-audience";
+
+const QuestionDetail = lazy(() => import("@/components/question/QuestionDetail"));
+const QuestionEditor = lazy(() => import("@/components/question/QuestionEditor"));
+const QuestionAdaptationModal = lazy(() => import("@/components/question/QuestionAdaptationModal"));
+const QuestionLinksModal = lazy(() => import("@/components/question/QuestionLinksModal"));
+const QuestionVideoModal = lazy(() => import("@/components/question/QuestionVideoModal"));
+const RelatedQuestionsModal = lazy(() => import("@/components/question/RelatedQuestionsModal"));
+const QuickEditModal = lazy(() => import("@/components/question/QuickEditModal"));
+const ShareModal = lazy(() => import("@/components/question/ShareModal"));
 
 type Mode = "manage" | "use";
 type SortKey = "usage" | "weakness" | "recommendation" | "newest" | "recentUse";
@@ -572,21 +573,33 @@ export default function QuestionBankPage({
           questionIds: basket.questionIds,
         })));
       }).catch(() => { if (!cancelled) setBaskets([]); reportMetadataError("资源篮"); });
-    void classService.listMyClasses(teacher.schoolId, teacher.id)
-      .then((classes) => {
-        if (cancelled) return;
-        setSchoolClasses(classes.filter((item): item is SchoolClass => item.type === "school"));
-        setPersonalClasses(classes.filter((item): item is PersonalClass => item.type === "personal"));
-      }).catch(() => {
-        if (!cancelled) { setSchoolClasses([]); setPersonalClasses([]); }
-        reportMetadataError("班级");
-      });
-    void classService.listMyStudents(teacher.schoolId, teacher.id)
-      .then((items) => { if (!cancelled) setStudents(items); })
-      .catch(() => { if (!cancelled) setStudents([]); reportMetadataError("学生"); });
-
     return () => { cancelled = true; };
   }, [teacher, directoryReloadToken, isTreeEnabled]);
+
+  useEffect(() => {
+    // Student data is only required after opening the picker or selecting students.
+    // Loading every student's record on every ordinary question-bank visit delays
+    // the essential paginated question request on larger schools.
+    if (!teacher || (selectedStudentIds.length === 0 && !showStudentPicker)) return;
+    let cancelled = false;
+    void Promise.all([
+      classService.listMyClasses(teacher.schoolId, teacher.id),
+      classService.listMyStudents(teacher.schoolId, teacher.id),
+    ]).then(([classes, students]) => {
+      if (cancelled) return;
+      setSchoolClasses(classes.filter((item): item is SchoolClass => item.type === "school"));
+      setPersonalClasses(classes.filter((item): item is PersonalClass => item.type === "personal"));
+      setStudents(students);
+      setDirectoryLoadErrors((errors) => errors.filter((error) => error !== "学生"));
+    }).catch(() => {
+      if (cancelled) return;
+      setSchoolClasses([]);
+      setPersonalClasses([]);
+      setStudents([]);
+      setDirectoryLoadErrors((errors) => errors.includes("学生") ? errors : [...errors, "学生"]);
+    });
+    return () => { cancelled = true; };
+  }, [teacher, selectedStudentIds.length, showStudentPicker]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1579,7 +1592,7 @@ export default function QuestionBankPage({
         size="lg"
         title="题目详情"
       >
-        {detailQuestion && <QuestionDetail question={detailQuestion} />}
+        {detailQuestion && <Suspense fallback={<Spinner size={20} />}><QuestionDetail question={detailQuestion} /></Suspense>}
       </Modal>
 
       {/* 编辑题目（完整属性编辑） */}
@@ -1592,6 +1605,7 @@ export default function QuestionBankPage({
         footer={null}
       >
         {editingQuestion && (
+          <Suspense fallback={<Spinner size={20} />}>
           <QuestionEditor
             question={editingQuestion}
             onSaved={(q) => {
@@ -1601,9 +1615,11 @@ export default function QuestionBankPage({
             }}
             onCancel={() => setEditingQuestion(null)}
           />
+          </Suspense>
         )}
       </Modal>
 
+      {Boolean(adaptingQuestion) && <Suspense fallback={null}>
       <QuestionAdaptationModal
         open={Boolean(adaptingQuestion)}
         question={adaptingQuestion}
@@ -1614,7 +1630,9 @@ export default function QuestionBankPage({
           loadQuestions();
         }}
       />
+      </Suspense>}
 
+      {Boolean(linksQuestion) && <Suspense fallback={null}>
       <QuestionLinksModal
         open={Boolean(linksQuestion)}
         question={linksQuestion}
@@ -1625,7 +1643,9 @@ export default function QuestionBankPage({
           loadQuestions();
         }}
       />
+      </Suspense>}
 
+      {Boolean(videoQuestion) && <Suspense fallback={null}>
       <QuestionVideoModal
         open={Boolean(videoQuestion)}
         question={videoQuestion}
@@ -1638,6 +1658,7 @@ export default function QuestionBankPage({
           loadQuestions();
         }}
       />
+      </Suspense>}
 
       {/* 加入试题篮 */}
       <Modal
@@ -1669,7 +1690,7 @@ export default function QuestionBankPage({
 
       {/* 相关题目选择弹窗 */}
       {relatedModal && teacher && (
-        <RelatedQuestionsModal
+        <Suspense fallback={null}><RelatedQuestionsModal
           open={relatedModal.open}
           onClose={() => setRelatedModal(null)}
           title={relatedModal.title}
@@ -1678,10 +1699,11 @@ export default function QuestionBankPage({
           filterValue={relatedModal.filterValue}
           schoolId={teacher.schoolId!}
           onSelect={(q) => setAddToBasketFor(q)}
-        />
+        /></Suspense>
       )}
 
       {/* 快速属性编辑弹窗 */}
+      {Boolean(quickEditQuestion) && <Suspense fallback={null}>
       <QuickEditModal
         open={Boolean(quickEditQuestion)}
         onClose={() => setQuickEditQuestion(null)}
@@ -1691,13 +1713,16 @@ export default function QuestionBankPage({
           loadQuestions();
         }}
       />
+      </Suspense>}
 
       {/* 分享弹窗 */}
+      {Boolean(shareQuestion) && <Suspense fallback={null}>
       <ShareModal
         open={Boolean(shareQuestion)}
         onClose={() => setShareQuestion(null)}
         question={shareQuestion}
       />
+      </Suspense>}
 
       {/* 替换题目弹窗 */}
       <Modal
