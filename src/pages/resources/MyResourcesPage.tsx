@@ -1,5 +1,5 @@
 import { openPage } from "@/lib/navigation";
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
 import {
   Search, FileQuestion, BookOpen, Lightbulb,
@@ -15,7 +15,6 @@ import {
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
 import { lessonCoursewareService, loadEditableCoursewarePptSlides } from "@/services/lessonCourseware";
-import { BoardLibrary } from "./BoardLibrary";
 import { questionService } from "@/services/question";
 import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
 import { prepService } from "@/services/prep";
@@ -58,7 +57,6 @@ import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { questionStemSimilarity } from "@/lib/question-similarity";
 import { subjectAwareDefaultQuestionScore } from "@/lib/question-default-score";
-import QuestionBankPage from "@/pages/question-bank/QuestionBankPage";
 import { StudentPickerModal } from "@/components/student/StudentPickerModal";
 import { documentStudentProgressLabel, type PendingQuestionAssignment } from "@/lib/document-student-progress";
 import {
@@ -121,6 +119,9 @@ import {
   isPdfDocumentResource,
   type DocumentCategory,
 } from "@/lib/document-resource";
+
+const QuestionBankPage = lazy(() => import("@/pages/question-bank/QuestionBankPage"));
+const BoardLibrary = lazy(() => import("./BoardLibrary").then((module) => ({ default: module.BoardLibrary })));
 
 type MyResourceTab = "question" | "examPaper" | "lecture" | "courseware" | "material" | "answerSheet" | "board" | "basket";
 type RenameableResourceType = Exclude<MyResourceTab, "question" | "answerSheet" | "board" | "basket">;
@@ -3055,6 +3056,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
       {/* 题库 Tab：渲染完整的题库管理/使用页面 */}
       {activeTab === "question" ? (
+        <Suspense fallback={<div className="flex justify-center py-8"><Spinner size={24} /></div>}>
         <QuestionBankPage
           studentIds={selectedResourceStudentIds}
           onStudentIdsChange={setSelectedResourceStudentIds}
@@ -3084,8 +3086,11 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           }}
           refreshToken={resourceRefreshToken}
         />
+        </Suspense>
       ) : activeTab === "board" ? (
-        <BoardLibrary />
+        <Suspense fallback={<div className="flex justify-center py-8"><Spinner size={24} /></div>}>
+          <BoardLibrary />
+        </Suspense>
       ) : activeTab === "basket" ? (
         <div className="grid grid-cols-12 gap-4">
           {/* 左侧：资源篮列表 */}

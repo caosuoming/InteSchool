@@ -376,6 +376,8 @@ describe("QuestionBankPage personal resource scope", () => {
     render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId("searchable-tree-chapter"))
       .toHaveAttribute("data-tree-id", "chapter-root"));
+    expect(classService.listMyStudents).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("学生加载失败"));
     expect(screen.getByTestId("searchable-tree-chapter"))
       .toHaveAttribute("data-tree-id", "chapter-root");
@@ -629,8 +631,13 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(filter).toMatchObject({ teacherId: "teacher-1" });
     expect(filter).not.toHaveProperty("schoolId");
 
-    expect(classService.listMyClasses).toHaveBeenCalledWith("school-2", "teacher-1");
-    expect(classService.listMyStudents).toHaveBeenCalledWith("school-2", "teacher-1");
+    expect(classService.listMyClasses).not.toHaveBeenCalled();
+    expect(classService.listMyStudents).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
+    await waitFor(() => {
+      expect(classService.listMyClasses).toHaveBeenCalledWith("school-2", "teacher-1");
+      expect(classService.listMyStudents).toHaveBeenCalledWith("school-2", "teacher-1");
+    });
   });
 
   it("filters trained knowledge points by low mastery and untrained knowledge points by easy difficulty", async () => {
@@ -879,7 +886,8 @@ describe("QuestionBankPage personal resource scope", () => {
     const row = (await screen.findByText("目录异常回归题")).closest(".card-base") as HTMLElement;
     expect(await within(row).findByText("函数章节")).toBeInTheDocument();
     expect(within(row).getByText("函数概念")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("学生加载失败");
+    fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("学生加载失败"));
     expect(screen.getByRole("checkbox", { name: "篮中题" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: "篮中题" }));
     await waitFor(() => expect(vi.mocked(analyticsService.annotateTreeWithStudentProgress).mock.lastCall?.[4]?.basketQuestionIds)

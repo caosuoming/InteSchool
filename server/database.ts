@@ -19,6 +19,7 @@ import type { ServerConfig } from "./config.js";
 import type { QuestionSortKey } from "./runtime-db.js";
 import { hashPassword, verifyPassword } from "./lib/password.js";
 import { createSqlClient, type SqlClient, type SqlConnection } from "./sql-client.js";
+import { resourceSubject } from "./lib/resource-subject.js";
 
 export const COLLECTIONS = [
   "schools", "teachers", "applications", "schoolClasses", "personalClasses",
@@ -1427,6 +1428,39 @@ export class DatabaseStore {
     const { clauses, params } = questionSearchWhere(filter);
     params.push(teacherId);
     clauses.push(`(owner_id = $${params.length} OR coalesce((data_json->>'isShared')::boolean, false))`);
+
+    // Keep multi-subject teacher libraries on the indexed SQL pagination path.
+    // Legacy questions without a stored subject inherit it from their owner's
+    // school affiliation; calculate the same per-school fallback as resourceSubject.
+    if (filter.subject) {
+      const owner = this.stateCache.teachers.find((teacher) => teacher.id === filter.teacherId);
+      const affiliatedSchoolIds = Array.from(new Set(
+        (owner?.affiliations || [])
+          .map((affiliation) => affiliation.schoolId)
+          .filter((id): id is string => typeof id === "string"),
+      ));
+      const inheritedSchoolIds = affiliatedSchoolIds.filter((schoolId) =>
+        resourceSubject(this.stateCache, { teacherId: filter.teacherId, schoolId }) === filter.subject,
+      );
+      const inheritedOtherSchools = resourceSubject(
+        this.stateCache, { teacherId: filter.teacherId },
+      ) === filter.subject;
+      params.push(filter.subject, inheritedSchoolIds);
+      const subjectParam = params.length - 1;
+      const legacySchoolsParam = params.length;
+      if (inheritedOtherSchools) params.push(affiliatedSchoolIds);
+      const otherSchoolsParam = params.length;
+      clauses.push(`(
+        btrim(coalesce(data_json->>'subject', '')) = $${subjectParam}
+        OR (
+          nullif(btrim(data_json->>'subject'), '') IS NULL
+          AND (
+            school_id = ANY($${legacySchoolsParam}::text[])
+            ${inheritedOtherSchools ? `OR NOT coalesce(school_id = ANY($${otherSchoolsParam}::text[]), false)` : ""}
+          )
+        )
+      )`);
+    }
 
     const countResult = await this.sql.query<{ total: string | number }>(`
       SELECT count(*) AS total FROM app_records

@@ -129,6 +129,23 @@ describe("question pagination", () => {
     });
   });
 
+  it("keeps teacher subject-filtered pages on indexed pagination", async () => {
+    const teacher = { id: "teacher-1", schoolId: "school-1" } as TeacherRecord;
+    const filter = { teacherId: teacher.id, subject: "数学" };
+    const backendPage = { items: [question("math", { subject: "数学" })], total: 1 };
+    const searchQuestionPage = vi.fn().mockResolvedValue(backendPage);
+    const searchQuestions = vi.fn().mockRejectedValue(new Error("full bank scan is forbidden"));
+
+    await runWithState(state([]), async () => {
+      const page = await questionService.listQuestionPage(filter, 1, 20, "newest", teacher);
+      expect(page.items.map((item) => item.id)).toEqual(["math"]);
+      expect(page.total).toBe(1);
+    }, { searchQuestionPage, searchQuestions });
+
+    expect(searchQuestionPage).toHaveBeenCalledWith(filter, 1, 20, "newest", teacher.id);
+    expect(searchQuestions).not.toHaveBeenCalled();
+  });
+
   it("delegates pagination to the database backend when available", async () => {
     const teacher = { id: "teacher-1", schoolId: "school-1" } as TeacherRecord;
     const backendPage = {
