@@ -1656,6 +1656,87 @@ describe("production backend", () => {
       .resolves.toMatchObject({ teacher: expect.objectContaining({ id: "tch-3" }) });
   });
 
+  it("migrates a legacy knowledge-tree configuration from the currently selected subject", async () => {
+    const before = built.store.loadState();
+    const after = structuredClone(before);
+    const teacher = after.teachers.find((item) => item.id === "tch-1")!;
+    teacher.subject = "英语";
+    teacher.knowledgeTreeEnabled = { chapter: false, method: true };
+    teacher.affiliations = teacher.affiliations.map((affiliation) =>
+      affiliation.id === "aff-1"
+        ? { ...affiliation, subject: "英语", subjects: ["数学", "英语"] }
+        : affiliation);
+    await built.store.saveState(before, after);
+
+    const session = await login(built.app);
+    const headers = { cookie: session.cookie, "x-inteschool-csrf": session.csrfToken };
+    const switched = await built.app.inject({
+      method: "POST", url: "/api/auth/affiliations/aff-1/subject",
+      headers, payload: { subject: "数学" },
+    });
+    expect(switched.statusCode).toBe(200);
+    expect(switched.json<{ knowledgeTreeEnabledBySubject: Record<string, Record<string, boolean>> }>()
+      .knowledgeTreeEnabledBySubject).toEqual({ "英语": { chapter: false, method: true } });
+
+    const patched = await built.app.inject({
+      method: "PATCH", url: "/api/auth/profile",
+      headers, payload: { knowledgeTreeEnabled: { error: true } },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json<{ knowledgeTreeEnabledBySubject: Record<string, Record<string, boolean>> }>()
+      .knowledgeTreeEnabledBySubject).toEqual({
+        "英语": { chapter: false, method: true }, "数学": { error: true },
+      });
+  });
+
+  it("persists knowledge-tree preferences per subject and shares them across schools", async () => {
+    const before = built.store.loadState();
+    const after = structuredClone(before);
+    const teacher = after.teachers.find((item) => item.id === "tch-1")!;
+    teacher.affiliations = teacher.affiliations.map((affiliation) =>
+      affiliation.schoolId ? { ...affiliation, subjects: ["数学", "英语"] } : affiliation);
+    await built.store.saveState(before, after);
+
+    const session = await login(built.app);
+    const headers = { cookie: session.cookie, "x-inteschool-csrf": session.csrfToken };
+    const patch = async (knowledgeTreeEnabled: Record<string, boolean>) => {
+      const response = await built.app.inject({
+        method: "PATCH", url: "/api/auth/profile", headers, payload: { knowledgeTreeEnabled },
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json<{ knowledgeTreeEnabledBySubject: Record<string, Record<string, boolean>> }>();
+    };
+    const switchSubject = async (subject: string) => {
+      const response = await built.app.inject({
+        method: "POST", url: "/api/auth/affiliations/aff-1/subject", headers, payload: { subject },
+      });
+      expect(response.statusCode).toBe(200);
+    };
+    const activateSchool = async (affiliationId: string) => {
+      const response = await built.app.inject({
+        method: "POST", url: `/api/auth/affiliations/${affiliationId}/activate`, headers, payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+    };
+
+    expect((await patch({ chapter: false })).knowledgeTreeEnabledBySubject).toEqual({
+      "数学": { chapter: false },
+    });
+    await switchSubject("英语");
+    expect((await patch({ method: true })).knowledgeTreeEnabledBySubject).toEqual({
+      "数学": { chapter: false }, "英语": { method: true },
+    });
+    await switchSubject("数学");
+    await activateSchool("aff-2");
+    const sameSubject = await patch({ error: true });
+    expect(sameSubject.knowledgeTreeEnabledBySubject).toEqual({
+      "数学": { chapter: false, error: true }, "英语": { method: true },
+    });
+    expect(built.store.getTeacherById("tch-1")?.knowledgeTreeEnabledBySubject).toEqual(
+      sameSubject.knowledgeTreeEnabledBySubject,
+    );
+  });
+
   it("lets users update a validated public nickname and persists it", async () => {
     const session = await login(built.app);
 

@@ -248,6 +248,15 @@ const managedTeachingProfileSchema = z.object({
   message: "至少需要修改一项教学资料",
 });
 
+function migrateKnowledgeTreePreferences(teacher: TeacherRecord): TeacherRecord {
+  const legacy = teacher.knowledgeTreeEnabled as Record<string, boolean> | undefined;
+  if (!legacy || teacher.knowledgeTreeEnabledBySubject) return teacher;
+  const active = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
+    || teacher.affiliations.find((item) => item.isCurrent);
+  const subject = String(active?.subject || teacher.subject || "").trim();
+  return { ...teacher, knowledgeTreeEnabledBySubject: { [subject]: { ...legacy } } };
+}
+
 function publicTeacher(teacher: TeacherRecord): TeacherRecord {
   const copy = structuredClone(teacher);
   delete copy.password;
@@ -1055,6 +1064,9 @@ export async function registerAuthRoutes(
       const index = state.teachers.findIndex((teacher) => teacher.id === session.teacherId);
       if (index < 0) throw new Error("教师不存在");
       let teacher = state.teachers[index];
+      if (input.subject !== undefined || input.knowledgeTreeEnabled !== undefined) {
+        teacher = migrateKnowledgeTreePreferences(teacher);
+      }
       const current = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
         || teacher.affiliations.find((item) => item.isCurrent);
       if (input.subject !== undefined && typeof current?.schoolId === "string") {
@@ -1070,11 +1082,15 @@ export async function registerAuthRoutes(
       }
       if (input.nickname !== undefined) teacher = { ...teacher, nickname: input.nickname };
       if (input.knowledgeTreeEnabled !== undefined) {
+        const active = teacher.affiliations.find((item) => item.id === teacher.currentAffiliationId)
+          || teacher.affiliations.find((item) => item.isCurrent);
+        const subject = String(active?.subject || teacher.subject || "").trim();
+        const bySubject = (teacher.knowledgeTreeEnabledBySubject || {}) as Record<string, Record<string, boolean>>;
         teacher = {
           ...teacher,
-          knowledgeTreeEnabled: {
-            ...(teacher.knowledgeTreeEnabled as Record<string, boolean> | undefined),
-            ...input.knowledgeTreeEnabled,
+          knowledgeTreeEnabledBySubject: {
+            ...bySubject,
+            [subject]: { ...(Object.prototype.hasOwnProperty.call(bySubject, subject) ? bySubject[subject] : {}), ...input.knowledgeTreeEnabled },
           },
         };
       }
@@ -1706,7 +1722,7 @@ export async function registerAuthRoutes(
         platformContext: true,
       };
       state.teachers[index] = {
-        ...teacher,
+        ...migrateKnowledgeTreePreferences(teacher),
         schoolId: school.id,
         subject,
         subjects: [...SUBJECT_OPTIONS],
@@ -1759,7 +1775,7 @@ export async function registerAuthRoutes(
           : backup,
       );
       state.teachers[index] = {
-        ...teacher, subject, subjects, currentAffiliationId: affiliationId,
+        ...migrateKnowledgeTreePreferences(teacher), subject, subjects, currentAffiliationId: affiliationId,
         affiliations: teacher.affiliations.map((item) => item.id === affiliationId ? { ...item, subject, subjects } : item),
       };
       return publicTeacher(state.teachers[index]);
@@ -1787,7 +1803,7 @@ export async function registerAuthRoutes(
       }
       const affiliations = teacher.affiliations.map((item) => ({ ...item, isCurrent: item.id === affiliationId }));
       state.teachers[index] = {
-        ...teacher,
+        ...migrateKnowledgeTreePreferences(teacher),
         schoolId: (target.schoolId as string | null) || null,
         subject: String(target.subject || ""),
         subjects: Array.isArray(target.subjects) && target.subjects.length ? target.subjects as string[] : [String(target.subject || "")],
