@@ -46,8 +46,17 @@ describe("board library layout", () => {
     expect(screen.getByRole("button", { name: "展开编辑属性" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "全屏" }));
     expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "展开编辑属性" })).toBeNull();
+    expect(screen.getByRole("button", { name: "展开编辑属性" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开编辑属性" }));
+    expect(screen.getByText("编辑属性")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "属性编辑操作区" })).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(screen.getByRole("region", { name: "属性编辑操作区" })).toContainElement(screen.getByLabelText("节点名称"));
+    fireEvent.click(screen.getByRole("button", { name: "向右折叠编辑属性" }));
+    expect(screen.queryByRole("region", { name: "属性编辑操作区" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开编辑属性" }));
+    expect(screen.getByRole("region", { name: "属性编辑操作区" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("button", { name: "全屏" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "属性编辑操作区" })).toBeInTheDocument();
   });
 });
