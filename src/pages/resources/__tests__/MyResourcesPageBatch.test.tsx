@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MyResourcesPage from "@/pages/resources/MyResourcesPage";
@@ -450,6 +450,63 @@ describe("MyResourcesPage batch actions", () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(["examPaper", "lecture"] as const)(
+    "shows linked chapter names under filenames in the %s library, including multi-selection",
+    async (tab) => {
+      vi.mocked(knowledgeService.getChapterTree).mockResolvedValue({
+        ...chapterTree,
+        children: [
+          { id: "chapter-existing", name: "函数概念", type: "chapter", count: 0, children: [] },
+          { id: "chapter-next", name: "函数单调性", type: "chapter", count: 0, children: [] },
+        ],
+      });
+      const linkedIds = ["chapter-existing", "missing-chapter", "chapter-next"];
+      vi.mocked(examPaperService.listPapers).mockResolvedValue(tab === "examPaper"
+        ? [{ ...examPaper, chapterIds: linkedIds }, examPaperTwo] : []);
+      vi.mocked(lectureService.listLectures).mockResolvedValue(tab === "lecture"
+        ? [{ ...answerSheetLecture, chapterIds: linkedIds },
+          { ...answerSheetLecture, id: "lecture-without-chapter", title: "没有章节的讲义", chapterIds: [] }]
+        : []);
+
+      renderPage(tab);
+      const linkedTitle = tab === "examPaper" ? examPaper.title : answerSheetLecture.title;
+      const linkedCard = (await screen.findByText(linkedTitle)).closest(".card-base") as HTMLElement;
+      await waitFor(() => expect(within(linkedCard).getByTestId("resource-card-chapters"))
+        .toHaveTextContent("章节课：函数概念、函数单调性"));
+      const chapterLine = within(linkedCard).getByTestId("resource-card-chapters");
+      expect(within(linkedCard).getByTestId("resource-card-title-row")
+        .compareDocumentPosition(chapterLine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      const unlinkedTitle = tab === "examPaper" ? examPaperTwo.title : "没有章节的讲义";
+      const unlinkedCard = (await screen.findByText(unlinkedTitle)).closest(".card-base") as HTMLElement;
+      expect(within(unlinkedCard).queryByTestId("resource-card-chapters")).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(["examPaper", "lecture"] as const)(
+    "shows chapter names from the displayed extracted copy in the %s library",
+    async (tab) => {
+      vi.mocked(knowledgeService.getChapterTree).mockResolvedValue({
+        ...chapterTree,
+        children: [{ id: "chapter-existing", name: "导数基础", type: "chapter", count: 0, children: [] }],
+      });
+      const source = tab === "examPaper" ? examPaper : answerSheetLecture;
+      const copy = {
+        ...source, id: `extracted-${tab}`, title: "拆解后的文档",
+        chapterIds: ["chapter-existing"], isExtractCopy: true, sourceResourceId: source.id,
+      };
+      vi.mocked(examPaperService.listPapers).mockResolvedValue(tab === "examPaper"
+        ? [examPaper, copy as ExamPaper] : []);
+      vi.mocked(lectureService.listLectures).mockResolvedValue(tab === "lecture"
+        ? [answerSheetLecture, copy as Lecture] : []);
+
+      renderPage(tab);
+      const card = (await screen.findByText("拆解后的文档")).closest(".card-base") as HTMLElement;
+      await waitFor(() => expect(within(card).getByTestId("resource-card-chapters"))
+        .toHaveTextContent("章节课：导数基础"));
+    },
+  );
 
   it("shows created answer sheets after the material tab with only the chapter directory", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([

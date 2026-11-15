@@ -299,6 +299,29 @@ describe("ResourceCard", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it("shows linked chapter lessons directly below the document title and hides empty labels", () => {
+    const { rerender } = render(
+      <ResourceCard
+        title="函数单元试卷"
+        chapterNames={["函数概念", "函数的单调性"]}
+        remark="复习用"
+        meta={[]}
+        updatedAt="2026-07-30T00:00:00.000Z"
+      />,
+    );
+
+    const chapterLabel = screen.getByTestId("resource-card-chapters");
+    expect(chapterLabel).toHaveTextContent("章节课：函数概念、函数的单调性");
+    expect(chapterLabel).toHaveAttribute("title", "函数概念、函数的单调性");
+    expect(screen.getByTestId("resource-card-title-row").compareDocumentPosition(chapterLabel)
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(chapterLabel.nextElementSibling).toBe(screen.getByTestId("resource-card-remark"));
+
+    rerender(<ResourceCard title="函数单元试卷" chapterNames={[]} meta={[]}
+      updatedAt="2026-07-30T00:00:00.000Z" />);
+    expect(screen.queryByTestId("resource-card-chapters")).not.toBeInTheDocument();
+  });
+
   it("renders a document format marker before the resource title", () => {
     render(
       <ResourceCard
