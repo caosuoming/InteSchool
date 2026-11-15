@@ -2033,16 +2033,21 @@ function normalizeBlockFillBlankArea(block: DocumentBlock): void {
   block.content = content;
 }
 
-const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用).{0,100}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
+const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
 
 /** Recover later prompts from interleaved math worked examples. */
 function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
   if (subject?.trim() !== "数学") return blocks;
   for (const block of blocks) {
     if (block.type !== "question" || !["essay", "comprehensive"].includes(block.questionType || "")) continue;
-    const stemMarkers = block.content.split("\n")
-      .map((line) => leadingNestedSubQuestionIndex(line))
-      .filter((value): value is number => value !== undefined);
+    // The first （1） may follow the shared stem on the same line. Do not
+    // require it to begin a line, but require a genuine essay prompt so that
+    // parenthetical references in ordinary prose cannot trigger regrouping.
+    const stemMarkers = block.content.split("\n").flatMap((line) =>
+      scanNestedSubQuestionMarkers(line)
+        .filter((marker) => essayPromptAfterNumber.test(line.slice(marker.end).trim()))
+        .map((marker) => marker.index),
+    );
     if (!stemMarkers.includes(1)) continue;
 
     let expected = Math.max(...stemMarkers) + 1;

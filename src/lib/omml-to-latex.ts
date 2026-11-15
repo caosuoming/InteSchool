@@ -329,8 +329,11 @@ function convertSubSup(el: Element): string {
   const e = getMathChild(el, "e");
   const sub = getMathChild(el, "sub");
   const sup = getMathChild(el, "sup");
-  let result = e;
-  if (sub && sub.trim() !== "") {
+  // Imported Word vectors may encode the arrow as the lower index of
+  // m:sSubSup, not only m:sSub or m:limLow. Keep a real superscript.
+  const vector = sub ? vectorLimitAccent(sub, e) : null;
+  let result = vector || e;
+  if (sub && sub.trim() !== "" && !vector) {
     result += `_{${sub}}`;
   }
   if (sup && sup.trim() !== "") {
@@ -406,10 +409,10 @@ function convertDelimiter(el: Element): string {
     ? delimiterCharacter(separatorElement, "")
     : "";
   const e = expressions.join(separator ? escapeLatex(separator) : "");
-  // A matrix framed only by a left brace denotes a one-sided equation system.
-  // Word can omit m:endChr here; falling back to ")" adds a spurious bracket.
-  if (beginChr === "{" && !dPr?.getElementsByTagNameNS(MATH_NS, "endChr")[0]
-    && /\\begin\{(?:matrix|aligned|cases)\}/.test(e)) {
+  // A delimiter explicitly starting with a brace and lacking an endChr
+  // is one-sided, even when Word encodes its entries as separate expressions
+  // instead of a matrix. Do not invent the default closing parenthesis.
+  if (beginChr === "{" && !dPr?.getElementsByTagNameNS(MATH_NS, "endChr")[0]) {
     endChr = "";
   }
 

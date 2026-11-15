@@ -78,7 +78,9 @@ function splitArguments(value: string, acceptFullWidthComma = false): string[] {
 }
 
 function delimiterLatex(value: string, side: "left" | "right"): string {
-  if (!value) return ".";
+  // Legacy Word EQ uses \\rc\\<space> for an intentionally absent right
+  // delimiter. Treat it like the empty delimiter, never as a parenthesis.
+  if (!value.trim()) return ".";
   if (value === "{") return "\\{";
   if (value === "}") return "\\}";
   if (["(", ")", "[", "]", "|"].includes(value)) return value;
@@ -232,7 +234,20 @@ class EqParser {
     }
     const raw = this.readRawGroup();
     if (raw === null) return "";
-    const args = splitArguments(raw).map((part) => this.parseFragment(part));
+    const parts = splitArguments(raw);
+    if (parts.length === 2) {
+      // In old Chinese math textbooks, Word emits vector accents as
+      // EQ \\o(CB,\\s\\up6(→)). The second overstrike layer is the
+      // arrow ABOVE the complete point pair, not a subscript.
+      const pointPair = parts[0].trim();
+      const accent = /^\\s\\up[0-9.+-]*\(\s*([→←⟶⟵])\s*\)$/.exec(parts[1].trim());
+      const pointLabels = pointPair.replace(/\\s\\do[0-9.+-]*\(([0-9]+)\)/g, "$1");
+      if (/^[A-Z][A-Z0-9′']*[A-Z][A-Z0-9′']*$/.test(pointLabels) && accent) {
+        const direction = ["←", "⟵"].includes(accent[1]) ? "overleftarrow" : "overrightarrow";
+        return `\\${direction}{${this.parseFragment(pointPair)}}`;
+      }
+    }
+    const args = parts.map((part) => this.parseFragment(part));
     if (args.length === 2) return `{}_{${args[1]}}^{${args[0]}}`;
     return args.join("");
   }
