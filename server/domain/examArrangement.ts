@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   ExamArrangement,
   ExamArrangementContext,
@@ -238,7 +239,6 @@ export const examArrangementService = {
         absent: Boolean(selection.absent),
       })),
     } satisfies ExamArrangementInput, context);
-    const assignments = generateExamAssignments(preparedInput, context);
     const existing = input.id
       ? readArrangements().find((item) => item.id === input.id)
       : undefined;
@@ -247,6 +247,31 @@ export const examArrangementService = {
     if (existing && existing.schoolId !== schoolId) throw new Error("无权修改其他学校的考场安排方案");
     if (existing && existing.teacherId !== teacherId && (!actor || !canModifyExamRecord(existing.teacherId, existing.schoolId, actor))) {
       throw new Error("无权修改其他教师的考场安排方案");
+    }
+
+    // Re-previewing an existing random arrangement must actually reshuffle its seats,
+    // even when its configuration is unchanged. Keep ranked layouts deterministic.
+    let assignments = generateExamAssignments(
+      preparedInput,
+      context,
+      existing && preparedInput.seatOrder === "random" ? randomUUID() : undefined,
+    );
+    if (existing && preparedInput.seatOrder === "random") {
+      const previousSeats = new Map(existing.assignments.map((item) => [item.id, item]));
+      const countMoved = (items: typeof assignments) => items.filter((item) => {
+        const before = previousSeats.get(item.id);
+        return before && (before.roomId !== item.roomId || before.seatNo !== item.seatNo);
+      }).length;
+      let moved = countMoved(assignments);
+      const maxAttempts = context.students.length <= 10 ? 24 : context.students.length <= 200 ? 5 : 2;
+      for (let attempt = 1; attempt < maxAttempts && moved < assignments.length; attempt += 1) {
+        const candidate = generateExamAssignments(preparedInput, context, randomUUID());
+        const candidateMoved = countMoved(candidate);
+        if (candidateMoved > moved) {
+          assignments = candidate;
+          moved = candidateMoved;
+        }
+      }
     }
 
     const now = new Date().toISOString();
