@@ -208,12 +208,13 @@ export function BoardLibrary() {
   if (loading && !board) return <div className="py-16 text-center text-sm text-ink-500">正在加载导图库...</div>;
   if (!board) return <div className="py-12 text-center text-sm text-ink-500">暂无可用板书 <button onClick={() => void reload()} className="underline">重试</button></div>;
 
-  const gridColumns = fullScreen ? "lg:grid-cols-1"
+  const gridColumns = fullScreen
+    ? rightCollapsed ? "grid-cols-[minmax(0,1fr)_48px]" : "grid-cols-[minmax(0,1fr)_min(260px,46vw)]"
     : leftCollapsed
       ? rightCollapsed ? "lg:grid-cols-[48px_minmax(0,1fr)_48px]" : "lg:grid-cols-[48px_minmax(0,1fr)_260px]"
       : rightCollapsed ? "lg:grid-cols-[220px_minmax(0,1fr)_48px]" : "lg:grid-cols-[220px_minmax(0,1fr)_260px]";
   const availableChapters = chapterTree ? chapterOptions(chapterTree) : [];
-  return <div className={`grid min-h-[70vh] grid-cols-1 gap-3 ${gridColumns} ${fullScreen ? "fixed inset-0 z-[70] overflow-auto bg-paper p-3" : ""}`}>
+  return <div className={`grid gap-3 ${fullScreen ? "" : "min-h-[70vh] grid-cols-1"} ${gridColumns} ${fullScreen ? "fixed inset-0 z-[70] h-dvh min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden bg-paper p-3" : ""}`}>
     {!fullScreen && <aside className="min-w-0 rounded-xl border border-ink-100 bg-paper p-2">
       <div className="flex items-center justify-between gap-1">
         {!leftCollapsed && <span className="px-1 text-sm font-semibold text-ink-800">目录导航</span>}
@@ -261,7 +262,7 @@ export function BoardLibrary() {
       </>}
     </aside>}
 
-    <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-ink-100 bg-paper">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-ink-100 bg-paper">
       <div className="flex items-center gap-2 border-b border-ink-100 px-4 py-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-ink-800">{board.title}</div>
@@ -282,7 +283,7 @@ export function BoardLibrary() {
           <Save className="h-3.5 w-3.5" />保存
         </button>
       </div>
-      <div className="min-h-[480px] flex-1 p-2" style={{ height: fullScreen ? "calc(100vh - 135px)" : "min(72vh, 750px)" }}>
+      <div className={`flex-1 p-2 ${fullScreen ? "min-h-0" : "min-h-[480px]"}`} style={{ height: fullScreen ? undefined : "min(72vh, 750px)" }}>
         <BoardCanvas board={board} selectedNodeId={selectedNodeId} selectedEdgeId={selectedEdgeId}
           onSelectNode={(id) => { setSelectedNodeId(id); setSelectedEdgeId(null); }}
           onSelectEdge={(id) => { setSelectedEdgeId(id); setSelectedNodeId(null); }}
@@ -293,15 +294,17 @@ export function BoardLibrary() {
       </div>
     </section>
 
-    {!fullScreen && <aside className="min-w-0 space-y-4 rounded-xl border border-ink-100 bg-paper p-3">
-      <div className="flex items-center justify-between gap-1">
+    <aside aria-label="板书属性编辑" className={`flex min-h-0 min-w-0 flex-col rounded-xl border border-ink-100 bg-paper ${rightCollapsed ? "p-2" : "p-3"}`}
+      style={{ maxHeight: fullScreen ? undefined : "calc(min(72vh, 750px) + 110px)" }}>
+      <div className="flex shrink-0 items-center justify-between gap-1">
         {!rightCollapsed && <h3 className="text-sm font-semibold text-ink-900">编辑属性</h3>}
         <button type="button" aria-label={rightCollapsed ? "展开编辑属性" : "向右折叠编辑属性"}
           onClick={() => setRightCollapsed((value) => !value)} className="rounded p-1.5 hover:bg-mist">
           {rightCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
         </button>
       </div>
-      {!rightCollapsed && <>
+      {!rightCollapsed && <div role="region" aria-label="属性编辑操作区"
+        className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1">
       {board.kind === "structure" && <label className="block text-xs text-ink-500">板书标题
         <input aria-label="板书标题" value={board.title} maxLength={180}
           onChange={(e) => patch({ title: e.target.value,
@@ -422,8 +425,8 @@ export function BoardLibrary() {
         }}>删除连线</button>}
       </div>}
       {!selected && !edge && <p className="text-xs text-ink-400">点击节点或连线查看编辑选项。</p>}
-      </>}
-    </aside>}
+      </div>}
+    </aside>
     <Modal open={chapterPickerOpen && board.kind === "structure"} onClose={() => setChapterPickerOpen(false)} title="添加到章节课目录" size="lg">
       <div className="space-y-3 p-4">
         {chapterTree ? <TreeView data={chapterTree} selectedId={board.chapterId}
