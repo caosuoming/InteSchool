@@ -823,8 +823,8 @@ function compareTasks(
     const rightRank = context.previousGradeRanks?.[right.student.id] ?? Number.POSITIVE_INFINITY;
     if (leftRank !== rightRank) return leftRank - rightRank;
   } else {
-    const leftHash = stableHash(`${seed}:${left.student.id}`);
-    const rightHash = stableHash(`${seed}:${right.student.id}`);
+    const leftHash = stableHash(`${left.student.id}:${seed}`);
+    const rightHash = stableHash(`${right.student.id}:${seed}`);
     if (leftHash !== rightHash) return leftHash - rightHash;
   }
   return left.className.localeCompare(right.className, "zh-CN")
@@ -853,6 +853,7 @@ function allocateSession(
   sessionIndex: number,
   input: ExamArrangementInput,
   context: ExamArrangementContext,
+  shuffleSeed?: string,
 ): ExamSeatAssignment[] {
   const roomMap = new Map(rooms.map((room) => [room.id, room]));
   const usedBySlot = new Map<string, number>();
@@ -860,7 +861,7 @@ function allocateSession(
   const groupRoomUsed = new Map<string, number>();
   const seatOrder = input.seatOrder || "random";
   const sessionKey = tasks[0]?.sessionKey || String(sessionIndex);
-  const seed = `${input.name}:${input.examDate || ""}:${sessionKey}`;
+  const seed = `${input.name}:${input.examDate || ""}:${sessionKey}:${shuffleSeed || ""}`;
   const splitRoomIds = new Set(input.splitRoomIdsBySession?.[sessionKey] || []);
   const seatGroups = input.sameSeatSubjectGroups === undefined
     ? [] : resolveSameSeatSubjectGroups(input, uniqueStrings(input.subjects || []));
@@ -1012,6 +1013,7 @@ function allocateSession(
 export function generateExamAssignments(
   input: ExamArrangementInput,
   context: ExamArrangementContext,
+  shuffleSeed?: string,
 ): ExamSeatAssignment[] {
   input = normalizeExamRoomSharing(input, context);
   const name = input.name?.trim();
@@ -1052,5 +1054,6 @@ export function generateExamAssignments(
     sessionIndex,
     input,
     context,
+    shuffleSeed,
   ));
 }

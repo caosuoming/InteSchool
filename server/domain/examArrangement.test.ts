@@ -31,6 +31,58 @@ function state(): AppState {
 }
 
 describe("exam arrangement service", () => {
+  it("reshuffles existing random seats when previewed again without any configuration changes", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const input = {
+        cohortKey: "grad-2026",
+        name: "期中考试",
+        mode: "combination" as const,
+        seatOrder: "random" as const,
+        subjects: ["物理"],
+        rooms: [{ id: "room-1", name: "第一考场", capacity: 2 }],
+        classRules: [{ classId: "class-1", defaultSubjects: ["物理"], subjectRoomIds: { 物理: ["room-1"] } }],
+        studentSubjects: [
+          { studentId: "student-1", subjects: ["物理"] },
+          { studentId: "student-2", subjects: ["物理"] },
+        ],
+      };
+      const first = await examArrangementService.saveArrangement("school-1", "teacher-1", input);
+      const second = await examArrangementService.saveArrangement("school-1", "teacher-1", { ...input, id: first.id });
+
+      expect(second.id).toBe(first.id);
+      expect(second.rooms).toEqual(first.rooms);
+      expect(second.assignments).toHaveLength(2);
+      expect(new Set(second.assignments.map((item) => `${item.roomId}:${item.seatNo}`)).size).toBe(2);
+      for (const before of first.assignments) {
+        const after = second.assignments.find((item) => item.studentId === before.studentId);
+        expect(after?.seatNo).not.toBe(before.seatNo);
+      }
+    });
+  });
+
+  it("keeps previous-rank seating stable when reopening the same configuration", async () => {
+    const appState = state();
+    await runWithState(appState, async () => {
+      const input = {
+        cohortKey: "grad-2026",
+        name: "按名次排座",
+        mode: "combination" as const,
+        seatOrder: "previousRank" as const,
+        subjects: ["物理"],
+        rooms: [{ id: "room-1", name: "第一考场", capacity: 2 }],
+        classRules: [{ classId: "class-1", defaultSubjects: ["物理"], subjectRoomIds: { 物理: ["room-1"] } }],
+        studentSubjects: [
+          { studentId: "student-1", subjects: ["物理"] },
+          { studentId: "student-2", subjects: ["物理"] },
+        ],
+      };
+      const first = await examArrangementService.saveArrangement("school-1", "teacher-1", input);
+      const second = await examArrangementService.saveArrangement("school-1", "teacher-1", { ...input, id: first.id });
+      expect(second.assignments).toEqual(first.assignments);
+    });
+  });
+
   it("persists a cohort teaching schedule and rejects teacher double-booking", async () => {
     const appState = state();
     (appState.schoolClasses as any[]).push({
