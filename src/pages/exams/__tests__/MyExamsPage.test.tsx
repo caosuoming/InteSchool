@@ -394,6 +394,19 @@ describe("MyExamsPage", () => {
     expect(within(wrappedLocationHeader).getByText("教室")).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "巡考" })).toHaveAttribute("rowspan", "3");
+    const rightRoomResize = invigilationTable.getByRole("button", { name: "拖动右侧刻度调整考场列宽" });
+    const leftRoomResize = invigilationTable.getByRole("button", { name: "拖动左侧刻度调整考场列宽" });
+    expect(leftRoomResize).toBeInTheDocument();
+    Object.defineProperties(rightRoomResize, {
+      setPointerCapture: { value: vi.fn(), configurable: true },
+      hasPointerCapture: { value: vi.fn(() => true), configurable: true },
+      releasePointerCapture: { value: vi.fn(), configurable: true },
+    });
+    fireEvent.pointerDown(rightRoomResize, { pointerId: 5, button: 0, clientX: 100 });
+    fireEvent.pointerMove(rightRoomResize, { pointerId: 5, clientX: 140 });
+    expect(wrappedLocationHeader).toHaveStyle({ width: "92px" });
+    expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toHaveStyle({ width: "92px" });
+    fireEvent.pointerUp(rightRoomResize, { pointerId: 5, clientX: 140 });
     expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "晚上" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
@@ -474,6 +487,12 @@ describe("MyExamsPage", () => {
     const floatingPanel = durationCard.closest(".fixed") as HTMLElement | null;
     expect(floatingPanel).not.toBeNull();
     expect(floatingPanel).toHaveClass("z-50");
+    Object.defineProperty(wrappedLocationHeader, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ left: 120, right: 420, top: 120, bottom: 180, width: 300, height: 60, x: 120, y: 120, toJSON: () => ({}) }),
+    });
+    fireEvent.resize(window);
+    expect(floatingPanel).toHaveStyle({ width: "300px" });
     expect(leftDragHandle.parentElement).toBe(floatingPanel);
     expect(rightDragHandle.parentElement).toBe(floatingPanel);
 
@@ -501,10 +520,12 @@ describe("MyExamsPage", () => {
     expect(within(durationCard as HTMLElement).queryByRole("heading", { name: "监考时长" })).not.toBeInTheDocument();
     fireEvent.click(within(durationCard as HTMLElement).getByRole("button", { name: "最长" }));
     expect(within(durationCard as HTMLElement).getByRole("button", { name: "最长" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(durationCard as HTMLElement).getByLabelText("最长监考老师名单")).not.toHaveTextContent("年级领导");
     fireEvent.click(within(durationCard as HTMLElement).getByRole("button", { name: "最短" }));
     expect(within(durationCard as HTMLElement).getByRole("button", { name: "最短" })).toHaveAttribute("aria-pressed", "true");
     const shortestNames = within(durationCard as HTMLElement).getByLabelText("最短监考老师名单");
     expect(within(shortestNames).getAllByRole("button", { name: /选择最短监考教师/ }).length).toBeGreaterThan(0);
+    expect(within(durationCard as HTMLElement).getByLabelText("最长监考老师名单")).toBeVisible();
   });
 
   it("accumulates selected previous invigilation durations", async () => {
@@ -698,15 +719,16 @@ describe("MyExamsPage", () => {
     expect(roomTwo.closest("td")).toHaveTextContent("李老师");
 
     await user.click(screen.getByRole("button", { name: "时长优先" }));
-    expect(roomOne.closest("td")).toHaveTextContent("李老师");
-    expect(roomTwo.closest("td")).toHaveTextContent("张老师");
+    // Both teachers have their own-subject slots before duration balancing.
+    expect(roomOne.closest("td")).toHaveTextContent("张老师");
+    expect(roomTwo.closest("td")).toHaveTextContent("李老师");
 
     await user.click(roomOne);
     await user.click(roomTwo);
     await user.click(screen.getByRole("button", { name: "是否交换" }));
 
-    expect(roomOne.closest("td")).toHaveTextContent("张老师");
-    expect(roomTwo.closest("td")).toHaveTextContent("李老师");
+    expect(roomOne.closest("td")).toHaveTextContent("李老师");
+    expect(roomTwo.closest("td")).toHaveTextContent("张老师");
   });
 
   it("keeps other invigilation cells unchanged when replacing one teacher", async () => {
