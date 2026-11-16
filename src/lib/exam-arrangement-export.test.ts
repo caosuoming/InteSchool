@@ -79,6 +79,21 @@ describe("groupDeskLabels", () => {
     expect(groups[1]).toMatchObject({ roomNumber: "A02", seatNo: 1 });
   });
 
+  it("uses natural numeric room order for preview, spreadsheet and PDF source pages", () => {
+    const assignments = [
+      assignment({ id: "ten", roomId: "r10", roomNumber: "第10考场", seatNo: 2 }),
+      assignment({ id: "two", roomId: "r2", roomNumber: "第2考场", seatNo: 10 }),
+      assignment({ id: "one", roomId: "r1", roomNumber: "第1考场", seatNo: 1 }),
+      assignment({ id: "two-first", roomId: "r2", roomNumber: "第2考场", seatNo: 1 }),
+    ];
+    expect(groupDeskLabels(assignments).map((label) => `${label.roomNumber}/${label.seatNo}`)).toEqual([
+      "第1考场/1", "第2考场/1", "第2考场/10", "第10考场/2",
+    ]);
+    expect(groupDeskLabelsByRoom(assignments).map((room) => room.roomNumber)).toEqual([
+      "第1考场", "第2考场", "第10考场",
+    ]);
+  });
+
   it("groups all exam sessions for one student into one class-preview record", () => {
     const groups = groupStudentArrangements([
       assignment({ id: "combined", studentId: "student-1", subjectLabel: "语文 / 数学" }),

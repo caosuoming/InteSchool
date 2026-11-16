@@ -1,6 +1,7 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { paginateClassArrangementPages } from "./exam-class-pagination";
+import { inspectClassPdfOverflow, layoutClassPdfPages, type ClassPdfLayoutSelection } from "./exam-class-pdf-layout";
 
 const MM_TO_PT = 72 / 25.4;
 const PX_TO_PT = 72 / 96;
@@ -28,8 +29,25 @@ function color(value: string) {
   return rgb(Number(match[1]) / 255, Number(match[2]) / 255, Number(match[3]) / 255);
 }
 
+/** Measure complete class pages at physical A4 dimensions before asking for pagination. */
+export async function inspectClassExamPdfOverflow(pages: HTMLElement[]): Promise<string[]> {
+  const host = document.createElement("div");
+  host.setAttribute("aria-hidden", "true");
+  Object.assign(host.style, { position: "fixed", left: "-100000px", top: "0", width: "210mm", background: "white", pointerEvents: "none" });
+  const style = document.createElement("style");
+  style.textContent = printStyles();
+  document.head.append(style);
+  document.body.append(host);
+  try {
+    if (document.fonts?.ready) await document.fonts.ready;
+    return inspectClassPdfOverflow(pages, host);
+  } finally {
+    host.remove(); style.remove();
+  }
+}
+
 /** Preserve text, rules and backgrounds as PDF operators rather than a bitmap. */
-export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, widthMm: number, heightMm: number) {
+export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, widthMm: number, heightMm: number, classLayout?: ClassPdfLayoutSelection) {
   const fontResponse = await fetch(`${import.meta.env.BASE_URL}fonts/NotoSansCJKsc-Regular.otf`);
   if (!fontResponse.ok) throw new Error("无法加载 PDF 中文字体");
   const pdf = await PDFDocument.create();
@@ -47,7 +65,9 @@ export async function saveVectorExamPdf(pages: HTMLElement[], filename: string, 
   try {
     if (document.fonts?.ready) await document.fonts.ready;
     // Measure actual card heights before committing to physical PDF pages.
-    const paginatedPages = paginateClassArrangementPages(pages, host);
+    const paginatedPages = classLayout
+      ? layoutClassPdfPages(pages, host, classLayout)
+      : paginateClassArrangementPages(pages, host);
     for (const clone of paginatedPages) {
       clone.style.breakAfter = "auto";
       host.replaceChildren(clone);
