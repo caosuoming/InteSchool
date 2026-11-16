@@ -124,7 +124,7 @@ describe("exam invigilation table", () => {
     expect(table.rows[1].roomTeacherIds["room-2"]).toBeNull();
   });
 
-  it("uses cumulative duration as the automatic assignment baseline", () => {
+  it("reserves an own-subject duty before considering previous duration", () => {
     const input = arrangement();
     const settings: ExamInvigilationConfig = {
       teachers: [
@@ -140,6 +140,22 @@ describe("exam invigilation table", () => {
       baselineTeacherMinutes: { "teacher-a": 240, "teacher-b": 0 },
     });
 
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-a");
+  });
+
+  it("uses cumulative duration to fill rooms without an own-subject candidate", () => {
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "teacher-a", name: "甲老师", subject: "物理" },
+        { id: "teacher-b", name: "乙老师", subject: "历史" },
+      ],
+      subjectTimes: [{ subject: "数学", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 }],
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+    const table = buildExamInvigilationTable(arrangement(), settings, {
+      baselineTeacherMinutes: { "teacher-a": 240, "teacher-b": 0 },
+    });
     expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-b");
   });
 
@@ -411,7 +427,7 @@ describe("exam invigilation table", () => {
     expect(table.roomLocationGroups.map((group) => group.roomNumbers)).toEqual([["2考场"], ["10考场"]]);
   });
 
-  it("defaults to one-day assignments but accepts explicitly flexible teachers", () => {
+  it("treats same-day preferences as soft even with only one available teacher", () => {
     const input = arrangement();
     const times: ExamInvigilationConfig["subjectTimes"] = [
       { subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
@@ -425,13 +441,36 @@ describe("exam invigilation table", () => {
         invigilationSlotKey([time]), { roomTeacherIds: {}, outsideTeacherId: null },
       ])),
     };
-    const defaultTable = buildExamInvigilationTable(input, settings);
-    expect(defaultTable.rows[0].roomTeacherIds["room-1"]).toBe("teacher-only");
-    expect(defaultTable.rows[1].roomTeacherIds["room-1"]).toBeNull();
+    for (const sameDay of ["yes", "no", "any"] as const) {
+      settings.teacherRequirements = { "teacher-only": { sameDay } };
+      const table = buildExamInvigilationTable(input, settings);
+      expect(table.rows[0].roomTeacherIds["room-1"]).toBe("teacher-only");
+      expect(table.rows[1].roomTeacherIds["room-1"]).toBe("teacher-only");
+    }
+  });
 
-    settings.teacherRequirements = { "teacher-only": { sameDay: "any" } };
-    const relaxedTable = buildExamInvigilationTable(input, settings);
-    expect(relaxedTable.rows[1].roomTeacherIds["room-1"]).toBe("teacher-only");
+  it("prefers keeping a teacher on their assigned day when durations tie", () => {
+    const input = arrangement();
+    const times: ExamInvigilationConfig["subjectTimes"] = [
+      { subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
+      { subject: "数学", date: "2026-10-21", period: "morning", time: "08:00", durationMinutes: 90 },
+      { subject: "历史", date: "2026-10-21", period: "afternoon", time: "14:00", durationMinutes: 90 },
+    ];
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "first", name: "甲老师", subject: "生物" },
+        { id: "second", name: "乙老师", subject: "化学" },
+      ],
+      subjectTimes: times,
+      patrolTeacherIds: [],
+      overrides: Object.fromEntries(times.map((time) => [
+        invigilationSlotKey([time]), { roomTeacherIds: {}, outsideTeacherId: null },
+      ])),
+    };
+    const table = buildExamInvigilationTable(input, settings);
+    expect(table.rows.map((row) => Object.values(row.roomTeacherIds).find(Boolean))).toEqual([
+      "first", "second", "second",
+    ]);
   });
 
   it("collapses a legacy per-room override onto the shared location cell", () => {
