@@ -718,10 +718,27 @@ function leadingNestedSubQuestionIndex(text: string): number | undefined {
   return undefined;
 }
 
+type NestedSubQuestionStyle = "parenthesized" | "circled";
+
+function leadingNestedSubQuestionStyle(text: string): NestedSubQuestionStyle | undefined {
+  const trimmed = text.trim();
+  if (/^[①-⑳]/.test(trimmed)) return "circled";
+  if (/^[（(]\s*(?:[\d０-９]{1,3}|[ivxlcdm]+)\s*[）)]/i.test(trimmed)) return "parenthesized";
+  return undefined;
+}
+
+function isExplicitCircledQuestionPrompt(text: string): boolean {
+  const remainder = text.trim().replace(/^[①-⑳]\s*/, "");
+  return /[?？]/.test(remainder)
+    || /^(?:求|证明|求证|计算|选择|判断|写出|填空|完成|回答|解答|下列)/.test(remainder)
+    || /(?:^|\s)[A-H][.．、)）]\s*\S/i.test(remainder);
+}
+
 interface NestedSubQuestionMarker {
   start: number;
   end: number;
   index: number;
+  style: NestedSubQuestionStyle;
 }
 
 function scanNestedSubQuestionMarkers(text: string): NestedSubQuestionMarker[] {
@@ -735,7 +752,12 @@ function scanNestedSubQuestionMarkers(text: string): NestedSubQuestionMarker[] {
     }
     const index = leadingNestedSubQuestionIndex(match[0]);
     if (!index) continue;
-    markers.push({ start: match.index, end: pattern.lastIndex, index });
+    markers.push({
+      start: match.index,
+      end: pattern.lastIndex,
+      index,
+      style: leadingNestedSubQuestionStyle(match[0])!,
+    });
   }
   return markers;
 }
@@ -772,7 +794,7 @@ function scanExtendedInquiryMarkers(text: string): NestedSubQuestionMarker[] {
   while ((match = pattern.exec(text)) !== null) {
     const index = Number(normalizeQuestionNumber(match[1]));
     if (!Number.isInteger(index) || index <= 0) continue;
-    markers.push({ start: match.index, end: pattern.lastIndex, index });
+    markers.push({ start: match.index, end: pattern.lastIndex, index, style: "parenthesized" });
   }
   return markers;
 }
@@ -868,11 +890,12 @@ function splitSequentialNestedSubQuestions(
   text: string,
   expectedIndex: number,
   searchStart = 0,
+  style?: NestedSubQuestionStyle,
 ): { parts: string[]; nextExpectedIndex: number; matched: boolean } {
   const selected: NestedSubQuestionMarker[] = [];
   let expected = expectedIndex;
   for (const marker of scanNestedSubQuestionMarkers(text)) {
-    if (marker.start < searchStart || marker.index !== expected) continue;
+    if (marker.start < searchStart || marker.index !== expected || (style && marker.style !== style)) continue;
     selected.push(marker);
     expected += 1;
   }
@@ -896,6 +919,14 @@ function expandIndependentSubQuestionLines(content: string, config: DocumentPars
   const source = content.replace(/\r\n?/g, "\n").split("\n");
   const lines: string[] = [];
   let expectedIndex: number | undefined;
+  let expectedStyle: NestedSubQuestionStyle | undefined;
+  let inSolution = false;
+  const solutionStartPattern = keywordPattern([
+    ...config.answerKeywords,
+    ...config.analysisKeywords,
+    ...config.summaryKeywords,
+    ...builtInTrailingAnalysisKeywords,
+  ]);
 
   for (const originalLine of source) {
     const line = originalLine.trim();
@@ -906,12 +937,16 @@ function expandIndependentSubQuestionLines(content: string, config: DocumentPars
 
     if (isKnowledgeBlockStart(line) || isHeading(line, config) || isProjectHeading(line, config)) {
       expectedIndex = undefined;
+      expectedStyle = undefined;
+      inSolution = false;
       lines.push(originalLine);
       continue;
     }
 
     if (isQuestionStart(line, config)) {
       expectedIndex = undefined;
+      expectedStyle = undefined;
+      inSolution = false;
       const remainder = topLevelQuestionRemainder(line, config);
       if (!remainder || leadingNestedSubQuestionIndex(remainder.text) !== 1) {
         lines.push(originalLine);
@@ -920,10 +955,12 @@ function expandIndependentSubQuestionLines(content: string, config: DocumentPars
 
       const firstMarker = scanNestedSubQuestionMarkers(line)
         .find((marker) => marker.start >= remainder.start && marker.index === 1);
+      expectedStyle = leadingNestedSubQuestionStyle(remainder.text);
       const split = splitSequentialNestedSubQuestions(
         line,
         2,
         firstMarker?.end ?? remainder.start,
+        expectedStyle,
       );
       lines.push(...split.parts);
       expectedIndex = split.nextExpectedIndex;
@@ -931,11 +968,18 @@ function expandIndependentSubQuestionLines(content: string, config: DocumentPars
     }
 
     if (expectedIndex !== undefined) {
-      const split = splitSequentialNestedSubQuestions(line, expectedIndex);
-      if (split.matched) {
-        lines.push(...split.parts);
-        expectedIndex = split.nextExpectedIndex;
-        continue;
+      if (solutionStartPattern?.test(line) || solutionMarkerPattern.test(line)) inSolution = true;
+      // A circled step following an answer or explanation is a solution step,
+      // even when the stem itself uses circled labels.
+      if (!(config.subject?.trim() === "数学" && inSolution && expectedStyle === "circled"
+        && !isExplicitCircledQuestionPrompt(line))) {
+        const split = splitSequentialNestedSubQuestions(line, expectedIndex, 0, expectedStyle);
+        if (split.matched) {
+          lines.push(...split.parts);
+          expectedIndex = split.nextExpectedIndex;
+          inSolution = false;
+          continue;
+        }
       }
     }
 
@@ -1674,6 +1718,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
   let independentSubQuestionNextIndex: number | undefined;
+  let independentSubQuestionStyle: NestedSubQuestionStyle | undefined;
   let separatedByBlank = false;
   let order = 0;
 
@@ -1776,6 +1821,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     if (isKnowledgeBlockStart(line)) {
       submitCurrent();
       independentSubQuestionNextIndex = undefined;
+      independentSubQuestionStyle = undefined;
       sectionQuestionType = undefined;
       currentBlock = {
         type: "knowledge",
@@ -1792,6 +1838,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     if (isHeading(line, config) || (!isExpectedQuestionImage && isProjectHeading(line, config))) {
       submitCurrent();
       independentSubQuestionNextIndex = undefined;
+      independentSubQuestionStyle = undefined;
       sectionQuestionType = detectSectionQuestionType(line);
       blocks.push({
         id: createBlockId(),
@@ -1830,6 +1877,9 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     )) {
       submitCurrent();
       independentSubQuestionNextIndex = startsIndependentSubQuestionGroup(line, config) ? 2 : undefined;
+      independentSubQuestionStyle = independentSubQuestionNextIndex !== undefined
+        ? leadingNestedSubQuestionStyle(topLevelQuestionRemainder(line, config)?.text || "")
+        : undefined;
       const inline = splitQuestionAndInlineOptions(
         line,
         sectionQuestionType === "single" || sectionQuestionType === "multiple",
@@ -1849,6 +1899,11 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       currentBlock.type === "question"
       && independentSubQuestionNextIndex !== undefined
       && leadingNestedSubQuestionIndex(line) === independentSubQuestionNextIndex
+      && leadingNestedSubQuestionStyle(line) === independentSubQuestionStyle
+      && !(config.subject?.trim() === "数学"
+        && independentSubQuestionStyle === "circled"
+        && currentQuestionField !== "content"
+        && !isExplicitCircledQuestionPrompt(line))
       && (
         currentQuestionField === "content"
         || !shouldContinueSequentialSubQuestion(line, currentBlock, currentQuestionField)
