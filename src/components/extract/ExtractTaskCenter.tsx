@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,12 +10,14 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { ExtractReviewModal } from "@/components/extract/ExtractReviewModal";
 import {
   MAX_CONCURRENT_EXTRACT_TASKS,
   useExtractTasksStore,
 } from "@/stores/extractTasks";
 import { cn } from "@/lib/utils";
+
+const ExtractReviewModal = lazy(() => import("@/components/extract/ExtractReviewModal")
+  .then((module) => ({ default: module.ExtractReviewModal })));
 
 export function ExtractTaskCenter() {
   const tasks = useExtractTasksStore((state) => state.tasks);
@@ -174,7 +177,8 @@ export function ExtractTaskCenter() {
       </div>
 
       {activeTask?.status === "ready" && (
-        <ExtractReviewModal
+        <Suspense fallback={null}>
+          <ExtractReviewModal
           open
           onClose={handleCloseReview}
           resourceId={activeTask.resourceId}
@@ -189,7 +193,8 @@ export function ExtractTaskCenter() {
           questionCategory={activeTask.questionCategory}
           initialBlocks={activeTask.blocks}
           onConfirmed={handleConfirmed}
-        />
+          />
+        </Suspense>
       )}
     </>
   );

@@ -1,5 +1,6 @@
 import { openPage } from "@/lib/navigation";
-import { type ReactNode, useState, useRef, useEffect } from "react";
+import { preloadNavigationPage } from "@/lib/page-preload";
+import { lazy, Suspense, type ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate, Navigate } from "react-router";
 import {
   LayoutDashboard, LogOut,
@@ -21,7 +22,7 @@ import { SUBJECT_OPTIONS } from "@/lib/education";
 import { schoolService } from "@/services/school";
 import type { School as SchoolRecord } from "@/types";
 import { BrandMark } from "@/components/brand/BrandMark";
-import { ExtractTaskCenter } from "@/components/extract/ExtractTaskCenter";
+const ExtractTaskCenter = lazy(() => import("@/components/extract/ExtractTaskCenter"));
 import { useExtractTasksStore } from "@/stores/extractTasks";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { LessonScheduleReminder } from "@/components/layout/LessonScheduleReminder";
@@ -97,6 +98,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { teacher, loading, logout, switchAffiliation, switchSubject, switchPlatformSchool, getAffiliations, getCurrentAffiliation } = useAuthStore();
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
+  const extractTaskCount = useExtractTasksStore((state) => state.tasks.length);
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const [affiliationDropdownOpen, setAffiliationDropdownOpen] = useState(false);
   const [donationRank, setDonationRank] = useState<number | null>(null);
@@ -104,6 +106,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [platformSchools, setPlatformSchools] = useState<SchoolRecord[]>([]);
   const [schoolFilter, setSchoolFilter] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const preloadTimerRef = useRef<number | null>(null);
+  const schedulePreload = (path: string) => {
+    if (preloadTimerRef.current !== null) window.clearTimeout(preloadTimerRef.current);
+    preloadTimerRef.current = window.setTimeout(() => preloadNavigationPage(path), 150);
+  };
+  const cancelPreload = () => {
+    if (preloadTimerRef.current !== null) window.clearTimeout(preloadTimerRef.current);
+    preloadTimerRef.current = null;
+  };
 
   const affiliations = teacher ? getAffiliations().filter((item) => item.status === "active") : [];
   const currentAffiliation = teacher ? getCurrentAffiliation() : null;
@@ -139,7 +150,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
       .then((classes) => { if (active) setHasPersonalClass(classes.length > 0); })
       .catch(() => { if (active) setHasPersonalClass(false); });
     return () => { active = false; };
-  }, [teacher?.id, location.pathname]);
+  }, [teacher?.id]);
+
+  useEffect(() => () => {
+    if (preloadTimerRef.current !== null) window.clearTimeout(preloadTimerRef.current);
+  }, []);
 
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -465,6 +480,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     )}
                     <button
                       onClick={() => openPage(item.path)}
+                      onMouseEnter={() => schedulePreload(item.path)}
+                      onMouseLeave={cancelPreload}
+                      onFocus={() => preloadNavigationPage(item.path)}
                       className="flex items-center gap-3 flex-1 min-w-0 text-left"
                     >
                       <Icon className={cn("w-4 h-4 flex-shrink-0", active && "text-gold-400")} />
@@ -491,6 +509,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
                           <Link
                             key={child.path}
                             to={child.path}
+                            onMouseEnter={() => schedulePreload(child.path)}
+                            onMouseLeave={cancelPreload}
+                            onFocus={() => preloadNavigationPage(child.path)}
                             className={cn(
                               "flex items-center gap-3 mx-2 px-3 py-2 pl-8 rounded-md text-sm transition-all relative",
                               childActive
@@ -516,6 +537,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <Link
                 key={item.path}
                 to={item.path}
+                onMouseEnter={() => schedulePreload(item.path)}
+                onMouseLeave={cancelPreload}
+                onFocus={() => preloadNavigationPage(item.path)}
                 className={cn(
                   "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-md text-sm transition-all relative group",
                   active
@@ -624,7 +648,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </div>
 
       <ToastContainer />
-      <ExtractTaskCenter />
+      {extractTaskCount > 0 && (
+        <Suspense fallback={null}>
+          <ExtractTaskCenter />
+        </Suspense>
+      )}
     </div>
   );
 }

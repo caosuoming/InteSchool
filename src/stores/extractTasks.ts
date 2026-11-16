@@ -2,11 +2,7 @@ import { create } from "zustand";
 import { examPaperService } from "@/services/examPaper";
 import { lectureService } from "@/services/lecture";
 import { extractStoredFile } from "@/services/api";
-import {
-  parseDocumentBlocks,
-  type DocumentBlock,
-  type DocumentParseConfig,
-} from "@/lib/document-block-parser";
+import type { DocumentBlock, DocumentParseConfig } from "@/lib/document-block-parser";
 import { useExtractConfigStore } from "@/stores/extractConfig";
 import { toast } from "@/stores/ui";
 import type { ResourceSemester } from "@/types";
@@ -120,6 +116,7 @@ export const useExtractTasksStore = create<ExtractTaskState>((set, get) => {
         progress: 75,
         progressMessage: "正在分析文档结构...",
       });
+      const { parseDocumentBlocks } = await import("@/lib/document-block-parser");
       let blocks = parseDocumentBlocks(extracted.text, currentParseConfig(task.subject));
       if (blocks.length === 0) {
         blocks = parseDocumentBlocks(
