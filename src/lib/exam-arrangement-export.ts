@@ -46,6 +46,7 @@ export interface ExamDeskLabelDisplayOptions {
 }
 
 export type ExamPdfPaperSize = "A4" | "8K";
+import type { ClassPdfLayoutSelection } from "./exam-class-pdf-layout";
 
 const PDF_PAPER_SIZES: Record<ExamPdfPaperSize, { width: number; height: number }> = {
   A4: { width: 210, height: 297 },
@@ -68,13 +69,17 @@ export async function downloadExamPreviewPdf(
   pages: HTMLElement[],
   fileName: string,
   paperSize: ExamPdfPaperSize,
+  classLayout?: ClassPdfLayoutSelection,
 ): Promise<void> {
   if (pages.length === 0) throw new Error("暂无可下载的预览内容");
 
   const { saveVectorExamPdf } = await import("./exam-vector-pdf");
   const paper = PDF_PAPER_SIZES[paperSize];
-  await saveVectorExamPdf(pages, safeFileName(fileName), paper.width, paper.height);
+  if (classLayout) await saveVectorExamPdf(pages, safeFileName(fileName), paper.width, paper.height, classLayout);
+  else await saveVectorExamPdf(pages, safeFileName(fileName), paper.width, paper.height);
 }
+
+const roomNumberCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
 function compareAssignments(left: ExamSeatAssignment, right: ExamSeatAssignment): number {
   return left.className.localeCompare(right.className, "zh-CN")
@@ -130,7 +135,7 @@ export function groupDeskLabels(assignments: ExamSeatAssignment[]): ExamDeskLabe
   }
   return [...groups.values()]
     .map((group) => ({ ...group, assignments: group.assignments.sort(compareAssignments) }))
-    .sort((left, right) => left.roomNumber.localeCompare(right.roomNumber, "zh-CN") || left.seatNo - right.seatNo);
+    .sort((left, right) => roomNumberCollator.compare(left.roomNumber, right.roomNumber) || left.seatNo - right.seatNo);
 }
 
 export function groupDeskLabelsByRoom(assignments: ExamSeatAssignment[]): ExamDeskRoomGroup[] {
@@ -150,7 +155,7 @@ export function groupDeskLabelsByRoom(assignments: ExamSeatAssignment[]): ExamDe
   }
   return [...groups.values()]
     .map((group) => ({ ...group, labels: group.labels.sort((left, right) => left.seatNo - right.seatNo) }))
-    .sort((left, right) => left.roomNumber.localeCompare(right.roomNumber, "zh-CN"));
+    .sort((left, right) => roomNumberCollator.compare(left.roomNumber, right.roomNumber));
 }
 
 function spreadsheetCells() {

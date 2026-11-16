@@ -818,6 +818,10 @@
   .exam-class-arrangement-page[data-density="compact"] .exam-class-arrangement-items {
     gap: 0.28mm;
   }
+  .exam-class-arrangement-page[data-pdf-fill="true"] .exam-class-arrangement-items {
+    flex: 1;
+    justify-content: space-evenly;
+  }
   .exam-desk-label-page {
     --desk-label-gap: 1.4mm;
     --desk-label-padding: 1.7mm;

@@ -974,6 +974,9 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
   const [studentSettingsClassId, setStudentSettingsClassId] = useState("");
   const [bulkCapacity, setBulkCapacity] = useState(30);
   const [newPlanOpen, setNewPlanOpen] = useState(false);
+  const [classPdfOverflow, setClassPdfOverflow] = useState<string[]>([]);
+  const [classPdfLayoutChoices, setClassPdfLayoutChoices] = useState<Record<string, "compress" | "split">>({});
+  const [checkingClassPdf, setCheckingClassPdf] = useState(false);
   const [newPlanName, setNewPlanName] = useState("");
   const classPrintRef = useRef<HTMLDivElement>(null);
   const deskPrintRef = useRef<HTMLDivElement>(null);
@@ -1701,7 +1704,26 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
     }
   };
 
-  const downloadSelectedClassPdf = async () => {
+  const promptClassPdfDownload = async () => {
+    if (!classPrintRef.current) return;
+    setCheckingClassPdf(true);
+    try {
+      const { inspectClassExamPdfOverflow } = await import("@/lib/exam-vector-pdf");
+      const pages = [...classPrintRef.current.querySelectorAll<HTMLElement>(".exam-class-arrangement-page")];
+      const overflowingIds = await inspectClassExamPdfOverflow(pages);
+      if (overflowingIds.length) {
+        setClassPdfLayoutChoices(Object.fromEntries(overflowingIds.map((id) => [id, "split"])));
+        setClassPdfOverflow(overflowingIds);
+      }
+      else await downloadSelectedClassPdf("compress");
+    } catch (error) {
+      toast.error("检查班级排版失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setCheckingClassPdf(false);
+    }
+  };
+
+  const downloadSelectedClassPdf = async (layout: "compress" | "split" | Record<string, "compress" | "split">) => {
     if (!selectedArrangement || !classPrintRef.current || !teacher) return;
     try {
       await quotaService.consumeExamUsage(teacher.id, "examRoom");
@@ -1710,6 +1732,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
         pages,
         `${selectedArrangement.name}_${selectedClassIds.size}个班级_考场安排`,
         "A4",
+        layout,
       );
     } catch (error) {
       toast.error("下载班级安排 PDF 失败", error instanceof Error ? error.message : undefined);
@@ -2322,7 +2345,7 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
                         <Button variant="outline" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClasses()}>
                           <Download className="h-4 w-4" />下载已选班级
                         </Button>
-                        <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void downloadSelectedClassPdf()}>
+                        <Button variant="gold" disabled={selectedClassIds.size === 0} onClick={() => void promptClassPdfDownload()} loading={checkingClassPdf}>
                           <Download className="h-4 w-4" />下载班级 PDF
                         </Button>
                       </>
@@ -2707,6 +2730,41 @@ export default function ExamRoomArrangementPage({ embedded = false }: { embedded
           )}
         </>
       )}
+
+      <Modal
+        open={classPdfOverflow.length > 0}
+        onClose={() => setClassPdfOverflow([])}
+        title="班级考场安排分页"
+        description="以下班级的学生卡片在正常字号下无法完整排入一张 A4 纸，请选择排版方式。"
+        size="md"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setClassPdfOverflow([])}>取消</Button>
+            <Button variant="gold" onClick={() => { setClassPdfOverflow([]); void downloadSelectedClassPdf(classPdfLayoutChoices); }}>生成 PDF</Button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          {classPdfOverflow.map((id) => (
+            <fieldset key={id} className="rounded-lg border border-ink-200 p-3">
+              <legend className="px-1 text-sm font-medium text-ink-800">{classAssignmentGroups.find(({ classItem }) => classItem.id === id)?.classItem.name || id}</legend>
+              <div className="mt-2 flex flex-wrap gap-5 text-sm text-ink-700">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input type="radio" name={`class-pdf-layout-${id}`} checked={classPdfLayoutChoices[id] === "compress"}
+                    onChange={() => setClassPdfLayoutChoices((choices) => ({ ...choices, [id]: "compress" }))} />
+                  压缩到一页
+                </label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input type="radio" name={`class-pdf-layout-${id}`} checked={classPdfLayoutChoices[id] === "split"}
+                    onChange={() => setClassPdfLayoutChoices((choices) => ({ ...choices, [id]: "split" }))} />
+                  均分到两页
+                </label>
+              </div>
+            </fieldset>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-ink-500">根据实际内容高度调整卡片间距，铺满纸张且不裁剪文本；内容过多无法完整排入时会提示调整。</p>
+      </Modal>
 
       <Modal
         open={newPlanOpen}
