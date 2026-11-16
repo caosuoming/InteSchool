@@ -3035,3 +3035,78 @@ describe("issue 1470: long rich-text math essay prompts", () => {
     expect(blocks[0].analysis).not.toContain("(2) 若");
   });
 });
+
+describe("issue 1476: circled indices in mathematical solutions", () => {
+  const math = { ...config, subject: "数学" };
+
+  it("keeps circled alternative solution steps in analysis rather than creating a question", () => {
+    const questions = parseDocumentBlocks([
+      "训练1 （1）求双曲线的标准方程。",
+      "答案：$4x^2-y^2=1$。",
+      "解析：方法一：①若双曲线的焦点在x轴上，则可得方程。",
+      "②若双曲线的焦点在y轴上，则可得另一方程。",
+      "方法二：将已知点代入，得到相同结果。",
+      "（2）已知双曲线的离心率，求其标准方程。",
+      "答案：$x^2-y^2=1$。",
+      "解析：由离心率可解出参数。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+
+    expect(questions).toHaveLength(2);
+    expect(questions[0].content).toBe("训练1 （1）求双曲线的标准方程。");
+    expect(questions[0].analysis).toContain("①若双曲线的焦点在x轴上");
+    expect(questions[0].analysis).toContain("②若双曲线的焦点在y轴上");
+    expect(questions[0].analysis).toContain("方法二：将已知点代入");
+    expect(questions[1].content).toContain("（2）已知双曲线的离心率");
+  });
+
+  it("keeps consecutive circled solutions within a numbered math question", () => {
+    const questions = parseDocumentBlocks([
+      "例1 ①求方程的两个解。",
+      "答案：$x=1$ 或 $x=-1$。",
+      "解析：方法一：代入求根。",
+      "②利用公式求根，得到同样的结果。",
+      "所以两个根分别为1和-1。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+
+    expect(questions).toHaveLength(1);
+    expect(questions[0].analysis).toContain("②利用公式求根");
+  });
+
+  it("recognizes a clear circled choice question even after an earlier solution", () => {
+    const questions = parseDocumentBlocks([
+      "训练2 ①第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：A",
+      "解析：先判断甲的真假。",
+      "②第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+      "答案：B",
+      "解析：再判断己的真假。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+
+    expect(questions).toHaveLength(2);
+    expect(questions.map((question) => question.answer)).toEqual(["A", "B"]);
+    expect(questions[1].content).toContain("②第二小题");
+  });
+
+  it("keeps circled procedure verbs like 求导 and 计算 inside analysis", () => {
+    const questions = parseDocumentBlocks([
+      "例2 ①求函数的最值。",
+      "解析：①求导得到 f'(x)=2x。",
+      "②计算驻点可得 x=0。",
+      "③求导数符号便可确定最值。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+
+    expect(questions).toHaveLength(1);
+    expect(questions[0].analysis).toContain("②计算驻点");
+    expect(questions[0].analysis).toContain("③求导数符号");
+  });
+
+  it("continues splitting genuine circled subquestions in the stem", () => {
+    const questions = parseDocumentBlocks([
+      "训练1 ①第一小题 A. 甲 B. 乙 C. 丙 D. 丁",
+      "②第二小题 A. 戊 B. 己 C. 庚 D. 辛",
+    ].join("\n"), math).filter((block) => block.type === "question");
+
+    expect(questions).toHaveLength(2);
+    expect(questions[1].content).toContain("②第二小题");
+  });
+});
