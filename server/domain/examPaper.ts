@@ -1,4 +1,5 @@
 import type {
+  AnswerRecord,
   ExamPaper,
   ExamPaperQuestion,
   ExtractedDocumentBlock,
@@ -6,6 +7,9 @@ import type {
   ResourceSemester,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
+import type { TeacherRecord } from "../types.js";
+import { publishAnswerSheetsForUsage } from "./document-resource-lock.js";
+import type { UsageImportItem } from "../../src/lib/exam-usage-spreadsheet.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
@@ -119,6 +123,89 @@ function newlyReferencedQuestionIds(
 }
 
 export const examPaperService = {
+  /** 经 RPC 注入当前登录教师，校验试卷和学生后原子导入明细。 */
+  async importUsageData(paperId: string, items: UsageImportItem[], teacher: TeacherRecord): Promise<{ imported: number; studentCount: number }> {
+    const paper = (db.read("examPapers") as ExamPaper[]).find((candidate) => candidate.id === paperId);
+    if (!paper || paper.teacherId !== teacher.id || paper.schoolId !== teacher.schoolId) {
+      throw new Error("无权导入此试卷的使用数据");
+    }
+    if (!Array.isArray(items) || !items.length || items.length > 20000) {
+      throw new Error("导入数据为空或超过单次 20000 条限制");
+    }
+    const questionById = new Map(paper.questions.map((question) => [question.id, question]));
+    const linkedById = new Map((paper.contentBlocks || [])
+      .filter((block) => block.type === "question" && block.examPaperQuestionId && block.questionId)
+      .map((block) => [block.examPaperQuestionId!, block.questionId!]));
+    const studentIds = new Set((db.read("students") || []).filter((student) => {
+      if (student.schoolId !== paper.schoolId || student.status !== "active") return false;
+      if ((paper.studentIds || []).includes(student.id) || (paper.classIds || []).includes(student.classId)) return true;
+      return (db.read("personalClasses") || []).some((cls) =>
+        (paper.classIds || []).includes(cls.id) && cls.studentIds.includes(student.id));
+    }).map((student) => student.id));
+    if (!studentIds.size) throw new Error("请先添加试卷使用班级及在读学生");
+    const now = new Date().toISOString();
+    const existing = new Map<string, AnswerRecord>((db.read("answerRecords") as AnswerRecord[] || []).map((record) =>
+      [`${record.lectureId}:${record.studentId}:${record.questionId}`, record] as const));
+    const seen = new Set<string>();
+    const changes: AnswerRecord[] = [];
+    for (const item of items) {
+      if (!item || !studentIds.has(item.studentId)) throw new Error("导入包含不属于试卷使用班级的学生");
+      const question = questionById.get(item.paperQuestionId);
+      if (!question) throw new Error("导入题号不属于当前试卷");
+      const questionId = question.questionId || linkedById.get(question.id) || `exam-item:${paper.id}:${question.id}`;
+      const key = `${paperId}:${item.studentId}:${questionId}`;
+      if (seen.has(key)) throw new Error("同一个学生和试题出现重复数据");
+      seen.add(key);
+      const rawSubScores = item.subScores;
+      if (rawSubScores !== undefined && (!rawSubScores || typeof rawSubScores !== "object" || Array.isArray(rawSubScores)
+        || Object.keys(rawSubScores).length > 100)) throw new Error("小题得分格式无效");
+      const subScores: Record<string, number> | undefined = rawSubScores === undefined ? undefined : {};
+      for (const [part, value] of Object.entries(rawSubScores || {})) {
+        if (!/^[1-9]\d{0,2}$/.test(part) || typeof value !== "number" || !Number.isFinite(value)
+          || value < 0 || value > 10000) throw new Error("小题得分格式无效");
+        subScores![part] = value;
+      }
+      if (item.earnedScore !== undefined && (typeof item.earnedScore !== "number" || !Number.isFinite(item.earnedScore)
+        || item.earnedScore < 0 || item.earnedScore > 10000)) throw new Error("题目得分格式无效");
+      if (item.studentAnswer !== undefined && (typeof item.studentAnswer !== "string" || item.studentAnswer.length > 2048))
+        throw new Error("学生答案长度超出限制");
+      const points = item.earnedScore ?? (subScores ? Object.values(subScores).reduce((sum, n) => sum + n, 0) : undefined);
+      const maxScore = question.score;
+      const subTotal = subScores ? Object.values(subScores).reduce((sum, n) => sum + n, 0) : undefined;
+      if (maxScore > 0 && (points !== undefined && points > maxScore + 1e-6
+        || subTotal !== undefined && subTotal > maxScore + 1e-6)
+        || item.earnedScore !== undefined && subTotal !== undefined && subTotal > item.earnedScore + 1e-6)
+        throw new Error("题目得分或小题分数超过卷面满分");
+      if (points === undefined && !item.studentAnswer?.trim()) throw new Error("有空的答题记录");
+      const old = existing.get(key);
+      const score = points === undefined
+        ? old?.score || "done"
+        : maxScore <= 0 ? "done" : points >= maxScore - 1e-6 ? "correct" : points === 0 ? "wrong" : "partial";
+      changes.push({
+        ...old,
+        id: old?.id || genId("ar"),
+        studentId: item.studentId,
+        questionId,
+        lectureId: paperId,
+        score, isCorrect: score === "correct", source: "import",
+        earnedScore: points ?? old?.earnedScore,
+        maxScore: points === undefined ? old?.maxScore : maxScore,
+        subScores: subScores ?? old?.subScores,
+        studentAnswer: item.studentAnswer ?? old?.studentAnswer,
+        answeredAt: now,
+      });
+    }
+    for (const record of changes) {
+      existing.set(`${record.lectureId}:${record.studentId}:${record.questionId}`, record);
+    }
+    db.update("answerRecords", () => [...existing.values()]);
+    const touched = new Set(changes.map((record) => record.questionId));
+    db.update("questions", (questions) => questions.map((question) => touched.has(question.id)
+      ? { ...question, lastUsedAt: now } : question));
+    publishAnswerSheetsForUsage([paperId], now);
+    return { imported: changes.length, studentCount: new Set(changes.map((record) => record.studentId)).size };
+  },
+
   async listPapers(filter: ResourceFilter = {}): Promise<ExamPaper[]> {
     await delay(300);
     return withPaperAnnotationSummary(db

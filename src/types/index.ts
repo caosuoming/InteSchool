@@ -2589,6 +2589,13 @@ export interface AnswerRecord {
   score?: AnswerScore;
   /** 答题记录来源（预留扫描仪等未来扩展） */
   source?: AnswerSource;
+  /** 本题实得分及卷面满分（导入的精确分数）。 */
+  earnedScore?: number;
+  maxScore?: number;
+  /** 小题编号到得分的映射。 */
+  subScores?: Record<string, number>;
+  /** 学生在表格中的作答内容（含选择题选项）。 */
+  studentAnswer?: string;
   answeredAt: string;
 }
 

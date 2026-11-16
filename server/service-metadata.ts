@@ -861,6 +861,7 @@ export const serviceParameters = {
     ]
   },
   "examPaper": {
+    "importUsageData": ["paperId", "items", "teacher"],
     "listPapers": [
       "filter"
     ],

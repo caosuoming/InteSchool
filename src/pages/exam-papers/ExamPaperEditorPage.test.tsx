@@ -5,6 +5,7 @@ import type { ExamPaper, ExamPublication, Question, Teacher, TreeNode } from "@/
 
 const mocks = vi.hoisted(() => ({
   getPaper: vi.fn(),
+  importUsageData: vi.fn(),
   listPapers: vi.fn(),
   listLectures: vi.fn(),
   updatePaper: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("@/stores/auth", () => ({
 vi.mock("@/services/examPaper", () => ({
   examPaperService: {
     getPaper: mocks.getPaper,
+    importUsageData: mocks.importUsageData,
     updatePaper: mocks.updatePaper,
     markPaperDownloaded: mocks.markPaperDownloaded,
     invalidatePaperDownload: mocks.invalidatePaperDownload,
@@ -659,6 +661,17 @@ describe("ExamPaperEditorPage preview", () => {
     });
   });
 
+  it("shows preview title-row actions and the Excel import dialog", async () => {
+    renderPage();
+    await screen.findByTestId("exam-paper-preview");
+    const toolbar = screen.getByRole("toolbar", { name: "试卷预览操作" });
+    expect(within(toolbar).getByRole("button", { name: "编辑文档属性" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
+    fireEvent.click(within(toolbar).getByRole("button", { name: "上传使用数据" }));
+    expect(await screen.findByText("上传试卷使用数据")).toBeInTheDocument();
+    expect(screen.getByLabelText("答题数据 Excel")).toBeInTheDocument();
+  });
+
   it("persists class-only usage changes made directly in preview", async () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");
@@ -727,8 +740,14 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "下载" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "编辑试卷" })).toBeInTheDocument();
-    expect(toolbar.previousElementSibling).toContainElement(
+    expect(toolbar.firstElementChild).toContainElement(
       screen.getByRole("heading", { name: paper.title }),
+    );
+    expect(toolbar.firstElementChild).toContainElement(
+      within(toolbar).getByRole("button", { name: "上传使用数据" }),
+    );
+    expect(toolbar.lastElementChild).toContainElement(
+      within(toolbar).getByRole("button", { name: "下载" }),
     );
   });
 
