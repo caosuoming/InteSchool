@@ -165,6 +165,8 @@ function chooseBalancedRoomTeacher(
   minutes: Map<string, number>,
   preferredSubjects: Set<string>,
   allowed: (teacher: ExamInvigilationTeacher) => boolean,
+  datePreference: (teacher: ExamInvigilationTeacher) => number,
+  subjectFirst: boolean,
 ): ExamInvigilationTeacher | null {
   return candidates
     .filter((teacher) => !teacher.isLeader && !unavailable.has(teacher.id) && allowed(teacher))
@@ -172,8 +174,8 @@ function chooseBalancedRoomTeacher(
       const subjectDifference = Number(!preferredSubjects.has(left.subject)) - Number(!preferredSubjects.has(right.subject));
       const durationDifference = (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0);
       return (
-        durationDifference
-        || subjectDifference
+        (subjectFirst ? subjectDifference || durationDifference : durationDifference || subjectDifference)
+        || datePreference(left) - datePreference(right)
         || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
         || left.name.localeCompare(right.name, "zh-CN")
       );
@@ -274,7 +276,6 @@ export function buildExamInvigilationTable(
   ]));
   const teacherSessions = new Map(config.teachers.map((teacher) => [teacher.id, 0]));
   const teacherDates = new Map(config.teachers.map((teacher) => [teacher.id, new Set<string>()]));
-  const ownSubjectTeacherIds = new Set<string>();
   const groupedTimes = groupSchedules(arrangement, config);
   const patrolTeacherIds = resolvePatrolTeacherIds(config, teachers);
   const usedRoomIds = new Set<string>();
@@ -343,23 +344,101 @@ export function buildExamInvigilationTable(
     teacherDates.get(teacherId)?.add(date);
   };
 
-  const matchesTeacherRequirements = (teacher: ExamInvigilationTeacher, date: string) => {
-    const requirement = config.teacherRequirements?.[teacher.id];
-    if (requirement?.isOnLeave || requirement?.isExempt) return false;
-    const sameDay = requirement?.sameDay || "yes";
-    const dates = teacherDates.get(teacher.id) || new Set<string>();
-    if (sameDay === "no") return !dates.has(date);
-    if (sameDay === "yes") return dates.size === 0 || dates.has(date);
-    return true;
-  };
+  // Same-day choices rank candidates; they must never leave a room vacant when
+  // an otherwise eligible teacher is available on a different date.
+  const matchesTeacherRequirements = (teacher: ExamInvigilationTeacher) => (
+    !config.teacherRequirements?.[teacher.id]?.isOnLeave
+    && !config.teacherRequirements?.[teacher.id]?.isExempt
+  );
 
-  const markOwnSubjectAssignment = (teacherId: string | null | undefined, subjects: Set<string>) => {
+  // Reserve one own-subject room duty for each available teacher throughout the
+  // entire exam *before* balancing remaining rooms by accumulated duration.
+  // Otherwise earlier non-subject rows can consume the teachers/rooms needed
+  // for this first pass.
+  const ownSubjectSlots = rowInputs.flatMap((input, rowIndex) => {
+    const override = normalizeOverride(config.overrides?.[input.key], teachers);
+    const manuallyUsed = new Set<string>([
+      ...patrolTeacherIds,
+      ...Object.values(override.roomTeacherIds).filter((id): id is string => Boolean(id)),
+      ...(override.outsideTeacherId ? [override.outsideTeacherId] : []),
+    ]);
+    return groupedRooms.groups.flatMap((group) => {
+      const active = group.roomIds.filter((id) => (input.roomStudents.get(id)?.size || 0) > 0);
+      if (!active.length || active.some((id) => Object.prototype.hasOwnProperty.call(override.roomTeacherIds, id))) return [];
+      const subjects = new Set<string>();
+      active.forEach((id) => input.roomSubjects.get(id)?.forEach((subject) => subjects.add(subject)));
+      if (!subjects.size) input.subjectSet.forEach((subject) => subjects.add(subject));
+      return [{ rowIndex, roomId: active[0], subjects, manuallyUsed }];
+    });
+  });
+  const alreadyOwnSubject = new Set<string>();
+  rowInputs.forEach((input) => {
+    const override = normalizeOverride(config.overrides?.[input.key], teachers);
+    const assigned = [
+      ...Object.entries(override.roomTeacherIds).filter(([, id]) => Boolean(id)).map(([, id]) => id!),
+      ...(override.outsideTeacherId ? [override.outsideTeacherId] : []),
+    ];
+    assigned.forEach((id) => {
+      const teacher = teachers.get(id);
+      if (teacher && input.subjectSet.has(teacher.subject)) alreadyOwnSubject.add(id);
+    });
+  });
+  const ownSubjectCandidates = eligibleTeachers
+    // Prep leaders belong to their own-subject outside duty first. They remain
+    // eligible to supervise an occupied room if no regular teacher is left.
+    .filter((teacher) => !teacher.isLeader && !teacher.isPrepLeader
+      && !patrolTeacherIds.includes(teacher.id) && !alreadyOwnSubject.has(teacher.id))
+    .map((teacher) => ({
+      teacher,
+      slots: ownSubjectSlots.filter((slot) => slot.subjects.has(teacher.subject) && !slot.manuallyUsed.has(teacher.id)),
+    }))
+    .filter((entry) => entry.slots.length)
+    .sort((left, right) => left.slots.length - right.slots.length
+      || (teacherPriorityMinutes.get(left.teacher.id) || 0) - (teacherPriorityMinutes.get(right.teacher.id) || 0)
+      || left.teacher.name.localeCompare(right.teacher.name, "zh-CN"));
+  // Maximum bipartite matching avoids losing an own-subject assignment when a
+  // multi-subject room is the only option for another teacher.
+  const teacherForSlot = new Map<string, string>();
+  const slotsForTeacher = new Map(ownSubjectCandidates.map((entry) => [entry.teacher.id, entry.slots]));
+  const slotKey = (slot: (typeof ownSubjectSlots)[number]) => slot.rowIndex + "|" + slot.roomId;
+  const matchTeacher = (teacherId: string, visitedSlots: Set<string>): boolean => {
+    for (const slot of slotsForTeacher.get(teacherId) || []) {
+      const key = slotKey(slot);
+      if (visitedSlots.has(key)) continue;
+      visitedSlots.add(key);
+      const previousTeacher = teacherForSlot.get(key);
+      if (!previousTeacher || matchTeacher(previousTeacher, visitedSlots)) {
+        teacherForSlot.set(key, teacherId);
+        return true;
+      }
+    }
+    return false;
+  };
+  ownSubjectCandidates.forEach(({ teacher }) => { matchTeacher(teacher.id, new Set<string>()); });
+  const plannedOwnSubject = new Map<number, Map<string, string>>();
+  const plannedOwnDate = new Map<string, string>();
+  ownSubjectSlots.forEach((slot) => {
+    const teacherId = teacherForSlot.get(slotKey(slot));
     if (!teacherId) return;
-    const teacher = teachers.get(teacherId);
-    if (teacher && subjects.has(teacher.subject)) ownSubjectTeacherIds.add(teacherId);
+    const selected = plannedOwnSubject.get(slot.rowIndex) || new Map<string, string>();
+    selected.set(slot.roomId, teacherId);
+    plannedOwnSubject.set(slot.rowIndex, selected);
+    plannedOwnDate.set(teacherId, rowInputs[slot.rowIndex].times[0].date);
+  });
+
+  const sameDayPreference = (teacher: ExamInvigilationTeacher, date: string): number => {
+    const preference = config.teacherRequirements?.[teacher.id]?.sameDay || "yes";
+    const assignedDates = teacherDates.get(teacher.id);
+    const dates = assignedDates?.size ? assignedDates : (
+      plannedOwnDate.has(teacher.id) ? new Set([plannedOwnDate.get(teacher.id)!]) : null
+    );
+    if (!dates?.size || preference === "any") return 0;
+    return preference === "yes"
+      ? Number(!dates.has(date))
+      : Number(dates.has(date));
   };
 
-  const rows = rowInputs.map((input) => {
+  const rows = rowInputs.map((input, rowIndex) => {
     const unavailable = new Set<string>(patrolTeacherIds);
     const override = normalizeOverride(config.overrides?.[input.key], teachers);
     const roomTeacherIds: Record<string, string | null> = {};
@@ -385,13 +464,12 @@ export function buildExamInvigilationTable(
     for (const item of roomGroups) {
       if (item.overriddenTeacherId) {
         unavailable.add(item.overriddenTeacherId);
-        markOwnSubjectAssignment(item.overriddenTeacherId, item.roomSubjectSet);
       }
     }
     if (override.outsideTeacherId) unavailable.add(override.outsideTeacherId);
 
     const date = input.times[0].date;
-    const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate, date);
+    const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate);
     const outsideOverridden = Object.prototype.hasOwnProperty.call(override, "outsideTeacherId");
     // Explicit outside overrides reserve their teacher. Automatic outside duty
     // must wait until occupied rooms have a supervisor; otherwise a shortage of
@@ -400,52 +478,10 @@ export function buildExamInvigilationTable(
       ? [override.outsideTeacherId]
       : [];
 
-    const subjectPriorityRoomTeachers = new Map<string, string>();
-    if ((config.autoArrangePriority || "duration") === "subject") {
-      const autoRoomGroups = roomGroups.filter((item) => item.canonicalRoomId && item.overriddenTeacherId === undefined);
-      const candidatesByRoom = new Map<string, ExamInvigilationTeacher[]>();
-      autoRoomGroups.forEach((item) => {
-        candidatesByRoom.set(item.canonicalRoomId!, config.teachers
-          .filter((teacher) => (
-            !teacher.isLeader
-            && !unavailable.has(teacher.id)
-            && !ownSubjectTeacherIds.has(teacher.id)
-            && item.roomSubjectSet.has(teacher.subject)
-            && requirement(teacher)
-          ))
-          .sort((left, right) => (
-            (teacherPriorityMinutes.get(left.id) || 0) - (teacherPriorityMinutes.get(right.id) || 0)
-            || Number(Boolean(left.isPrepLeader)) - Number(Boolean(right.isPrepLeader))
-            || left.name.localeCompare(right.name, "zh-CN")
-          )));
-      });
-
-      const teacherRoom = new Map<string, string>();
-      const assignRoom = (roomId: string, visitedTeachers: Set<string>): boolean => {
-        for (const teacher of candidatesByRoom.get(roomId) || []) {
-          if (visitedTeachers.has(teacher.id)) continue;
-          visitedTeachers.add(teacher.id);
-          const previousRoomId = teacherRoom.get(teacher.id);
-          if (previousRoomId === undefined || assignRoom(previousRoomId, visitedTeachers)) {
-            teacherRoom.set(teacher.id, roomId);
-            subjectPriorityRoomTeachers.set(roomId, teacher.id);
-            return true;
-          }
-        }
-        return false;
-      };
-
-      [...candidatesByRoom.keys()]
-        .sort((left, right) => (
-          (candidatesByRoom.get(left)?.length || 0) - (candidatesByRoom.get(right)?.length || 0)
-        ))
-        .forEach((roomId) => { assignRoom(roomId, new Set<string>()); });
-
-      subjectPriorityRoomTeachers.forEach((teacherId) => {
-        unavailable.add(teacherId);
-        ownSubjectTeacherIds.add(teacherId);
-      });
-    }
+    const subjectPriorityRoomTeachers = plannedOwnSubject.get(rowIndex) || new Map<string, string>();
+    subjectPriorityRoomTeachers.forEach((teacherId) => {
+      unavailable.add(teacherId);
+    });
 
     for (const item of roomGroups) {
       item.group.roomIds.forEach((roomId) => { roomTeacherIds[roomId] = null; });
@@ -465,11 +501,12 @@ export function buildExamInvigilationTable(
         teacherPriorityMinutes,
         item.roomSubjectSet,
         requirement,
+        (candidate) => sameDayPreference(candidate, date),
+        (config.autoArrangePriority || "duration") === "subject",
       );
       roomTeacherIds[item.canonicalRoomId] = teacher?.id || null;
       if (teacher) {
         unavailable.add(teacher.id);
-        markOwnSubjectAssignment(teacher.id, item.roomSubjectSet);
       }
     }
 
@@ -497,7 +534,6 @@ export function buildExamInvigilationTable(
       }
       outsideTeacherIds.forEach((teacherId) => {
         unavailable.add(teacherId);
-        markOwnSubjectAssignment(teacherId, input.subjectSet);
       });
     }
 
