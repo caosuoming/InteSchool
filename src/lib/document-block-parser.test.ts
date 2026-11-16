@@ -3087,6 +3087,19 @@ describe("issue 1476: circled indices in mathematical solutions", () => {
     expect(questions[1].content).toContain("②第二小题");
   });
 
+  it("keeps circled procedure verbs like 求导 and 计算 inside analysis", () => {
+    const questions = parseDocumentBlocks([
+      "例2 ①求函数的最值。",
+      "解析：①求导得到 f'(x)=2x。",
+      "②计算驻点可得 x=0。",
+      "③求导数符号便可确定最值。",
+    ].join("\n"), math).filter((block) => block.type === "question");
+
+    expect(questions).toHaveLength(1);
+    expect(questions[0].analysis).toContain("②计算驻点");
+    expect(questions[0].analysis).toContain("③求导数符号");
+  });
+
   it("continues splitting genuine circled subquestions in the stem", () => {
     const questions = parseDocumentBlocks([
       "训练1 ①第一小题 A. 甲 B. 乙 C. 丙 D. 丁",

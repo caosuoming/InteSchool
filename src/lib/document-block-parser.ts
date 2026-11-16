@@ -729,8 +729,9 @@ function leadingNestedSubQuestionStyle(text: string): NestedSubQuestionStyle | u
 
 function isExplicitCircledQuestionPrompt(text: string): boolean {
   const remainder = text.trim().replace(/^[①-⑳]\s*/, "");
-  return /[?？]/.test(remainder)
-    || /^(?:求|证明|求证|计算|选择|判断|写出|填空|完成|回答|解答|下列)/.test(remainder)
+  // Procedure verbs such as “求导” and “计算” also occur in worked solutions.
+  // Only unmistakable question syntax can override an active solution field.
+  return /[?？]\s*$/.test(remainder)
     || /(?:^|\s)[A-H][.．、)）]\s*\S/i.test(remainder);
 }
 
