@@ -5,7 +5,7 @@ import { useAutosave } from "@/hooks/useAutosave";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft, Save, Eye, Edit3, Plus, Trash2, ShoppingBasket,
-  FileSpreadsheet, Users,
+  FileSpreadsheet, Users, Upload,
   ChevronUp, ChevronDown, ChevronRight, Library, Files, FileText, ListOrdered, Copy,
   Lock, Layout,
   Sparkles, BookOpen, Lightbulb, Download,
@@ -63,6 +63,8 @@ import {
   type DocumentMetadataValue,
 } from "@/components/resource/DocumentMetadataModal";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
+import { ExamPaperUsageImportModal } from "./ExamPaperUsageImportModal";
+import type { UsageImportItem } from "@/lib/exam-usage-spreadsheet";
 import {
   commonScoreUnderHeading,
   questionIdsUnderHeading,
@@ -333,6 +335,7 @@ export default function ExamPaperEditorPage() {
   const [projects, setProjects] = useState<ExamPaperProject[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
   const [markingAllDone, setMarkingAllDone] = useState(false);
+  const [usageImportOpen, setUsageImportOpen] = useState(false);
   const [previewSidebarVisibility, setPreviewSidebarVisibility] = useState<PreviewSidebarVisibility>(
     { properties: true, answerStatus: true, answeredList: true, basket: true },
   );
@@ -883,6 +886,26 @@ export default function ExamPaperEditorPage() {
         : flatDisplayQuestions;
     return geographyPaperNumberMap(ordered, geographySubject);
   }, [isStructuredExtract, contentBlocks, paperQuestions, questions, groupOrder, layoutMode, flatDisplayQuestions, geographySubject]);
+  // Excel 列号采用预览卷面上的题号顺序，不能直接使用内部 questions 数组顺序。
+  const usageQuestions = useMemo(() => {
+    const candidates = isStructuredExtract
+      ? contentBlocks.filter((block) => block.type === "question").flatMap((block) => {
+        const question = paperQuestions.find((item) => item.id === block.examPaperQuestionId)
+          || paperQuestions.find((item) => item.questionId && item.questionId === block.questionId);
+        return question ? [{ question, displayId: block.id }] : [];
+      })
+      : (layoutMode === "grouped"
+        ? getQuestionTypeSections(paperQuestions, questions, groupOrder).flatMap((section) => section.questions)
+        : flatDisplayQuestions).map((question) => ({ question, displayId: question.id }));
+    const numbered = candidates.map(({ question, displayId }, index) => ({
+      question, number: paperDisplayNumbers.get(displayId) ?? index + 1,
+    }));
+    if (numbered.length === new Set(numbered.map((entry) => entry.number)).size
+      && numbered.every((entry) => entry.number >= 1 && entry.number <= numbered.length)) {
+      return numbered.sort((left, right) => left.number - right.number).map((entry) => entry.question);
+    }
+    return candidates.map((entry) => entry.question);
+  }, [isStructuredExtract, contentBlocks, paperQuestions, questions, groupOrder, layoutMode, flatDisplayQuestions, paperDisplayNumbers]);
   const previewQuestionIds = useMemo(
     () => isStructuredExtract
       ? contentBlocks.filter((block) => block.type === "question").map((block) => block.id)
@@ -1679,6 +1702,14 @@ export default function ExamPaperEditorPage() {
     }
   };
 
+  const handleImportUsage = async (items: UsageImportItem[]) => {
+    if (!paper || paper.teacherId !== teacher?.id || prepTaskId) throw new Error("无权导入此试卷的数据");
+    const result = await examPaperService.importUsageData(paper.id, items);
+    setIsUsedDocument(true);
+    await refreshCompletionRecords();
+    toast.success(`已导入 ${result.studentCount} 名学生的 ${result.imported} 条答题记录`);
+  };
+
   const refreshCompletionRecords = async () => {
     if (!paper) return;
     const refreshedRecords = (await analyticsService.listAnswerRecordsByStudents(audienceStudentIds, dateRange))
@@ -1796,33 +1827,40 @@ export default function ExamPaperEditorPage() {
   if (isPreview) {
     return (
       <div className="max-w-[1500px] mx-auto">
-        <PageHeader
-          title={title || paper?.title}
-          description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
-          icon={<FileSpreadsheet className="w-5 h-5" />}
-          className="mb-3"
-        />
-
-        <div
-          role="toolbar"
-          aria-label="试卷预览操作"
-          className="no-print mb-6 flex flex-wrap items-center justify-end gap-2"
-        >
-          {!prepTaskId && paper?.teacherId === teacher?.id && (
-            <Button variant="outline" onClick={() => setDocumentMetadataOpen(true)}>
-              <Edit3 className="w-4 h-4" />
-              编辑文档属性
-            </Button>
-          )}
-          {!prepTaskId && (
-            <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
-              <Users className="w-4 h-4" />
-              <span className="max-w-48 truncate">
-                {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
-              </span>
-              {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
-            </Button>
-          )}
+        <div role="toolbar" aria-label="试卷预览操作" className="no-print mb-6">
+          <PageHeader
+            title={title || paper?.title || ""}
+            description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
+            icon={<FileSpreadsheet className="w-5 h-5" />}
+            className="mb-3 flex-wrap"
+            action={<div className="flex flex-wrap items-center justify-end gap-2">
+              {!prepTaskId && paper?.teacherId === teacher?.id && (
+                <Button variant="outline" onClick={() => setDocumentMetadataOpen(true)}>
+                  <Edit3 className="w-4 h-4" />编辑文档属性
+                </Button>
+              )}
+              {!prepTaskId && (
+                <Button variant="outline" onClick={() => setAudiencePickerOpen(true)}>
+                  <Users className="w-4 h-4" />
+                  <span className="max-w-48 truncate">
+                    {selectedClassIds.length > 0 ? selectedClassLabel : "添加使用对象"}
+                  </span>
+                  {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
+                </Button>
+              )}
+              <Button variant="outline" onClick={toggleAllPreviewAnswers}
+                disabled={previewQuestionIds.length === 0} aria-pressed={allPreviewAnswersExpanded}>
+                <Eye className="w-4 h-4" />
+                {allPreviewAnswersExpanded ? "收起全部答案" : "一键显示答案"}
+              </Button>
+              {!prepTaskId && paper?.teacherId === teacher?.id && (
+                <Button variant="outline" onClick={() => setUsageImportOpen(true)}>
+                  <Upload className="w-4 h-4" />上传使用数据
+                </Button>
+              )}
+            </div>}
+          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
           {!prepTaskId && paper?.teacherId === teacher?.id && (
                 <DocumentCoursewareActions
                   classIds={selectedClassIds}
@@ -1843,15 +1881,6 @@ export default function ExamPaperEditorPage() {
               创建副本
             </Button>
           )}
-          <Button
-            variant="outline"
-            onClick={toggleAllPreviewAnswers}
-            disabled={previewQuestionIds.length === 0}
-            aria-pressed={allPreviewAnswersExpanded}
-          >
-            <Eye className="w-4 h-4" />
-            {allPreviewAnswersExpanded ? "收起全部答案" : "一键显示答案"}
-          </Button>
           <Button variant="outline" onClick={() => setDownloadModalOpen(true)}>
             <Download className="w-4 h-4" />
             下载
@@ -1875,6 +1904,7 @@ export default function ExamPaperEditorPage() {
             <Edit3 className="w-4 h-4" />
             编辑试卷
           </Button>
+          </div>
         </div>
 
         <div className="no-print mb-3 rounded-lg border border-ink-200 bg-paper p-3">
@@ -2187,6 +2217,13 @@ export default function ExamPaperEditorPage() {
           />
         )}
         {audienceModal}
+        {paper && <ExamPaperUsageImportModal
+          open={usageImportOpen}
+          onClose={() => setUsageImportOpen(false)}
+          questions={usageQuestions}
+          students={audienceStudents}
+          onImport={handleImportUsage}
+        />}
       </div>
     );
   }

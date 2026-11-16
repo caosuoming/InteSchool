@@ -392,6 +392,9 @@ export const analyticsService = {
         score: input.score,
         isCorrect,
         source: input.source ?? existing.source,
+        ...(input.source === "manual" || !input.source ? {
+          earnedScore: undefined, maxScore: undefined, subScores: undefined,
+        } : {}),
         answeredAt: new Date().toISOString(),
       };
       db.update("answerRecords", (list) =>
@@ -449,6 +452,9 @@ export const analyticsService = {
             score: item.score,
             isCorrect: item.score === "correct",
             source: item.source ?? existing.source,
+            ...(item.source === "manual" || !item.source ? {
+              earnedScore: undefined, maxScore: undefined, subScores: undefined,
+            } : {}),
             answeredAt: now,
           }
         : {

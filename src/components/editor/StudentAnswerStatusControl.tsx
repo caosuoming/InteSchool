@@ -31,13 +31,10 @@ export function StudentAnswerStatusControl({
   const [saving, setSaving] = useState(false);
   const activeStudentId = students.length === 1 ? students[0].id : selectedStudentId;
 
-  const currentScore = useMemo(() => {
-    if (!activeStudentId) return null;
-    const record = answerRecords.find(
-      (item) => item.studentId === activeStudentId && item.questionId === questionId,
-    );
-    return record ? inferScore(record) : null;
-  }, [activeStudentId, answerRecords, questionId]);
+  const currentRecord = useMemo(() => answerRecords.find(
+    (item) => item.studentId === activeStudentId && item.questionId === questionId,
+  ), [activeStudentId, answerRecords, questionId]);
+  const currentScore = currentRecord ? inferScore(currentRecord) : null;
 
   const answeredStudents = useMemo(() => {
     const recordsByStudentId = new Map(
@@ -87,6 +84,14 @@ export function StudentAnswerStatusControl({
   return (
     <div className={className}>
       <div className="mb-1.5 text-[11px] font-medium text-ink-500">学生答题情况</div>
+      {currentRecord && (currentRecord.earnedScore !== undefined || currentRecord.studentAnswer || currentRecord.subScores) && (
+        <div className="mb-2 space-y-1 rounded-md bg-ink-50 px-2 py-1.5 text-xs text-ink-700" data-testid="student-answer-import-details">
+          {currentRecord.earnedScore !== undefined && <div>实得分：{currentRecord.earnedScore}{currentRecord.maxScore !== undefined ? ` / ${currentRecord.maxScore}` : ""}</div>}
+          {currentRecord.studentAnswer && <div className="break-words">学生作答：{currentRecord.studentAnswer}</div>}
+          {currentRecord.subScores && <div>小题得分：{Object.entries(currentRecord.subScores)
+            .map(([part, points]) => `${part}：${points}`).join("、")}</div>}
+        </div>
+      )}
       {students.length === 0 ? (
         <div className="text-[11px] leading-5 text-ink-400">请先添加使用班级</div>
       ) : students.length === 1 ? (

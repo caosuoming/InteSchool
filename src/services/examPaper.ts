@@ -1,4 +1,5 @@
 import { rpcCall } from "./api";
+import type { UsageImportItem } from "@/lib/exam-usage-spreadsheet";
 
 import type {
   ExamPaper,
@@ -36,6 +37,10 @@ export interface ExamPaperInput {
 }
 
 export const examPaperService = {
+  async importUsageData(paperId: string, items: UsageImportItem[]): Promise<{ imported: number; studentCount: number }> {
+    return rpcCall("examPaper", "importUsageData", [paperId, items]) as any;
+  },
+
   async listPapers(filter: ResourceFilter = {}): Promise<ExamPaper[]> {
     return rpcCall("examPaper", "listPapers", [filter]) as any;
   },
