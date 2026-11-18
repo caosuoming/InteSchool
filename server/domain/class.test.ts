@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppState } from "../types.js";
+import type { Teacher } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { classService } from "./class.js";
 import { knowledgeService } from "./knowledge.js";
@@ -1080,7 +1081,7 @@ describe("cross-school document audience", () => {
       name: "其他教师私有班", description: "", studentIds: [], createdAt: "2026-01-01",
     });
     await runWithState(state, async () => {
-      const classes = await classService.listAudienceClasses("school-1", "teacher-1");
+      const classes = await classService.listAudienceClasses("school-1", { id: "teacher-1" } as Teacher);
       expect(classes.map((item) => item.id)).toContain("outside-active");
       expect(classes.map((item) => item.id)).not.toContain("outside-deleted");
       expect(classes.map((item) => item.id)).not.toContain("private-other");

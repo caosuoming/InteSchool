@@ -617,7 +617,7 @@ export default function ExamPaperEditorPage() {
     loadPaper();
     if (teacher) {
       basketService.listBaskets(teacher.id).then(setBaskets);
-      classSvc.listAudienceClasses(schoolId, teacher.id).then(setClasses);
+      classSvc.listAudienceClasses(schoolId).then(setClasses);
       // 加载试卷类型
       settingsService.listExamPaperTypes(schoolId).then(setExamPaperTypes);
       knowledgeService.getChapterTree(schoolId).then(setChapterTree);

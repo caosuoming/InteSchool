@@ -178,7 +178,7 @@ export default function LecturePreviewPage() {
       ));
       const [availableClassList, loadedQuestions, records] = await Promise.all([
         teacher?.schoolId
-          ? classService.listAudienceClasses(teacher.schoolId, teacher.id).catch(() => [])
+          ? classService.listAudienceClasses(teacher.schoolId).catch(() => [])
           : Promise.resolve([]),
         Promise.all(
           questionIds.map(async (questionId) => [

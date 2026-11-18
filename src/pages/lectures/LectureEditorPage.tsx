@@ -486,7 +486,7 @@ export default function LectureEditorPage() {
         setKnowledgeTree(kps);
         setLectureTypes(lecTypes);
         setColumnTemplates(savedColumnTemplates);
-        const allClasses = await classSvc.listAudienceClasses(teacher.schoolId!, teacher.id);
+        const allClasses = await classSvc.listAudienceClasses(teacher.schoolId!);
         setClasses(allClasses);
         setBaskets(await basketService.listBaskets(teacher.id));
         const allStudents = await classSvc.listStudentsBySchool(teacher.schoolId!);

@@ -522,7 +522,7 @@ describe("LecturePreviewPage", () => {
       isExtractCopy: true,
       sourceResourceId: "lecture-source-1",
     });
-    vi.mocked(classService.listAudienceClasses).mockImplementation(async (schoolId, teacherId) => {
+    vi.mocked(classService.listAudienceClasses).mockImplementation(async (schoolId) => {
       if (schoolId === "school-old") throw new Error("无权访问其他学校的数据");
       expect(schoolId).toBe(teacher.schoolId);
       expect(teacherId).toBe(teacher.id);
@@ -533,7 +533,7 @@ describe("LecturePreviewPage", () => {
 
     expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
     expect(screen.queryByText("讲义加载失败")).not.toBeInTheDocument();
-    expect(classService.listAudienceClasses).toHaveBeenCalledWith(teacher.schoolId, teacher.id);
+    expect(classService.listAudienceClasses).toHaveBeenCalledWith(teacher.schoolId);
     expect(classService.getClassesByIds).not.toHaveBeenCalled();
     expect(classService.listStudentsByClass).not.toHaveBeenCalledWith("old-class");
     await waitFor(() => {
