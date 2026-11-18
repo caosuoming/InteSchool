@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
   listBaskets: vi.fn(),
   addQuestion: vi.fn(),
   removeQuestion: vi.fn(),
-  listAllClasses: vi.fn(),
+  listAudienceClasses: vi.fn(),
   listSchoolClasses: vi.fn(),
   listPersonalClasses: vi.fn(),
   listStudentsByClass: vi.fn(),
@@ -89,7 +89,7 @@ vi.mock("@/services/lessonCourseware", () => ({
 }));
 vi.mock("@/services/class", () => ({
   classService: {
-    listAllClasses: mocks.listAllClasses,
+    listAudienceClasses: mocks.listAudienceClasses,
     listSchoolClasses: mocks.listSchoolClasses,
     listPersonalClasses: mocks.listPersonalClasses,
     listStudentsByClass: mocks.listStudentsByClass,
@@ -320,7 +320,7 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.listBaskets.mockResolvedValue([]);
     mocks.addQuestion.mockResolvedValue(undefined);
     mocks.removeQuestion.mockResolvedValue(undefined);
-    mocks.listAllClasses.mockResolvedValue([{
+    mocks.listAudienceClasses.mockResolvedValue([{
       id: "class-1",
       type: "school",
       schoolId: teacher.schoolId,
@@ -824,7 +824,7 @@ describe("ExamPaperEditorPage preview", () => {
       name: "个别辅导班", description: "", studentIds: [], createdAt: timestamp,
     };
     mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["personal-1"] });
-    mocks.listAllClasses.mockResolvedValue([personalClass]);
+    mocks.listAudienceClasses.mockResolvedValue([personalClass]);
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "添加到个人上课" }));
     await waitFor(() => expect(mocks.createLessonFromExamPaper).toHaveBeenCalledWith(
@@ -932,7 +932,7 @@ describe("ExamPaperEditorPage preview", () => {
       externalSchool: "外校",
       status: "active" as const,
     };
-    mocks.listAllClasses.mockResolvedValue([personalClass]);
+    mocks.listAudienceClasses.mockResolvedValue([personalClass]);
     mocks.listStudentsByClass.mockResolvedValue([externalStudent]);
 
     renderPage();
@@ -1553,7 +1553,7 @@ describe("ExamPaperEditorPage structured editor", () => {
     mocks.listBaskets.mockResolvedValue([]);
     mocks.addQuestion.mockResolvedValue(undefined);
     mocks.removeQuestion.mockResolvedValue(undefined);
-    mocks.listAllClasses.mockResolvedValue([]);
+    mocks.listAudienceClasses.mockResolvedValue([]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
     mocks.listStudentsByClass.mockResolvedValue([]);

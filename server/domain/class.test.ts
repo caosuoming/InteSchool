@@ -1062,3 +1062,28 @@ describe("class lifecycle service", () => {
     });
   });
 });
+
+
+describe("cross-school document audience", () => {
+  it("lists active classes from other schools but only the teacher's personal classes", async () => {
+    const state = createState();
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "outside-active", type: "school", schoolId: "school-2", grade: "高一",
+      name: "外校高一", studentCount: 10, status: "active", createdBy: "other-teacher", createdAt: "2026-01-01",
+    });
+    (state.schoolClasses as Array<Record<string, unknown>>).push({
+      id: "outside-deleted", type: "school", schoolId: "school-2", grade: "高一",
+      name: "已删除班", studentCount: 0, status: "deleted", createdBy: "other-teacher", createdAt: "2026-01-01",
+    });
+    (state.personalClasses as Array<Record<string, unknown>>).push({
+      id: "private-other", type: "personal", teacherId: "other-teacher",
+      name: "其他教师私有班", description: "", studentIds: [], createdAt: "2026-01-01",
+    });
+    await runWithState(state, async () => {
+      const classes = await classService.listAudienceClasses("school-1", "teacher-1");
+      expect(classes.map((item) => item.id)).toContain("outside-active");
+      expect(classes.map((item) => item.id)).not.toContain("outside-deleted");
+      expect(classes.map((item) => item.id)).not.toContain("private-other");
+    });
+  });
+});

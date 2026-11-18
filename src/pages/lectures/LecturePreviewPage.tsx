@@ -178,7 +178,7 @@ export default function LecturePreviewPage() {
       ));
       const [availableClassList, loadedQuestions, records] = await Promise.all([
         teacher?.schoolId
-          ? classService.listAllClasses(teacher.schoolId, teacher.id).catch(() => [])
+          ? classService.listAudienceClasses(teacher.schoolId, teacher.id).catch(() => [])
           : Promise.resolve([]),
         Promise.all(
           questionIds.map(async (questionId) => [
@@ -789,6 +789,9 @@ export default function LecturePreviewPage() {
         )}
       >
         <ClassAudiencePicker
+          schoolId={teacher?.schoolId}
+          teachingClassIds={teacher?.teachingClassIds || []}
+          teachingGrades={teacher?.teachingGrades || []}
           classes={availableClasses}
           selectedClassIds={audienceClassIds}
           onChange={setAudienceClassIds}

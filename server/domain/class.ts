@@ -228,6 +228,14 @@ export const classService = {
     return [...school, ...personal];
   },
 
+  /** Document audience choices: active classes from all schools, plus the teacher's own classes. */
+  async listAudienceClasses(schoolId: string, teacherId: string): Promise<AnyClass[]> {
+    await delay(150);
+    const school = db.read("schoolClasses").filter((item) => item.status !== "deleted" && item.status !== "graduated");
+    const personal = db.read("personalClasses").filter((item) => item.teacherId === teacherId);
+    return [...school, ...personal];
+  },
+
   async createSchoolClass(
     schoolId: string,
     teacherId: string,

@@ -486,7 +486,7 @@ export default function LectureEditorPage() {
         setKnowledgeTree(kps);
         setLectureTypes(lecTypes);
         setColumnTemplates(savedColumnTemplates);
-        const allClasses = await classSvc.listAllClasses(teacher.schoolId!, teacher.id);
+        const allClasses = await classSvc.listAudienceClasses(teacher.schoolId!, teacher.id);
         setClasses(allClasses);
         setBaskets(await basketService.listBaskets(teacher.id));
         const allStudents = await classSvc.listStudentsBySchool(teacher.schoolId!);
@@ -1809,6 +1809,9 @@ export default function LectureEditorPage() {
       }
     >
       <ClassAudiencePicker
+          schoolId={teacher?.schoolId}
+          teachingClassIds={teacher?.teachingClassIds || []}
+          teachingGrades={teacher?.teachingGrades || []}
         classes={classes}
         selectedClassIds={selectedClassIds}
         onChange={setSelectedClassIds}
