@@ -661,6 +661,41 @@ describe("document block parser", () => {
     });
   });
 
+  it("associates a Word math paper's final 答案以及解析 with the original questions", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、选择题",
+        "1. 计算 1+1。 A. 1 B. 2 C. 3 D. 4",
+        "2. 判断命题。 A. 甲 B. 乙 C. 丙 D. 丁",
+        "3. 判断函数单调性。 A. 甲 B. 乙 C. 丙 D. 丁",
+        "4. 已知三角形，求角度。 A. 甲 B. 乙 C. 丙 D. 丁",
+        "5. 圆锥的轴截面有什么性质？ A. 甲 B. 乙 C. 丙 D. 丁",
+        "17. 求证三角形为等腰三角形。",
+        "答案以及解析",
+        "1.答案：D",
+        "解析：由题意可得D。",
+        "2.答案：C",
+        "解析：复数的虚部为正。",
+        "3【答案】C",
+        "4.答案：C",
+        "解析：解得结论。",
+        "5答案：B",
+        "解析：轴截面为正三角形。",
+        "17解：（1）由余弦定理可证。",
+        "（2）再由正弦定理得到结论。",
+      ].join("\n"),
+      config,
+    );
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(6);
+    expect(questions.map((question) => question.answer)).toEqual([
+      "D", "C", "C", "C", "B", "（1）由余弦定理可证。\n（2）再由正弦定理得到结论。",
+    ]);
+    expect(questions[0].analysis).toBe("由题意可得D。");
+    expect(questions[4].analysis).toBe("轴截面为正三角形。");
+    expect(questions.every((question) => !question.content.includes("答案以及解析"))).toBe(true);
+  });
+
   it("classifies 分析 markers in a trailing solution section as summary", () => {
     const blocks = parseDocumentBlocks(
       [
