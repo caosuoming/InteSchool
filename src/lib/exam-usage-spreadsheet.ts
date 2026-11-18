@@ -6,6 +6,7 @@ export type UsageColumnRole =
   | "ignore" | "studentName" | "studentNo"
   | `score:${number}` | `answer:${number}` | `subscore:${number}:${string}`;
 export interface UsageColumn { index: number; header: string; role: UsageColumnRole }
+export interface UsageMetadataConflict { column: string; questionNo: number; attribute: "score" | "answer"; excel: string; paper: string }
 export interface UsageImportItem {
   studentId: string;
   paperQuestionId: string;
@@ -19,6 +20,13 @@ export interface UsagePreview {
   unmatchedStudents: string[];
   warnings: string[];
   mappedColumns: number;
+  conflicts?: UsageMetadataConflict[];
+  firstStudent?: { name: string; values: { header: string; value: string }[] };
+}
+
+// Preserve the separator between question number and maximum score: "1 2分 答案B".
+function parseEncodedHeader(header: string): RegExpMatchArray | null {
+  return header.normalize("NFKC").trim().match(/^(?:第)?(\d+)(?:题|小题)?[\s:：、，,]+(\d+(?:\.\d+)?)\s*分(?:[\s,，、;；]*(?:正确)?答案\s*([A-Za-z0-9]+))?$/i);
 }
 
 const isBlank = (value: UsageCell | undefined) => value === undefined || value === null || String(value).trim() === "";
@@ -53,6 +61,11 @@ export function detectUsageRole(header: string, sample: UsageCell[], questionCou
     if (q >= 1 && q <= questionCount) return `subscore:${q}:${Number(sub[2])}`;
   }
   // 第一层只自动映射明确的题目列，避免把班级、总分等列误识别为题目。
+  // Some exported spreadsheets encode the question's full mark and key in one header:
+  // "1 2分、答案B". This column contains the student's earned score.
+  const encoded = parseEncodedHeader(header);
+  if (encoded && Number(encoded[1]) >= 1 && Number(encoded[1]) <= questionCount)
+    return `score:${Number(encoded[1])}`;
   const question = name.match(/^(?:第|题|q)?(\d+)(?:题|小题)?(?:的)?(得分|分数|分|评分|成绩|答案|作答|解答|选项|答题|学生答案)?$/)
     || name.match(/^(?:选择题|填空题|解答题)(\d+)(得分|分数|分|答案|作答|解答|选项)?$/);
   if (question) {
@@ -76,13 +89,20 @@ export function detectUsageHeader(sheet: UsageSheet, questionCount: number): { h
     }, 0);
     if (score > best) { best = score; headerRow = i; }
   }
-  return {
-    headerRow,
-    columns: (rows[headerRow] || []).map((cell, index) => ({
-      index, header: clean(cell) || `第${index + 1}列`,
-      role: detectUsageRole(clean(cell), rows.slice(headerRow + 1, headerRow + 8).map((row) => row[index]), questionCount),
-    })),
-  };
+  const columns = (rows[headerRow] || []).map((cell, index) => ({
+    index, header: clean(cell) || `第${index + 1}列`,
+    role: detectUsageRole(clean(cell), rows.slice(headerRow + 1, headerRow + 8).map((row) => row[index]), questionCount),
+  }));
+  // An otherwise unnamed column immediately following an encoded score column
+  // normally contains that question's answer. Do not override explicit mappings.
+  columns.forEach((column, index) => {
+    if (index === 0 || column.role !== "ignore") return;
+    const previous = columns[index - 1];
+    if (!parseEncodedHeader(previous.header)?.[3]) return;
+    const match = /^score:(\d+)$/.exec(previous.role);
+    if (match && !/总分|排名|班级|学号|姓名/.test(column.header)) column.role = `answer:${Number(match[1])}`;
+  });
+  return { headerRow, columns };
 }
 
 export async function readUsageWorkbook(file: File): Promise<UsageSheet[]> {
@@ -110,6 +130,18 @@ export function prepareUsageImport(
 ): UsagePreview {
   const roles = columns.filter((column) => column.role !== "ignore");
   const warnings: string[] = [];
+  const conflicts: UsageMetadataConflict[] = [];
+  columns.forEach((column) => {
+    const questionNo = Number(column.role.split(":")[1]);
+    const question = paperQuestions[questionNo - 1];
+    if (!question) return;
+    const encoded = parseEncodedHeader(column.header);
+    if (!encoded) return;
+    if (Math.abs(Number(encoded[2]) - question.score) > 0.000001)
+      conflicts.push({ column: column.header, questionNo, attribute: "score", excel: encoded[2], paper: String(question.score) });
+    if (encoded[3] && (question.answer || "").trim() && encoded[3].toUpperCase() !== (question.answer || "").trim().toUpperCase())
+      conflicts.push({ column: column.header, questionNo, attribute: "answer", excel: encoded[3], paper: (question.answer || "").trim() });
+  });
   if (!roles.some((column) => column.role === "studentNo" || column.role === "studentName"))
     return { entries: [], matchedStudents: 0, unmatchedStudents: [], warnings: ["请先映射学生姓名或学号列"], mappedColumns: 0 };
 
@@ -142,6 +174,7 @@ export function prepareUsageImport(
   const unmatched: string[] = [];
   const seenKeys = new Set<string>();
   let matchedStudents = 0;
+  let firstStudent: UsagePreview["firstStudent"];
 
   for (let i = headerRow + 1; i < sheet.rows.length; i++) {
     const row = sheet.rows[i];
@@ -163,6 +196,7 @@ export function prepareUsageImport(
       continue;
     }
     seenStudents.add(student.id);
+    if (!firstStudent) firstStudent = { name: student.name, values: columns.map((column) => ({ header: column.header, value: clean(row[column.index]) })) };
     matchedStudents++;
     const byQuestion = new Map<number, UsageImportItem>();
     for (const column of scores) {
@@ -210,6 +244,6 @@ export function prepareUsageImport(
   if (unmatched.length) warnings.unshift(`有${unmatched.length}行未匹配到使用班级中的学生，不会导入`);
   if (!entries.length) warnings.unshift("没有可导入的答题数据");
   return {
-    entries, matchedStudents, unmatchedStudents: unmatched.slice(0, 50), warnings, mappedColumns: scores.length,
+    entries, matchedStudents, unmatchedStudents: unmatched.slice(0, 50), warnings, mappedColumns: scores.length, conflicts, firstStudent,
   };
 }

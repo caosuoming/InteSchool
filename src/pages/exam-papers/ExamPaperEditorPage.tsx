@@ -1,4 +1,4 @@
-import { geographyPaperNumberMap, isGeographyChoiceGroup, renumberGeographyPaperAnswer, renumberGeographyPaperStem } from "@/lib/geography-paper-layout";
+import { geographyPaperNumberMap, geographyPaperQuestionCount, isGeographyChoiceGroup, renumberGeographyPaperAnswer, renumberGeographyPaperStem } from "@/lib/geography-paper-layout";
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import { useAutosave } from "@/hooks/useAutosave";
@@ -1833,7 +1833,7 @@ export default function ExamPaperEditorPage() {
         <div role="toolbar" aria-label="试卷预览操作" className="no-print mb-6">
           <PageHeader
             title={title || paper?.title || ""}
-            description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.length}题 · 总分${totalScore}分`}
+            description={`${grade} · ${schoolYear} · ${semester} · ${duration}分钟 · 共${paperQuestions.reduce((sum, question) => sum + geographyPaperQuestionCount(question.stem, question.type, geographySubject), 0)}题 · 总分${totalScore}分`}
             icon={<FileSpreadsheet className="w-5 h-5" />}
             className="mb-3 flex-wrap"
             action={<div className="flex flex-wrap items-center justify-end gap-2">
@@ -2072,7 +2072,7 @@ export default function ExamPaperEditorPage() {
                     left={(
                       <div className="flex items-center gap-3 border-b border-ink-200 pb-2">
                         <h2 className="font-serif text-lg font-bold text-ink-900">{group.label}</h2>
-                        <span className="text-sm text-ink-500">共 {group.questions.length} 题</span>
+                        <span className="text-sm text-ink-500">共 {group.questions.reduce((sum, item) => sum + geographyPaperQuestionCount(item.pq.stem, item.pq.type, geographySubject), 0)} 题</span>
                         <span className="text-sm font-medium text-gold-600">共 {groupScore} 分</span>
                       </div>
                     )}
@@ -2129,7 +2129,7 @@ export default function ExamPaperEditorPage() {
                         <h2 className="font-serif text-lg font-bold text-ink-900">
                           {sectionNumerals[sectionIndex - (projectSections[0]?.project ? 0 : 1)] || sectionIndex + 1}、{section.project.name}
                         </h2>
-                        <span className="text-sm text-ink-500">共 {section.questions.length} 题</span>
+                        <span className="text-sm text-ink-500">共 {section.questions.reduce((sum, item) => sum + geographyPaperQuestionCount(item.stem, item.type, geographySubject), 0)} 题</span>
                         <span className="text-sm font-medium text-gold-600">共 {section.questions.reduce((sum, item) => sum + item.score, 0)} 分</span>
                       </div>
                     )}
@@ -2815,7 +2815,7 @@ export default function ExamPaperEditorPage() {
                             className="h-8 w-40 min-w-0 font-serif text-base font-bold"
                           />
                         </div>
-                        <span className="text-xs text-ink-500">{group.questions.length} 题</span>
+                        <span className="text-xs text-ink-500">{group.questions.reduce((sum, item) => sum + geographyPaperQuestionCount(item.pq.stem, item.pq.type, geographySubject), 0)} 题</span>
                         <span className="text-xs text-gold-700 font-medium">{groupScore} 分</span>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-ink-500">每题</span>
