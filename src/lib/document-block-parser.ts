@@ -1700,6 +1700,8 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
 }
 
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
+  const knowledgeTipPattern = keywordPattern(["温馨提示", "友情提示", "小贴士", "注意事项"]);
+
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const answerPattern = keywordPattern(config.answerKeywords);
@@ -1959,6 +1961,24 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       if (explicitSolution !== undefined) {
         appendQuestionField(currentBlock, "analysis", explicitSolution);
         currentQuestionField = "analysis";
+        continue;
+      }
+    }
+    if (currentBlock.type === "knowledge") {
+      if (answerPattern?.test(line)) {
+        appendQuestionField(currentBlock, "answer", stripPrefix(line, answerPattern));
+        currentQuestionField = "answer";
+        continue;
+      }
+      if (analysisPattern?.test(line) || knowledgeTipPattern?.test(line)) {
+        // Preserve the tip heading so readers can distinguish it from ordinary explanation.
+        const isTip = knowledgeTipPattern?.test(line);
+        appendQuestionField(currentBlock, "analysis", isTip ? line : stripPrefix(line, analysisPattern));
+        currentQuestionField = "analysis";
+        continue;
+      }
+      if (currentQuestionField !== "content") {
+        appendQuestionField(currentBlock, currentQuestionField, originalLine);
         continue;
       }
     }
