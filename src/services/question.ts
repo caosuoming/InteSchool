@@ -47,6 +47,10 @@ export interface QuestionPage {
 }
 
 export const questionService = {
+  async getDashboardQuestionCounts(weekStartIso: string): Promise<{ total: number; weekly: number }> {
+    return rpcCall("question", "getDashboardQuestionCounts", [null, weekStartIso]);
+  },
+
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     const questions = await rpcCall("question", "listQuestions", [filter]) as Question[];
     return questions.map(normalizeLegacyQuestionMeanNotation);

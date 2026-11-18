@@ -1,7 +1,7 @@
 import { rpcCall } from "./api";
 
 import type {
-  DocumentRecord, RecognitionResult, WebAnnotationStats, Question,
+  DocumentRecord, DashboardDocumentSummary, RecognitionResult, WebAnnotationStats, Question,
 } from "@/types";
 import { importStoredFile, uploadFile } from "./api";
 
@@ -22,6 +22,10 @@ export const aiService = {
 
   async getDocument(docId: string): Promise<DocumentRecord | null> {
     return rpcCall("ai", "getDocument", [docId]) as any;
+  },
+
+  async getDashboardDocumentSummary(teacherId: string, weekStartIso: string): Promise<DashboardDocumentSummary> {
+    return rpcCall("ai", "getDashboardDocumentSummary", [teacherId, weekStartIso]);
   },
 
   async listDocuments(teacherId: string): Promise<DocumentRecord[]> {

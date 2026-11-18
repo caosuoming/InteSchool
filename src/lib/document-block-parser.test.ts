@@ -36,6 +36,39 @@ describe("document block parser", () => {
     expect(blocks.find((block) => block.type === "question")?.answer).toBe("2");
   });
 
+  it("keeps chemistry choice and non-choice sections and splits inline choice solutions", () => {
+    const blocks = parseDocumentBlocks([
+      "一、选择题", "1. 反应产物是哪一个 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：B解析：乙符合反应条件。",
+      "二、非选择题", "2. 写出化学反应方程式。", "答案：2H₂+O₂=2H₂O",
+    ].join("\n"), { ...config, subject: "化学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0]).toMatchObject({ questionType: "single", answer: "B", analysis: "乙符合反应条件。" });
+    expect(questions[1]).toMatchObject({ questionType: "essay", answer: "2H₂+O₂=2H₂O" });
+  });
+
+  it("uses chemistry 答案与解析 but discards a subsequent 答案-only key", () => {
+    const blocks = parseDocumentBlocks([
+      "一、选择题", "1. 下列说法正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案与解析", "1. C解析：丙符合要求。",
+      "答案", "1. A", "2. B", "3. D",
+    ].join("\n"), { ...config, subject: "化学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({ answer: "C", analysis: "丙符合要求。" });
+    expect(blocks.some((block) => block.content === "答案")).toBe(false);
+  });
+
+  it("does not import an isolated chemistry answer-only section", () => {
+    const blocks = parseDocumentBlocks([
+      "一、选择题", "1. 下列说法正确的是 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案", "1. D", "2. C",
+    ].join("\n"), { ...config, subject: "化学" });
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(1);
+    expect(blocks.find((block) => block.type === "question")?.answer).toBeUndefined();
+  });
+
   it("recognizes configured project headings without treating numbered exercises as headings", () => {
     const blocks = parseDocumentBlocks(
       [
@@ -673,6 +706,41 @@ describe("document block parser", () => {
       answer: "C",
       analysis: "两项判断均成立。",
     });
+  });
+
+  it("associates a Word math paper's final 答案以及解析 with the original questions", () => {
+    const blocks = parseDocumentBlocks(
+      [
+        "一、选择题",
+        "1. 计算 1+1。 A. 1 B. 2 C. 3 D. 4",
+        "2. 判断命题。 A. 甲 B. 乙 C. 丙 D. 丁",
+        "3. 判断函数单调性。 A. 甲 B. 乙 C. 丙 D. 丁",
+        "4. 已知三角形，求角度。 A. 甲 B. 乙 C. 丙 D. 丁",
+        "5. 圆锥的轴截面有什么性质？ A. 甲 B. 乙 C. 丙 D. 丁",
+        "17. 求证三角形为等腰三角形。",
+        "答案以及解析",
+        "1.答案：D",
+        "解析：由题意可得D。",
+        "2.答案：C",
+        "解析：复数的虚部为正。",
+        "3【答案】C",
+        "4.答案：C",
+        "解析：解得结论。",
+        "5答案：B",
+        "解析：轴截面为正三角形。",
+        "17解：（1）由余弦定理可证。",
+        "（2）再由正弦定理得到结论。",
+      ].join("\n"),
+      config,
+    );
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(6);
+    expect(questions.map((question) => question.answer)).toEqual([
+      "D", "C", "C", "C", "B", "（1）由余弦定理可证。\n（2）再由正弦定理得到结论。",
+    ]);
+    expect(questions[0].analysis).toBe("由题意可得D。");
+    expect(questions[4].analysis).toBe("轴截面为正三角形。");
+    expect(questions.every((question) => !question.content.includes("答案以及解析"))).toBe(true);
   });
 
   it("classifies 分析 markers in a trailing solution section as summary", () => {

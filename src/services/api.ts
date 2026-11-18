@@ -14,9 +14,18 @@ export function setCsrfToken(token: string | null): void {
   csrfToken = token;
 }
 
-function reviveRpc(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(reviveRpc);
+/** Avoid rebuilding unmodified RPC JSON objects while reviving Set/Map values. */
+export function reviveRpc(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    let changed: unknown[] | undefined;
+    value.forEach((item, index) => {
+      const revived = reviveRpc(item);
+      if (revived !== item && !changed) changed = value.slice();
+      if (changed) changed[index] = revived;
+    });
+    return changed || value;
+  }
   const record = value as Record<string, unknown>;
   if (record.__rpcType === "Set" && Array.isArray(record.values)) {
     return new Set(record.values.map(reviveRpc));
@@ -27,7 +36,13 @@ function reviveRpc(value: unknown): unknown {
       return [reviveRpc(pair[0]), reviveRpc(pair[1])];
     }));
   }
-  return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, reviveRpc(child)]));
+  let changed: Record<string, unknown> | undefined;
+  for (const [key, child] of Object.entries(record)) {
+    const revived = reviveRpc(child);
+    if (revived !== child && !changed) changed = { ...record };
+    if (changed) changed[key] = revived;
+  }
+  return changed || record;
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}, useCsrf = false): Promise<T> {
