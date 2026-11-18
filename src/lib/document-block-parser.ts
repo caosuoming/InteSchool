@@ -2740,8 +2740,12 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
   // Chemistry answer-only keys are duplicated after the detailed solutions.
   // Ignore that section entirely, including when it is the last section.
   const chemistry = config.subject?.trim() === "化学";
+  const detailedSolutionsStart = chemistry
+    ? sourceLines.findIndex((line) => trailingSolutionHeadingKind(line.trim()) === "answerAnalysis")
+    : -1;
   const answerOnlyStart = chemistry
-    ? sourceLines.findIndex((line) => trailingSolutionHeadingKind(line.trim()) === "answer")
+    ? sourceLines.findIndex((line, index) =>
+      index > detailedSolutionsStart && trailingSolutionHeadingKind(line.trim()) === "answer")
     : -1;
   const lines = answerOnlyStart >= 0
     ? sourceLines.slice(0, answerOnlyStart)
