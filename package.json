@@ -7,7 +7,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "vite",
     "dev:server": "INTESCHOOL_SERVE_STATIC=false tsx watch server/index.ts",
-    "build:web": "tsc -b && vite build",
+    "build:web": "tsc -b && vite build && node scripts/precompress-assets.mjs",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:web && npm run build:server",
     "check:mathtype": "node scripts/check-mathtype-runtime.mjs",

@@ -188,6 +188,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
       prefix: "/",
       wildcard: false,
       decorateReply: true,
+      preCompressed: true,
       maxAge: 0,
       immutable: false,
       setHeaders(reply, path) {
