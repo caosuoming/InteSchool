@@ -10,9 +10,10 @@ import { teacherResourceScopeId } from "@/lib/personal-resource-scope";
 import { useSchoolResourceOptions, includeCurrentOption } from "@/hooks/useSchoolResourceOptions";
 import { uploadFile } from "@/services/api";
 import { coursewareService } from "@/services/courseware";
+import { materialService } from "@/services/material";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { Courseware, ResourceSemester } from "@/types";
+import type { Courseware, Material, ResourceSemester } from "@/types";
 
 export default function GeoGebraEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +23,7 @@ export default function GeoGebraEditorPage() {
   const resourceScopeId = teacher ? teacherResourceScopeId(teacher) : undefined;
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear } =
     useSchoolResourceOptions(resourceScopeId);
-  const [existing, setExisting] = useState<Courseware | null>(null);
+  const [existing, setExisting] = useState<Courseware | Material | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -43,16 +44,17 @@ export default function GeoGebraEditorPage() {
     if (!id) return;
     let active = true;
     setLoading(true);
-    coursewareService.getCourseware(id).then((courseware) => {
+    Promise.all([coursewareService.getCourseware(id), materialService.getMaterial(id)]).then(([courseware, material]) => {
+      const entry = courseware || (material?.fileName?.toLowerCase().endsWith(".ggb") ? material : null);
       if (!active) return;
-      if (!courseware || courseware.type !== "ggb" || courseware.teacherId !== teacher?.id) {
+      if (!entry || ("onlineAccessToken" in entry && entry.type !== "ggb") || entry.teacherId !== teacher?.id) {
         throw new Error("GeoGebra 课件不存在或无权编辑");
       }
-      setExisting(courseware);
-      setTitle(courseware.title);
-      setGrade(courseware.grade);
-      setSchoolYear(courseware.schoolYear);
-      setSemester(courseware.semester || "上学期");
+      setExisting(entry);
+      setTitle(entry.title);
+      setGrade(entry.grade);
+      setSchoolYear(entry.schoolYear);
+      setSemester(entry.semester || "上学期");
     }).catch((cause) => {
       if (active) setError(cause instanceof Error ? cause.message : "加载课件失败");
     }).finally(() => {
@@ -67,7 +69,7 @@ export default function GeoGebraEditorPage() {
 
   const selectedGrade = grade || defaultGrade;
   const selectedSchoolYear = schoolYear || defaultSchoolYear;
-  const fileUrl = existing ? getCoursewareFileUrl(existing) : undefined;
+  const fileUrl = existing ? ("onlineAccessToken" in existing ? getCoursewareFileUrl(existing as Courseware) : existing.fileUrl) : undefined;
 
   useEffect(() => {
     if (loading || error || (id && !existing)) return;
@@ -137,8 +139,16 @@ export default function GeoGebraEditorPage() {
         fileSize: file.size,
       };
       const saved = existing
-        ? await coursewareService.updateCourseware(existing.id, fields)
-        : await coursewareService.createCourseware(teacher.id, resourceScopeId, {
+        ? ("onlineAccessToken" in existing
+            ? await coursewareService.updateCourseware(existing.id, fields)
+            : await materialService.updateMaterial(existing.id, fields))
+        : teacher.subject === "数学"
+          ? await materialService.createMaterial(teacher.id, resourceScopeId, {
+              ...fields, chapterIds: [], knowledgePointIds: [], type: "file",
+              content: mode === "geometry" ? "GeoGebra 几何画板" : "GeoGebra 交互素材",
+              tags: [mode === "geometry" ? "几何画板" : "GeoGebra"],
+            })
+          : await coursewareService.createCourseware(teacher.id, resourceScopeId, {
             ...fields,
             chapterIds: [],
             knowledgePointIds: [],
@@ -146,7 +156,7 @@ export default function GeoGebraEditorPage() {
             content: mode === "geometry" ? "GeoGebra 几何画板" : "GeoGebra 交互课件",
             tags: [mode === "geometry" ? "几何画板" : "GeoGebra"],
           });
-      toast.success("已保存到课件库", "可从上课课件编辑器中插入该 GGB 课件");
+      toast.success(teacher.subject === "数学" ? "已保存到素材库" : "已保存到课件库", "可从上课课件编辑器中插入该 GGB 素材");
       if (!existing) navigate("/geogebra/" + saved.id + "/edit", { replace: true });
       else setExisting(saved);
     } catch (cause) {

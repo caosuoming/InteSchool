@@ -56,7 +56,7 @@ function buildSections(text: string): Array<{
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
   ".md", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp",
-  ".mp3", ".mp4", ".wav", ".webm", ".ggb",
+  ".mp3", ".mp4", ".wav", ".webm", ".ggb", ".html", ".htm", ".gsp", ".gss",
 ]);
 
 const MIME_TYPES: Record<string, string> = {
@@ -80,11 +80,13 @@ const MIME_TYPES: Record<string, string> = {
   ".wav": "audio/wav",
   ".webm": "video/webm",
   ".ggb": "application/vnd.geogebra.file",
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
 };
 
 const INLINE_EXTENSIONS = new Set([
   ".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp",
-  ".mp3", ".mp4", ".wav", ".webm", ".ggb",
+  ".mp3", ".mp4", ".wav", ".webm", ".ggb", ".html", ".htm",
 ]);
 
 function safeMimeType(name: string): string {
@@ -479,7 +481,12 @@ export async function registerFileRoutes(
     const disposition = INLINE_EXTENSIONS.has(extension) ? "inline" : "attachment";
     reply.header("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(file.originalName)}`);
     reply.header("X-Content-Type-Options", "nosniff");
-    reply.header("Content-Security-Policy", "sandbox; default-src 'none'");
+    // HTML 素材允许画布内脚本动画，但必须使用独立的 opaque origin；
+    // 禁止顶层导航、表单及访问平台登录态。
+    const isHtmlMaterial = extension === ".html" || extension === ".htm";
+    reply.header("Content-Security-Policy", isHtmlMaterial
+      ? "sandbox allow-scripts; default-src 'self' data: blob:; script-src 'unsafe-inline' 'self' blob:; style-src 'unsafe-inline' 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+      : "sandbox; default-src 'none'");
 
     const filePath = join(config.uploadsDir, file.storageName);
     if (extension === ".docx" && formulaFormat === "office") {

@@ -3055,10 +3055,21 @@ export interface LessonSlideGeoGebraElement extends LessonSlideElementBase {
   src: string;
   title: string;
   coursewareId?: string;
+  materialId?: string;
+}
+
+/** 上传的 HTML 网页素材。使用沙箱嵌入或按钮在新标签页打开。 */
+export interface LessonSlideWebpageElement extends LessonSlideElementBase {
+  kind: "webpage";
+  src: string;
+  title: string;
+  materialId?: string;
+  displayMode: "embed" | "button";
+  backgroundColor?: string;
 }
 
 /** 可在课件画布中自由移动、缩放的元素。 */
-export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement;
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement | LessonSlideWebpageElement;
 
 /** 导入外部课件时尚未分配本地 ID 的自由画布元素。 */
 export type PptSlideImportElement =
