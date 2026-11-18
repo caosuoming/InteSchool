@@ -34,7 +34,7 @@ export const COLLECTIONS = [
   "studentInteractions", "studentInteractionFollows", "studentInteractionIgnores", "homeworkAttitudeRecords", "homeworkKnowledgeRecords", "homeworkRecordPreferences", "homeworkClassOverviewRecords", "studentArchiveRecords", "schoolBackups", "platformResourceSettings", "platformResourceCorrections", "schoolAdminApplications",
   "schoolCreationApplications",
   "gradeExams", "gradeExamAccess", "gradeExamAccessGrants", "gradePublications", "gradeTemplateProfiles", "gradeCohortSettings", "examArrangements", "examInvigilationProfiles", "teachingScheduleProfiles",
-  "notifications", "dashboardTodos", "parentAuthorizations", "parentAccounts",
+  "notifications", "dashboardTodos", "duplicateSchedules", "duplicateCandidates", "duplicateCheckedPairs", "parentAuthorizations", "parentAccounts",
   "helpTopics", "helpReplies", "helpCategories", "helpChangelogEntries", "helpChangelogShares",
 ] as const;
 
