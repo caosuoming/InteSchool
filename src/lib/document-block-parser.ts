@@ -1158,8 +1158,8 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
     .replace(/^[【［[(（]+/, "");
   const normalized = compact.replace(/[】］\])）:：]+$/, "");
   if (/^(?:参考)?答案$/.test(normalized)) return "answer";
-  if (/^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
-  const heading = /(?:参考)?答案(?:与|和|及)?解析|(?:参考)?答案/;
+  if (/^(?:参考)?答案(?:以及|与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
+  const heading = /(?:参考)?答案(?:以及|与|和|及)?解析|(?:参考)?答案/;
   const leading = new RegExp(`^(${heading.source})`).exec(compact);
   if (leading && (/^(?:[（(【［][^）)】］]{1,40}[）)】］])?$/.test(compact.slice(leading[0].length))
     || (leading[0].startsWith("参考答案")
@@ -1210,6 +1210,10 @@ function categorizedQuestionFieldKeywords(config: DocumentParseConfig): {
 }
 
 function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
+  // Answer keys copied from Word sometimes omit the separator after the number.
+  // Accept this only when an explicit solution field immediately follows it.
+  const compactEntry = /^(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?((?:【\s*(?:答案|解析|详解|解答)\s*】|(?:参考)?答案\s*[:：]|(?:解析|详解|解答|解)\s*[:：]).*)$/.exec(line);
+  if (compactEntry) return [{ number: normalizeQuestionNumber(compactEntry[1]), rest: compactEntry[2].replace(/^解\s*[:：]\s*/, "").trim() }];
   const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
   const markers = [...line.matchAll(markerPattern)];
   if (markers.length === 0) return [];
@@ -2722,7 +2726,7 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
 
   for (const { index: headingIndex, kind } of solutionHeadingIndexes) {
     const headingLine = lines[headingIndex].trim();
-    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
+    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:以及|与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
     const solutionLines = inlineAnswers !== headingLine
       ? [inlineAnswers, ...lines.slice(headingIndex + 1)]
       : lines.slice(headingIndex + 1);
