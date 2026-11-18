@@ -1078,7 +1078,12 @@ export function ExtractReviewModal({
       const extractedKnowledge = knowledgeBlocks.map((b) => ({
         id: b.id,
         title: b.knowledgeTitle || truncate(removeKeywords(b.content, questionKeywords), 20),
-        content: removeKeywords(b.content, questionKeywords),
+        // Materials have one content field: retain structured answers and tips on save.
+        content: [
+          removeKeywords(b.content, questionKeywords),
+          ...(b.answer?.trim() ? [`【答案】\n${b.answer.trim()}`] : []),
+          ...(b.analysis?.trim() ? [`【解析】\n${b.analysis.trim()}`] : []),
+        ].join("\n"),
         inlineAnswers: b.inlineAnswers,
         status: b.status as "new" | "duplicate" | "confirmed" | "edited",
         duplicateOf: b.duplicateOf as Material | undefined,
@@ -1279,6 +1284,8 @@ export function ExtractReviewModal({
                     className="whitespace-pre-wrap text-sm leading-relaxed text-ink-700"
                     dangerouslySetInnerHTML={{ __html: renderExtractText(block.content, allKeywords, true) }}
                   />
+                  {renderSolutionField("answer")}
+                  {renderSolutionField("analysis")}
                 </div>
               )}
 
@@ -1623,6 +1630,18 @@ export function ExtractReviewModal({
                   value={block.content}
                   onChange={(e) => updateBlockField(block.id, { content: e.target.value })}
                   rows={5}
+                />
+                <Textarea
+                  label="答案"
+                  value={block.answer || ""}
+                  onChange={(e) => updateBlockField(block.id, { answer: e.target.value })}
+                  rows={2}
+                />
+                <Textarea
+                  label="解析"
+                  value={block.analysis || ""}
+                  onChange={(e) => updateBlockField(block.id, { analysis: e.target.value })}
+                  rows={2}
                 />
               </>
             )}

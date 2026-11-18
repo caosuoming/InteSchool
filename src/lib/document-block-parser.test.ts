@@ -22,6 +22,20 @@ const config: DocumentParseConfig = {
 };
 
 describe("document block parser", () => {
+  it("separates knowledge answers and helpful tips while preserving continuation lines", () => {
+    const blocks = parseDocumentBlocks([
+      "一、基础知识", "教学目标：平行线的性质", "两直线平行，同位角相等。",
+      "【答案】相等", "必要时补充图形条件。",
+      "温馨提示：注意区分同位角与内错角。", "先找截线。",
+      "例1 求 1+1。", "答案：2",
+    ].join("\n"), config);
+    const knowledge = blocks.find((block) => block.type === "knowledge");
+    expect(knowledge?.content).not.toContain("温馨提示");
+    expect(knowledge?.answer).toBe("相等\n必要时补充图形条件。");
+    expect(knowledge?.analysis).toBe("温馨提示：注意区分同位角与内错角。\n先找截线。");
+    expect(blocks.find((block) => block.type === "question")?.answer).toBe("2");
+  });
+
   it("keeps chemistry choice and non-choice sections and splits inline choice solutions", () => {
     const blocks = parseDocumentBlocks([
       "一、选择题", "1. 反应产物是哪一个 A. 甲 B. 乙 C. 丙 D. 丁",
