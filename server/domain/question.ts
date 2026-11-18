@@ -17,7 +17,7 @@ import type {
 import type { TeacherRecord } from "../types.js";
 import { db, computeDuplicateHash, type QuestionSortKey } from "../runtime-db.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
-import { resourceSubject } from "../lib/resource-subject.js";
+import { resourceSubject, selectedSubject } from "../lib/resource-subject.js";
 import { knowledgeService } from "./knowledge.js";
 import { assertResourceCapacity } from "./quota.js";
 import { linkSameQuestions } from "./sameQuestion.js";
@@ -354,6 +354,32 @@ export function createVerifiedExtractQuestions(
 }
 
 export const questionService = {
+  /** A compact dashboard view: never send full question bodies just to render counts. */
+  async getDashboardQuestionCounts(
+    teacher: TeacherRecord,
+    weekStartIso: string,
+  ): Promise<{ total: number; weekly: number }> {
+    const start = Date.parse(weekStartIso);
+    if (!Number.isFinite(start)) throw new Error("无效的统计时间");
+    const questions = db.read("questions");
+    const activeSubject = selectedSubject(teacher);
+    const affiliation = teacher.affiliations?.find((item) => item.id === teacher.currentAffiliationId);
+    const multiSubject = Array.isArray(affiliation?.subjects) && affiliation.subjects.length > 1;
+    const hasOtherSubjects = questions.some((item) =>
+      item.teacherId === teacher.id && item.subject && item.subject !== activeSubject);
+    const restrictSubject = Boolean(activeSubject && (multiSubject || hasOtherSubjects));
+    const state = { teachers: [teacher] } as import("../types.js").AppState;
+    let total = 0;
+    let weekly = 0;
+    for (const question of questions) {
+      if (question.teacherId !== teacher.id) continue;
+      if (restrictSubject && resourceSubject(state, question as unknown as Record<string, unknown>) !== activeSubject) continue;
+      total++;
+      if (question.createdAt && Date.parse(question.createdAt) >= start) weekly++;
+    }
+    return { total, weekly };
+  },
+
   async listQuestions(filter: QuestionFilter = {}): Promise<Question[]> {
     const indexed = filter.subject ? null : await db.searchQuestions(filter);
     if (indexed) return withCurrentUsageCounts(indexed);

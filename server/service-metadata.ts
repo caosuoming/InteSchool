@@ -312,6 +312,7 @@ export const serviceParameters = {
     ]
   },
   "ai": {
+    "getDashboardDocumentSummary": ["teacherId", "weekStartIso"],
     "generateTeachingResources": [
       "kind",
       "keyword",
@@ -1062,6 +1063,7 @@ export const serviceParameters = {
     ]
   },
   "lecture": {
+    "getDashboardLectureSummary": ["teacher", "weekStartIso"],
     "listLectures": [
       "filter"
     ],
@@ -1449,6 +1451,7 @@ export const serviceParameters = {
     ]
   },
   "question": {
+    "getDashboardQuestionCounts": ["teacher", "weekStartIso"],
     "listQuestions": [
       "filter"
     ],

@@ -21,10 +21,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Modal } from "@/components/ui/Modal";
 import { timeAgo } from "@/lib/service-utils";
 import type {
-  Question,
-  Lecture,
+  DashboardLectureSummary, DashboardDocumentSummary,
   Basket,
-  DocumentRecord,
   PlatformResourceCorrection,
   PrepTask,
   PrepTaskType, LessonCourseware, ExamPaper, DashboardTodoInput, DashboardTodoRecord, DashboardTodoType,
@@ -41,10 +39,10 @@ import { useSchoolResourceOptions } from "@/hooks/useSchoolResourceOptions";
 import { canManageSchoolRoster } from "@/lib/roster-permissions";
 
 interface Stats {
-  questions: Question[];
-  lectures: Lecture[];
+  questions: { total: number; weekly: number };
+  lectures: DashboardLectureSummary;
   baskets: Basket[];
-  documents: DocumentRecord[];
+  documents: DashboardDocumentSummary;
   schoolClassCount: number;
   personalClassCount: number;
 }
@@ -132,12 +130,15 @@ export default function DashboardPage() {
   useEffect(() => {
     const load = async () => {
       if (!teacher) return;
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - (weekStart.getDay() + 6) % 7);
+      weekStart.setHours(0, 0, 0, 0);
       const [questions, lectures, baskets, documents, schoolClasses, personalClasses, corrections] =
         await Promise.all([
-          questionService.listQuestions({ teacherId: teacher.id }),
-          lectureService.listLectures({ teacherId: teacher.id }),
+          questionService.getDashboardQuestionCounts(weekStart.toISOString()),
+          lectureService.getDashboardLectureSummary(weekStart.toISOString()),
           basketService.listBaskets(teacher.id),
-          aiService.listDocuments(teacher.id),
+          aiService.getDashboardDocumentSummary(teacher.id, weekStart.toISOString()),
           teacher.schoolId ? classService.listSchoolClasses(teacher.schoolId) : Promise.resolve([]),
           classService.listPersonalClasses(teacher.id),
           shareService.listCorrectionTodos(teacher.id),
@@ -299,9 +300,9 @@ export default function DashboardPage() {
   const changedThisWeek = (timestamp?: string) =>
     Boolean(timestamp && new Date(timestamp).getTime() >= weekStart.getTime());
   const weeklyActivity = {
-    questions: stats?.questions.filter((item) => changedThisWeek(item.createdAt)).length ?? 0,
-    lectures: stats?.lectures.filter((item) => changedThisWeek(item.updatedAt)).length ?? 0,
-    documents: stats?.documents.filter((item) => changedThisWeek(item.createdAt)).length ?? 0,
+    questions: stats?.questions.weekly ?? 0,
+    lectures: stats?.lectures.weekly ?? 0,
+    documents: stats?.documents.weekly ?? 0,
     baskets: stats?.baskets.filter((item) => changedThisWeek(item.updatedAt || item.createdAt)).length ?? 0,
   };
   const activeTodos: DashboardTodoItem[] = [
@@ -310,7 +311,7 @@ export default function DashboardPage() {
       detail: `平台资源纠错 · ${correction.reporterNickname}：${correction.message || `上传了 ${correction.attachments.length} 张图片`}`,
       href: `/platform-resources?edit=${encodeURIComponent(correction.donationId)}&correction=${encodeURIComponent(correction.id)}`,
     })),
-    ...(stats?.documents ?? []).filter((doc) => doc.status === "recognized").map((doc) => ({
+    ...(stats?.documents.recognized ?? []).map((doc) => ({
       type: "document" as const, resourceId: doc.id, title: doc.fileName,
       detail: "AI 识别完成，等待您确认入库", href: "/import",
     })),
@@ -323,7 +324,7 @@ export default function DashboardPage() {
       type: "scan" as const, resourceId: paper.id, title: paper.title,
       detail: "待扫描作业 · 答题卡尚无扫描记录", href: "/homework-exams/homework",
     })),
-    ...(stats?.lectures ?? []).filter((lecture) => lecture.status === "draft").map((lecture) => ({
+    ...(stats?.lectures.drafts ?? []).map((lecture) => ({
       type: "lecture" as const, resourceId: lecture.id, title: lecture.title,
       detail: `草稿 · ${timeAgo(lecture.updatedAt)}更新`,
       href: `/lectures/${encodeURIComponent(lecture.id)}/edit`,
@@ -338,7 +339,7 @@ export default function DashboardPage() {
   const cards = [
     {
       label: "题库总量",
-      value: stats?.questions.length ?? 0,
+      value: stats?.questions.total ?? 0,
       icon: Library,
       color: "text-gold-600",
       bg: "bg-gold-50",
@@ -346,7 +347,7 @@ export default function DashboardPage() {
     },
     {
       label: "讲义数量",
-      value: stats?.lectures.length ?? 0,
+      value: stats?.lectures.total ?? 0,
       icon: FileText,
       color: "text-teal-600",
       bg: "bg-teal-50",
@@ -488,7 +489,7 @@ export default function DashboardPage() {
                   }
                 />
                 <div className="space-y-2">
-                  {stats.lectures.slice(0, 4).map((lec) => (
+                  {stats.lectures.recent.map((lec) => (
                     <Link
                       key={lec.id}
                       to={`/lectures/${lec.id}/preview`}
@@ -505,12 +506,12 @@ export default function DashboardPage() {
                           </span>
                         </div>
                         <div className="text-xs text-ink-500 mt-0.5">
-                          {lec.grade} · {lec.schoolYear} · {lec.sections.length} 节 · {timeAgo(lec.updatedAt)}
+                          {lec.grade} · {lec.schoolYear} · {lec.sectionCount} 节 · {timeAgo(lec.updatedAt)}
                         </div>
                       </div>
                     </Link>
                   ))}
-                  {stats.lectures.length === 0 && (
+                  {stats.lectures.total === 0 && (
                     <div className="text-center py-8 text-sm text-ink-400">
                       <FileQuestion className="w-8 h-8 mx-auto mb-2 text-ink-200" />
                       暂无讲义，从快捷入口开始创建
