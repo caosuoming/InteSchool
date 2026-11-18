@@ -147,6 +147,7 @@ function questionSearchWhere(filter: QuestionFilter): { clauses: string[]; param
     if ((filter.knowledgeLogic || "or") === "and") add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.knowledgePointIds));
     else add("coalesce(data_json->'knowledgePointIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.knowledgePointIds);
   }
+  if (filter.noMethod) clauses.push("jsonb_array_length(coalesce(data_json->'thoughtMethodIds', '[]'::jsonb)) = 0");
   if (filter.thoughtMethodIds?.length) {
     if ((filter.methodLogic || "or") === "and") add("coalesce(data_json->'thoughtMethodIds', '[]'::jsonb) @> __PARAM__::jsonb", JSON.stringify(filter.thoughtMethodIds));
     else add("coalesce(data_json->'thoughtMethodIds', '[]'::jsonb) ?| __PARAM__::text[]", filter.thoughtMethodIds);

@@ -229,6 +229,7 @@ export default function QuestionBankPage({
   const [annotatedDirectory, setAnnotatedDirectory] = useState<{ type: LeftTab; tree: TreeNode } | null>(null);
   const [noChapter, setNoChapter] = useState(false);
   const [noKnowledge, setNoKnowledge] = useState(false);
+  const [noMethod, setNoMethod] = useState(false);
 
   const [selectedDifficulties, setSelectedDifficulties] = useState<number[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -337,6 +338,9 @@ export default function QuestionBankPage({
     (isTreeEnabled("knowledge") && checkedKnowledge.length > 0) ||
     (isTreeEnabled("method") && checkedMethods.length > 0) ||
     (isTreeEnabled("error") && checkedErrors.length > 0) ||
+    (isTreeEnabled("chapter") && noChapter) ||
+    (isTreeEnabled("knowledge") && noKnowledge) ||
+    (isTreeEnabled("method") && noMethod) ||
     selectedDifficulties.length > 0 ||
     selectedTypes.length > 0 ||
     selectedGrade ||
@@ -380,6 +384,7 @@ export default function QuestionBankPage({
       errorReasonLogic: errorLogic,
       noChapter: isTreeEnabled("chapter") && noChapter,
       noKnowledge: isTreeEnabled("knowledge") && noKnowledge,
+      noMethod: isTreeEnabled("method") && noMethod,
       difficulty: selectedDifficulties,
       type: selectedTypes as any,
       grade: selectedGrade || undefined,
@@ -496,7 +501,7 @@ export default function QuestionBankPage({
     setLoading(false);
   }, [
     teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, checkedErrors, chapterLogic, knowledgeLogic, methodLogic, errorLogic,
-    noChapter, noKnowledge,
+    noChapter, noKnowledge, noMethod,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
     selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
     currentPage, pageSize, isTreeEnabled,
@@ -512,7 +517,7 @@ export default function QuestionBankPage({
     if (!isTreeEnabled(leftTab)) setLeftTab(enabledTreeKinds[0] || "chapter");
     if (!isTreeEnabled("chapter")) { setCheckedChapters((current) => current.length ? [] : current); setNoChapter(false); }
     if (!isTreeEnabled("knowledge")) { setCheckedKnowledge((current) => current.length ? [] : current); setNoKnowledge(false); }
-    if (!isTreeEnabled("method")) setCheckedMethods((current) => current.length ? [] : current);
+    if (!isTreeEnabled("method")) { setCheckedMethods((current) => current.length ? [] : current); setNoMethod(false); }
     if (!isTreeEnabled("error")) setCheckedErrors((current) => current.length ? [] : current);
   }, [teacher?.id, isTreeEnabled, enabledTreeKinds, leftTab]);
 
@@ -837,6 +842,7 @@ export default function QuestionBankPage({
     setCheckedErrors([]);
     setNoChapter(false);
     setNoKnowledge(false);
+    setNoMethod(false);
     setSelectedDifficulties([]);
     setSelectedTypes([]);
     setSelectedGrade("");
@@ -1265,7 +1271,7 @@ export default function QuestionBankPage({
 
           {/* 顶部筛选栏 */}
           <Card className="mb-4 p-4">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-start gap-3">
               {/* 搜索：可限定题干、解析、总结和备注；未选择时搜索全部 */}
               <div className="flex-1 min-w-[280px] space-y-2">
                 <div className="relative">
@@ -1300,6 +1306,13 @@ export default function QuestionBankPage({
                 </fieldset>
               </div>
 
+              <div className="flex flex-wrap items-center gap-2 self-start">
+                {isTreeEnabled("chapter") && <ToggleFilter label="无章节" checked={noChapter} onChange={setNoChapter} icon={<BookOpen className="w-3.5 h-3.5" />} />}
+                {isTreeEnabled("knowledge") && <ToggleFilter label="无知识点" checked={noKnowledge} onChange={setNoKnowledge} icon={<Lightbulb className="w-3.5 h-3.5" />} />}
+                {isTreeEnabled("method") && <ToggleFilter label="无方法" checked={noMethod} onChange={setNoMethod} icon={<Lightbulb className="w-3.5 h-3.5" />} />}
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <SelectFilter label="年级" value={selectedGrade} options={gradeOptions} onChange={setSelectedGrade} icon={<GraduationCap className="w-3.5 h-3.5" />} />
               <SelectFilter label="学年" value={selectedYear} options={schoolYearOptions} onChange={setSelectedYear} icon={<Calendar className="w-3.5 h-3.5" />} />
               <SelectFilter label="学期" value={selectedSemester} options={semesterOptions} onChange={setSelectedSemester} icon={<Calendar className="w-3.5 h-3.5" />} />
@@ -1307,8 +1320,6 @@ export default function QuestionBankPage({
               <MultiFilter label="难度" values={selectedDifficulties.map(String)} options={difficultyOptions.map((d) => ({ value: String(d.value), label: d.label }))} onToggle={(v) => toggleDifficulty(Number(v))} icon={<Layers className="w-3.5 h-3.5" />} />
               <MultiFilter label="来源" values={selectedSources} options={sourceOptions} onToggle={toggleSource} icon={<ListFilter className="w-3.5 h-3.5" />} />
               <MultiFilter label="题类" values={selectedCategories} options={categoryOptions} onToggle={toggleCategory} icon={<Tag className="w-3.5 h-3.5" />} />
-              {isTreeEnabled("chapter") && <ToggleFilter label="无章节" checked={noChapter} onChange={setNoChapter} icon={<BookOpen className="w-3.5 h-3.5" />} />}
-              {isTreeEnabled("knowledge") && <ToggleFilter label="无知识点" checked={noKnowledge} onChange={setNoKnowledge} icon={<Lightbulb className="w-3.5 h-3.5" />} />}
 
               {hasFilter && (
                 <Button variant="ghost" size="sm" onClick={clearAllFilters}>

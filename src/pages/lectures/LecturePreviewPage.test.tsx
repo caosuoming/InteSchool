@@ -31,7 +31,7 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 vi.mock("@/services/lecture", () => ({
-  lectureService: { getLecture: vi.fn(), listLectures: vi.fn(), updateLecture: vi.fn(), duplicateLecture: vi.fn() },
+  lectureService: { getLecture: vi.fn(), updateLecture: vi.fn(), duplicateLecture: vi.fn(), listLectures: vi.fn() },
 }));
 vi.mock("@/lib/docx", () => ({
   downloadLectureDocxVariants: documentMocks.downloadLectureDocxVariants,
@@ -39,7 +39,7 @@ vi.mock("@/lib/docx", () => ({
 vi.mock("@/services/class", () => ({
   classService: {
     getClassesByIds: vi.fn(),
-    listAllClasses: vi.fn(),
+    listAudienceClasses: vi.fn(),
     listStudentsByClass: vi.fn(),
     listStudentsBySchool: vi.fn(),
     getStudent: vi.fn(),
@@ -279,9 +279,8 @@ describe("LecturePreviewPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(lectureService.getLecture).mockResolvedValue(lecture);
-    vi.mocked(lectureService.listLectures).mockResolvedValue([]);
     vi.mocked(classService.getClassesByIds).mockResolvedValue([schoolClass]);
-    vi.mocked(classService.listAllClasses).mockResolvedValue([schoolClass]);
+    vi.mocked(classService.listAudienceClasses).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent]);
     vi.mocked(classService.listStudentsBySchool).mockResolvedValue([classStudent, explicitStudent]);
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
@@ -302,6 +301,7 @@ describe("LecturePreviewPage", () => {
     vi.mocked(analyticsService.batchSaveAnswerRecords).mockResolvedValue([]);
     vi.mocked(analyticsService.batchSetDocumentQuestionStatus).mockResolvedValue({ created: 1, cleared: 0, excluded: 0 });
     vi.mocked(lectureService.updateLecture).mockResolvedValue(lecture);
+    vi.mocked(lectureService.listLectures).mockResolvedValue([lecture]);
     vi.mocked(lectureService.duplicateLecture).mockResolvedValue({ ...lecture, id: "lecture-copy" });
     documentMocks.downloadLectureDocxVariants.mockResolvedValue(undefined);
     vi.mocked(lessonCoursewareService.getCoursewareBySource).mockResolvedValue(null);
@@ -335,8 +335,8 @@ describe("LecturePreviewPage", () => {
         schoolYear: "2027-2028",
         semester: "下学期",
         chapterIds: ["chapter-1"],
-        knowledgePointIds: [],
-        thoughtMethodIds: [],
+        knowledgePointIds: lecture.knowledgePointIds,
+        thoughtMethodIds: lecture.thoughtMethodIds || [],
       });
     });
   });
@@ -525,10 +525,9 @@ describe("LecturePreviewPage", () => {
       isExtractCopy: true,
       sourceResourceId: "lecture-source-1",
     });
-    vi.mocked(classService.listAllClasses).mockImplementation(async (schoolId, teacherId) => {
+    vi.mocked(classService.listAudienceClasses).mockImplementation(async (schoolId) => {
       if (schoolId === "school-old") throw new Error("无权访问其他学校的数据");
       expect(schoolId).toBe(teacher.schoolId);
-      expect(teacherId).toBe(teacher.id);
       return [];
     });
 
@@ -536,7 +535,7 @@ describe("LecturePreviewPage", () => {
 
     expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
     expect(screen.queryByText("讲义加载失败")).not.toBeInTheDocument();
-    expect(classService.listAllClasses).toHaveBeenCalledWith(teacher.schoolId, teacher.id);
+    expect(classService.listAudienceClasses).toHaveBeenCalledWith(teacher.schoolId);
     expect(classService.getClassesByIds).not.toHaveBeenCalled();
     expect(classService.listStudentsByClass).not.toHaveBeenCalledWith("old-class");
     await waitFor(() => {

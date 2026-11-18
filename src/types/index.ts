@@ -2343,6 +2343,7 @@ export interface QuestionFilter {
   errorReasonLogic?: FilterLogic;
   noChapter?: boolean;
   noKnowledge?: boolean;
+  noMethod?: boolean;
   difficulty?: number[];
   recommendation?: number[];
   type?: QuestionType[];
