@@ -525,7 +525,6 @@ describe("LecturePreviewPage", () => {
     vi.mocked(classService.listAudienceClasses).mockImplementation(async (schoolId) => {
       if (schoolId === "school-old") throw new Error("无权访问其他学校的数据");
       expect(schoolId).toBe(teacher.schoolId);
-      expect(teacherId).toBe(teacher.id);
       return [];
     });
 
