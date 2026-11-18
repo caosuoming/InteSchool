@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, applyAppearanceMode, applyUiScale } from "@/stores/settings";
+import { preloadNavigationPage } from "@/lib/page-preload";
 const AppLayout = lazy(async () => ({ default: (await import("@/components/layout/AppLayout")).AppLayout }));
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
 import { RequireSchoolRosterManager } from "@/components/auth/RequireSchoolRosterManager";
@@ -76,13 +77,21 @@ export default function App() {
   const appearanceMode = useSettingsStore((s) => s.appearanceMode);
 
   useEffect(() => {
-    // Overlap the protected shell download with the auth round trip on deep links.
-    // Public landing pages should never pay for the protected UI bundle.
-    if (!/^\/(?:login|prep-login|classroom-login|scanner|classroom-device|parent(?:-register)?|grade-reports|changelog)(?:\/|$)/.test(window.location.pathname)) {
-      void import("@/components/layout/AppLayout");
-    }
+    // Wait for session validation before loading authenticated navigation.
+    // Otherwise anonymous deep links fetch the entire shell and icon set
+    // even though they will immediately redirect to the login page.
     void init();
   }, [init]);
+
+  useEffect(() => {
+    if (!teacher) return;
+    // Fetch the selected page and navigation shell in parallel. Nested lazy
+    // routes otherwise wait for the shell before requesting page code.
+    const path = window.location.pathname;
+    if (/^\/(?:login|prep-login|parent(?:-register)?|classroom-login|scanner|grade-reports|changelog)(?:\/|$)/.test(path)) return;
+    void import("@/components/layout/AppLayout");
+    preloadNavigationPage(path);
+  }, [teacher]);
 
   // 字体版本同步到 :root
   useEffect(() => {
