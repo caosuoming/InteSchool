@@ -375,6 +375,8 @@ describe("ExamPaperEditorPage preview", () => {
         schoolYear: "2027-2028",
         semester: "下学期",
         chapterIds: ["chapter-1"],
+        knowledgePointIds: ["knowledge-1"],
+        thoughtMethodIds: [],
       });
     });
     expect(await screen.findAllByText("函数单元检测卷")).toHaveLength(2);

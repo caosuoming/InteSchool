@@ -31,7 +31,7 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 vi.mock("@/services/lecture", () => ({
-  lectureService: { getLecture: vi.fn(), updateLecture: vi.fn(), duplicateLecture: vi.fn() },
+  lectureService: { getLecture: vi.fn(), listLectures: vi.fn(), updateLecture: vi.fn(), duplicateLecture: vi.fn() },
 }));
 vi.mock("@/lib/docx", () => ({
   downloadLectureDocxVariants: documentMocks.downloadLectureDocxVariants,
@@ -279,6 +279,7 @@ describe("LecturePreviewPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(lectureService.getLecture).mockResolvedValue(lecture);
+    vi.mocked(lectureService.listLectures).mockResolvedValue([]);
     vi.mocked(classService.getClassesByIds).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listAllClasses).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent]);
@@ -334,6 +335,8 @@ describe("LecturePreviewPage", () => {
         schoolYear: "2027-2028",
         semester: "下学期",
         chapterIds: ["chapter-1"],
+        knowledgePointIds: [],
+        thoughtMethodIds: [],
       });
     });
   });
