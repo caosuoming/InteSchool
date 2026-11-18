@@ -1,3 +1,4 @@
+import { migrateMathCoursewareMaterials } from "./lib/math-courseware-migration.js";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -194,6 +195,11 @@ export class DatabaseStore {
       await store.reloadStateCache();
       await store.ensureDemoAccount();
       await store.ensureBootstrapAdmin();
+      const beforeMigration = store.loadState();
+      const nextState = structuredClone(beforeMigration);
+      if (migrateMathCoursewareMaterials(nextState) > 0) {
+        await store.saveState(beforeMigration, nextState);
+      }
       return store;
     } catch (error) {
       await sql.close();

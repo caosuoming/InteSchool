@@ -169,15 +169,15 @@ export default function GeoGebraEditorPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" onClick={() => navigate("/my-resources/coursewares")}>
-          <ArrowLeft className="w-4 h-4" />返回课件库
+        <Button variant="ghost" onClick={() => navigate(teacher?.subject === "数学" ? "/my-resources/materials" : "/my-resources/coursewares")}>
+          <ArrowLeft className="w-4 h-4" />{teacher?.subject === "数学" ? "返回素材库" : "返回课件库"}
         </Button>
         <h1 className="font-serif text-xl font-semibold text-ink-900">
           {mode === "geometry" ? "制作几何画板" : "制作 GGB"}
         </h1>
         <div className="flex-1" />
         <Button variant="gold" onClick={() => void save()} disabled={!ready || loading || Boolean(error)} loading={saving}>
-          <Save className="w-4 h-4" />保存到课件库
+          <Save className="w-4 h-4" />{teacher?.subject === "数学" ? "保存到素材库" : "保存到课件库"}
         </Button>
       </div>
       <div className="grid gap-3 rounded-lg border border-ink-100 bg-paper p-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -196,7 +196,7 @@ export default function GeoGebraEditorPage() {
         {error && <div role="alert" className="absolute inset-0 flex items-center justify-center p-6 text-red-700">{error}</div>}
       </div>
       <p className="text-xs text-ink-500">
-        制作完成后点击“保存到课件库”。保存为标准 .ggb 文件，插入上课课件后保留几何对象的交互操作。在线编辑器需要能够访问 GeoGebra 服务。
+        制作完成后点击“{teacher?.subject === "数学" ? "保存到素材库" : "保存到课件库"}”。保存为标准 .ggb 文件，插入上课课件后保留几何对象的交互操作。在线编辑器需要能够访问 GeoGebra 服务。
       </p>
     </div>
   );

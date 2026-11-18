@@ -190,7 +190,9 @@ function resourceStatusForTeacherId(
 ): ResourceQuotaStatus {
   const records = db.read(RESOURCE_COLLECTIONS[key]);
   const used = Array.isArray(records)
-    ? records.filter((record: { teacherId?: string }) => record.teacherId === teacherId).length
+    ? records.filter((record: { teacherId?: string; migratedToMaterial?: boolean }) => (
+        record.teacherId === teacherId && (key !== "courseware" || !record.migratedToMaterial)
+      )).length
     : 0;
   const configured = teacher?.quotaOverrides?.resourceBaseCapacities?.[key];
   const baseCapacity = configured === undefined ? DEFAULT_RESOURCE_CAPACITIES[key] : configured;

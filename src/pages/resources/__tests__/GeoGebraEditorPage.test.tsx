@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   createCourseware: vi.fn(),
   updateCourseware: vi.fn(),
   getCourseware: vi.fn(),
+  getMaterial: vi.fn(),
+  createMaterial: vi.fn(),
+  updateMaterial: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -26,6 +29,7 @@ vi.mock("@/services/courseware", () => ({
     getCourseware: mocks.getCourseware,
   },
 }));
+vi.mock("@/services/material", () => ({ materialService: { getMaterial: mocks.getMaterial, createMaterial: mocks.createMaterial, updateMaterial: mocks.updateMaterial } }));
 vi.mock("@/stores/auth", () => ({
   useAuthStore: () => ({ teacher: { id: "teacher-1", schoolId: "school-1" } }),
 }));
@@ -77,6 +81,7 @@ describe("GeoGebraEditorPage", () => {
     mocks.createCourseware.mockResolvedValue(saved);
     mocks.updateCourseware.mockResolvedValue(saved);
     mocks.getCourseware.mockResolvedValue(saved);
+    mocks.getMaterial.mockResolvedValue(null);
   });
 
   it("creates a new geometry-board file in the courseware library", async () => {

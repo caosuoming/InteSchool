@@ -1869,6 +1869,8 @@ export interface Courseware {
   editorUrl?: string;
   /** 从试卷或讲义生成的上课课件所对应的“我的上课”课件。 */
   lessonCoursewareId?: string;
+  /** 旧版数学媒体已归入素材库；保留原记录仅兼容外部引用。 */
+  migratedToMaterial?: boolean;
   /** 生成该课件的源文档类型。 */
   sourceResourceType?: "examPaper" | "lecture";
   /** 生成该课件的源文档 ID；拆解文档指向正稿。 */

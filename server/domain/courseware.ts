@@ -91,7 +91,7 @@ export const coursewareService = {
     await delay(300);
     return db
       .read("coursewares")
-      .filter((c) => matchFilter(c, filter))
+      .filter((c) => !c.migratedToMaterial && matchFilter(c, filter))
       .map(ensureOnlineAccessToken)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   },

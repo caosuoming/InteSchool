@@ -906,7 +906,7 @@ export function UploadPage() {
                           <Upload className="w-8 h-8 mx-auto text-ink-300 mb-2" />
                           <div className="text-sm text-ink-700">拖拽文件到此处，或点击选择多个文件</div>
                           <div className="text-xs text-ink-400 mt-1">
-                            支持格式：{resourceTypes.find((r) => r.key === selectedType)?.formats}
+                            支持格式：{selectedType === "courseware" && teacher?.subject === "数学" ? ".ppt,.pptx" : resourceTypes.find((r) => r.key === selectedType)?.formats}
                           </div>
                         </>
                       )}
@@ -915,7 +915,7 @@ export function UploadPage() {
                       ref={fileInputRef}
                       type="file"
                       multiple
-                      accept={resourceTypes.find((r) => r.key === selectedType)?.formats}
+                      accept={selectedType === "courseware" && teacher?.subject === "数学" ? ".ppt,.pptx" : resourceTypes.find((r) => r.key === selectedType)?.formats}
                       onChange={handleFileInput}
                       className="hidden"
                     />
