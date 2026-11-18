@@ -6,6 +6,7 @@ import type {
   LectureColumnTemplate,
   LectureColumnTemplateItem,
   LectureFilter,
+  DashboardLectureSummary,
   LectureSection,
   ResourceSemester,
 } from "@/types";
@@ -37,6 +38,10 @@ export interface LectureColumnTemplateInput {
 }
 
 export const lectureService = {
+  async getDashboardLectureSummary(weekStartIso: string): Promise<DashboardLectureSummary> {
+    return rpcCall("lecture", "getDashboardLectureSummary", [null, weekStartIso]);
+  },
+
   async listLectures(filter: LectureFilter = {}): Promise<Lecture[]> {
     return rpcCall("lecture", "listLectures", [filter]) as any;
   },
