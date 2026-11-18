@@ -235,6 +235,7 @@ function matchFilter(q: Question, filter: QuestionFilter): boolean {
       if (!filter.knowledgePointIds.some((k) => q.knowledgePointIds.includes(k))) return false;
     }
   }
+  if (filter.noMethod && (q.thoughtMethodIds?.length || 0) > 0) return false;
   if (filter.thoughtMethodIds?.length) {
     const ids = q.thoughtMethodIds || [];
     if ((filter.methodLogic || "or") === "and") {

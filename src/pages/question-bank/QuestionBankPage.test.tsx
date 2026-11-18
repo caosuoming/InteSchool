@@ -618,6 +618,26 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-basket", "true");
   });
 
+  it("places missing metadata toggles by the search box and filters questions without methods", async () => {
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    const search = screen.getByPlaceholderText("搜索题干、解析、总结、备注...");
+    const missingMethod = screen.getByRole("button", { name: "无方法" });
+    expect(search.closest(".flex.flex-wrap")).toContainElement(missingMethod);
+    expect(screen.getByRole("button", { name: "无章节" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "无知识点" })).toBeInTheDocument();
+
+    fireEvent.click(missingMethod);
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ noMethod: true }),
+      expect.anything(),
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "清空筛选" }));
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ noMethod: false }),
+      expect.anything(),
+    ));
+  });
+
   it("queries personal questions by teacher while keeping class context on the active school", async () => {
     render(
       <MemoryRouter>
