@@ -5,6 +5,16 @@ import { defineConfig } from "vite";
 export default defineConfig(({ mode }) => ({
   build: {
     sourcemap: "hidden",
+    rollupOptions: {
+      output: {
+        // Lucide exports are shared between lazy pages. Without a shared chunk,
+        // Rollup generates a separate HTTP request for almost every icon,
+        // creating long waterfalls on high-latency connections.
+        manualChunks(id) {
+          if (id.includes("/node_modules/lucide-react/")) return "lucide-icons";
+        },
+      },
+    },
   },
   server: {
     host: "0.0.0.0",
