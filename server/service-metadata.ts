@@ -1,4 +1,10 @@
 export const serviceParameters = {
+  "scheduledDuplicate": {
+    "listSchedules": ["teacherId"], "listCandidates": ["teacherId"],
+    "createSchedule": ["teacherId", "kind", "repeat", "nextRunAt", "timezoneOffsetMinutes"],
+    "cancelSchedule": ["teacherId", "scheduleId"], "runSchedule": ["teacherId", "scheduleId"],
+    "resolveCandidate": ["teacherId", "candidateId", "decision"]
+  },
   "board": {
     "listBoards": ["teacherId"],
     "getBoard": ["boardId", "teacherId"],
@@ -306,6 +312,7 @@ export const serviceParameters = {
     ]
   },
   "ai": {
+    "getDashboardDocumentSummary": ["teacherId", "weekStartIso"],
     "generateTeachingResources": [
       "kind",
       "keyword",
@@ -597,6 +604,7 @@ export const serviceParameters = {
       "schoolId",
       "teacherId"
     ],
+    "listAudienceClasses": ["schoolId", "teacher"],
     "createSchoolClass": [
       "schoolId",
       "teacherId",
@@ -1055,6 +1063,7 @@ export const serviceParameters = {
     ]
   },
   "lecture": {
+    "getDashboardLectureSummary": ["teacher", "weekStartIso"],
     "listLectures": [
       "filter"
     ],
@@ -1442,6 +1451,7 @@ export const serviceParameters = {
     ]
   },
   "question": {
+    "getDashboardQuestionCounts": ["teacher", "weekStartIso"],
     "listQuestions": [
       "filter"
     ],

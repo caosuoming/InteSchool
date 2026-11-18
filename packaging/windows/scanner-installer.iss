@@ -1,5 +1,5 @@
 #define AppName "InteSchool 扫描桥接"
-#define AppVersion "1.2.0"
+#define AppVersion "1.2.1"
 #define OfficialSite "https://inteschool.fwerkor.com"
 #define OfficialSiteEncoded "https%3A%2F%2Finteschool.fwerkor.com"
 
@@ -30,6 +30,7 @@ Source: "..\..\scripts\scanner-launcher.mjs"; DestDir: "{app}\scripts"; Flags: i
 Source: "..\..\scripts\scanner-wia.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "scanner-launch.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Source: "scanner-tray.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "scanner-restart-bridge.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\public\favicon.ico"; DestDir: "{app}"; DestName: "scanner.ico"; Flags: ignoreversion
 
 [Tasks]
@@ -51,6 +52,7 @@ Name: "{userstartup}\InteSchool 扫描桥接"; Filename: "{sys}\wscript.exe"; Pa
 ; Only the explicitly selected production origin is saved. The launcher uses
 ; the same origin validation and persistent allowlist as browser pairing.
 Filename: "{app}\node.exe"; Parameters: """{app}\scripts\scanner-launcher.mjs"" --pair-only ""inteschool-scanner://connect?origin={#OfficialSiteEncoded}"""; Tasks: authorizeOfficialWebsite; Flags: runhidden waituntilterminated; StatusMsg: "正在授权 InteSchool 网站..."
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\scanner-restart-bridge.ps1"""; Flags: runhidden waituntilterminated; StatusMsg: "更新本机扫描服务..."
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -STA -File ""{app}\scanner-tray.ps1"" -Restart"; Description: "启动本机扫描服务"; Flags: nowait skipifsilent
 
 [UninstallRun]

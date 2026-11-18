@@ -4,10 +4,13 @@ import type {
   LectureColumnTemplate,
   LectureColumnTemplateItem,
   LectureFilter,
+  DashboardLectureSummary,
   LectureSection,
   ResourceSemester,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
+import type { TeacherRecord } from "../types.js";
+import { resourceSubject, selectedSubject } from "../lib/resource-subject.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
@@ -136,6 +139,25 @@ export interface LectureColumnTemplateInput {
 }
 
 export const lectureService = {
+  async getDashboardLectureSummary(teacher: TeacherRecord, weekStartIso: string): Promise<DashboardLectureSummary> {
+    const start = Date.parse(weekStartIso);
+    if (!Number.isFinite(start)) throw new Error("无效的统计时间");
+    const currentSubject = selectedSubject(teacher);
+    const state = { teachers: [teacher] } as import("../types.js").AppState;
+    const lectures = db.read("lectures")
+      .filter((lecture) => lecture.teacherId === teacher.id
+        && (!currentSubject || resourceSubject(state, lecture as unknown as Record<string, unknown>) === currentSubject))
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    return {
+      total: lectures.length,
+      weekly: lectures.filter((lecture) => Date.parse(lecture.updatedAt) >= start).length,
+      recent: lectures.slice(0, 4).map(({ id, title, grade, schoolYear, status, updatedAt, sections }) =>
+        ({ id, title, grade, schoolYear, status, updatedAt, sectionCount: sections.length })),
+      drafts: lectures.filter((lecture) => lecture.status === "draft").map(({ id, title, updatedAt }) =>
+        ({ id, title, updatedAt })),
+    };
+  },
+
   async listLectures(filter: LectureFilter = {}): Promise<Lecture[]> {
     await delay(300);
     return withLectureAnnotationSummary(db

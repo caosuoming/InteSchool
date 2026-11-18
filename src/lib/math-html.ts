@@ -13,7 +13,7 @@ const MARKDOWN_IMAGE_PATTERN = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const LATEX_STRUCTURE_PATTERN = /\\[A-Za-z]+|[_^{}=<>]/;
 const ESCAPED_MATH_VARIABLE_PATTERN = /&lt;i\s+class=(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)(math-(?:variable|vector)(?:\s+math-vector-zero)?)(?:&quot;|&#34;|&#x22;|&#39;|&#x27;|&apos;)&gt;([\s\S]*?)&lt;\/i&gt;/gi;
 const ESCAPED_VERTICAL_SCRIPT_PATTERN = /&lt;(sub|sup|u)&gt;([\s\S]*?)&lt;\/\1&gt;/gi;
-const ESCAPED_ANSWER_BLANK_PATTERN = /&lt;span\s+class=(?:&quot;|&#34;|&#x22;|\")knowledge-answer-blank(?:&quot;|&#34;|&#x22;|\")\s+data-answer-index=(?:&quot;|&#34;|&#x22;|\")(\d+)(?:&quot;|&#34;|&#x22;|\")&gt;(_{4,})&lt;\/span&gt;/gi;
+const ESCAPED_ANSWER_BLANK_PATTERN = /&lt;span\s+class=(?:&quot;|&#34;|&#x22;|")knowledge-answer-blank(?:&quot;|&#34;|&#x22;|")\s+data-answer-index=(?:&quot;|&#34;|&#x22;|")(\d+)(?:&quot;|&#34;|&#x22;|")&gt;(_{4,})&lt;\/span&gt;/gi;
 
 const SAFE_RICH_TEXT_TAGS = sanitizeHtml.defaults.allowedTags.concat([
   "img",

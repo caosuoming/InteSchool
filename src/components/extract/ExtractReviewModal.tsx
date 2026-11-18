@@ -342,9 +342,11 @@ export function ExtractReviewModal({
   const { teacher } = useAuthStore();
   const { options: questionTypeOptions, defaultType: defaultQuestionType } = useQuestionTypeOptions(teacher?.schoolId, teacher?.subject);
   const subject = teacher?.subject;
-  const availableQuestionTypes = subject?.trim() === "数学"
-    ? questionTypeOptions.filter((option) => option.value !== "comprehensive")
-    : questionTypeOptions;
+  const availableQuestionTypes = subject?.trim() === "化学"
+    ? [{ value: "single" as const, label: "选择题" }, { value: "essay" as const, label: "非选择题" }]
+    : subject?.trim() === "数学"
+      ? questionTypeOptions.filter((option) => option.value !== "comprehensive")
+      : questionTypeOptions;
   const subjectDefaultQuestionType = availableQuestionTypes[0]?.value
     || normalizeQuestionTypeForSubject(defaultQuestionType, subject);
   const extractConfig = useExtractConfigStore();
