@@ -639,7 +639,7 @@ describe("QuestionBankPage personal resource scope", () => {
       expect.any(Number),
       expect.any(String),
     ));
-    fireEvent.click(screen.getByRole("button", { name: "清空筛选" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "清空筛选" })[0]);
     await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
       expect.objectContaining({ noMethod: false }),
       expect.any(Number),
