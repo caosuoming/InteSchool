@@ -1848,19 +1848,19 @@ export default function ExamPaperEditorPage() {
                   {selectedClassIds.length > 0 && <Badge variant="gold">{selectedClassIds.length}班</Badge>}
                 </Button>
               )}
-              <Button variant="outline" onClick={toggleAllPreviewAnswers}
-                disabled={previewQuestionIds.length === 0} aria-pressed={allPreviewAnswersExpanded}>
-                <Eye className="w-4 h-4" />
-                {allPreviewAnswersExpanded ? "收起全部答案" : "一键显示答案"}
-              </Button>
               {!prepTaskId && paper?.teacherId === teacher?.id && (
-                <Button variant="outline" onClick={() => setUsageImportOpen(true)}>
+                <Button variant="outline" onClick={() => setUsageImportOpen(true)} disabled={selectedClassIds.length === 0}>
                   <Upload className="w-4 h-4" />上传使用数据
                 </Button>
               )}
             </div>}
           />
           <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="outline" onClick={toggleAllPreviewAnswers}
+                disabled={previewQuestionIds.length === 0} aria-pressed={allPreviewAnswersExpanded}>
+                <Eye className="w-4 h-4" />
+                {allPreviewAnswersExpanded ? "收起全部答案" : "一键显示答案"}
+              </Button>
           {!prepTaskId && paper?.teacherId === teacher?.id && (
                 <DocumentCoursewareActions
                   classIds={selectedClassIds}
@@ -1922,10 +1922,6 @@ export default function ExamPaperEditorPage() {
                 buttonClassName="justify-start"
                 onApplied={refreshCompletionRecords}
               />
-              <Button variant="outline" size="sm" className="justify-start" onClick={handleMarkAllDone}
-                loading={markingAllDone} disabled={audienceStudentIds.length === 0 || paperQuestions.length === 0}>
-                <CheckSquare className="w-3.5 h-3.5" /> 全部设为使用
-              </Button>
             </>}
           />
         </div>

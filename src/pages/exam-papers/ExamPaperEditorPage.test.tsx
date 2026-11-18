@@ -494,8 +494,8 @@ describe("ExamPaperEditorPage preview", () => {
     const batchButtons = within(batchActions).getAllByRole("button");
     expect(batchButtons.every((button) => !button.classList.contains("w-full"))).toBe(true);
     expect(within(batchActions).getByRole("button", { name: "全部设为已做" })).toBeInTheDocument();
-    expect(within(batchActions).getByRole("button", { name: "全部设为使用" })).toBeInTheDocument();
-    expect(batchButtons).toHaveLength(5);
+    expect(within(batchActions).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+    expect(batchButtons).toHaveLength(4);
     expect(preview.closest(".preview-sticky-shell")).not.toBeNull();
     expect(preview.querySelector(".preview-sticky-spacer")).not.toBeNull();
     const questionDetails = screen.getByTestId("exam-question-details-1");
@@ -661,13 +661,23 @@ describe("ExamPaperEditorPage preview", () => {
     });
   });
 
-  it("shows preview title-row actions and the Excel import dialog", async () => {
+  it("places metadata, audience and upload beside the title, with answers on the next row", async () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");
     const toolbar = screen.getByRole("toolbar", { name: "试卷预览操作" });
-    expect(within(toolbar).getByRole("button", { name: "编辑文档属性" })).toBeInTheDocument();
+    const titleActions = within(toolbar).getByRole("button", { name: "编辑文档属性" }).parentElement!;
+    expect(within(titleActions).getByRole("button", { name: "添加使用对象" })).toBeInTheDocument();
+    const upload = within(titleActions).getByRole("button", { name: "上传使用数据" });
+    expect(upload).toBeDisabled();
+    expect(within(titleActions).queryByRole("button", { name: "一键显示答案" })).not.toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: "一键显示答案" })).toBeInTheDocument();
-    fireEvent.click(within(toolbar).getByRole("button", { name: "上传使用数据" }));
+    expect(within(toolbar).queryByRole("button", { name: "全部设为使用" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(titleActions).getByRole("button", { name: "添加使用对象" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /确定（1 个班级）/ }));
+    await waitFor(() => expect(upload).toBeEnabled());
+    fireEvent.click(upload);
     expect(await screen.findByText("上传试卷使用数据")).toBeInTheDocument();
     expect(screen.getByLabelText("答题数据 Excel")).toBeInTheDocument();
   });
