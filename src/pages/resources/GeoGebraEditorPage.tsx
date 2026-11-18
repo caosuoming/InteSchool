@@ -45,7 +45,8 @@ export default function GeoGebraEditorPage() {
     let active = true;
     setLoading(true);
     Promise.all([coursewareService.getCourseware(id), materialService.getMaterial(id)]).then(([courseware, material]) => {
-      const entry = courseware || (material?.fileName?.toLowerCase().endsWith(".ggb") ? material : null);
+      const materialEntry = material?.fileName?.toLowerCase().endsWith(".ggb") ? material : null;
+      const entry = courseware?.migratedToMaterial ? materialEntry : (courseware || materialEntry);
       if (!active) return;
       if (!entry || ("onlineAccessToken" in entry && entry.type !== "ggb") || entry.teacherId !== teacher?.id) {
         throw new Error("GeoGebra 课件不存在或无权编辑");
