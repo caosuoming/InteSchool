@@ -619,6 +619,12 @@ describe("QuestionBankPage personal resource scope", () => {
   });
 
   it("places missing metadata toggles by the search box and filters questions without methods", async () => {
+    useAuthStore.setState({
+      teacher: {
+        ...useAuthStore.getState().teacher!,
+        knowledgeTreeEnabled: { chapter: true, knowledge: true, method: true, error: false },
+      } as Teacher,
+    });
     render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
     const search = screen.getByPlaceholderText("搜索题干、解析、总结、备注...");
     const missingMethod = screen.getByRole("button", { name: "无方法" });
