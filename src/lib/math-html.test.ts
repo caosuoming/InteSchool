@@ -120,6 +120,25 @@ describe("renderMathHtml", () => {
     expect(container.textContent).toBe("零向量 0");
   });
 
+  it("restores escaped Word underline runs and lesson answer placeholders", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml(
+      '性质：a&gt;b &lt;u&gt;a&lt;/u&gt;+&lt;u&gt;b&lt;/u&gt;，'
+      + '&lt;span class=&quot;knowledge-answer-blank&quot; data-answer-index=&quot;3&quot;&gt;____&lt;/span&gt;',
+    );
+    expect(container.querySelectorAll("u")).toHaveLength(2);
+    expect(container.querySelector(".knowledge-answer-blank")).toHaveAttribute("data-answer-index", "3");
+    expect(container.textContent).not.toContain("<u>");
+    expect(container.textContent).not.toContain("<span");
+  });
+
+  it("does not revive arbitrary escaped HTML", () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderMathHtml('&lt;script&gt;alert(1)&lt;/script&gt; &lt;u onclick=&quot;bad()&quot;&gt;X&lt;/u&gt;');
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("u")).toBeNull();
+  });
+
   it("does not render formulas that are already KaTeX markup", () => {
     const existing = '<span class="katex-formula" data-latex="x"><span class="katex">$x$</span></span>';
     const container = document.createElement("div");
