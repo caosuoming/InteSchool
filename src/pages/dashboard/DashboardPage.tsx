@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils";
 import { lessonCoursewareService } from "@/services/lessonCourseware";
 import { examPaperService } from "@/services/examPaper";
 import { scannerService } from "@/services/scanner";
+import { ScheduledDuplicatePanel } from "./ScheduledDuplicatePanel";
 import { DashboardQuickActions } from "./DashboardQuickActions";
 import { dashboardTodoService } from "@/services/dashboardTodo";
 import { pendingCoursewares, pendingScanPapers } from "./dashboard-todos";
@@ -392,6 +393,7 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="space-y-6 animate-slide-up">
+          <ScheduledDuplicatePanel teacherId={teacher.id} />
           {/* 数据卡片 */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map((c) => {

@@ -136,6 +136,7 @@ const PERSONAL_SETTINGS_ID_MUTATIONS = new Set([
 
 const PERSONAL_RESOURCE_SERVICES = new Set<ServiceName>([
   "courseware",
+  "scheduledDuplicate",
   "board",
   "donation",
   "examPaper",
