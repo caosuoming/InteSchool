@@ -629,12 +629,16 @@ describe("QuestionBankPage personal resource scope", () => {
     fireEvent.click(missingMethod);
     await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
       expect.objectContaining({ noMethod: true }),
-      expect.anything(),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(String),
     ));
     fireEvent.click(screen.getByRole("button", { name: "清空筛选" }));
     await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
       expect.objectContaining({ noMethod: false }),
-      expect.anything(),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(String),
     ));
   });
 
