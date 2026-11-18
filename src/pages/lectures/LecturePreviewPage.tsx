@@ -585,6 +585,8 @@ export default function LecturePreviewPage() {
             schoolYear: lecture.schoolYear,
             semester: lecture.semester || "上学期",
             chapterIds: lecture.chapterIds,
+            knowledgePointIds: lecture.knowledgePointIds,
+            thoughtMethodIds: lecture.thoughtMethodIds || [],
           }}
           gradeOptions={gradeOptions}
           schoolYearOptions={schoolYearOptions}
