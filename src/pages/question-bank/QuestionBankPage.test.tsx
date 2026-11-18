@@ -618,6 +618,36 @@ describe("QuestionBankPage personal resource scope", () => {
     expect(screen.getByTestId("searchable-tree-chapter")).toHaveAttribute("data-show-basket", "true");
   });
 
+  it("places missing metadata toggles by the search box and filters questions without methods", async () => {
+    useAuthStore.setState({
+      teacher: {
+        ...useAuthStore.getState().teacher!,
+        knowledgeTreeEnabled: { chapter: true, knowledge: true, method: true, error: false },
+      } as Teacher,
+    });
+    render(<MemoryRouter><QuestionBankPage /></MemoryRouter>);
+    const search = screen.getByPlaceholderText("搜索题干、解析、总结、备注...");
+    const missingMethod = screen.getByRole("button", { name: "无方法" });
+    expect(search.closest(".flex.flex-wrap")).toContainElement(missingMethod);
+    expect(screen.getByRole("button", { name: "无章节" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "无知识点" })).toBeInTheDocument();
+
+    fireEvent.click(missingMethod);
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ noMethod: true }),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(String),
+    ));
+    fireEvent.click(screen.getAllByRole("button", { name: "清空筛选" })[0]);
+    await waitFor(() => expect(questionService.listQuestionPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ noMethod: false }),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(String),
+    ));
+  });
+
   it("queries personal questions by teacher while keeping class context on the active school", async () => {
     render(
       <MemoryRouter>
