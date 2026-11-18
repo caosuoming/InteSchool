@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { useSettingsStore, applyAppearanceMode, applyUiScale } from "@/stores/settings";
-import { AppLayout } from "@/components/layout/AppLayout";
+const AppLayout = lazy(async () => ({ default: (await import("@/components/layout/AppLayout")).AppLayout }));
 import { RequireExamManager } from "@/components/auth/RequireExamManager";
 import { RequireSchoolRosterManager } from "@/components/auth/RequireSchoolRosterManager";
 import { RequireTeachingProfileManager } from "@/components/auth/RequireTeachingProfileManager";
@@ -76,6 +76,11 @@ export default function App() {
   const appearanceMode = useSettingsStore((s) => s.appearanceMode);
 
   useEffect(() => {
+    // Overlap the protected shell download with the auth round trip on deep links.
+    // Public landing pages should never pay for the protected UI bundle.
+    if (!/^\/(?:login|prep-login|classroom-login|scanner|classroom-device|parent(?:-register)?|grade-reports|changelog)(?:\/|$)/.test(window.location.pathname)) {
+      void import("@/components/layout/AppLayout");
+    }
     void init();
   }, [init]);
 
