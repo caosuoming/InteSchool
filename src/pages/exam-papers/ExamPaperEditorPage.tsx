@@ -617,7 +617,7 @@ export default function ExamPaperEditorPage() {
     loadPaper();
     if (teacher) {
       basketService.listBaskets(teacher.id).then(setBaskets);
-      classSvc.listAllClasses(schoolId, teacher.id).then(setClasses);
+      classSvc.listAudienceClasses(schoolId).then(setClasses);
       // 加载试卷类型
       settingsService.listExamPaperTypes(schoolId).then(setExamPaperTypes);
       knowledgeService.getChapterTree(schoolId).then(setChapterTree);
@@ -1816,6 +1816,9 @@ export default function ExamPaperEditorPage() {
       }
     >
       <ClassAudiencePicker
+          schoolId={teacher?.schoolId}
+          teachingClassIds={teacher?.teachingClassIds || []}
+          teachingGrades={teacher?.teachingGrades || []}
         classes={classes}
         selectedClassIds={selectedClassIds}
         onChange={setSelectedClassIds}

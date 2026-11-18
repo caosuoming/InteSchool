@@ -597,6 +597,7 @@ export const serviceParameters = {
       "schoolId",
       "teacherId"
     ],
+    "listAudienceClasses": ["schoolId", "teacher"],
     "createSchoolClass": [
       "schoolId",
       "teacherId",

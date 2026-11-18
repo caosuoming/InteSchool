@@ -39,7 +39,7 @@ vi.mock("@/lib/docx", () => ({
 vi.mock("@/services/class", () => ({
   classService: {
     getClassesByIds: vi.fn(),
-    listAllClasses: vi.fn(),
+    listAudienceClasses: vi.fn(),
     listStudentsByClass: vi.fn(),
     listStudentsBySchool: vi.fn(),
     getStudent: vi.fn(),
@@ -280,7 +280,7 @@ describe("LecturePreviewPage", () => {
     vi.clearAllMocks();
     vi.mocked(lectureService.getLecture).mockResolvedValue(lecture);
     vi.mocked(classService.getClassesByIds).mockResolvedValue([schoolClass]);
-    vi.mocked(classService.listAllClasses).mockResolvedValue([schoolClass]);
+    vi.mocked(classService.listAudienceClasses).mockResolvedValue([schoolClass]);
     vi.mocked(classService.listStudentsByClass).mockResolvedValue([classStudent]);
     vi.mocked(classService.listStudentsBySchool).mockResolvedValue([classStudent, explicitStudent]);
     vi.mocked(classService.getStudent).mockResolvedValue(explicitStudent);
@@ -525,10 +525,9 @@ describe("LecturePreviewPage", () => {
       isExtractCopy: true,
       sourceResourceId: "lecture-source-1",
     });
-    vi.mocked(classService.listAllClasses).mockImplementation(async (schoolId, teacherId) => {
+    vi.mocked(classService.listAudienceClasses).mockImplementation(async (schoolId) => {
       if (schoolId === "school-old") throw new Error("无权访问其他学校的数据");
       expect(schoolId).toBe(teacher.schoolId);
-      expect(teacherId).toBe(teacher.id);
       return [];
     });
 
@@ -536,7 +535,7 @@ describe("LecturePreviewPage", () => {
 
     expect(await screen.findByText("预览：函数专题讲义_2026（拆解版）")).toBeInTheDocument();
     expect(screen.queryByText("讲义加载失败")).not.toBeInTheDocument();
-    expect(classService.listAllClasses).toHaveBeenCalledWith(teacher.schoolId, teacher.id);
+    expect(classService.listAudienceClasses).toHaveBeenCalledWith(teacher.schoolId);
     expect(classService.getClassesByIds).not.toHaveBeenCalled();
     expect(classService.listStudentsByClass).not.toHaveBeenCalledWith("old-class");
     await waitFor(() => {
