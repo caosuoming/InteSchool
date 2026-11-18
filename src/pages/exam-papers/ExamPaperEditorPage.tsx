@@ -2208,6 +2208,8 @@ export default function ExamPaperEditorPage() {
               schoolYear,
               semester,
               chapterIds: paper.chapterIds,
+            knowledgePointIds: paper.knowledgePointIds,
+            thoughtMethodIds: paper.thoughtMethodIds || [],
             }}
             gradeOptions={gradeOptions}
             schoolYearOptions={schoolYearOptions}
