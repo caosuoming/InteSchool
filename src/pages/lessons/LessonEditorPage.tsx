@@ -8,10 +8,20 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type CSSProperties,
 } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
-  ChevronLeft, ChevronRight, Plus, Trash2, Send, Save, RotateCcw, Undo2,
+  closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove, sortableKeyboardCoordinates, SortableContext, useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Trash2, Send, Save, RotateCcw, Undo2,
   FileQuestion, Blocks, Check,
   Play, School, ExternalLink, Download, Maximize2, Minimize2,
   GripVertical, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
@@ -128,6 +138,98 @@ function lessonSaveStateFromCourseware(courseware: LessonCourseware): LessonSave
   };
 }
 
+interface SlideNavigatorItemProps {
+  slide: LessonSlide;
+  index: number;
+  slideCount: number;
+  isActive: boolean;
+  onSelect: () => void;
+  onMove: (to: number) => void;
+  onDelete: () => void;
+}
+
+function SortableSlideNavigatorItem({
+  slide, index, slideCount, isActive, onSelect, onMove, onDelete,
+}: SlideNavigatorItemProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: slide.id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 10 : undefined,
+    position: "relative",
+  };
+  const isQuestion = slide.type === "question";
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={onSelect}
+      className={cn(
+        "group relative cursor-pointer rounded-lg border p-2 transition-colors",
+        isActive ? "border-gold-300 bg-gold-50 shadow-sm" : "border-ink-100 bg-paper hover:border-ink-300",
+        isDragging && "shadow-lg ring-2 ring-gold-300",
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <div className={cn(
+          "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded font-mono text-[10px]",
+          isActive ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-500",
+        )}>
+          {index + 1}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="mb-0.5 flex items-center gap-1">
+            {isQuestion ? <FileQuestion className="h-3 w-3 text-ink-400" /> : <Blocks className="h-3 w-3 text-ink-400" />}
+            <MathHtml className="block truncate text-xs font-medium text-ink-700">{slide.title}</MathHtml>
+          </div>
+          <MathHtml className="line-clamp-2 text-[10px] text-ink-400">
+            {isQuestion ? slide.questionSnapshot?.stem || "题目" : slide.content || "知识块"}
+          </MathHtml>
+        </div>
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          onClick={(event) => event.stopPropagation()}
+          className="-mr-1 flex-shrink-0 cursor-grab touch-none rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 active:cursor-grabbing focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400"
+          title="拖动调整页面顺序"
+          aria-label={`拖动排序：第 ${index + 1} 页`}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="absolute bottom-1 right-1 hidden items-center gap-0.5 rounded bg-paper/95 group-hover:flex group-focus-within:flex">
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onMove(index - 1); }}
+          disabled={index === 0}
+          className="rounded p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30"
+          title="上移"
+          aria-label={`上移第 ${index + 1} 页`}
+        ><ChevronUp className="h-3.5 w-3.5" /></button>
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onMove(index + 1); }}
+          disabled={index === slideCount - 1}
+          className="rounded p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30"
+          title="下移"
+          aria-label={`下移第 ${index + 1} 页`}
+        ><ChevronDown className="h-3.5 w-3.5" /></button>
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); onDelete(); }}
+          className="rounded p-0.5 text-ink-400 hover:text-red-500"
+          title="删除"
+          aria-label={`删除第 ${index + 1} 页`}
+        ><Trash2 className="h-3.5 w-3.5" /></button>
+      </div>
+    </div>
+  );
+}
+
 export function LessonEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -205,6 +307,10 @@ export function LessonEditorPage() {
   const slideNavigatorResizeRef = useRef<SlideNavigatorResizeState | null>(null);
   const inspectorResizeRef = useRef<InspectorResizeState | null>(null);
   const questionBasketLoadRef = useRef(0);
+  const slideDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   useEffect(() => {
     const updateReferenceSize = () => setPresentationReferenceSize(getPresentationReferenceSize());
@@ -1155,12 +1261,19 @@ export function LessonEditorPage() {
   };
 
   const moveSlide = (from: number, to: number) => {
-    if (to < 0 || to >= slides.length) return;
-    const next = [...slides];
-    const [removed] = next.splice(from, 1);
-    next.splice(to, 0, removed);
+    if (from < 0 || from >= slides.length || to < 0 || to >= slides.length || from === to) return;
+    const activeSlideId = slides[currentIndex]?.id;
+    const next = arrayMove(slides, from, to);
     setSlides(next);
-    setCurrentIndex(to);
+    setCurrentIndex(Math.max(0, next.findIndex((slide) => slide.id === activeSlideId)));
+  };
+
+  const handleSlideDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    moveSlide(
+      slides.findIndex((slide) => slide.id === active.id),
+      slides.findIndex((slide) => slide.id === over.id),
+    );
   };
 
   const deleteSlide = (index: number) => {
@@ -1168,9 +1281,11 @@ export function LessonEditorPage() {
       toast.error("至少保留一页");
       return;
     }
+    const selectedSlideId = slides[currentIndex]?.id;
     const next = slides.filter((_, i) => i !== index);
     setSlides(next);
-    if (currentIndex >= next.length) setCurrentIndex(next.length - 1);
+    const selectedIndex = next.findIndex((slide) => slide.id === selectedSlideId);
+    setCurrentIndex(selectedIndex >= 0 ? selectedIndex : Math.min(index, next.length - 1));
   };
 
   const updateCurrentSlide = (patch: Partial<LessonSlide>) => {
@@ -1622,15 +1737,6 @@ export function LessonEditorPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void openGeoGebraPicker("slide")}
-                    className="rounded p-1 text-ink-500 hover:bg-ink-200/50 hover:text-ink-800"
-                    title="插入 GGB 素材"
-                    aria-label="插入 GGB 课件"
-                  >
-                    <Blocks className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setSlideNavigatorCollapsed(true)}
                     className="rounded p-1 text-ink-500 hover:bg-ink-200/50 hover:text-ink-800"
                     title="折叠到左侧"
@@ -1641,76 +1747,28 @@ export function LessonEditorPage() {
                 </div>
               </div>
               <div className="flex-1 space-y-1.5 overflow-auto p-2">
-                {slides.map((slide, idx) => {
-                  const isActive = idx === currentIndex;
-                  const isQuestion = slide.type === "question";
-                  return (
-                    <div
-                      key={slide.id}
-                      onClick={() => setCurrentIndex(idx)}
-                      className={cn(
-                        "group relative cursor-pointer rounded-lg border p-2 transition-all",
-                        isActive
-                          ? "border-gold-300 bg-gold-50 shadow-sm"
-                          : "border-ink-100 bg-paper hover:border-ink-300",
-                      )}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className={cn(
-                          "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded font-mono text-[10px]",
-                          isActive ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-500",
-                        )}>
-                          {idx + 1}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-0.5 flex items-center gap-1">
-                            {isQuestion ? (
-                              <FileQuestion className="h-3 w-3 text-ink-400" />
-                            ) : (
-                              <Blocks className="h-3 w-3 text-ink-400" />
-                            )}
-                            <MathHtml className="block truncate text-xs font-medium text-ink-700">
-                              {slide.title}
-                            </MathHtml>
-                          </div>
-                          <MathHtml className="line-clamp-2 text-[10px] text-ink-400">
-                            {isQuestion
-                              ? slide.questionSnapshot?.stem || "题目"
-                              : slide.content || "知识块"}
-                          </MathHtml>
-                        </div>
-                      </div>
-                      <div className="absolute right-1 top-1 hidden items-center gap-0.5 rounded bg-paper/90 group-hover:flex">
-                        <button
-                          type="button"
-                          onClick={(event) => { event.stopPropagation(); moveSlide(idx, idx - 1); }}
-                          disabled={idx === 0}
-                          className="rounded p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30"
-                          title="上移"
-                        >
-                          <ChevronLeft className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => { event.stopPropagation(); moveSlide(idx, idx + 1); }}
-                          disabled={idx === slides.length - 1}
-                          className="rounded p-0.5 text-ink-400 hover:text-ink-700 disabled:opacity-30"
-                          title="下移"
-                        >
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => { event.stopPropagation(); deleteSlide(idx); }}
-                          className="rounded p-0.5 text-ink-400 hover:text-red-500"
-                          title="删除"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                <DndContext
+                  sensors={slideDragSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleSlideDragEnd}
+                >
+                  <SortableContext items={slides.map((slide) => slide.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-1.5">
+                      {slides.map((slide, index) => (
+                        <SortableSlideNavigatorItem
+                          key={slide.id}
+                          slide={slide}
+                          index={index}
+                          slideCount={slides.length}
+                          isActive={index === currentIndex}
+                          onSelect={() => setCurrentIndex(index)}
+                          onMove={(to) => moveSlide(index, to)}
+                          onDelete={() => deleteSlide(index)}
+                        />
+                      ))}
                     </div>
-                  );
-                })}
+                  </SortableContext>
+                </DndContext>
               </div>
               <div
                 role="separator"
@@ -1791,6 +1849,9 @@ export function LessonEditorPage() {
                     <LessonSlideContent
                       slide={currentSlide}
                       questionVisibility={{ options: true }}
+                      questionNumber={currentSlide.type === "question"
+                        ? slides.slice(0, currentIndex + 1).filter((slide) => slide.type === "question").length
+                        : undefined}
                       editable
                       selectedTextRegion={selectedTextRegion}
                       onSelectTextRegion={(region) => {
