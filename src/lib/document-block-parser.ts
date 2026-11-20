@@ -1427,6 +1427,24 @@ function parseTrailingSolutions(
     const line = originalLine.trim();
     if (!line || /^[-—–=*]{3,}$/.test(line)) continue;
 
+    // Answer keys in examination papers may compact entire question ranges:
+    // "单选题1-8：C D B A D B B C" or "多选题9-11：ACD AD ACD".
+    // Match the expected count exactly: silently shifted answers are worse
+    // than leaving an unreadable formula unanswered.
+    const group = /^(?:单选题|多选题|填空题)\s*([0-9]{1,3})\s*[-–—~～至]\s*([0-9]{1,3})\s*[:：]\s*(.*)$/.exec(line);
+    if (group) {
+      submitCurrent();
+      const first = Number(group[1]);
+      const last = Number(group[2]);
+      const entries = group[3].match(/\$[^$]*\$|!\[[^\]]*\]\([^)]+\)|\S+/g) || [];
+      if (last >= first && last - first < 100 && entries.length === last - first + 1) {
+        entries.forEach((answer, index) => {
+          solutions.push({ number: String(first + index), answer, order: solutions.length });
+        });
+      }
+      continue;
+    }
+
     const tableSolutions = trailingSolutionsFromTable(line, solutions.length);
     if (tableSolutions.length > 0) {
       submitCurrent();
