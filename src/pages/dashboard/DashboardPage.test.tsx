@@ -18,10 +18,10 @@ vi.mock("@/stores/auth", () => {
 });
 vi.mock("@/hooks/useSchoolResourceOptions", () => ({ useSchoolResourceOptions: () => ({ gradeOptions: [] }) }));
 vi.mock("@/lib/roster-permissions", () => ({ canManageSchoolRoster: () => false }));
-vi.mock("@/services/question", () => ({ questionService: { listQuestions: vi.fn(async () => []) } }));
-vi.mock("@/services/lecture", () => ({ lectureService: { listLectures: vi.fn(async () => []) } }));
+vi.mock("@/services/question", () => ({ questionService: { getDashboardQuestionCounts: vi.fn(async () => ({ total: 0, weekly: 0 })) } }));
+vi.mock("@/services/lecture", () => ({ lectureService: { getDashboardLectureSummary: vi.fn(async () => ({ total: 0, weekly: 0, recent: [], drafts: [] })) } }));
 vi.mock("@/services/basket", () => ({ basketService: { listBaskets: vi.fn(async () => []) } }));
-vi.mock("@/services/ai", () => ({ aiService: { listDocuments: vi.fn(async () => []) } }));
+vi.mock("@/services/ai", () => ({ aiService: { getDashboardDocumentSummary: vi.fn(async () => ({ weekly: 0, recognized: [] })) } }));
 vi.mock("@/services/class", () => ({ classService: {
   listSchoolClasses: vi.fn(async () => []), listPersonalClasses: vi.fn(async () => []),
 } }));
@@ -35,7 +35,7 @@ vi.mock("@/services/dashboardTodo", () => ({ dashboardTodoService: { listTodoRec
 beforeEach(() => {
   vi.mocked(dashboardTodoService.listTodoRecords).mockReset().mockResolvedValue([]);
   vi.mocked(dashboardTodoService.setTodoStatus).mockReset();
-  vi.mocked(aiService.listDocuments).mockReset().mockResolvedValue([]);
+  vi.mocked(aiService.getDashboardDocumentSummary).mockReset().mockResolvedValue({ weekly: 0, recognized: [] });
   vi.mocked(lessonCoursewareService.listCoursewares).mockReset().mockResolvedValue([]);
   vi.mocked(examPaperService.listPapers).mockReset().mockResolvedValue([]);
   vi.mocked(scannerService.listPages).mockReset().mockResolvedValue([]);
@@ -74,9 +74,9 @@ describe("DashboardPage pending work", () => {
 describe("DashboardPage todo status", () => {
   it("moves a pending task to completed and keeps it after reloading", async () => {
     const user = userEvent.setup();
-    vi.mocked(aiService.listDocuments).mockResolvedValue([{
-      id: "document1", teacherId: "teacher1", fileName: "待处理文档.pdf", status: "recognized",
-    }] as never);
+    vi.mocked(aiService.getDashboardDocumentSummary).mockResolvedValue({ weekly: 0, recognized: [{
+      id: "document1", fileName: "待处理文档.pdf",
+    }] });
     const archived = {
       id: "teacher1:document:document1", teacherId: "teacher1", type: "document" as const,
       resourceId: "document1", title: "待处理文档.pdf", detail: "AI 识别完成，等待您确认入库",

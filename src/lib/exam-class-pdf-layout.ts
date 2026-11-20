@@ -37,7 +37,12 @@ function fitPage(page: HTMLElement, host: HTMLElement, allowCompression: boolean
   if (!rows) return true;
   host.replaceChildren(page);
   // Try real CSS dimensions instead of assuming a fixed card/row count.
-  const sizes = allowCompression ? [5.45, 5.05, 4.7, 4.4, 4.1, 3.8] : [5.45, 5.05];
+  // Choose the largest readable font that fits the *measured* row content.
+  // Sparse classes get larger text; dense classes progressively shrink it.
+  // Keep inspection at normal text sizes so the overflow dialog still appears.
+  const sizes = allowCompression
+    ? [...Array.from({ length: 29 }, (_, index) => +(12.5 - index * 0.25).toFixed(2)), 5.45, 5.05, 4.7, 4.4, 4.1, 3.8]
+    : [5.45, 5.05];
   for (const fontSize of sizes) {
     const condensed = fontSize < 5.05;
     page.dataset.density = fontSize < 5.45 ? "compact" : "normal";

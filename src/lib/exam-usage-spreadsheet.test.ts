@@ -74,3 +74,18 @@ describe("试卷 Excel 使用数据映射", () => {
     expect(detectUsageRole("Q3分数", [5], 3)).toBe("score:3");
   });
 });
+
+describe("带满分与标准答案的 Excel 表头", () => {
+  it("将 1 2分、答案B 映射到第一题得分并检查差异", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["学号", "1 2分、答案B", "学生解答", "2 10分、答案C"],
+      ["001", 2, "B", 6],
+    ] };
+    const found = detectUsageHeader(sheet, 3);
+    expect(found.columns.map((column) => column.role)).toEqual(["studentNo", "score:1", "answer:1", "score:2"]);
+    const preview = prepareUsageImport(sheet, 0, found.columns, questions, students);
+    expect(preview.entries[0]).toMatchObject({ studentId: "s1", paperQuestionId: "q1", earnedScore: 2, studentAnswer: "B" });
+    expect(preview.firstStudent?.values[1].value).toBe("2");
+    expect(preview.conflicts).toContainEqual({ column: "1 2分、答案B", questionNo: 1, attribute: "score", excel: "2", paper: "5" });
+  });
+});

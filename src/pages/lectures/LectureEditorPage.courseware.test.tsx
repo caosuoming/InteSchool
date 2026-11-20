@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   getChapterTree: vi.fn(),
   getKnowledgeTree: vi.fn(),
   listLectureTypes: vi.fn(),
-  listAllClasses: vi.fn(),
+  listAudienceClasses: vi.fn(),
   listStudentsBySchool: vi.fn(),
   listSchoolClasses: vi.fn(),
   listPersonalClasses: vi.fn(),
@@ -104,7 +104,7 @@ vi.mock("@/services/settings", () => ({
 }));
 vi.mock("@/services/class", () => ({
   classService: {
-    listAllClasses: mocks.listAllClasses,
+    listAudienceClasses: mocks.listAudienceClasses,
     listStudentsBySchool: mocks.listStudentsBySchool,
     listSchoolClasses: mocks.listSchoolClasses,
     listPersonalClasses: mocks.listPersonalClasses,
@@ -179,7 +179,7 @@ describe("LectureEditorPage courseware action", () => {
     mocks.getChapterTree.mockResolvedValue(emptyTree);
     mocks.getKnowledgeTree.mockResolvedValue(emptyTree);
     mocks.listLectureTypes.mockResolvedValue([]);
-    mocks.listAllClasses.mockResolvedValue([]);
+    mocks.listAudienceClasses.mockResolvedValue([]);
     mocks.listStudentsBySchool.mockResolvedValue([]);
     mocks.listSchoolClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);
@@ -242,7 +242,7 @@ describe("LectureEditorPage courseware action", () => {
   it("saves current lecture edits before creating school courseware from edit mode", async () => {
     const user = userEvent.setup();
     mocks.getLecture.mockResolvedValue({ ...lecture, classIds: ["class-1"] });
-    mocks.listAllClasses.mockResolvedValue([schoolClass]);
+    mocks.listAudienceClasses.mockResolvedValue([schoolClass]);
     renderPage();
 
     const sendButton = await screen.findByRole("button", { name: "添加到学校上课" });
@@ -272,7 +272,7 @@ describe("LectureEditorPage courseware action", () => {
 
   it("generates a personal tutoring deck for the selected personal class", async () => {
     mocks.getLecture.mockResolvedValue({ ...lecture, classIds: ["class-1", "personal-1"] });
-    mocks.listAllClasses.mockResolvedValue([schoolClass, personalClass]);
+    mocks.listAudienceClasses.mockResolvedValue([schoolClass, personalClass]);
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "添加到个人上课" }));
     await waitFor(() => expect(mocks.createFromLecture).toHaveBeenCalledWith(

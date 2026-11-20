@@ -157,6 +157,7 @@ function detectSectionQuestionType(text: string): QuestionType | undefined {
   const normalized = normalizeStructuralText(text).replace(/\s+/g, "");
   if (/不定项选择|多项选择|多选|多个正确|不止一个|至少(?:有|选)/.test(normalized)) return "multiple";
   if (/单项选择|单选/.test(normalized)) return "single";
+  if (/非选择题/.test(normalized)) return "essay";
   if (/综合题/.test(normalized)) return "comprehensive";
   if (/判断题|判断正误/.test(normalized)) return "judge";
   if (/填空题|填空/.test(normalized)) return "short";
@@ -321,6 +322,7 @@ function inferAtomicQuestionType(
 ): QuestionType {
   const text = [block.content, block.answer].filter(Boolean).join("\n");
   if (config.subject?.trim() === "地理" && sectionType === "comprehensive") return "comprehensive";
+  if (config.subject?.trim() === "化学" && sectionType === "essay") return "essay";
   const options = block.options || [];
   if (
     config.subject?.trim() === "数学"
@@ -355,6 +357,7 @@ function inferQuestionType(
   config: DocumentParseConfig,
 ): QuestionType {
   if (config.subject?.trim() === "地理" && sectionType === "comprehensive") return "comprehensive";
+  if (config.subject?.trim() === "化学" && sectionType === "essay") return "essay";
   return inferSharedStemSubQuestionType(block, sectionType, config)
     || inferAtomicQuestionType(block, sectionType, config);
 }
@@ -1158,8 +1161,8 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
     .replace(/^[【［[(（]+/, "");
   const normalized = compact.replace(/[】］\])）:：]+$/, "");
   if (/^(?:参考)?答案$/.test(normalized)) return "answer";
-  if (/^(?:参考)?答案(?:与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
-  const heading = /(?:参考)?答案(?:与|和|及)?解析|(?:参考)?答案/;
+  if (/^(?:参考)?答案(?:以及|与|和|及)?解析$/.test(normalized)) return "answerAnalysis";
+  const heading = /(?:参考)?答案(?:以及|与|和|及)?解析|(?:参考)?答案/;
   const leading = new RegExp(`^(${heading.source})`).exec(compact);
   if (leading && (/^(?:[（(【［][^）)】］]{1,40}[）)】］])?$/.test(compact.slice(leading[0].length))
     || (leading[0].startsWith("参考答案")
@@ -1210,6 +1213,10 @@ function categorizedQuestionFieldKeywords(config: DocumentParseConfig): {
 }
 
 function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
+  // Answer keys copied from Word sometimes omit the separator after the number.
+  // Accept this only when an explicit solution field immediately follows it.
+  const compactEntry = /^(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?((?:【\s*(?:答案|解析|详解|解答)\s*】|(?:参考)?答案\s*[:：]|(?:解析|详解|解答|解)\s*[:：]).*)$/.exec(line);
+  if (compactEntry) return [{ number: normalizeQuestionNumber(compactEntry[1]), rest: compactEntry[2].replace(/^解\s*[:：]\s*/, "").trim() }];
   const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
   const markers = [...line.matchAll(markerPattern)];
   if (markers.length === 0) return [];
@@ -1476,6 +1483,15 @@ function parseTrailingSolutions(
     currentField = appendTrailingSolutionLine(current, line, currentField, patterns);
   }
   submitCurrent();
+  if (config.subject?.trim() === "化学") {
+    for (const solution of solutions) {
+      const match = /^\s*[（(]?\s*([A-Da-d]{1,4})\s*[）)]?\s*[，,。.;；]?\s*(?:【\s*)?解析(?:\s*】)?\s*[:：]\s*([\s\S]*)$/.exec(solution.answer || "");
+      if (match) {
+        solution.answer = match[1].toUpperCase();
+        solution.analysis = [match[2], solution.analysis].filter(Boolean).join("\n");
+      }
+    }
+  }
   return solutions;
 }
 
@@ -1700,6 +1716,8 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
 }
 
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
+  const knowledgeTipPattern = keywordPattern(["温馨提示", "友情提示", "小贴士", "注意事项"]);
+
   const blocks: DocumentBlock[] = [];
   const categorizedKeywords = categorizedQuestionFieldKeywords(config);
   const answerPattern = keywordPattern(config.answerKeywords);
@@ -1962,7 +1980,35 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
         continue;
       }
     }
+    if (currentBlock.type === "knowledge") {
+      if (answerPattern?.test(line)) {
+        appendQuestionField(currentBlock, "answer", stripPrefix(line, answerPattern));
+        currentQuestionField = "answer";
+        continue;
+      }
+      if (analysisPattern?.test(line) || knowledgeTipPattern?.test(line)) {
+        // Preserve the tip heading so readers can distinguish it from ordinary explanation.
+        const isTip = knowledgeTipPattern?.test(line);
+        appendQuestionField(currentBlock, "analysis", isTip ? line : stripPrefix(line, analysisPattern));
+        currentQuestionField = "analysis";
+        continue;
+      }
+      if (currentQuestionField !== "content") {
+        appendQuestionField(currentBlock, currentQuestionField, originalLine);
+        continue;
+      }
+    }
     if (currentBlock.type === "question" && answerPattern?.test(line)) {
+      if (config.subject?.trim() === "化学") {
+        const answerText = stripPrefix(line, answerPattern);
+        const split = /^\s*[（(]?\s*([A-Da-d]{1,4})\s*[）)]?\s*[，,。.;；]?\s*(?:【\s*)?解析(?:\s*】)?\s*[:：]\s*([\s\S]*)$/.exec(answerText);
+        if (split) {
+          appendQuestionField(currentBlock, "answer", split[1].toUpperCase());
+          appendQuestionField(currentBlock, "analysis", split[2]);
+          currentQuestionField = "analysis";
+          continue;
+        }
+      }
       appendQuestionField(currentBlock, "answer", stripPrefix(line, answerPattern));
       currentQuestionField = "answer";
       continue;
@@ -2714,7 +2760,20 @@ function findRestartedGeographyAnswerIndex(lines: string[], config: DocumentPars
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const english = parseEnglishDocumentBlocks(content, config);
   if (english) return english;
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const sourceLines = content.replace(/\r\n?/g, "\n").split("\n");
+  // Chemistry answer-only keys are duplicated after the detailed solutions.
+  // Ignore that section entirely, including when it is the last section.
+  const chemistry = config.subject?.trim() === "化学";
+  const detailedSolutionsStart = chemistry
+    ? sourceLines.findIndex((line) => trailingSolutionHeadingKind(line.trim()) === "answerAnalysis")
+    : -1;
+  const answerOnlyStart = chemistry
+    ? sourceLines.findIndex((line, index) =>
+      index > detailedSolutionsStart && trailingSolutionHeadingKind(line.trim()) === "answer")
+    : -1;
+  const lines = answerOnlyStart >= 0
+    ? sourceLines.slice(0, answerOnlyStart)
+    : sourceLines;
   const solutionHeadingIndexes = lines
     .map((line, index) => ({ index, kind: trailingSolutionHeadingKind(line.trim()) }))
     .filter((entry): entry is { index: number; kind: TrailingSolutionHeadingKind } => Boolean(entry.kind))
@@ -2722,12 +2781,12 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
 
   for (const { index: headingIndex, kind } of solutionHeadingIndexes) {
     const headingLine = lines[headingIndex].trim();
-    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
+    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:以及|与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
     const solutionLines = inlineAnswers !== headingLine
       ? [inlineAnswers, ...lines.slice(headingIndex + 1)]
       : lines.slice(headingIndex + 1);
     const solutions = parseTrailingSolutions(solutionLines, config);
-    if (solutions.length === 0) continue;
+    if (solutions.length === 0 || (chemistry && kind === "answer")) continue;
 
     const blocks = parseDocumentBlocksCore(lines.slice(0, headingIndex).join("\n"), config);
     const questions = blocks.filter((block) => block.type === "question");
@@ -2755,7 +2814,7 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     }
   }
 
-  const fallback = refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(parseDocumentBlocksCore(content, config), config.subject)), config.subject), content, config);
+  const fallback = refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(parseDocumentBlocksCore(lines.join("\n"), config), config.subject)), config.subject), content, config);
   if (config.subject?.trim() !== "英语") return fallback;
   let sectionType: QuestionType | undefined;
   for (const block of fallback) {
