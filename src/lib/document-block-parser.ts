@@ -1236,7 +1236,7 @@ function splitMathConciseTrailingAnswer(solution: TrailingSolution): void {
   if (!solution.answer || solution.analysis) return;
   // In answer keys, "1. B 由题意..." and "13. -2 代入..." have no
   // explicit 解析 label. Only split a short, unmistakable answer token.
-  const match = /^([A-H](?:[、,，;；][A-H]){0,3}|[+\-−]?\d+(?:\.\d+)?(?:[/／]\d+)?|\$[^$\n]{1,70}\$)[ \t\u3000]+([^\n]+(?:\n[\s\S]*)?)$/i.exec(solution.answer.trim());
+  const match = /^([A-H]{1,4}(?:[、,，;；][A-H]{1,4})*|[+\-−]?\d+(?:\.\d+)?(?:[/／]\d+)?|\$[^$\n]{1,70}\$)[ \t\u3000]+([^\n]+(?:\n[\s\S]*)?)$/i.exec(solution.answer.trim());
   if (!match || !/^(?:由|根据|因为|所以|故|利用|可得|可知|解得|代入|结合|设|当|因此|从|作|令|对|若|注意|本题|首先|∵|∴)/.test(match[2])) return;
   solution.answer = match[1];
   solution.analysis = match[2].trim();
@@ -1471,7 +1471,7 @@ function parseTrailingSolutions(
       const bareNumber = /^([\d０-９]{1,4})\s+(.+)$/.exec(line);
       if (bareNumber && (anchoredPatterns.some((pattern) => pattern?.test(bareNumber[2]))
         || (config.subject?.trim() === "数学"
-          && /^(?:[A-H](?![a-z])|[+\-−]?\d+(?:\.\d+)?(?:[/／]\d+)?|\$[^$\n]{1,70}\$)(?:[ \t\u3000]|$)/i.test(bareNumber[2])))) {
+          && /^(?:[A-H]{1,4}(?![a-z])|[+\-−]?\d+(?:\.\d+)?(?:[/／]\d+)?|\$[^$\n]{1,70}\$)(?:[ \t\u3000]|$)/i.test(bareNumber[2])))) {
         entry = {
           number: normalizeQuestionNumber(bareNumber[1]),
           rest: bareNumber[2].trim(),

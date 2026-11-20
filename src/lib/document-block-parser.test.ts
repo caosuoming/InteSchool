@@ -684,18 +684,18 @@ describe("document block parser", () => {
       "二、填空题",
       "3. 求方程 x+2=0 的根：____。",
       "安徽省八校联考数学参考答案与评分细则：1. B 由计算可知 1+1=2。",
-      "2 D 根据条件可排除其他选项。",
+      "2 AC 根据条件可排除其他选项。",
       "3. -2 代入原方程验证。",
     ].join("\n"), { ...config, subject: "数学" });
     const questions = blocks.filter((block) => block.type === "question");
     expect(questions).toHaveLength(3);
-    expect(questions.map((q) => q.answer)).toEqual(["B", "D", "-2"]);
+    expect(questions.map((q) => q.answer)).toEqual(["B", "AC", "-2"]);
     expect(questions.map((q) => q.analysis)).toEqual([
       "由计算可知 1+1=2。",
       "根据条件可排除其他选项。",
       "代入原方程验证。",
     ]);
-    expect(questions.map((q) => q.questionType)).toEqual(["single", "single", "short"]);
+    expect(questions.map((q) => q.questionType)).toEqual(["single", "multiple", "short"]);
     expect(blocks.every((block) => !block.content.includes("参考答案"))).toBe(true);
   });
 
