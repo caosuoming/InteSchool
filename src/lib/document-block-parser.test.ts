@@ -3304,6 +3304,38 @@ describe("issue 1476: circled indices in mathematical solutions", () => {
   });
 });
 
+describe("compact grouped mathematics answer keys", () => {
+  const questions = Array.from({ length: 14 }, (_, i) => `${i + 1}. 第${i + 1}题${i < 8 ? " A. 甲 B. 乙 C. 丙 D. 丁" : "，求结果。"}`);
+
+  it("assigns spaced single, multiple and formula answers by explicit number range", () => {
+    const blocks = parseDocumentBlocks([
+      "一、单选题", ...questions.slice(0, 8),
+      "二、多选题", ...questions.slice(8, 11),
+      "三、填空题", ...questions.slice(11),
+      "高三数学参考答案",
+      "单选题1-8：C D B A D B B C",
+      "多选题9-11：ACD   AD   ACD",
+      "填空题12-14：  1  ![公式](/api/files/paper-1/assets/rId263?officeMetafile=wmf)  3",
+    ].join("\n"), { ...config, subject: "数学" });
+    const parsed = blocks.filter((item) => item.type === "question");
+    expect(parsed).toHaveLength(14);
+    expect(parsed.map((item) => item.answer)).toEqual([
+      "C", "D", "B", "A", "D", "B", "B", "C", "ACD", "AD", "ACD",
+      "1", "![公式](/api/files/paper-1/assets/rId263?officeMetafile=wmf)", "3",
+    ]);
+  });
+
+  it("leaves incomplete ranges unassigned rather than shifting answers", () => {
+    const blocks = parseDocumentBlocks([
+      "三、填空题", ...questions.slice(11),
+      "高三数学参考答案", "填空题12-14： 1 3",
+    ].join("\n"), { ...config, subject: "数学" });
+    const parsed = blocks.filter((item) => item.type === "question");
+    expect(parsed).toHaveLength(3);
+    expect(parsed.every((item) => !item.answer)).toBe(true);
+  });
+});
+
 describe("issue 1539: interleaved mathematics essay prompts", () => {
   const math = { ...config, subject: "数学" };
 

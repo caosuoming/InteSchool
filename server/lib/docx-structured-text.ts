@@ -430,9 +430,59 @@ function extractInlineContent(node: Node, imageUrl?: ImageUrlFactory): string {
     .join("");
 }
 
+// Automatic Word list labels live in numbering.xml, not in the paragraph text.
+// Resolve the actual list instance and start value instead of inferring a
+// missing question number from surrounding paragraphs.
+function docxNumberingPrefix(numberingXml?: string): (p: Element) => string {
+  if (!numberingXml) return () => "";
+  const doc = new DOMParser().parseFromString(numberingXml, "application/xml");
+  const value = (parent: Element | undefined, name: string) =>
+    (parent && wordChild(parent, name)?.getAttributeNS(WORD_NS, "val")) || "";
+  const abstract = new Map<string, Map<number, { start: number; format: string; pattern: string }>>();
+  for (const entry of Array.from(doc.getElementsByTagNameNS(WORD_NS, "abstractNum"))) {
+    const id = entry.getAttributeNS(WORD_NS, "abstractNumId") || "";
+    const levels = new Map<number, { start: number; format: string; pattern: string }>();
+    for (const level of wordChildren(entry, "lvl")) {
+      const index = Number(level.getAttributeNS(WORD_NS, "ilvl"));
+      if (!Number.isInteger(index) || index < 0 || index > 8) continue;
+      levels.set(index, { start: Number(value(level, "start")) || 1,
+        format: value(level, "numFmt"), pattern: value(level, "lvlText") });
+    }
+    abstract.set(id, levels);
+  }
+  const instances = new Map<string, { id: string; starts: Map<number, number> }>();
+  for (const instance of Array.from(doc.getElementsByTagNameNS(WORD_NS, "num"))) {
+    const id = instance.getAttributeNS(WORD_NS, "numId") || "";
+    const starts = new Map<number, number>();
+    for (const override of wordChildren(instance, "lvlOverride")) {
+      const index = Number(override.getAttributeNS(WORD_NS, "ilvl"));
+      const start = Number(value(override, "startOverride"));
+      if (Number.isInteger(index) && start > 0) starts.set(index, start);
+    }
+    instances.set(id, { id: value(instance, "abstractNumId"), starts });
+  }
+  const counters = new Map<string, number>();
+  return (paragraph) => {
+    const props = wordChild(paragraph, "pPr");
+    const num = props && wordChild(props, "numPr");
+    const id = value(num, "numId");
+    const instance = instances.get(id);
+    if (!instance) return ""; // Includes numId=0 (numbering disabled).
+    const level = Number(value(num, "ilvl") || 0);
+    const def = abstract.get(instance.id)?.get(level);
+    const placeholder = `%${level + 1}`;
+    if (!def || def.format !== "decimal" || !def.pattern.includes(placeholder)) return "";
+    const key = `${id}:${level}`;
+    const current = (counters.get(key) ?? ((instance.starts.get(level) ?? def.start) - 1)) + 1;
+    counters.set(key, current);
+    return `${def.pattern.replaceAll(placeholder, String(current))} `;
+  };
+}
+
 function extractParagraph(
   paragraph: Element,
   imageUrl?: ImageUrlFactory,
+  numbering?: (paragraph: Element) => string,
 ): string {
   let field: {
     depth: number;
@@ -507,9 +557,12 @@ function extractParagraph(
   }
   if (field) content.push(field.result);
 
-  return normalizeText(
+  const text = normalizeText(
     normalizePlainMathText(normalizeLegacyOmmlMathText(markScriptedMathVariables(content.join("")))),
   ).trim();
+  if (!text) return "";
+  const label = numbering?.(paragraph) || "";
+  return label && !text.startsWith(label.trim()) ? `${label}${text}` : text;
 }
 
 function wordChild(element: Element, localName: string): Element | undefined {
@@ -542,17 +595,17 @@ function tableCellVerticalMerge(cell: Element): "restart" | "continue" | null {
   return value === "restart" ? "restart" : "continue";
 }
 
-function extractTableCell(cell: Element, imageUrl?: ImageUrlFactory): string {
+function extractTableCell(cell: Element, imageUrl?: ImageUrlFactory, numbering?: (paragraph: Element) => string): string {
   return elementChildren(cell)
     .flatMap((child) => {
       if (child.namespaceURI !== WORD_NS) return [];
-      if (child.localName === "p") return [extractParagraph(child, imageUrl)];
+      if (child.localName === "p") return [extractParagraph(child, imageUrl, numbering)];
       if (child.localName === "tbl") {
-        const nested = extractTable(child, imageUrl);
+        const nested = extractTable(child, imageUrl, numbering);
         return nested ? [nested] : [];
       }
       if (["sdt", "sdtContent", "customXml"].includes(child.localName)) {
-        return extractBlocks(child, imageUrl);
+        return extractBlocks(child, imageUrl, numbering);
       }
       return [];
     })
@@ -560,7 +613,7 @@ function extractTableCell(cell: Element, imageUrl?: ImageUrlFactory): string {
     .join("\n");
 }
 
-function extractTable(table: Element, imageUrl?: ImageUrlFactory): string {
+function extractTable(table: Element, imageUrl?: ImageUrlFactory, numbering?: (paragraph: Element) => string): string {
   const extracted: DocumentTable = [];
   const activeVerticalMerges = new Map<number, DocumentTableCell>();
 
@@ -585,7 +638,7 @@ function extractTable(table: Element, imageUrl?: ImageUrlFactory): string {
       }
 
       const cell: DocumentTableCell = {
-        content: extractTableCell(cellElement, imageUrl),
+        content: extractTableCell(cellElement, imageUrl, numbering),
         colSpan: colSpan > 1 ? colSpan : undefined,
       };
       row.push(cell);
@@ -607,22 +660,22 @@ function extractTable(table: Element, imageUrl?: ImageUrlFactory): string {
     : "";
 }
 
-function extractBlocks(parent: Element, imageUrl?: ImageUrlFactory): string[] {
+function extractBlocks(parent: Element, imageUrl?: ImageUrlFactory, numbering?: (paragraph: Element) => string): string[] {
   const blocks: string[] = [];
   for (const child of elementChildren(parent)) {
     if (child.namespaceURI !== WORD_NS) continue;
     if (child.localName === "p") {
-      const paragraph = extractParagraph(child, imageUrl);
+      const paragraph = extractParagraph(child, imageUrl, numbering);
       if (paragraph) blocks.push(paragraph);
       continue;
     }
     if (child.localName === "tbl") {
-      const table = extractTable(child, imageUrl);
+      const table = extractTable(child, imageUrl, numbering);
       if (table) blocks.push(table);
       continue;
     }
     if (["sdt", "sdtContent", "customXml"].includes(child.localName)) {
-      blocks.push(...extractBlocks(child, imageUrl));
+      blocks.push(...extractBlocks(child, imageUrl, numbering));
     }
   }
   return blocks;
@@ -636,6 +689,7 @@ export async function extractDocxStructuredText(
   const documentXml = await zip.file("word/document.xml")?.async("string");
   if (!documentXml) return "";
 
+  const numbering = docxNumberingPrefix(await zip.file("word/numbering.xml")?.async("string"));
   const relationshipsXml = await zip
     .file("word/_rels/document.xml.rels")
     ?.async("string");
@@ -656,7 +710,7 @@ export async function extractDocxStructuredText(
   const body = document.getElementsByTagNameNS(WORD_NS, "body")[0];
   if (!body) return "";
 
-  return normalizeText(extractBlocks(body, resolvedImageUrl).join("\n")).trim();
+  return normalizeText(extractBlocks(body, resolvedImageUrl, numbering).join("\n")).trim();
 }
 
 function safeImagePath(target: string): string | null {

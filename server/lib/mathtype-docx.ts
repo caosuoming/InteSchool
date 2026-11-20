@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { extname, join, posix } from "node:path";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import JSZip from "jszip";
+import * as CFB from "cfb";
 import { mml2omml } from "mathml2omml";
 
 const WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -520,23 +521,132 @@ function normalizeDecodeResult(result: Map<string, string> | MathTypeDecodeResul
   return result;
 }
 
+// Equation.KSEE3 and Equation.3 embed legacy MTEF v2/v3 streams. The
+// standard MathType Ruby converter cannot convert many of these, so use the
+// dedicated parser before falling back to the existing MathType path.
+function extractLegacyEquationNative(ole: Buffer): Buffer | null {
+  try {
+    const compound = CFB.read(ole, { type: "buffer" });
+    const entry = compound.FileIndex.find((part) => part.name === "Equation Native");
+    const data = entry?.content;
+    if (!data || data.length < 33 || data.length > MAX_EQUATION_BYTES) return null;
+    if ((data[28] !== 2 && data[28] !== 3) || data[30] !== 1) return null;
+    return Buffer.from(data);
+  } catch {
+    return null;
+  }
+}
+
+function runLegacyPythonConverter(
+  paths: Array<{ relationshipId: string; path: string }>,
+): Promise<MathTypeDecodeResult> {
+  return new Promise((resolve, reject) => {
+    const executable = process.platform === "win32" ? "python" : "python3";
+    const script = join(process.cwd(), "server/lib/legacy-equation-mtef.py");
+    const child = spawn(executable, [script, ...paths.map((item) => item.path)], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    let bytes = 0;
+    let finished = false;
+    const fail = (error: Error) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      fail(new Error("旧版公式转换超时"));
+    }, converterTimeout(paths.length));
+    child.stdout.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > MAX_CONVERTER_OUTPUT_BYTES) {
+        child.kill("SIGKILL");
+        fail(new Error("旧版公式转换输出过大"));
+        return;
+      }
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (stderr.length < 4096) stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => fail(new Error(`无法启动旧版公式转换器：${error.message}`)));
+    child.on("close", (code) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`旧版公式转换失败：${stderr.trim() || `退出码 ${code}`}`));
+        return;
+      }
+      try {
+        const payload = JSON.parse(stdout) as Record<string, RubyResult>;
+        const mathml = new Map<string, string>();
+        const errors = new Map<string, string>();
+        for (const item of paths) {
+          const converted = payload[item.relationshipId];
+          if (typeof converted?.mathml === "string" && converted.mathml.trim()) {
+            mathml.set(item.relationshipId, converted.mathml);
+          } else {
+            errors.set(item.relationshipId, typeof converted?.error === "string" ? converted.error : "旧版公式未返回结果");
+          }
+        }
+        resolve({ mathml, errors });
+      } catch (error) {
+        reject(new Error(`旧版公式返回无效结果：${error instanceof Error ? error.message : "未知错误"}`));
+      }
+    });
+  });
+}
+
 export const decodeMathTypeEquations: MathTypeDecoder = async (equations) => {
   if (equations.length === 0) return { mathml: new Map(), errors: new Map() };
   const directory = await mkdtemp(join(tmpdir(), "inteschool-mathtype-"));
   try {
     const paths: Array<{ relationshipId: string; path: string }> = [];
+    const legacyPaths: Array<{ relationshipId: string; path: string }> = [];
     for (const equation of equations) {
       const extension = equation.format === "wmf" ? ".wmf" : ".bin";
       const path = join(directory, `${equation.relationshipId}${extension}`);
       await writeFile(path, equation.data, { mode: 0o600 });
       paths.push({ relationshipId: equation.relationshipId, path });
+      if (equation.format !== "wmf") {
+        const native = extractLegacyEquationNative(equation.data);
+        if (native) {
+          const legacyPath = join(directory, `${equation.relationshipId}.eqn`);
+          await writeFile(legacyPath, native, { mode: 0o600 });
+          legacyPaths.push({ relationshipId: equation.relationshipId, path: legacyPath });
+        }
+      }
     }
     const mathml = new Map<string, string>();
     const errors = new Map<string, string>();
-    for (let offset = 0; offset < paths.length; offset += MAX_CONVERTER_BATCH_SIZE) {
-      const result = await runRubyConverter(paths.slice(offset, offset + MAX_CONVERTER_BATCH_SIZE));
-      for (const [id, value] of result.mathml) mathml.set(id, value);
-      for (const [id, value] of result.errors) errors.set(id, value);
+    for (let offset = 0; offset < legacyPaths.length; offset += MAX_CONVERTER_BATCH_SIZE) {
+      try {
+        const result = await runLegacyPythonConverter(legacyPaths.slice(offset, offset + MAX_CONVERTER_BATCH_SIZE));
+        for (const [id, value] of result.mathml) mathml.set(id, value);
+        for (const [id, value] of result.errors) errors.set(id, value);
+      } catch {
+        // Missing Python or unsupported legacy data still uses the Ruby path.
+      }
+    }
+    const remaining = paths.filter((path) => !mathml.has(path.relationshipId));
+    for (let offset = 0; offset < remaining.length; offset += MAX_CONVERTER_BATCH_SIZE) {
+      const batch = remaining.slice(offset, offset + MAX_CONVERTER_BATCH_SIZE);
+      try {
+        const result = await runRubyConverter(batch);
+        for (const [id, value] of result.mathml) mathml.set(id, value);
+        for (const [id, value] of result.errors) errors.set(id, value);
+      } catch (error) {
+        if (mathml.size === 0) throw error;
+        // An unavailable or broken Ruby converter must not discard equations
+        // successfully recovered from legacy MTEF streams.
+        const message = error instanceof Error ? error.message : "MathType 转换失败";
+        for (const item of batch) errors.set(item.relationshipId, message);
+      }
     }
     return { mathml, errors };
   } finally {
