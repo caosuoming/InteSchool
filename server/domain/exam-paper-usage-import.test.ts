@@ -58,6 +58,38 @@ describe("试卷使用数据批量导入", () => {
     });
   });
 
+  it("preserves geography subquestion scores and answers across partial imports", async () => {
+    const dbState = state();
+    (dbState.examPapers as ExamPaper[])[0] = {
+      ...paper, subject: undefined,
+      questions: [{
+        id: "geo", score: 6, type: "single",
+        stem: "读图回答1—3题。\n1. 甲地？\nA. 甲\nB. 乙\n2. 乙地？\nA. 甲\nB. 乙\n3. 丙地？\nA. 甲\nB. 乙",
+        answer: "（1）A （2）B （3）A",
+      }],
+    } as ExamPaper;
+    const geographyTeacher = { ...teacher, subject: "地理" } as TeacherRecord;
+    await runWithState(dbState, async () => {
+      await examPaperService.importUsageData("paper1", [{
+        studentId: "s1", paperQuestionId: "geo", subScores: { "1": 2, "2": 0 },
+        studentAnswer: "1. A\n2. A",
+      }], [], geographyTeacher);
+      await examPaperService.importUsageData("paper1", [{
+        studentId: "s1", paperQuestionId: "geo", subScores: { "3": 2 },
+        studentAnswer: "3. A",
+      }], [], geographyTeacher);
+      expect(dbState.answerRecords).toHaveLength(1);
+      expect((dbState.answerRecords as AnswerRecord[])[0]).toMatchObject({
+        subScores: { "1": 2, "2": 0, "3": 2 },
+        earnedScore: 4, maxScore: 6,
+        studentAnswer: "1. A\n2. A\n3. A",
+      });
+      await expect(examPaperService.importUsageData("paper1", [{
+        studentId: "s1", paperQuestionId: "geo", subScores: { "4": 2 },
+      }], [], geographyTeacher)).rejects.toThrow("小题号");
+    });
+  });
+
   it("禁止越权教师、非班级学生、错误题号和超额分数，并保持原子性", async () => {
     const dbState = state();
     await runWithState(dbState, async () => {

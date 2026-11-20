@@ -1,4 +1,46 @@
 import type { ExamPaperQuestion, Student } from "../types/index.js";
+import { alignGeographyQuestionAnswer, splitGeographyChoiceGroup } from "./geography-paper-layout.js";
+
+export interface UsageQuestionSlot {
+  number: number;
+  questionIndex: number;
+  paperQuestionId: string;
+  part?: number;
+  maxScore: number;
+  answer?: string;
+}
+
+/** Geography choice groups occupy several printed numbers but one stored record. */
+export function getUsageQuestionSlots(questions: ExamPaperQuestion[], subject?: string): UsageQuestionSlot[] {
+  const slots: UsageQuestionSlot[] = [];
+  for (const [questionIndex, question] of questions.entries()) {
+    const group = subject?.trim() === "地理" && question.type === "single"
+      ? splitGeographyChoiceGroup(question.stem) : null;
+    const count = group?.questions.length ?? 1;
+    const answers = new Map<number, string>();
+    if (group) {
+      const aligned = alignGeographyQuestionAnswer(question.stem, question.answer || "", question.type, subject);
+      const markers = [...aligned.matchAll(/(?<!\d)(\d+)[.．、]\s*/g)];
+      if (markers.length === count && markers.every((match, index) => Number(match[1]) === group.originalNumbers[index])) {
+        markers.forEach((match, index) => {
+          const value = aligned.slice(match.index! + match[0].length, markers[index + 1]?.index ?? aligned.length).trim();
+          if (/^[A-Za-z0-9]+$/.test(value)) answers.set(index + 1, value);
+        });
+      }
+    }
+    for (let part = 1; part <= count; part++) {
+      slots.push({
+        number: slots.length + 1,
+        questionIndex,
+        paperQuestionId: question.id,
+        part: group ? part : undefined,
+        maxScore: question.score / count,
+        answer: group ? answers.get(part) : question.answer?.trim(),
+      });
+    }
+  }
+  return slots;
+}
 
 export type UsageCell = string | number | null;
 export interface UsageSheet { name: string; rows: UsageCell[][] }
@@ -10,6 +52,7 @@ export interface UsageMetadataConflict {
   column: string;
   questionNo: number;
   paperQuestionId: string;
+  part?: number;
   attribute: "score" | "answer";
   excel: string;
   paper: string;
@@ -20,8 +63,8 @@ export interface UsageMetadataUpdate {
   expected: string;
   value: string;
 }
-export const usageConflictKey = (conflict: Pick<UsageMetadataConflict, "paperQuestionId" | "attribute">) =>
-  `${conflict.paperQuestionId}:${conflict.attribute}`;
+export const usageConflictKey = (conflict: Pick<UsageMetadataConflict, "paperQuestionId" | "attribute" | "part">) =>
+  conflict.paperQuestionId + ":" + conflict.attribute + (conflict.part ? ":" + conflict.part : "");
 export interface UsageImportItem {
   studentId: string;
   paperQuestionId: string;
@@ -142,6 +185,63 @@ export async function readUsageWorkbook(file: File): Promise<UsageSheet[]> {
   return result;
 }
 
+/** Consolidate per-subquestion Excel decisions into atomic parent-question metadata updates. */
+export function getUsageMetadataUpdates(
+  questions: ExamPaperQuestion[],
+  subject: string | undefined,
+  conflicts: UsageMetadataConflict[],
+  selectedSources: Record<string, "paper" | "excel">,
+): UsageMetadataUpdate[] {
+  const slots = getUsageQuestionSlots(questions, subject);
+  const updates = new Map<string, UsageMetadataUpdate>();
+  for (const conflict of conflicts) {
+    if (selectedSources[usageConflictKey(conflict)] !== "excel") continue;
+    const question = questions.find((item) => item.id === conflict.paperQuestionId);
+    if (!question) continue;
+    const key = question.id + ":" + conflict.attribute;
+    if (!conflict.part) {
+      updates.set(key, { paperQuestionId: question.id, attribute: conflict.attribute,
+        expected: conflict.paper, value: conflict.excel });
+      continue;
+    }
+    const previous = updates.get(key);
+    if (conflict.attribute === "score") {
+      const current = previous ? Number(previous.value) : question.score;
+      updates.set(key, { paperQuestionId: question.id, attribute: "score",
+        expected: String(question.score), value: String(current + Number(conflict.excel) - Number(conflict.paper)) });
+      continue;
+    }
+    const group = splitGeographyChoiceGroup(question.stem);
+    if (!group) continue;
+    const groupSlots = slots.filter((slot) => slot.paperQuestionId === question.id);
+    // Do not replace an unrecognized original key with incomplete inferred answers.
+    if (question.answer?.trim() && groupSlots.some((slot) => !slot.answer)) continue;
+    const selectedAnswers = new Map<number, string>();
+    for (const slot of groupSlots) if (slot.answer)
+      selectedAnswers.set(group.originalNumbers[slot.part! - 1], slot.answer);
+    for (const other of conflicts) {
+      if (other.paperQuestionId === question.id && other.attribute === "answer" && other.part
+        && selectedSources[usageConflictKey(other)] === "excel")
+        selectedAnswers.set(group.originalNumbers[other.part - 1], other.excel);
+    }
+    updates.set(key, {
+      paperQuestionId: question.id, attribute: "answer", expected: question.answer?.trim() || "",
+      value: [...selectedAnswers].sort(([a], [b]) => a - b)
+        .map(([number, answer]) => String(number) + ". " + answer).join(" "),
+    });
+  }
+  return [...updates.values()];
+}
+
+export function canAdoptUsageExcelAnswer(
+  questions: ExamPaperQuestion[], subject: string | undefined, conflict: UsageMetadataConflict,
+): boolean {
+  if (conflict.attribute !== "answer" || !conflict.part) return true;
+  const question = questions.find((item) => item.id === conflict.paperQuestionId);
+  if (!question || !question.answer?.trim()) return true;
+  return getUsageQuestionSlots([question], subject).every((slot) => Boolean(slot.answer));
+}
+
 export function prepareUsageImport(
   sheet: UsageSheet,
   headerRow: number,
@@ -149,7 +249,9 @@ export function prepareUsageImport(
   paperQuestions: ExamPaperQuestion[],
   students: Student[],
   selectedSources: Record<string, "paper" | "excel"> = {},
+  subject?: string,
 ): UsagePreview {
+  const slots = getUsageQuestionSlots(paperQuestions, subject);
   const roles = columns.filter((column) => column.role !== "ignore");
   const warnings: string[] = [];
   const conflicts: UsageMetadataConflict[] = [];
@@ -158,18 +260,28 @@ export function prepareUsageImport(
     // Only an encoded *score* header carries the maximum score and answer key.
     if (!column.role.startsWith("score:")) return;
     const questionNo = Number(column.role.split(":")[1]);
-    const question = paperQuestions[questionNo - 1];
+    const slot = slots[questionNo - 1];
     const encoded = parseEncodedHeader(column.header);
-    if (!question || !encoded || Number(encoded[1]) !== questionNo) return;
-    if (Math.abs(Number(encoded[2]) - question.score) > 0.000001) {
-      const conflict = { column: column.header, questionNo, paperQuestionId: question.id,
-        attribute: "score" as const, excel: encoded[2], paper: String(question.score) };
-      conflicts.push(conflict);
-      if (selectedSources[usageConflictKey(conflict)] === "excel") effectiveScores.set(question.id, Number(encoded[2]));
+    if (!slot || !encoded || Number(encoded[1]) !== questionNo) return;
+    const question = paperQuestions[slot.questionIndex];
+    const scoreConflict: UsageMetadataConflict = {
+      column: column.header, questionNo, paperQuestionId: question.id,
+      ...(slot.part ? { part: slot.part } : {}),
+      attribute: "score", excel: encoded[2], paper: String(slot.maxScore),
+    };
+    if (Math.abs(Number(encoded[2]) - slot.maxScore) > 0.000001) {
+      conflicts.push(scoreConflict);
+      if (selectedSources[usageConflictKey(scoreConflict)] === "excel") {
+        const previous = effectiveScores.get(question.id) ?? question.score;
+        effectiveScores.set(question.id, previous + Number(encoded[2]) - slot.maxScore);
+      }
     }
-    if (encoded[3] && normalizeUsageAnswer(encoded[3]) !== normalizeUsageAnswer((question.answer || "").trim()))
-      conflicts.push({ column: column.header, questionNo, paperQuestionId: question.id,
-        attribute: "answer", excel: encoded[3], paper: (question.answer || "").trim() });
+    if (encoded[3] && normalizeUsageAnswer(encoded[3]) !== normalizeUsageAnswer(slot.answer || ""))
+      conflicts.push({
+        column: column.header, questionNo, paperQuestionId: question.id,
+        ...(slot.part ? { part: slot.part } : {}),
+        attribute: "answer", excel: encoded[3], paper: slot.answer || "",
+      });
   });
   if (!roles.some((column) => column.role === "studentNo" || column.role === "studentName"))
     return { entries: [], matchedStudents: 0, unmatchedStudents: [], warnings: ["请先映射学生姓名或学号列"], mappedColumns: 0 };
@@ -228,9 +340,11 @@ export function prepareUsageImport(
     if (!firstStudent) firstStudent = { name: student.name, values: columns.map((column) => ({ header: column.header, value: clean(row[column.index]) })) };
     matchedStudents++;
     const byQuestion = new Map<number, UsageImportItem>();
+    const groupAnswers = new Map<number, Map<number, string>>();
     for (const column of scores) {
       const [kind, noString, subNo] = column.role.split(":");
-      const questionIndex = Number(noString) - 1;
+      const slot = kind === "subscore" ? undefined : slots[Number(noString) - 1];
+      const questionIndex = kind === "subscore" ? Number(noString) - 1 : slot?.questionIndex ?? -1;
       const question = paperQuestions[questionIndex];
       if (!question) continue;
       const raw = row[column.index];
@@ -241,7 +355,13 @@ export function prepareUsageImport(
         byQuestion.set(questionIndex, item);
       }
       if (kind === "answer") {
-        item.studentAnswer = clean(raw).slice(0, 2048);
+        if (slot?.part) {
+          const answers = groupAnswers.get(questionIndex) || new Map<number, string>();
+          answers.set(slot.part, clean(raw));
+          groupAnswers.set(questionIndex, answers);
+        } else {
+          item.studentAnswer = clean(raw).slice(0, 2048);
+        }
       } else {
         const numeric = scoreCell(raw);
         if (numeric === undefined) continue;
@@ -249,9 +369,16 @@ export function prepareUsageImport(
           warnings.push(`第${i + 1}行「${column.header}」得分无效，已跳过`);
           continue;
         }
-        if (kind === "score") item.earnedScore = numeric;
-        else item.subScores = { ...(item.subScores || {}), [subNo]: numeric };
+        if (kind === "score" && !slot?.part) item.earnedScore = numeric;
+        else item.subScores = { ...(item.subScores || {}), [kind === "subscore" ? subNo : slot!.part!]: numeric };
       }
+    }
+    for (const [questionIndex, answers] of groupAnswers) {
+      const start = slots.find((slot) => slot.questionIndex === questionIndex)?.number ?? 1;
+      byQuestion.get(questionIndex)!.studentAnswer = [...answers.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([part, value]) => String(start + part - 1) + ". " + value)
+        .join("\n").slice(0, 2048);
     }
     for (const item of byQuestion.values()) {
       if (item.earnedScore === undefined && !item.subScores && !item.studentAnswer) continue;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExamPaperQuestion, Student } from "@/types";
-import { detectUsageHeader, detectUsageRole, normalizeUsageAnswer, prepareUsageImport, usageConflictKey, type UsageSheet } from "./exam-usage-spreadsheet";
+import { detectUsageHeader, detectUsageRole, getUsageMetadataUpdates, getUsageQuestionSlots, normalizeUsageAnswer, prepareUsageImport, usageConflictKey, type UsageSheet } from "./exam-usage-spreadsheet";
 
 const questions = [
   { id: "q1", score: 5 },
@@ -119,4 +119,90 @@ describe("带满分与标准答案的 Excel 表头", () => {
     expect(preview.conflicts).toEqual([]);
   });
 
+});
+
+describe("Issue #1503: geography grouped question data import", () => {
+  const geography = [
+    {
+      id: "geo", score: 6, type: "single", answer: "（4）B （5）D （6）A",
+      stem: "读图完成4—6题。\n4. 甲地气候？\nA. 热\nB. 冷\n5. 乙地地形？\nA. 山\nB. 海\n6. 丙地土壤？\nA. 黄\nB. 红",
+    },
+    { id: "standalone", score: 4, type: "single", answer: "C", stem: "7. 下一题" },
+  ] as ExamPaperQuestion[];
+
+  it("uses printed consecutive question numbers, not array indices", () => {
+    const slots = getUsageQuestionSlots(geography, "地理");
+    expect(slots.map((slot) => [slot.number, slot.paperQuestionId, slot.part, slot.maxScore, slot.answer])).toEqual([
+      [1, "geo", 1, 2, "B"],
+      [2, "geo", 2, 2, "D"],
+      [3, "geo", 3, 2, "A"],
+      [4, "standalone", undefined, 4, "C"],
+    ]);
+    expect(getUsageQuestionSlots(geography, "历史")).toHaveLength(2);
+    expect(getUsageQuestionSlots([{ ...geography[0], answer: "（4）B（5）D（6）A" }], "地理")
+      .map((slot) => slot.answer)).toEqual(["B", "D", "A"]);
+  });
+
+  it("maps each Excel score and answer into its geography group while keeping following questions aligned", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["学号", "1 2分、答案B", "学生解答", "2 2分、答案D", "学生解答", "3 2分、答案A", "学生解答", "4 4分、答案C", "学生解答"],
+      ["001", 2, "B", 0, "A", 1, "A", 4, "C"],
+    ] };
+    const detected = detectUsageHeader(sheet, getUsageQuestionSlots(geography, "地理").length);
+    expect(detected.columns.map((column) => column.role)).toEqual([
+      "studentNo", "score:1", "answer:1", "score:2", "answer:2", "score:3", "answer:3", "score:4", "answer:4",
+    ]);
+    const preview = prepareUsageImport(sheet, detected.headerRow, detected.columns, geography, students, {}, "地理");
+    expect(preview.conflicts).toEqual([]);
+    expect(preview.warnings).toEqual([]);
+    expect(preview.entries).toEqual([
+      { studentId: "s1", paperQuestionId: "geo", subScores: { "1": 2, "2": 0, "3": 1 }, studentAnswer: "1. B\n2. A\n3. A" },
+      { studentId: "s1", paperQuestionId: "standalone", earnedScore: 4, studentAnswer: "C" },
+    ]);
+  });
+
+  it("reports answer and per-part score discrepancies against the corresponding subquestion", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["学号", "2 3分、答案A"],
+      ["001", 2],
+    ] };
+    const detected = detectUsageHeader(sheet, 4);
+    const preview = prepareUsageImport(sheet, detected.headerRow, detected.columns, geography, students, {}, "地理");
+    expect(preview.conflicts).toEqual([
+      { column: "2 3分、答案A", questionNo: 2, paperQuestionId: "geo", part: 2, attribute: "score", excel: "3", paper: "2" },
+      { column: "2 3分、答案A", questionNo: 2, paperQuestionId: "geo", part: 2, attribute: "answer", excel: "A", paper: "D" },
+    ]);
+    expect(preview.entries).toEqual([{ studentId: "s1", paperQuestionId: "geo", subScores: { "2": 2 } }]);
+  });
+
+  it("applies Excel-selected per-part score and key as atomic parent metadata updates", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["学号", "2 3分、答案A"], ["001", 3],
+    ] };
+    const cols = detectUsageHeader(sheet, 4).columns;
+    const initial = prepareUsageImport(sheet, 0, cols, geography, students, {}, "地理");
+    const selected = Object.fromEntries((initial.conflicts || [])
+      .map((item) => [usageConflictKey(item), "excel" as const]));
+    const updates = getUsageMetadataUpdates(geography, "地理", initial.conflicts || [], selected);
+    expect(updates).toEqual([
+      { paperQuestionId: "geo", attribute: "score", expected: "6", value: "7" },
+      { paperQuestionId: "geo", attribute: "answer", expected: "（4）B （5）D （6）A",
+        value: "4. B 5. A 6. A" },
+    ]);
+    const preview = prepareUsageImport(sheet, 0, cols, geography, students, selected, "地理");
+    expect(preview.entries).toEqual([
+      { studentId: "s1", paperQuestionId: "geo", subScores: { "2": 3 } },
+    ]);
+  });
+
+  it("rejects grouped scores exceeding the stored question's total", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["学号", "1得分", "2得分", "3得分"],
+      ["001", 3, 3, 3],
+    ] };
+    const detected = detectUsageHeader(sheet, 4);
+    const preview = prepareUsageImport(sheet, detected.headerRow, detected.columns, geography, students, {}, "地理");
+    expect(preview.entries).toEqual([]);
+    expect(preview.warnings.join(" ")).toContain("超过满分");
+  });
 });

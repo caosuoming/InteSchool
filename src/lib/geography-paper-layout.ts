@@ -1,4 +1,4 @@
-import { alignGeographyGroupAnswerNumbers, geographyAnswerLabelNumbers, rewriteGeographyAnswerLabels } from "./geography-answer-numbering";
+import { alignGeographyGroupAnswerNumbers, geographyAnswerLabelNumbers, rewriteGeographyAnswerLabels } from "./geography-answer-numbering.js";
 
 const lineStart = /^([ \t]*(?:<(?:p|div|li|span|strong)\b[^>]*>[ \t]*)*)([\d０-９]{1,4})[ \t]*[.．、][ \t]*(?=\S)/i;
 
