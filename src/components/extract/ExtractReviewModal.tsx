@@ -1,4 +1,5 @@
 import { renderGeographyChoiceGroups } from "@/lib/geography-question-markup";
+import { isChemistryCompositeGroup, renumberChemistryGroupStem, renumberChemistryGroupField } from "@/lib/chemistry-paper-layout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "katex/dist/katex.min.css";
 import {
@@ -140,7 +141,7 @@ const blockTypeLabel: Record<BlockType, string> = {
 function withDetectedQuestionCategories(blocks: DocBlock[], subject?: string): DocBlock[] {
   return blocks.map((block) => {
     if (block.type !== "question") return block;
-    if (subject?.trim() === "地理") {
+    if (subject?.trim() === "地理" || subject?.trim() === "化学") {
       return {
         ...block,
         suggestedCategories: [],
@@ -257,7 +258,7 @@ function getOptionColor(index: number): string {
 /**
  * 从文本中移除行首的关键字和编号（用于入库时过滤）
  */
-function removeKeywords(text: string, keywords: string[]): string {
+function removeKeywords(text: string, keywords: string[], preserveNumberedLines = false): string {
   if (!text) return text;
 
   const numeralSource = "[\\d一二三四五六七八九十百零〇两]+";
@@ -298,7 +299,9 @@ function removeKeywords(text: string, keywords: string[]): string {
     }
 
     // 移除行首的数字编号（如 "1."、"一、" 等）
-    processedLine = processedLine.replace(/^[\d一二三四五六七八九十]+[、．.）),，。｡:：;；·•—–-]\s*/, "");
+    if (!preserveNumberedLines) {
+      processedLine = processedLine.replace(/^[\d一二三四五六七八九十]+[、．.）),，。｡:：;；·•—–-]\s*/, "");
+    }
 
     return processedLine;
   });
@@ -489,7 +492,9 @@ export function ExtractReviewModal({
       sourceTextRef.current = extracted.text;
       setProgress(60);
       setProgressMsg("正在分析文档结构...");
-      let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, { ...extractConfig, subject });
+      let blocks: DocBlock[] = parseDocumentBlocks(extracted.text, { ...extractConfig, subject,
+        chemistryComprehensiveSections: resourceType === "examPaper" && subject?.trim() === "化学",
+      });
 
       if (blocks.length === 0) {
         blocks = parseDocumentBlocks("文档内容为空，请检查文档是否包含题目或知识块内容。", { ...extractConfig, subject });
@@ -668,13 +673,13 @@ export function ExtractReviewModal({
         if (b.id !== id) return b;
         const updated: DocBlock = { ...b, type, status: "edited" };
         if (type === "question" && b.type !== "question") {
-          updated.suggestedCategories = subject?.trim() === "地理"
+          updated.suggestedCategories = ["地理", "化学"].includes(subject?.trim() || "")
             ? [] : detectQuestionCategories(updated, subject);
           updated.categories = [...new Set([...(updated.categories || []), ...updated.suggestedCategories])];
         }
         if (type === "question" && !updated.questionType) {
-          updated.questionType = "single";
-          updated.options = ["", ""];
+          updated.questionType = subject?.trim() === "化学" ? "essay" : "single";
+          updated.options = subject?.trim() === "化学" ? [] : ["", ""];
           updated.answer = "";
           updated.analysis = "";
           updated.difficulty = 3;
@@ -975,19 +980,39 @@ export function ExtractReviewModal({
       const analysisKeywords = [...extractConfig.analysisKeywords];
       const summaryKeywords = [...extractConfig.summaryKeywords];
 
+      // Source paper renders each section title separately. Keep its topic
+      // within the bank question when the section is used independently.
+      const chemistrySectionTitles = new Map<string, string>();
+      if (subject?.trim() === "化学" && resourceType === "examPaper") {
+        let sectionTitle = "";
+        for (const block of blocks) {
+          if (block.type === "groupTitle") {
+            const match = /^[一二三四五六七八九十百]{1,4}\s*[、.．]\s*(.+)$/.exec(block.content.trim());
+            sectionTitle = match && !/(?:非?选择题|填空题|判断题|综合题|解答题|计算题|证明题)/.test(match[1])
+              ? match[1] : "";
+          } else if (block.type === "question" && sectionTitle) {
+            chemistrySectionTitles.set(block.id, sectionTitle);
+          }
+        }
+      }
+
       const extractedQuestions = questionBlocks.map((b) => {
         const type = normalizeQuestionTypeForSubject(b.questionType || subjectDefaultQuestionType, subject);
         const answer = normalizeQuestionField(
-          removeKeywords(b.answer || "", answerKeywords),
+          removeKeywords(b.answer || "", answerKeywords,
+            isChemistryCompositeGroup(b.content, b.questionType || subjectDefaultQuestionType, subject)),
           ["待教师补充"],
         );
-        const keywordFilteredStem = removeKeywords(b.content, questionKeywords);
+        const chemistryComposite = isChemistryCompositeGroup(b.content, type, subject);
+        const keywordFilteredStem = removeKeywords(b.content, questionKeywords, chemistryComposite);
         const cleanedStem = preservedScoreLabelBlockIds.has(b.id)
           ? keywordFilteredStem
           : stripLeadingScoreLabels(keywordFilteredStem).text;
-        const stem = type === "short"
+        const numberedStem = type === "short"
           ? ensureFillBlankAnswerArea(cleanedStem, answer)
-          : cleanedStem;
+          : chemistryComposite ? renumberChemistryGroupStem(cleanedStem, 1) : cleanedStem;
+        const sectionTitle = chemistrySectionTitles.get(b.id);
+        const stem = sectionTitle ? sectionTitle + "\n" + numberedStem : numberedStem;
         return {
           id: b.id,
           type,
@@ -1005,11 +1030,13 @@ export function ExtractReviewModal({
             : b.categories || [],
           stem,
           options: b.options?.map(opt => removeKeywords(opt, questionKeywords)),
-          answer,
-          analysis: normalizeQuestionField(
-            removeKeywords(b.analysis || "", analysisKeywords),
-            ["待教师补充解析"],
-          ),
+          answer: chemistryComposite
+            ? renumberChemistryGroupField(b.content, answer, 1) : answer,
+          analysis: chemistryComposite
+            ? renumberChemistryGroupField(b.content, normalizeQuestionField(
+              removeKeywords(b.analysis || "", analysisKeywords, true), ["待教师补充解析"],
+            ), 1)
+            : normalizeQuestionField(removeKeywords(b.analysis || "", analysisKeywords), ["待教师补充解析"]),
           summary: normalizeQuestionField(removeKeywords(b.summary || "", summaryKeywords)),
           difficulty: b.difficulty || 3,
           status: b.status as "new" | "duplicate" | "confirmed" | "edited",
@@ -1346,7 +1373,7 @@ export function ExtractReviewModal({
                   { value: "question", label: "题目" },
                 ]}
               />
-              {block.type === "question" && !["英语", "地理"].includes(subject?.trim() || "") && (
+              {block.type === "question" && !["英语", "地理", "化学"].includes(subject?.trim() || "") && (
 
                 <div className={cn(
                   "rounded-lg border p-2.5",

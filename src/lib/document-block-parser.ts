@@ -40,6 +40,8 @@ export interface DocumentBlock {
 
 export interface DocumentParseConfig {
   subject?: string;
+  /** Only chemistry exam papers use roman-numbered sections as atomic bank items. */
+  chemistryComprehensiveSections?: boolean;
   headingKeywords: string[];
   projectTypeKeywords?: string[];
   questionKeywords: string[];
@@ -360,6 +362,13 @@ function inferQuestionType(
   if (config.subject?.trim() === "化学" && sectionType === "essay") return "essay";
   return inferSharedStemSubQuestionType(block, sectionType, config)
     || inferAtomicQuestionType(block, sectionType, config);
+}
+
+function isChemistryComprehensiveHeading(text: string, config: DocumentParseConfig): boolean {
+  if (config.subject?.trim() !== "化学" || !config.chemistryComprehensiveSections) return false;
+  const heading = normalizeStructuralText(text).trim();
+  return /^[一二三四五六七八九十百]{1,4}\s*[、.．]\s*\S/.test(heading)
+    && !/(?:非?选择题|填空题|解答题|计算题|证明题|综合题|判断题)/.test(heading);
 }
 
 function isHeading(text: string, config: DocumentParseConfig): boolean {
@@ -1736,6 +1745,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
   let currentBlock: Partial<DocumentBlock> = {};
   let currentQuestionField: QuestionField = "content";
   let sectionQuestionType: QuestionType | undefined;
+  let inChemistryComprehensiveSection = false;
   let independentSubQuestionNextIndex: number | undefined;
   let independentSubQuestionStyle: NestedSubQuestionStyle | undefined;
   let separatedByBlank = false;
@@ -1755,7 +1765,8 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     } as DocumentBlock;
     if (block.type === "question") {
       block.options = (block.options || []).filter((option) => option.trim()).map((option) => option.trim());
-      block.questionType = inferQuestionType(block, sectionQuestionType, config);
+      block.questionType = inChemistryComprehensiveSection
+        ? "essay" : inferQuestionType(block, sectionQuestionType, config);
       const fillBlankSignal = sectionQuestionType === "short"
         || hasFillBlankAnswerArea(block.content)
         || config.fillBlankKeywords.some((keyword) => (
@@ -1854,8 +1865,10 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       && currentBlock.type === "question"
       && currentQuestionField === "content"
       && /(?:图|图形|图像|图示|如下|如图|下图|如下图|示意图)\s*[：:.。]?$/.test(currentBlock.content?.trim() || "");
-    if (isHeading(line, config) || (!isExpectedQuestionImage && isProjectHeading(line, config))) {
+    if (isHeading(line, config) || isChemistryComprehensiveHeading(line, config)
+      || (!isExpectedQuestionImage && isProjectHeading(line, config))) {
       submitCurrent();
+      inChemistryComprehensiveSection = isChemistryComprehensiveHeading(line, config);
       independentSubQuestionNextIndex = undefined;
       independentSubQuestionStyle = undefined;
       sectionQuestionType = detectSectionQuestionType(line);
@@ -1875,6 +1888,20 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     }
 
     line = stripQuestionScoreAnnotation(line, config);
+
+    // One Shanghai chemistry section is a single comprehensive bank item.
+    // Its 1./2. labels are paper-wide, whereas （1）/① and A.–D. belong to
+    // the section body and must never start new questions or choice options.
+    if (inChemistryComprehensiveSection && currentQuestionField === "content"
+      && !answerPattern?.test(line) && !analysisPattern?.test(line)
+      && !summaryPattern?.test(line)) {
+      if (currentBlock.type === "question") {
+        appendQuestionField(currentBlock, "content", line);
+      } else {
+        currentBlock = { type: "question", content: line, questionType: "essay", difficulty: 3 };
+      }
+      continue;
+    }
 
     const confirmedMathStart = isConfirmedMathQuestionStart(line, config);
     const mathDecimal = config.subject?.trim() === "数学"
@@ -2757,6 +2784,36 @@ function findRestartedGeographyAnswerIndex(lines: string[], config: DocumentPars
   return undefined;
 }
 
+function mergeChemistryComprehensiveSolutions(
+  blocks: DocumentBlock[], solutions: TrailingSolution[], config: DocumentParseConfig,
+): number {
+  if (!config.chemistryComprehensiveSections || config.subject?.trim() !== "化学") return 0;
+  const byNumber = new Map(solutions.map((solution) => [Number(solution.number), solution]));
+  let inComprehensive = false;
+  let matched = 0;
+  for (const block of blocks) {
+    if (block.type === "groupTitle") {
+      inComprehensive = isChemistryComprehensiveHeading(block.content, config);
+      continue;
+    }
+    if (!inComprehensive || block.type !== "question") continue;
+    const numbers = [...block.content.matchAll(/^\s*([\d０-９]{1,4})\s*[.．、]\s*\S/gm)]
+      .map((match) => Number(normalizeQuestionNumber(match[1])));
+    if (!numbers.length) continue;
+    for (const field of ["answer", "analysis", "summary"] as const) {
+      const entries = numbers.flatMap((number) => {
+        const content = byNumber.get(number)?.[field];
+        return content?.trim() ? [String(number) + ". " + content.trim()] : [];
+      });
+      if (entries.length) {
+        block[field] = entries.join("\n");
+        if (field === "answer") matched += entries.length;
+      }
+    }
+  }
+  return matched;
+}
+
 export function parseDocumentBlocks(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const english = parseEnglishDocumentBlocks(content, config);
   if (english) return english;
@@ -2796,9 +2853,10 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
     const merged = mergeTrailingSolutions(blocks, solutions, config, {
       allowPositionalFallback: kind !== "answer",
     });
+    const compositeMerged = mergeChemistryComprehensiveSolutions(blocks, solutions, config);
     const requiredMatches = kind === "answer" && config.subject?.trim() !== "地理"
       ? Math.min(2, questions.length) : 1;
-    if (merged >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(blocks, config.subject)), config.subject), content, config);
+    if (Math.max(merged, compositeMerged) >= requiredMatches) return refineGeographyBlocks(normalizeFillBlankAreas(normalizeInlineDocumentAnswers(normalizeInterleavedMathSubquestions(blocks, config.subject)), config.subject), content, config);
   }
 
   // Some scans omit the answer-key heading. Only a numbering restart with
