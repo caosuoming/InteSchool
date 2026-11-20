@@ -321,7 +321,7 @@ export function InvigilationTableSection({
       .sort((a, b) => arrangementDateKey(b).localeCompare(arrangementDateKey(a)))[0];
     setConfig(configForArrangement(selectedArrangement, teacherOptions, latestSaved?.invigilation));
     setSelectedCells([]);
-  }, [selectedArrangement, teacherOptions]);
+  }, [arrangements, selectedArrangement, teacherOptions]);
 
   useEffect(() => {
     setHistoryArrangementIds([]);
