@@ -57,6 +57,42 @@ describe("subject scoped RPC", () => {
     expect(other.items.map((q) => q.id)).toEqual(["legacy"]);
   });
 
+  it("includes the user's other-school questions on the first page without exposing another user's", async () => {
+    const { state, store } = fixture();
+    (state.questions as Array<Record<string, unknown>>).push(
+      { id: "other-school", teacherId: teacher.id, schoolId: "school-2", subject: "数学",
+        type: "single", stem: "Other school", answer: "2", analysis: "",
+        chapterIds: [], knowledgePointIds: [], createdAt: "2026-01-03T00:00:00Z" },
+      { id: "foreign", teacherId: "teacher-2", schoolId: "school-2", subject: "数学",
+        type: "single", stem: "Private", answer: "3", analysis: "",
+        chapterIds: [], knowledgePointIds: [], createdAt: "2026-01-04T00:00:00Z" },
+    );
+    const filter = { teacherId: teacher.id };
+    const page = await invokeRpc(store, session, "question", "listQuestionPage",
+      [filter, 1, 20, "newest", null]) as { items: Array<{ id: string }>; total: number };
+    expect(page.total).toBe(2);
+    expect(page.items.map((item) => item.id)).toEqual(["other-school", "english"]);
+    const listed = await invokeRpc(store, session, "question", "listQuestions", [filter]) as Array<{ id: string }>;
+    expect(listed.map((item) => item.id)).toEqual(["english", "other-school"]);
+    const referenced = await invokeRpc(store, session, "question", "listQuestions", [{
+      ids: ["other-school", "foreign"],
+    }]) as Array<{ id: string }>;
+    expect(referenced.map((item) => item.id)).toEqual(["other-school"]);
+
+    // A different school context must retain ownership while preserving same-school subject filters.
+    state.teachers[0].schoolId = "school-2";
+    state.teachers[0].subject = "数学";
+    state.teachers[0].affiliations = [{
+      id: "aff-2", schoolId: "school-2", subject: "数学", isCurrent: true, status: "active",
+      subjects: ["数学", "英语"],
+    }];
+    state.teachers[0].currentAffiliationId = "aff-2";
+    const afterSwitch = await invokeRpc(store, session, "question", "listQuestionPage",
+      [filter, 1, 20, "newest", null]) as { items: Array<{ id: string }>; total: number };
+    expect(afterSwitch.total).toBe(3);
+    expect(afterSwitch.items.map((item) => item.id)).toEqual(["other-school", "english", "legacy"]);
+  });
+
   it("scopes baskets and persists the active subject on newly created records", async () => {
     const { state, store } = fixture();
     expect((await invokeRpc(store, session, "basket", "listBaskets", [teacher.id]) as Array<{ id: string }>).map((item) => item.id))

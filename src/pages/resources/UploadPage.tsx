@@ -81,8 +81,8 @@ const resourceTypes: {
 }[] = [
   { key: "examPaper", label: "试卷", icon: FileSpreadsheet, description: "Word/PDF版试卷，上传后可在资源库中进行文档拆解", supportsAIExtract: true, formats: ".doc,.docx,.pdf" },
   { key: "lecture", label: "讲义", icon: FileText, description: "Word/PDF版讲义，上传后可在资源库中进行文档拆解", supportsAIExtract: true, formats: ".doc,.docx,.pdf" },
-  { key: "courseware", label: "课件", icon: Presentation, description: "PPT、几何画板、视频等课件", supportsAIExtract: false, formats: ".ppt,.pptx,.ggb,.pdf,.mp4,.jpg,.png" },
-  { key: "material", label: "素材", icon: FileBox, description: "文本、图片、音视频等素材", supportsAIExtract: false, formats: ".txt,.jpg,.png,.mp3,.mp4,.pdf" },
+  { key: "courseware", label: "课件", icon: Presentation, description: "数学仅上传 PPT/PPTX；其他格式请放入素材库", supportsAIExtract: false, formats: ".ppt,.pptx,.ggb,.pdf,.mp4,.jpg,.png" },
+  { key: "material", label: "素材", icon: FileBox, description: "图片、音视频、网页、几何画板及其他文件", supportsAIExtract: false, formats: ".txt,.jpg,.jpeg,.png,.gif,.svg,.mp3,.mp4,.pdf,.html,.htm,.ggb,.gsp,.gss" },
 ];
 
 const coursewareTypeOptions = [
@@ -467,6 +467,9 @@ export function UploadPage() {
           resourceId = lecture.id;
         } else if (currentType === "courseware") {
           const resolvedCoursewareType = (item.coursewareType || coursewareType) as CoursewareType;
+          if (teacher.subject === "数学" && (!/\.pptx?$/i.test(item.file.name) || resolvedCoursewareType !== "ppt")) {
+            throw new Error("数学课件库仅接受 PPT/PPTX；其他文件请上传至素材库");
+          }
           const pageCount = resolvedCoursewareType === "ppt"
             ? await countPptxSlides(item.file)
             : undefined;
@@ -797,7 +800,7 @@ export function UploadPage() {
                         label="课件类型（默认）"
                         value={coursewareType}
                         onChange={(e) => setCoursewareType(e.target.value)}
-                        options={coursewareTypeOptions}
+                        options={teacher?.subject === "数学" ? coursewareTypeOptions.filter((option) => option.value === "ppt") : coursewareTypeOptions}
                       />
                     )}
                     {selectedType === "material" && (
@@ -903,7 +906,7 @@ export function UploadPage() {
                           <Upload className="w-8 h-8 mx-auto text-ink-300 mb-2" />
                           <div className="text-sm text-ink-700">拖拽文件到此处，或点击选择多个文件</div>
                           <div className="text-xs text-ink-400 mt-1">
-                            支持格式：{resourceTypes.find((r) => r.key === selectedType)?.formats}
+                            支持格式：{selectedType === "courseware" && teacher?.subject === "数学" ? ".ppt,.pptx" : resourceTypes.find((r) => r.key === selectedType)?.formats}
                           </div>
                         </>
                       )}
@@ -912,7 +915,7 @@ export function UploadPage() {
                       ref={fileInputRef}
                       type="file"
                       multiple
-                      accept={resourceTypes.find((r) => r.key === selectedType)?.formats}
+                      accept={selectedType === "courseware" && teacher?.subject === "数学" ? ".ppt,.pptx" : resourceTypes.find((r) => r.key === selectedType)?.formats}
                       onChange={handleFileInput}
                       className="hidden"
                     />
@@ -1035,7 +1038,7 @@ export function UploadPage() {
                                 label="课件类型"
                                 value={item.coursewareType || coursewareType}
                                 onChange={(e) => updateBatchItem(item.id, { coursewareType: e.target.value })}
-                                options={coursewareTypeOptions}
+                                options={teacher?.subject === "数学" ? coursewareTypeOptions.filter((option) => option.value === "ppt") : coursewareTypeOptions}
                                 disabled={isLocked}
                               />
                             )}

@@ -50,6 +50,12 @@ describe("subject-filtered indexed question pages", () => {
         { teacherId: owner.id, subject }, 1, 20, "newest", owner.id,
       );
 
+      const crossSchool = await store.searchQuestionPage({
+        teacherId: owner.id, subject: "物理", ownerSubjectSchoolId: "school-a",
+      }, 1, 20, "newest", owner.id);
+      expect(crossSchool.items.map((item) => item.id).sort()).toEqual([
+        "history-legacy", "physics-explicit", "unknown-legacy",
+      ]);
       const math = await getPage("数学");
       expect(math.total).toBe(4);
       expect(math.items.map((item) => item.id).sort()).toEqual([

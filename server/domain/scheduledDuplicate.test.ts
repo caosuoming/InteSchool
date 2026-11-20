@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppState } from "../types.js";
-import type { AnswerRecord, Question } from "../../src/types/index.js";
+import type { AnswerRecord, Question, ExamPaper, Lecture } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { nextExecution, runDueDuplicateSchedules, scheduledDuplicateService } from "./scheduledDuplicate.js";
 
@@ -33,7 +33,7 @@ describe("scheduled duplicate scan", () => {
       const task = await makeTask("library");
       expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
       const [candidate] = await scheduledDuplicateService.listCandidates("teacher");
-      expect(candidate).toMatchObject({ leftStem: data.questions && (data.questions as Question[])[0].stem, rightQuestionId: "b" });
+      expect(candidate).toMatchObject({ leftQuestion: { stem: (data.questions as Question[])[0].stem }, rightQuestionId: "b" });
       await scheduledDuplicateService.resolveCandidate("teacher", candidate.id, "keep");
       expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(0);
       expect(await scheduledDuplicateService.listCandidates("teacher")).toHaveLength(0);
@@ -80,11 +80,76 @@ describe("scheduled duplicate scan", () => {
       const task = await makeTask("library");
       expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
       const [candidate] = await scheduledDuplicateService.listCandidates("teacher");
-      await scheduledDuplicateService.resolveCandidate("teacher", candidate.id, "merge");
+      await scheduledDuplicateService.resolveCandidate("teacher", candidate.id, "merge", {
+        stem: "existing", answer: "existing", analysis: "existing", summary: "existing",
+      });
       expect((data.questions as Question[]).map((q) => q.id)).toEqual(["mine"]);
       expect((data.answerRecords as AnswerRecord[])[0].questionId).toBe("mine");
       expect((data.baskets as Array<{ questionIds: string[] }>)[0].questionIds).toEqual(["mine"]);
       expect((data.lectures as Array<{ sections: Array<{ questionId: string }> }>)[0].sections[0].questionId).toBe("mine");
+    });
+  });
+
+  it("shows choices, details and source documents, then synchronizes both source documents on merge", async () => {
+    const first = { ...question("left", "求解方程 $x^2=4$"), options: ["2", "-2"], answer: "A",
+      analysis: "左解析", summary: "左总结", sourceDocId: "doc-left" };
+    const second = { ...question("right", "求解方程 $x^2=4$"), options: ["1", "2"], answer: "B",
+      analysis: "右解析", summary: "右总结", sourceDocId: "doc-right" };
+    const data = state([first, second]);
+    data.documents = [
+      { id: "doc-left", teacherId: "teacher", schoolId: "school", fileName: "原题一.docx", sections: [], status: "confirmed", fileSize: 1, fileType: "word", createdAt: first.createdAt },
+      { id: "doc-right", teacherId: "teacher", schoolId: "school", fileName: "原题二.pdf", sections: [], status: "confirmed", fileSize: 1, fileType: "pdf", createdAt: first.createdAt },
+    ];
+    data.examPapers = [
+      { id: "paper-left", teacherId: "teacher", title: "试卷一", questions: [
+        { id: "item-left", questionId: "left", stem: first.stem, options: first.options, answer: first.answer, analysis: first.analysis, type: "singleChoice", score: 2 },
+      ], contentBlocks: [{ id: "block-left", type: "question", questionId: "left", content: first.stem }] },
+      { id: "paper-right", teacherId: "teacher", title: "试卷二", questions: [
+        { id: "item-right", questionId: "right", stem: second.stem, options: second.options, answer: second.answer, analysis: second.analysis, type: "singleChoice", score: 2 },
+        { id: "other", stem: "另一道题", answer: "", analysis: "", type: "short", score: 2 },
+      ], contentBlocks: [{ id: "block-right", type: "question", questionId: "right", content: second.stem }] },
+    ] as unknown as AppState["examPapers"];
+    data.lectures = [{
+      id: "lecture", teacherId: "teacher", title: "讲义二",
+      sections: [{ id: "section", type: "question", questionId: "right", content: second.stem, children: [] }],
+      contentBlocks: [{ id: "lecture-block", type: "question", questionId: "right", content: second.stem }],
+    }] as unknown as AppState["lectures"];
+    await runWithState(data, async () => {
+      const task = await makeTask("library");
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
+      const [candidate] = await scheduledDuplicateService.listCandidates("teacher");
+      expect(candidate.leftQuestion).toMatchObject({ options: ["2", "-2"], answer: "A", analysis: "左解析", summary: "左总结" });
+      expect(candidate.rightQuestion).toMatchObject({ options: ["1", "2"], answer: "B", analysis: "右解析", summary: "右总结" });
+      expect(candidate.leftQuestion?.sources).toEqual(expect.arrayContaining(["文档：原题一.docx", "试卷：试卷一"]));
+      expect(candidate.rightQuestion?.sources).toEqual(expect.arrayContaining(["文档：原题二.pdf", "试卷：试卷二", "讲义：讲义二"]));
+      await expect(scheduledDuplicateService.resolveCandidate("teacher", candidate.id, "merge")).rejects.toThrow("选择");
+      expect(data.questions).toHaveLength(2);
+      await scheduledDuplicateService.resolveCandidate("teacher", candidate.id, "merge", {
+        stem: "incoming", answer: "both", analysis: "existing", summary: "both",
+      });
+      expect(data.questions).toHaveLength(1);
+      const merged = (data.questions as Question[])[0];
+      expect(merged).toMatchObject({
+        id: "left", stem: second.stem, options: second.options,
+        answer: "A\n\n答案2：B", analysis: "左解析",
+        summary: "左总结\n\n总结2：右总结",
+      });
+      expect(merged.sourceDocIds).toEqual(["doc-left", "doc-right"]);
+      const papers = data.examPapers as ExamPaper[];
+      const lectures = data.lectures as Lecture[];
+      for (const paper of papers) {
+        for (const item of paper.questions.filter((item) => item.questionId)) {
+          expect(item).toMatchObject({
+            questionId: "left", stem: merged.stem, options: merged.options,
+            answer: merged.answer, analysis: merged.analysis,
+          });
+        }
+        expect(paper.contentBlocks?.[0]).toMatchObject({ questionId: "left", content: merged.stem });
+      }
+      expect(papers[1].questions[1].stem).toBe("另一道题");
+      expect(lectures[0].sections[0]).toMatchObject({ questionId: "left", content: merged.stem });
+      expect(lectures[0].contentBlocks?.[0]).toMatchObject({ questionId: "left", content: merged.stem });
+      expect(await scheduledDuplicateService.listCandidates("teacher")).toHaveLength(0);
     });
   });
 

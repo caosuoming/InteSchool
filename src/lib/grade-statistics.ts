@@ -338,6 +338,17 @@ function normalizeClassAverageOptions(
     classLabels: normalizeLabels(options.classLabels, 30),
     subjectScoreModes,
     totalScoreMode,
+    customTotals: (options.customTotals || []).slice(0, 12).reduce<NonNullable<GradeClassAverageOptions["customTotals"]>>((totals, value) => {
+      if (!value || typeof value !== "object") return totals;
+      const id = typeof value.id === "string" ? value.id.trim().slice(0, 64) : "";
+      const name = typeof value.name === "string" ? value.name.trim().slice(0, 30) : "";
+      const subjects = Array.isArray(value.subjects)
+        ? unique(value.subjects.filter((subject): subject is string => typeof subject === "string"))
+          .filter((subject) => subjectSet.has(subject)) : [];
+      if (!id || !name || subjects.length === 0 || totals.some((item) => item.id === id)) return totals;
+      totals.push({ id, name, subjects, scoreMode: value.scoreMode === "raw" ? "raw" : "assigned" });
+      return totals;
+    }, []),
     showTeacherRows: optionalBoolean(options.showTeacherRows),
     showGroupDifference: optionalBoolean(options.showGroupDifference),
     showGroupAverage: optionalBoolean(options.showGroupAverage),

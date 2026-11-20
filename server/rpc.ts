@@ -136,6 +136,7 @@ const PERSONAL_SETTINGS_ID_MUTATIONS = new Set([
 
 const PERSONAL_RESOURCE_SERVICES = new Set<ServiceName>([
   "courseware",
+  "basket",
   "scheduledDuplicate",
   "board",
   "donation",
@@ -520,8 +521,19 @@ function authorize(
     const hasOtherSubjectRecords = Array.isArray(state.questions) && state.questions.some((item) =>
       item.teacherId === teacher.id && item.subject && item.subject !== subject);
     // Keep indexed queries available for single-subject teachers without historical cross-subject records.
-    if (subject && (multipleSubjects || hasOtherSubjectRecords)) {
-      args = [{ ...(args[0] as Record<string, unknown> || {}), subject }, ...args.slice(1)];
+    const filter = args[0] as Record<string, unknown> || {};
+    // Explicit document question references are owned resources, even when their
+    // originating subject differs from the currently selected affiliation.
+    const referencesById = Array.isArray(filter.ids) && filter.ids.length > 0;
+    if (!referencesById && subject && (multipleSubjects || hasOtherSubjectRecords)) {
+      const hasCrossSchoolResources = filter.teacherId === teacher.id
+        && Array.isArray(state.questions)
+        && state.questions.some((item) => item.teacherId === teacher.id && item.schoolId !== teacher.schoolId);
+      args = [{
+        ...filter,
+        subject,
+        ...(hasCrossSchoolResources ? { ownerSubjectSchoolId: teacher.schoolId } : {}),
+      }, ...args.slice(1)];
     }
   }
   const params = (serviceParameters as Record<string, Record<string, readonly string[]>>)[service]?.[method] || [];
@@ -606,7 +618,7 @@ function authorize(
         .find((item) => item.id === params.resourceId)
       : undefined;
     if (!resource) throw new Error("分享资源不存在");
-    if (recordOwner(resource) !== teacher.id || recordSchool(resource) !== allowedSchoolId) {
+    if (recordOwner(resource) !== teacher.id) {
       throw new Error("无权分享不属于自己的资源");
     }
     normalizedArgs[0] = {

@@ -124,7 +124,7 @@ export function StudentRosterSidebar({
                             className={cn(
                               "w-full flex items-center gap-2.5 px-2 py-2 rounded-md text-left transition-colors",
                               selected ? "bg-gold-50 ring-1 ring-gold-300" : "hover:bg-mist",
-                              ignored && "opacity-65",
+                              ignored && "border border-red-300 bg-red-50/90",
                             )}
                           >
                             <button
@@ -135,13 +135,14 @@ export function StudentRosterSidebar({
                             >
                               <div className={cn(
                                 "w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0",
-                                selected ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-600",
+                                ignored ? "bg-red-100 text-red-700" : selected ? "bg-gold-200 text-gold-800" : "bg-mist text-ink-600",
                               )}>
                                 {student.name.slice(0, 1)}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-sm font-medium text-ink-900 truncate">{student.name}</span>
+                                  <span className={cn("text-sm font-medium truncate", ignored ? "text-red-700" : "text-ink-900")}>{student.name}</span>
+                                  {ignored && <span className="shrink-0 rounded bg-red-100 px-1 py-0.5 text-[10px] font-semibold text-red-700">不关注</span>}
                                 </div>
                                 <div className="text-[10px] text-ink-400 flex items-center gap-1">
                                   {lastInteractionMap[student.id] ? (
@@ -176,7 +177,7 @@ export function StudentRosterSidebar({
                               title={ignored ? "取消不关注" : "不关注"}
                               className={cn(
                                 "flex-shrink-0 rounded p-1 transition-colors disabled:opacity-50",
-                                ignored ? "text-ink-600" : "text-ink-300 hover:text-ink-600",
+                                ignored ? "bg-red-100 text-red-700" : "text-ink-300 hover:text-red-600",
                               )}
                             >
                               <EyeOff className="h-4 w-4" />

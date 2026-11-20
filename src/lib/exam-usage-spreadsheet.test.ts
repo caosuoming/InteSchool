@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExamPaperQuestion, Student } from "@/types";
-import { detectUsageHeader, detectUsageRole, prepareUsageImport, type UsageSheet } from "./exam-usage-spreadsheet";
+import { detectUsageHeader, detectUsageRole, normalizeUsageAnswer, prepareUsageImport, usageConflictKey, type UsageSheet } from "./exam-usage-spreadsheet";
 
 const questions = [
   { id: "q1", score: 5 },
@@ -86,6 +86,37 @@ describe("带满分与标准答案的 Excel 表头", () => {
     const preview = prepareUsageImport(sheet, 0, found.columns, questions, students);
     expect(preview.entries[0]).toMatchObject({ studentId: "s1", paperQuestionId: "q1", earnedScore: 2, studentAnswer: "B" });
     expect(preview.firstStudent?.values[1].value).toBe("2");
-    expect(preview.conflicts).toContainEqual({ column: "1 2分、答案B", questionNo: 1, attribute: "score", excel: "2", paper: "5" });
+    expect(preview.conflicts).toContainEqual({ column: "1 2分、答案B", questionNo: 1, attribute: "score", excel: "2", paper: "5", paperQuestionId: "q1" });
   });
+  it("识别题号后携带的标准答案，显示空答案冲突，允许采用 Excel 的新满分", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["学号", "1 8分、答案（D）", "学生解答"],
+      ["001", 7, "D"],
+    ] };
+    const columns = detectUsageHeader(sheet, questions.length).columns;
+    expect(columns.map((column) => column.role)).toEqual(["studentNo", "score:1", "answer:1"]);
+    const paper = [{ ...questions[0], stem: "题干", answer: "A" }, ...questions.slice(1)];
+    const initial = prepareUsageImport(sheet, 0, columns, paper, students);
+    expect(initial.conflicts).toEqual([
+      { column: "1 8分、答案（D）", questionNo: 1, paperQuestionId: "q1", attribute: "score", excel: "8", paper: "5" },
+      { column: "1 8分、答案（D）", questionNo: 1, paperQuestionId: "q1", attribute: "answer", excel: "D", paper: "A" },
+    ]);
+    expect(initial.entries).toEqual([]);
+    const selected = { [usageConflictKey(initial.conflicts![0])]: "excel" as const };
+    const updated = prepareUsageImport(sheet, 0, columns, paper, students, selected);
+    expect(updated.entries).toEqual([{ studentId: "s1", paperQuestionId: "q1", earnedScore: 7, studentAnswer: "D" }]);
+    expect(updated.conflicts).toEqual(initial.conflicts);
+
+    const noPaperAnswer = prepareUsageImport(sheet, 0, columns, [{ ...paper[0], answer: "" }, ...paper.slice(1)], students);
+    expect(noPaperAnswer.conflicts?.find((item) => item.attribute === "answer")?.paper).toBe("");
+  });
+
+  it("多选答案比较忽略大小写、顺序和标点差异", () => {
+    expect(normalizeUsageAnswer("C、A")).toBe(normalizeUsageAnswer("ac"));
+    const sheet: UsageSheet = { name: "成绩", rows: [["学号", "1 5分、答案C/A"], ["001", 5]] };
+    const columns = detectUsageHeader(sheet, questions.length).columns;
+    const preview = prepareUsageImport(sheet, 0, columns, [{ ...questions[0], answer: "AC" }, ...questions.slice(1)], students);
+    expect(preview.conflicts).toEqual([]);
+  });
+
 });

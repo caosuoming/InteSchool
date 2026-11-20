@@ -12,6 +12,7 @@ import {
   buildGradeTotalScoreRankingReport,
   DEFAULT_TOTAL_SCORE_TOP_N,
 } from "@/lib/grade-total-score-ranking";
+import { gradeCustomTotals } from "@/lib/grade-custom-totals";
 import { exportGradeTotalScoreRankingReport } from "@/lib/grade-spreadsheet";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -60,6 +61,11 @@ export function GradeTotalScoreRankingTable({
     effectiveClassAverageTemplate,
   ), [context, effectiveClassAverageTemplate, effectiveTemplate, exam]);
 
+  const customReports = useMemo(() => gradeCustomTotals(effectiveClassAverageTemplate, exam.subjects).map((total) =>
+    buildGradeTotalScoreRankingReport(exam, effectiveTemplate, context, effectiveClassAverageTemplate, total),
+  ), [exam, effectiveTemplate, context, effectiveClassAverageTemplate]);
+  const displayTables = [...report.tables, ...customReports.flatMap((item) => item.tables)];
+
   const updateTopN = (field: "totalScoreTopN" | "totalScoreSeparateTopN", value: string) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return;
@@ -103,7 +109,7 @@ export function GradeTotalScoreRankingTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeTotalScoreRankingReport(report, exam.name, buildGradeReportNotes(exam, settings));
+      await exportGradeTotalScoreRankingReport({ ...report, tables: displayTables }, exam.name, buildGradeReportNotes(exam, settings));
       toast.success("总分前 N 名已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);
@@ -112,7 +118,7 @@ export function GradeTotalScoreRankingTable({
     }
   };
 
-  const hasRows = report.tables.some((table) => table.rows.length > 0);
+  const hasRows = displayTables.some((table) => table.rows.length > 0);
 
   return (
     <Card className="overflow-hidden p-0">
@@ -179,8 +185,8 @@ export function GradeTotalScoreRankingTable({
         />
       ) : (
         <div className="space-y-8 p-5">
-          {report.tables.map((rankingTable) => (
-            <section key={rankingTable.key} className="overflow-x-auto">
+          {displayTables.map((rankingTable) => (
+            <section key={`${rankingTable.totalId || "standard"}:${rankingTable.key}`} className="overflow-x-auto">
               <div className="mb-3 flex min-w-max items-end justify-between gap-4 px-1">
                 <h3 className="font-serif text-lg font-semibold text-ink-900">{rankingTable.title}</h3>
                 <div className="shrink-0 text-sm font-medium text-ink-600">{report.reportDate.replace(/-/g, ".")}</div>
@@ -195,7 +201,7 @@ export function GradeTotalScoreRankingTable({
                     {report.subjects.map((subject) => (
                       <th key={subject} className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
                     ))}
-                    <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">总分（{report.scoreModeLabel}）</th>
+                    <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{rankingTable.totalLabel || "总分"}（{rankingTable.scoreModeLabel || report.scoreModeLabel}）</th>
                   </tr>
                 </thead>
                 <tbody>

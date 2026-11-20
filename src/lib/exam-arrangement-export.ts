@@ -183,7 +183,9 @@ function spreadsheetCells() {
 }
 
 export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangement): Promise<void> {
-  const statistics = buildExamPrintRoomStatistics(arrangement);
+  const rawStatistics = buildExamPrintRoomStatistics(arrangement);
+  const roomOrder = rawStatistics.rooms.map((room, index) => ({ room, index })).sort((a, b) => roomNumberCollator.compare(a.room.roomNumber, b.room.roomNumber));
+  const statistics = { rooms: roomOrder.map(({ room }) => room), rows: rawStatistics.rows.map((row) => ({ ...row, counts: roomOrder.map(({ index }) => row.counts[index]) })) };
   if (statistics.rooms.length === 0) throw new Error("当前考试方案暂无已安排考场");
 
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
@@ -238,7 +240,14 @@ export async function downloadExamPrintRoomStatistics(arrangement: ExamArrangeme
         const periodRowSpan = consecutiveRowSpan(invigilation.rows, index, (item) => `${item.date}\u0000${item.period}`);
         const locationTeacherCells = invigilation.roomLocationGroups.map((group) => {
           const roomId = group.roomIds.find((id) => (row.roomStudentCounts[id] || 0) > 0);
-          return centeredCell(roomId ? teacherMap.get(row.roomTeacherIds[roomId] || "") || "" : "");
+          if (!roomId) return centeredCell("");
+          const name = teacherMap.get(row.roomTeacherIds[roomId] || "") || "";
+          const breakdown = group.roomIds.flatMap((id) => Object.entries(row.roomSubjectStudentCounts[id] || {}))
+            .reduce((counts, [subject, count]) => counts.set(subject, (counts.get(subject) || 0) + count), new Map<string, number>());
+          const detail = row.subjects.length > 1
+            ? [...breakdown].filter(([, count]) => count > 0).map(([subject, count]) => `${subject} ${count}人`).join(" / ")
+            : "";
+          return centeredCell([name, detail].filter(Boolean).join("\n"));
         });
         return [
           dateRowSpan > 0 ? { ...invigilationInfoCell(formatExamDateWithWeekday(row.date).replace(" ", "\n")), rowSpan: dateRowSpan } : null,

@@ -356,6 +356,8 @@ require "uri"
 # - tmSUMOP templates test each variation independently, so an operator carrying
 #   both tvBO_LOWER and tvBO_UPPER can match the lower-only template and lose its
 #   upper bound.
+# - MathType 3 MTEF files have no equation_options; the gem's base stylesheet
+#   only emits a <math> element when that optional field is present.
 gem_spec = Gem::Specification.find_by_name("mathtype_to_mathml_plus", "0.0.16")
 base_transform = File.join(gem_spec.full_gem_path, "lib", "transform.xsl")
 base_transform_uri = URI::Generic.build(scheme: "file", path: base_transform).to_s
@@ -363,6 +365,12 @@ compatibility_transform = Nokogiri::XSLT(<<~XSL)
   <?xml version="1.0" encoding="UTF-8"?>
   <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">
     <xsl:import href="#{base_transform_uri}"/>
+    <xsl:template match="mtef[mtef_version='3' and not(equation_options)]" priority="20">
+      <math><xsl:apply-templates select="pile | slot"/></math>
+    </xsl:template>
+    <xsl:template match="char[mt_code_value='0x007C']" priority="20">
+      <mo><xsl:call-template name="charhex"><xsl:with-param name="mt_code_value" select="mt_code_value/text()"/></xsl:call-template></mo>
+    </xsl:template>
     <xsl:template match="matrix" priority="20">
       <xsl:variable name="cols" select="number(cols)"/>
       <xsl:choose>
@@ -399,8 +407,11 @@ ARGV.each do |path|
   begin
     converter = MathTypeToMathMLPlus::Converter.new(path)
     converter.instance_variable_set(:@xslt, compatibility_transform)
-    result[key] = { "mathml" => converter.convert }
-  rescue => error
+    mathml = converter.convert
+    parsed = Nokogiri::XML(mathml)
+    raise "MathType converter returned empty MathML" unless parsed.root&.element_children&.any?
+    result[key] = { "mathml" => mathml }
+  rescue StandardError, NotImplementedError => error
     result[key] = { "error" => "#{error.class}: #{error.message}" }
   end
 end
@@ -684,6 +695,12 @@ export async function convertMathTypeDocxToOmml(
   for (const candidate of candidates) {
     const mathml = mathmlByRelationship.get(candidate.relationshipId);
     if (!mathml) continue;
+    const parsedMathml = new DOMParser().parseFromString(mathml, "application/xml");
+    const mathRoot = parsedMathml.documentElement;
+    if (mathRoot?.localName !== "math" || !Array.from(mathRoot.childNodes).some((child) => child.nodeType === 1)) {
+      warnings.push(`公式 ${candidate.relationshipId} 转换结果为空，已保留原始对象`);
+      continue;
+    }
     try {
       const omml = mml2omml(mathml);
       if (replaceObjectWithOmml(candidate, omml)) convertedCount += 1;

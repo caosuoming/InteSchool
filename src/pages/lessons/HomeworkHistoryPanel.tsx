@@ -8,11 +8,13 @@ export function HomeworkHistoryPanel({
   students,
   followedStudentIds = new Set<string>(),
   highlightFollowed = true,
+  ignoredStudentIds = new Set<string>(),
 }: {
   records: HomeworkClassOverviewRecord[];
   students: { id: string; name: string }[];
   followedStudentIds?: ReadonlySet<string>;
   highlightFollowed?: boolean;
+  ignoredStudentIds?: ReadonlySet<string>;
 }) {
   const previous = useMemo(() => records.filter((item) => item.homeworkDate < new Date(
     Date.now() - new Date().getTimezoneOffset() * 60_000,
@@ -23,7 +25,7 @@ export function HomeworkHistoryPanel({
     if (!record.attendanceTaken) continue;
     const excluded = new Set([...record.submittedStudentIds, ...record.absentStudentIds]);
     for (const id of record.studentIds) {
-      if (!excluded.has(id)) missingCounts.set(id, (missingCounts.get(id) || 0) + 1);
+      if (!excluded.has(id) && !ignoredStudentIds.has(id)) missingCounts.set(id, (missingCounts.get(id) || 0) + 1);
     }
   }
 
@@ -34,7 +36,7 @@ export function HomeworkHistoryPanel({
         <div className="space-y-3">
           {previous.map((record) => {
             const excluded = new Set([...record.submittedStudentIds, ...record.absentStudentIds]);
-            const missing = record.attendanceTaken ? record.studentIds.filter((id) => !excluded.has(id)) : [];
+            const missing = record.attendanceTaken ? record.studentIds.filter((id) => !excluded.has(id) && !ignoredStudentIds.has(id)) : [];
             return (
               <article key={record.id} className="rounded-lg border border-ink-100 bg-mist/30 p-3">
                 <h3 className="text-xs font-semibold text-ink-800">{record.homeworkDate}</h3>

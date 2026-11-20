@@ -1,4 +1,4 @@
-import type { AnswerRecord, Question, ExamPaper, Student, PersonalClass } from "../../src/types/index.js";
+import type { AnswerRecord, Question, ExamPaper, Lecture, DocumentRecord, DuplicateQuestionMergeFields, Student, PersonalClass } from "../../src/types/index.js";
 import { HIGH_SIMILARITY_THRESHOLD, normalizeQuestionStem, questionStemSimilarity } from "../../src/lib/question-similarity.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { genId } from "../domain-shared.js";
@@ -37,6 +37,87 @@ const candidates = (): DuplicateCandidate[] => db.read("duplicateCandidates") ||
 const checked = (): Array<{ id: string; teacherId: string; kind: DuplicateTaskKind; leftQuestionId: string; rightQuestionId: string }> => db.read("duplicateCheckedPairs") || [];
 const pairId = (kind: DuplicateTaskKind, a: string, b: string) => `${kind}:${[a, b].sort().join(":")}`;
 const validTime = (value: string) => Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+
+type CandidateQuestion = Pick<Question, "id" | "stem" | "options" | "answer" | "analysis" | "summary" | "subject"> & { sources: string[] };
+
+function questionSources(teacherId: string, questions: Question[], wantedIds: Set<string>): Map<string, string[]> {
+  const sources = new Map<string, Set<string>>();
+  const add = (id: string, label: string) => {
+    if (!wantedIds.has(id)) return;
+    if (!sources.has(id)) sources.set(id, new Set());
+    sources.get(id)!.add(label);
+  };
+  const documents = new Map(((db.read("documents") || []) as DocumentRecord[])
+    .filter((doc) => doc.teacherId === teacherId).map((doc) => [doc.id, doc]));
+  for (const question of questions) {
+    if (question.teacherId !== teacherId) continue;
+    for (const id of new Set([question.sourceDocId, ...(question.sourceDocIds || [])].filter((v): v is string => Boolean(v)))) {
+      const document = documents.get(id);
+      if (document) add(question.id, "文档：" + document.fileName);
+    }
+  }
+  for (const paper of (db.read("examPapers") || []) as ExamPaper[]) {
+    if (paper.teacherId !== teacherId) continue;
+    for (const item of paper.questions) if (item.questionId) add(item.questionId, "试卷：" + paper.title);
+    for (const block of paper.contentBlocks || []) {
+      if (block.type === "question" && block.questionId) add(block.questionId, "试卷：" + paper.title);
+    }
+  }
+  for (const lecture of (db.read("lectures") || []) as Lecture[]) {
+    if (lecture.teacherId !== teacherId) continue;
+    const walk = (sections: Lecture["sections"]) => {
+      for (const section of sections) {
+        if (section.questionId) add(section.questionId, "讲义：" + lecture.title);
+        if (section.children?.length) walk(section.children);
+      }
+    };
+    walk(lecture.sections || []);
+    for (const block of lecture.contentBlocks || []) {
+      if (block.type === "question" && block.questionId) add(block.questionId, "讲义：" + lecture.title);
+    }
+  }
+  return new Map([...sources].map(([id, labels]) => [id, [...labels]]));
+}
+
+function syncMergedQuestionDocuments(previousIds: [string, string], merged: Question): void {
+  const ids = new Set(previousIds);
+  const now = new Date().toISOString();
+  db.update("examPapers", (papers: ExamPaper[] = []) => papers.map((paper) => {
+    const hasMatch = paper.questions.some((item) => item.questionId && ids.has(item.questionId))
+      || paper.contentBlocks?.some((block) => block.type === "question" && block.questionId && ids.has(block.questionId));
+    if (!hasMatch || paper.teacherId !== merged.teacherId) return paper;
+    return {
+      ...paper,
+      updatedAt: now,
+      questions: paper.questions.map((item) => item.questionId && ids.has(item.questionId) ? {
+        ...item, questionId: merged.id, stem: merged.stem, options: merged.options,
+        answer: merged.answer, analysis: merged.analysis, type: merged.type,
+      } : item),
+      contentBlocks: paper.contentBlocks?.map((block) => block.type === "question" && block.questionId && ids.has(block.questionId)
+        ? { ...block, questionId: merged.id, content: merged.stem, questionType: merged.type } : block),
+    };
+  }));
+  db.update("lectures", (lectures: Lecture[] = []) => lectures.map((lecture) => {
+    if (lecture.teacherId !== merged.teacherId) return lecture;
+    const updateSections = (sections: Lecture["sections"]): Lecture["sections"] => sections.map((section) => ({
+      ...section,
+      ...(section.questionId && ids.has(section.questionId) && section.type === "question"
+        ? { questionId: merged.id, content: merged.stem } : {}),
+      children: section.children?.length ? updateSections(section.children) : section.children,
+    }));
+    const hasLinked = (sections: Lecture["sections"]): boolean => sections.some((section) =>
+      Boolean(section.questionId && ids.has(section.questionId)) || hasLinked(section.children || []));
+    const hasMatch = lecture.contentBlocks?.some((block) => block.type === "question" && block.questionId && ids.has(block.questionId))
+      || hasLinked(lecture.sections || []);
+    if (!hasMatch) return lecture;
+    return {
+      ...lecture, updatedAt: now,
+      sections: updateSections(lecture.sections || []),
+      contentBlocks: lecture.contentBlocks?.map((block) => block.type === "question" && block.questionId && ids.has(block.questionId)
+        ? { ...block, questionId: merged.id, content: merged.stem, questionType: merged.type } : block),
+    };
+  }));
+}
 
 export function nextExecution(from: Date, repeat: RepeatRule, timezoneOffsetMinutes = 0): string | null {
   if (repeat === "once") return null;
@@ -137,9 +218,30 @@ export const scheduledDuplicateService = {
     return schedules().filter((item) => item.teacherId === teacherId);
   },
   async listCandidates(teacherId: string) {
-    const questions = new Map([...((db.read("questions") || []) as Question[]), ...paperQuestionSources()].map((q) => [q.id, q]));
-    return candidates().filter((item) => item.teacherId === teacherId && item.status === "pending")
-      .map((item) => ({ ...item, leftStem: questions.get(item.leftQuestionId)?.stem || "题目已删除", rightStem: questions.get(item.rightQuestionId)?.stem || "题目已删除" }));
+    const pending = candidates().filter((item) => item.teacherId === teacherId && item.status === "pending");
+    if (!pending.length) return [];
+    const libraryQuestions = (db.read("questions") || []) as Question[];
+    const questions = new Map([...libraryQuestions, ...paperQuestionSources()].map((q) => [q.id, q]));
+    const libraryIds = new Set(pending.filter((item) => item.kind === "library")
+      .flatMap((item) => [item.leftQuestionId, item.rightQuestionId]));
+    const sources = libraryIds.size
+      ? questionSources(teacherId, libraryQuestions.filter((question) => libraryIds.has(question.id)), libraryIds)
+      : new Map<string, string[]>();
+    const view = (id: string, library: boolean): CandidateQuestion | null => {
+      const question = questions.get(id);
+      if (!question) return null;
+      return {
+        id: question.id, stem: question.stem, options: question.options,
+        answer: library ? question.answer : "", analysis: library ? question.analysis : "",
+        summary: library ? question.summary : "", subject: question.subject,
+        sources: library ? (sources.get(id) || []) : [],
+      };
+    };
+    return pending.map((item) => ({
+        ...item,
+        leftQuestion: view(item.leftQuestionId, true),
+        rightQuestion: view(item.rightQuestionId, item.kind === "library"),
+      }));
   },
   async createSchedule(teacherId: string, kind: DuplicateTaskKind, repeat: RepeatRule, nextRunAt: string, timezoneOffsetMinutes = 0): Promise<DuplicateSchedule> {
     if (!["library", "student"].includes(kind) || !["once", "daily", "weekend"].includes(repeat)
@@ -168,7 +270,7 @@ export const scheduledDuplicateService = {
     db.update("duplicateSchedules", (items: DuplicateSchedule[]) => items.map((s) => s.id === scheduleId ? { ...s, lastRunAt: new Date().toISOString() } : s));
     return count;
   },
-  async resolveCandidate(teacherId: string, candidateId: string, decision: "keep" | "merge" | "same" | "add"): Promise<void> {
+  async resolveCandidate(teacherId: string, candidateId: string, decision: "keep" | "merge" | "same" | "add", fields?: DuplicateQuestionMergeFields): Promise<void> {
     const candidate = candidates().find((c) => c.id === candidateId && c.teacherId === teacherId && c.status === "pending");
     if (!candidate) throw new Error("待处理题目不存在");
     if (!(candidate.kind === "library" ? ["keep", "merge"] : ["same", "add"]).includes(decision)) throw new Error("处理方式无效");
@@ -177,11 +279,18 @@ export const scheduledDuplicateService = {
     const right = [...questions, ...paperQuestionSources()].find((q) => q.id === candidate.rightQuestionId);
     if (!left || !right) throw new Error("题目已不存在");
     if (decision === "merge") {
-      if (right.teacherId !== teacherId) throw new Error("只能合并本人题库中的题目");
-      await prepService.mergeQuestions(left.id, right.id);
-      db.update("examPapers", (items: Array<{ questions: Array<{ questionId?: string }> }> = []) => items.map((paper) => ({
-        ...paper, questions: paper.questions.map((q) => q.questionId === right.id ? { ...q, questionId: left.id } : q),
-      })));
+      if (right.teacherId !== teacherId || left.id === right.id) throw new Error("只能合并本人题库中的不同题目");
+      if (!fields) throw new Error("请先选择题干、答案、解析和总结的合并方式");
+      await prepService.mergeQuestions(left.id, right.id, fields);
+      const merged = ((db.read("questions") || []) as Question[]).find((q) => q.id === left.id);
+      if (!merged) throw new Error("合并后的题目不存在");
+      syncMergedQuestionDocuments([left.id, right.id], merged);
+      // The removed question may occur in other pending comparisons.
+      db.update("duplicateCandidates", (items: DuplicateCandidate[]) => items.map((item) =>
+        item.id !== candidate.id && item.teacherId === teacherId && item.kind === "library"
+        && item.status === "pending" && (item.leftQuestionId === right.id || item.rightQuestionId === right.id)
+          ? { ...item, status: "merged" as const, resolvedAt: new Date().toISOString() }
+          : item));
     } else if (decision === "same") {
       if (right.id.startsWith("exam-item:")) {
         // Exam-only questions have no library row to link. Preserve the recorded score
@@ -196,7 +305,7 @@ export const scheduledDuplicateService = {
       const now = new Date().toISOString();
       const copy = { ...right, id: genId("question"), teacherId, schoolId: left.schoolId,
         subject: left.subject, sameQuestionGroupId: undefined,
-        sourceDocId: undefined, hiddenByExamIds: [], platformSourceDonationIds: undefined,
+        sourceDocId: undefined, sourceDocIds: undefined, hiddenByExamIds: [], platformSourceDonationIds: undefined,
         schoolSourceBackupIds: undefined, sameQuestionDonationIds: undefined,
         duplicateHash: computeDuplicateHash(right.stem, right.answer, right.options),
         usageCount: 0, lastUsedAt: undefined, createdAt: now, updatedAt: now };

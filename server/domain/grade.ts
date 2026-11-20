@@ -1190,6 +1190,11 @@ export const gradeService = {
       || !Array.isArray(classStatisticsOptions.comparisonExamIds)
       || classStatisticsOptions.comparisonExamIds.length > 50
       || classStatisticsOptions.comparisonExamIds.some((id) => typeof id !== "string")
+      || (classStatisticsOptions.customTotalIds !== undefined && (
+        !Array.isArray(classStatisticsOptions.customTotalIds)
+        || classStatisticsOptions.customTotalIds.length > 12
+        || classStatisticsOptions.customTotalIds.some((id) => typeof id !== "string" || id.length > 64)
+      ))
     )) throw new Error("成绩统计显示配置无效");
     const permittedComparisons = new Set(readList<GradeExam>("gradeExams")
       .filter((exam) => exam.schoolId === current.schoolId && exam.cohortKey === current.cohortKey
@@ -1199,6 +1204,11 @@ export const gradeService = {
       ...structuredClone(classStatisticsOptions),
       comparisonExamIds: [...new Set(classStatisticsOptions.comparisonExamIds)]
         .filter((id) => permittedComparisons.has(id)),
+      ...(classStatisticsOptions.customTotalIds !== undefined && {
+        customTotalIds: [...new Set(classStatisticsOptions.customTotalIds)]
+          .filter((id) => normalized.templates.some((template) =>
+            template.kind === "classAverage" && template.classAverageOptions?.customTotals?.some((total) => total.id === id))),
+      }),
     };
     const now = new Date().toISOString();
     const updated: GradeExam = {

@@ -1,3 +1,4 @@
+import { gradeCustomTotals } from "./grade-custom-totals.js";
 import { buildGradeReportNotes } from "./grade-report-notes.js";
 import type {
   GradeExam,
@@ -433,13 +434,22 @@ export async function exportGradeTotalScoreSegmentReport(
   report: GradeTotalScoreSegmentReport,
   examName?: string,
   notes: string[] = [],
+  customReports: GradeTotalScoreSegmentReport[] = [],
 ): Promise<void> {
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
-  const sheet = appendGradeNotes(totalScoreSegmentWorkbookSheet(report, new Set<string>(), "总分分数段汇总表"), notes);
-  await writeXlsxFile(sheet.data, {
-    columns: sheet.columns,
-    stickyRowsCount: sheet.stickyRowsCount,
-  }).toFile(gradeReportFileName(examName, "总分分数段汇总表", report.title));
+  const usedNames = new Set<string>();
+  const sheet = appendGradeNotes(totalScoreSegmentWorkbookSheet(report, usedNames, "总分分数段汇总表"), notes);
+  if (!customReports.length) {
+    await writeXlsxFile(sheet.data, {
+      columns: sheet.columns,
+      stickyRowsCount: sheet.stickyRowsCount,
+    }).toFile(gradeReportFileName(examName, "总分分数段汇总表", report.title));
+    return;
+  }
+  const sheets = [sheet, ...customReports.map((custom) => appendGradeNotes(
+    totalScoreSegmentWorkbookSheet(custom, usedNames, `个性化-${custom.customName}`), notes,
+  ))];
+  await writeXlsxFile(sheets).toFile(gradeReportFileName(examName, "总分分数段汇总表", report.title));
 }
 
 export async function exportGradeTotalScoreRankingReport(
@@ -601,7 +611,7 @@ function classAverageWorkbookSheet(
   usedNames: Set<string>,
   sheetName = "表一、班级平均分",
 ): CombinedWorkbookSheet {
-  const headers = ["类别", "班级", "班主任 / 人数", ...report.subjects, "总分平均"];
+  const headers = ["类别", "班级", "班主任 / 人数", ...report.subjects, "总分平均", ...report.customTotals.map((total) => total.name)];
   const rows: CombinedWorkbookRow[] = [titleRow(report.title, headers.length, report.reportDate), headingRow(headers)];
 
   report.groups.forEach((group) => {
@@ -630,6 +640,7 @@ function classAverageWorkbookSheet(
             row.subjectTeachers[subject]?.join("、") || "—",
           )),
           combinedWorkbookCell(null),
+          ...report.customTotals.map(() => combinedWorkbookCell(null)),
         ]);
         rows.push([
           null,
@@ -643,6 +654,7 @@ function classAverageWorkbookSheet(
             row.totalAverages,
             report.options.totalScoreMode || "assigned",
           ), { fontWeight: "bold" }),
+          ...report.customTotals.map((total) => classAverageScoreWorkbookCell(row.customAverages[total.id], { fontWeight: "bold" })),
         ]);
       } else {
         rows.push([
@@ -657,6 +669,7 @@ function classAverageWorkbookSheet(
             row.totalAverages,
             report.options.totalScoreMode || "assigned",
           ), { fontWeight: "bold" }),
+          ...report.customTotals.map((total) => classAverageScoreWorkbookCell(row.customAverages[total.id], { fontWeight: "bold" })),
         ]);
       }
     });
@@ -674,6 +687,7 @@ function classAverageWorkbookSheet(
           group.difference.totalValues,
           report.options.totalScoreMode || "assigned",
         ), { fontWeight: "bold", backgroundColor: "#FFFBEB" }),
+        ...report.customTotals.map((total) => classAverageScoreWorkbookCell(group.difference.customValues[total.id], { backgroundColor: "#FFFBEB" })),
       ]);
     }
     if (group.rows.length > 1 && report.options.showGroupAverage) {
@@ -692,6 +706,7 @@ function classAverageWorkbookSheet(
           group.average.totalValues,
           report.options.totalScoreMode || "assigned",
         ), { fontWeight: "bold", backgroundColor: "#EFF6FF" }),
+        ...report.customTotals.map((total) => classAverageScoreWorkbookCell(group.average.customValues[total.id], { backgroundColor: "#EFF6FF" })),
       ]);
     }
   });
@@ -714,6 +729,7 @@ function classAverageWorkbookSheet(
         report.overallAverage.totalValues,
         report.options.totalScoreMode || "assigned",
       ), { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
+      ...report.customTotals.map((total) => classAverageScoreWorkbookCell(report.overallAverage.customValues[total.id], { backgroundColor: "#F3F4F6" })),
     ]);
   }
 
@@ -727,6 +743,7 @@ function classAverageWorkbookSheet(
       { width: 18 },
       ...report.subjects.map(() => ({ width: 14 })),
       { width: 14 },
+      ...report.customTotals.map(() => ({ width: 18 })),
     ],
   };
 }
@@ -761,7 +778,7 @@ function totalScoreSegmentWorkbookSheet(
     const display = (value: number | null) => value === null ? "未设置" : `${value}分`;
     return `${trackLabel}：高分1 ${display(values.highScore1)} | 高分2 ${display(values.highScore2)} | 一本 ${display(values.firstTier)} | 二本 ${display(values.undergraduate)}`;
   }).join("    ");
-  rows.push([
+  if (!report.customName) rows.push([
     combinedWorkbookCell(standardSummary, {
       fontWeight: "bold",
       backgroundColor: "#FFFBEB",
@@ -771,7 +788,7 @@ function totalScoreSegmentWorkbookSheet(
     }),
     ...Array.from({ length: report.columns.length }, () => null),
   ]);
-  report.separateStandards.forEach((group) => {
+  if (!report.customName) report.separateStandards.forEach((group) => {
     const display = (value: number | null) => value === null ? "沿用文理科标准" : `${value}分`;
     const values = group.thresholds;
     rows.push([
@@ -953,9 +970,11 @@ function totalScoreRankingWorkbookSheets(
   sheetPrefix = "表五-",
 ): CombinedWorkbookSheet[] {
   return report.tables.map((table) => {
-    const headers = ["名次", "学号", "姓名", "班级", ...report.subjects, `总分（${report.scoreModeLabel}）`];
-    const sheetLabel = table.key === "science" ? "理科" : table.key === "arts" ? "文科"
-      : table.key === "all" ? "总分排名" : table.key;
+    const headers = ["名次", "学号", "姓名", "班级", ...report.subjects, `${table.totalLabel || "总分"}（${table.scoreModeLabel || report.scoreModeLabel}）`];
+    const sheetLabel = table.totalLabel
+      ? `${table.totalLabel}-${table.key}`
+      : table.key === "science" ? "理科" : table.key === "arts" ? "文科"
+        : table.key === "all" ? "总分排名" : table.key;
     return {
       sheet: uniqueWorkbookSheetName(`${sheetPrefix}${sheetLabel}`, usedNames),
       data: [
@@ -1020,12 +1039,18 @@ export async function exportGradeTablesOneToFive(params: {
     classAverageTemplate,
   );
   const usedNames = new Set<string>();
+  const customTotals = gradeCustomTotals(classAverageTemplate, exam.subjects);
+  const customSegments = customTotals.map((total) =>
+    buildGradeTotalScoreSegmentReport(exam, totalScoreSegmentTemplate, context, classAverageTemplate, settings, total));
+  const customRanking = customTotals.flatMap((total) =>
+    buildGradeTotalScoreRankingReport(exam, totalScoreSegmentTemplate, context, classAverageTemplate, total).tables);
   const sheets: CombinedWorkbookSheet[] = [
     classAverageWorkbookSheet(classAverageReport, usedNames),
     totalScoreSegmentWorkbookSheet(totalScoreSegmentReport, usedNames),
+    ...customSegments.map((custom) => totalScoreSegmentWorkbookSheet(custom, usedNames, `表二-${custom.customName}`)),
     ...subjectScoreSegmentWorkbookSheets(subjectScoreSegmentReport, usedNames),
     ...electiveScoreSegmentWorkbookSheets(electiveScoreSegmentReport, usedNames),
-    ...totalScoreRankingWorkbookSheets(totalScoreRankingReport, usedNames),
+    ...totalScoreRankingWorkbookSheets({ ...totalScoreRankingReport, tables: [...totalScoreRankingReport.tables, ...customRanking] }, usedNames),
   ];
   sheets.forEach((sheet) => appendGradeNotes(sheet, buildGradeReportNotes(exam, settings)));
   const { default: writeXlsxFile } = await import("write-excel-file/browser");

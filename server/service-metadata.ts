@@ -3,7 +3,7 @@ export const serviceParameters = {
     "listSchedules": ["teacherId"], "listCandidates": ["teacherId"],
     "createSchedule": ["teacherId", "kind", "repeat", "nextRunAt", "timezoneOffsetMinutes"],
     "cancelSchedule": ["teacherId", "scheduleId"], "runSchedule": ["teacherId", "scheduleId"],
-    "resolveCandidate": ["teacherId", "candidateId", "decision"]
+    "resolveCandidate": ["teacherId", "candidateId", "decision", "fields"]
   },
   "board": {
     "listBoards": ["teacherId"],
@@ -869,7 +869,7 @@ export const serviceParameters = {
     ]
   },
   "examPaper": {
-    "importUsageData": ["paperId", "items", "teacher"],
+    "importUsageData": ["paperId", "items", "metadataUpdates", "teacher"],
     "listPapers": [
       "filter"
     ],

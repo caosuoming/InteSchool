@@ -649,10 +649,14 @@ function isSequentialMathQuestionStart(
   return Boolean(candidate && currentNumber && Number(candidate) === Number(currentNumber) + 1);
 }
 
+const mathQuestionPromptPrefixPattern =
+  /^(?:[（(【［][^）)】］]{1,40}[）)】］]\s*)?(?:已知|设|若|求|计算|证明|求证|判断|下列|选择|指出|写出|解答|阅读|根据|如图|关于|在|有)/;
+
 function shouldContinueNumberedSummary(
   line: string,
   block: Partial<DocumentBlock>,
   config: DocumentParseConfig,
+  nextLine?: string,
 ): boolean {
   const candidate = extractLeadingQuestionNumber(line);
   if (!candidate) return false;
@@ -671,6 +675,20 @@ function shouldContinueNumberedSummary(
   // exception is the expected next top-level question. Word/PDF extraction can
   // put its number (for example, "4.") on a line by itself.
   const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
+  if (
+    config.subject?.trim() === "数学"
+    && currentQuestionNumber
+    && candidateNumber === Number(currentQuestionNumber) + 1
+  ) {
+    // A numbered summary can end at the same number as its parent question.
+    // A following numbered math prompt is then the next question, even when
+    // the summary itself was a sequential list. Word may separate "4." from
+    // its actual stem, so inspect the next nonempty line in that case.
+    const stem = candidate.rest || nextLine || "";
+    if (mathQuestionPromptPrefixPattern.test(stem.trim())) {
+      return false;
+    }
+  }
   if (config.subject?.trim() === "数学" && previous && candidateNumber === Number(previous.number) + 1) {
     return true;
   }
@@ -1226,19 +1244,32 @@ function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
   // Accept this only when an explicit solution field immediately follows it.
   const compactEntry = /^(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?((?:【\s*(?:答案|解析|详解|解答)\s*】|(?:参考)?答案\s*[:：]|(?:解析|详解|解答|解)\s*[:：]).*)$/.exec(line);
   if (compactEntry) return [{ number: normalizeQuestionNumber(compactEntry[1]), rest: compactEntry[2].replace(/^解\s*[:：]\s*/, "").trim() }];
-  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
+  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})(?:\s*[-‐–—－~～至]\s*([\d０-９]{1,4}))?\s*(?:题\s*)?[、.．:：)）]\s*/g;
   const markers = [...line.matchAll(markerPattern)];
   if (markers.length === 0) return [];
   const firstIndex = markers[0].index || 0;
   if (line.slice(0, firstIndex).trim()) return [];
 
-  return markers.map((marker, index) => ({
-    number: normalizeQuestionNumber(marker[2]),
-    rest: line.slice(
+  return markers.flatMap((marker, index) => {
+    const rest = line.slice(
       (marker.index || 0) + marker[0].length,
       markers[index + 1]?.index ?? line.length,
-    ).trim(),
-  }));
+    ).trim();
+    if (!marker[3]) return [{ number: normalizeQuestionNumber(marker[2]), rest }];
+
+    const first = Number(normalizeQuestionNumber(marker[2]));
+    const last = Number(normalizeQuestionNumber(marker[3]));
+    const count = last - first + 1;
+    // A range such as "1-4. DACB" is a sequence of four single-choice
+    // answers. Never guess the mapping if its length is inconsistent.
+    if (count < 2 || count > 50) return [];
+    const letters = normalizeStructuralText(rest).replace(/[\s,，、;；/]/g, "").toUpperCase();
+    if (!/^[A-H]+$/.test(letters) || letters.length !== count) return [];
+    return [...letters].map((answer, offset) => ({
+      number: String(first + offset),
+      rest: answer,
+    }));
+  });
 }
 
 function normalizeTableHeader(value: string): string {
@@ -1457,6 +1488,12 @@ function parseTrailingSolutions(
             || currentField;
         }
       }
+      continue;
+    }
+
+    // Do not append a malformed compact range to the preceding answer.
+    if (/^(?:第\s*)?[\d０-９]{1,4}\s*[-‐–—－~～至]\s*[\d０-９]{1,4}\s*[、.．:：)）]/.test(line)) {
+      submitCurrent();
       continue;
     }
 
@@ -1910,7 +1947,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       currentBlock.type === "question"
       && currentQuestionField === "summary"
       && !confirmedMathStart
-      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config))
+      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config, nextNonEmptyLine(lineIndex)))
     ) {
       appendQuestionField(currentBlock, "summary", line);
       continue;
@@ -2162,7 +2199,7 @@ function normalizeBlockFillBlankArea(block: DocumentBlock): void {
   block.content = content;
 }
 
-const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
+const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用|过|给定|根据|以).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
 
 /** Recover later prompts from interleaved math worked examples. */
 function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {

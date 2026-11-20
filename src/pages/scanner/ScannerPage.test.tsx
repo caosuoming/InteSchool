@@ -13,7 +13,7 @@ vi.mock("@/lib/scanner-qr", () => ({ readAnswerSheetQr: vi.fn() }));
 vi.mock("@/services/school", () => ({ schoolService: { listSchools: vi.fn() } }));
 vi.mock("@/services/scanner", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/services/scanner")>();
-  return { ...original, scannerService: { listPublishedAnswerSheets: vi.fn(), listDevices: vi.fn(), scan: vi.fn(), uploadPage: vi.fn(), saveThirdPartyCard: vi.fn() } };
+  return { ...original, scannerService: { listPublishedAnswerSheets: vi.fn(), listDevices: vi.fn(), scan: vi.fn(), uploadPage: vi.fn(), saveThirdPartyCard: vi.fn(), listPages: vi.fn() } };
 });
 
 function mount() {
@@ -37,6 +37,7 @@ describe("ScannerPage", () => {
       description: "", teacherCount: 0, studentCount: 0,
     }]);
     vi.mocked(scannerService.listPublishedAnswerSheets).mockResolvedValue(sheets);
+    vi.mocked(scannerService.listPages).mockResolvedValue([]);
   });
 
   it("binds a school once and loads its published sheets on subsequent visits", async () => {

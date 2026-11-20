@@ -23,8 +23,14 @@ interface ScannerPageRecord {
   verified: boolean;
   studentId: string | null;
   status: "pending" | "assigned";
+  studentClassId?: string | null;
+  studentClassName?: string | null;
+  qrCurrent?: boolean;
   reviewedAt?: string | null;
   reviewedBy?: string | null;
+  manualVerifiedAt?: string | null;
+  manualVerifiedBy?: string | null;
+  manualVerifiedRevisionId?: string | null;
   createdAt: string;
 }
 
@@ -38,7 +44,8 @@ const scanSchema = z.object({
 const assignmentSchema = z.object({
   studentId: z.string().min(1).max(160).nullable().optional(),
   reviewed: z.boolean().optional(),
-}).refine((value) => value.studentId !== undefined || value.reviewed !== undefined, {
+  manualVerified: z.boolean().optional(),
+}).refine((value) => value.studentId !== undefined || value.reviewed !== undefined || value.manualVerified !== undefined, {
   message: "至少需要修改一项扫描记录信息",
 });
 const RECORD_MIME = new Map([["image/png", ".png"], ["image/jpeg", ".jpg"]]);
@@ -52,6 +59,26 @@ function sheetFor(state: Record<string, unknown>, type: "paper" | "lecture", id:
 function qrFor(type: "paper" | "lecture", id: string, revisionId?: string) {
   return buildAnswerSheetQrPayload(type === "paper" ? "exam-paper" : "lecture", id, revisionId);
 }
+function withStudentClass(record: ScannerPageRecord, state: Record<string, unknown>): ScannerPageRecord {
+  const student = record.studentId && (state.students as Array<{
+    id: string; schoolId: string; classId: string;
+  }> || []).find((item) => item.id === record.studentId && item.schoolId === record.schoolId);
+  const schoolClass = student && (state.schoolClasses as Array<{
+    id: string; schoolId: string; name: string; grade: string;
+  }> || []).find((item) => item.id === student.classId && item.schoolId === record.schoolId);
+  const sheet = sheetFor(state, record.sheetType, record.sheetId);
+  const qrCurrent = Boolean(sheet && sheet.schoolId === record.schoolId
+    && ((record.verified && record.qrPayload === qrFor(record.sheetType, record.sheetId, sheet.answerSheetRevisionId))
+      || (record.manualVerifiedAt
+        && (record.manualVerifiedRevisionId || null) === (sheet.answerSheetRevisionId || null))));
+  return {
+    ...record,
+    qrCurrent,
+    studentClassId: schoolClass?.id || null,
+    studentClassName: schoolClass ? [schoolClass.grade, schoolClass.name].filter(Boolean).join(" · ") : null,
+  };
+}
+
 function signatureMime(data: Buffer) {
   if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
   if (data.length >= 3 && data[0] === 255 && data[1] === 216 && data[2] === 255) return "image/jpeg";
@@ -66,7 +93,8 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
     if (!teacher || teacher.schoolId !== schoolId) throw new Error("无权查看该校扫描记录");
     return withReadOnlyState(store, (state) => (state.scannerPages as ScannerPageRecord[] || [])
       .filter((item) => item.schoolId === schoolId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((item) => withStudentClass(item, state)));
   });
 
   app.post("/api/scanner/pages", async (request) => {
@@ -129,7 +157,7 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
       await rm(path, { force: true });
       throw error;
     }
-    return record;
+    return withReadOnlyState(store, (state) => withStudentClass(record, state));
   });
 
   app.patch("/api/scanner/pages/:id", async (request) => {
@@ -138,7 +166,7 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
     const teacher = store.getTeacherById(session.teacherId);
     if (!teacher?.schoolId) throw new Error("无权修改扫描记录");
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const { studentId, reviewed } = assignmentSchema.parse(request.body);
+    const { studentId, reviewed, manualVerified } = assignmentSchema.parse(request.body);
     return withSerializedState(store, (state) => {
       const record = (state.scannerPages as ScannerPageRecord[]).find((item) => item.id === id && item.schoolId === teacher.schoolId);
       if (!record) throw new Error("扫描记录不存在");
@@ -153,12 +181,25 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
         record.studentId = studentId;
         record.status = studentId ? "assigned" : "pending";
       }
+      if (manualVerified !== undefined) {
+        const sheet = sheetFor(state, record.sheetType, record.sheetId);
+        if (manualVerified && (!sheet || sheet.schoolId !== teacher.schoolId)) {
+          throw new Error("答题卡已撤回，无法人工确认");
+        }
+        record.manualVerifiedAt = manualVerified ? new Date().toISOString() : null;
+        record.manualVerifiedBy = manualVerified ? teacher.id : null;
+        record.manualVerifiedRevisionId = manualVerified ? (sheet?.answerSheetRevisionId || null) : null;
+        if (!manualVerified) {
+          record.reviewedAt = null;
+          record.reviewedBy = null;
+        }
+      }
       if (reviewed !== undefined) {
         if (reviewed && !record.studentId) throw new Error("请先匹配学生再确认复查");
         record.reviewedAt = reviewed ? new Date().toISOString() : null;
         record.reviewedBy = reviewed ? teacher.id : null;
       }
-      return record;
+      return withStudentClass(record, state);
     });
   });
 }

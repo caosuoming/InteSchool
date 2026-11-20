@@ -269,6 +269,43 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    ["4. 已知 y，求 y。", "4. 已知 y，求 y。"],
+    ["４．已知 y，求 y。", "４．已知 y，求 y。"],
+    ["4.\n已知 y，求 y。", "4.\n已知 y，求 y。"],
+    ["４．\n已知 y，求 y。", "４．\n已知 y，求 y。"],
+  ])("recovers question 4 after a numbered math summary: %s", (source, expected) => {
+    const blocks = parseDocumentBlocks([
+      "3．已知 x，求 x。",
+      "总结：",
+      "1. 先审题。",
+      "2. 分类讨论。",
+      "3. 复核结论。",
+      source,
+      "5．已知 z，求 z。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions.map((block) => block.content)).toEqual([
+      "3．已知 x，求 x。",
+      expected,
+      "5．已知 z，求 z。",
+    ]);
+    expect(questions[0].summary).toBe("1. 先审题。\n2. 分类讨论。\n3. 复核结论。");
+  });
+
+  it("keeps numbered summary items when they do not introduce a new math question", () => {
+    const blocks = parseDocumentBlocks([
+      "3．已知 x，求 x。",
+      "总结：",
+      "1. 先审题。",
+      "2. 分类讨论。",
+      "3. 复核结论。",
+      "4. 继续检查边界值。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(1);
+    expect(blocks[0].summary).toContain("4. 继续检查边界值。");
+  });
+
   it("recovers consecutive math questions when their number punctuation is missing", () => {
     const blocks = parseDocumentBlocks([
       "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：",
@@ -3190,5 +3227,45 @@ describe("issue 1476: circled indices in mathematical solutions", () => {
 
     expect(questions).toHaveLength(2);
     expect(questions[1].content).toContain("②第二小题");
+  });
+});
+
+describe("issue 1539: interleaved mathematics essay prompts", () => {
+  const math = { ...config, subject: "数学" };
+
+  it("regroups a later proof prompt beginning with 过 and keeps solutions numbered", () => {
+    const blocks = parseDocumentBlocks([
+      "B组",
+      "11．已知双曲线 C 的左、右顶点分别为 A、B，左焦点为 F。",
+      "(1) 求双曲线 C 的标准方程；",
+      "【解答】由题意可得双曲线的标准方程为 x²-y²/3=1。",
+      "(2) 过左焦点 F 的直线 l 分别交双曲线 C 的左、右两支于 N、M，直线 AM 与 BN 相交于点 T，求证：点 T 在定直线上。",
+      "【解答】设交点坐标并联立方程，解得点 T 的横坐标为常数。",
+      "C组",
+      "12．已知抛物线，求其焦点坐标。",
+    ].join("\n"), math);
+
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(["B组", "C组"]);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].content).toContain("(1) 求双曲线");
+    expect(questions[0].content).toContain("(2) 过左焦点 F");
+    expect(questions[0].analysis).toContain("（1）由题意可得");
+    expect(questions[0].analysis).toContain("（2）设交点坐标");
+    expect(questions[0].analysis).not.toContain("(2) 过左焦点");
+    expect(questions[1].content).toContain("12．已知抛物线");
+  });
+
+  it("does not promote a numbered proof step into an essay prompt", () => {
+    const question = parseDocumentBlocks([
+      "四、解答题",
+      "11．已知双曲线 C，求其标准方程。",
+      "(1) 求出参数 a；",
+      "【解答】先根据离心率建立关系式。",
+      "(2) 过点 A 作辅助线，由相似三角形可得 b 的值。",
+    ].join("\n"), math).find((block) => block.type === "question")!;
+    expect(question.content).not.toContain("(2) 过点 A");
+    expect(question.analysis).toContain("(2) 过点 A");
   });
 });

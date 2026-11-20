@@ -994,6 +994,7 @@ export const prepService = {
       const fields = validateQuestionMergeFields(mergeFields);
       const stem = fields.stem === "incoming" ? source.stem : target.stem;
       const options = fields.stem === "incoming" ? source.options : target.options;
+      const type = fields.stem === "incoming" ? source.type : target.type;
       const answer = mergeQuestionTextField(target.answer, source.answer, fields.answer, "答案2");
       const analysis = mergeQuestionTextField(target.analysis, source.analysis, fields.analysis, "解析2");
       const summary = mergeQuestionTextField(target.summary, source.summary, fields.summary, "总结2");
@@ -1002,6 +1003,7 @@ export const prepService = {
           ...question,
           stem,
           options,
+          type,
           answer,
           analysis,
           summary,
@@ -1009,6 +1011,16 @@ export const prepService = {
           updatedAt: new Date().toISOString(),
         } : question),
       );
+    }
+
+    // 保留双方来源文档的关联，供后续查阅来源。
+    const sourceDocIds = [...new Set([
+      target.sourceDocId, ...(target.sourceDocIds || []),
+      source.sourceDocId, ...(source.sourceDocIds || []),
+    ].filter((id): id is string => Boolean(id)))];
+    if (sourceDocIds.length) {
+      db.update("questions", (list) => list.map((question) => question.id === targetQuestionId
+        ? { ...question, sourceDocIds } : question));
     }
 
     // 更新目标题目的使用记录

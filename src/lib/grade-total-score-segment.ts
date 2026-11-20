@@ -1,5 +1,6 @@
 import type {
   GradeAcademicTrack,
+  GradeCustomTotalScore,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -7,6 +8,7 @@ import type {
   GradeStatisticsTemplate,
   GradeTotalScoreTargetKey,
 } from "../types/index.js";
+import { gradeCustomTotal } from "./grade-custom-totals.js";
 import { resolveClassAverageOptions } from "./grade-class-average.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
 import {
@@ -51,6 +53,8 @@ export interface GradeTotalScoreSummaryRow {
 }
 
 export interface GradeTotalScoreSegmentReport {
+  customName?: string;
+  customId?: string;
   title: string;
   reportDate: string;
   segmentMax: number;
@@ -245,8 +249,16 @@ export function buildGradeTotalScoreSegmentReport(
   context: GradeImportContext,
   classAverageTemplate?: GradeStatisticsTemplate,
   rankSettings: GradeExamSettings = exam.settings,
+  customTotal?: GradeCustomTotalScore,
 ): GradeTotalScoreSegmentReport {
-  const { segmentMax, segmentMin, segmentSize } = resolveTotalScoreSegmentRange(template);
+  const range = resolveTotalScoreSegmentRange(template);
+  const segmentSize = range.segmentSize;
+  const customValues = customTotal
+    ? participatingGradeRecords(exam.records).map((record) => gradeCustomTotal(record, customTotal))
+      .filter((value): value is number => value !== null) : [];
+  const segmentMin = customTotal ? 0 : range.segmentMin;
+  const segmentMax = customTotal
+    ? Math.ceil(customValues.reduce((maximum, value) => Math.max(maximum, value), 0) / segmentSize) * segmentSize : range.segmentMax;
   const classOptions = resolveClassAverageOptions(exam, context, classAverageTemplate?.classAverageOptions);
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const recordsByClass = new Map<string, GradeScoreRecord[]>();
@@ -284,6 +296,10 @@ export function buildGradeTotalScoreSegmentReport(
   const totalsByClass = new Map(classes.map((classItem) => [
     classItem.classId,
     (recordsByClass.get(classItem.classId) || []).flatMap((record) => {
+      if (customTotal) {
+        const total = gradeCustomTotal(record, customTotal);
+        return total === null ? [] : [total];
+      }
       const rankedSubjects = rankedClassSubjects(effectiveTemplate.subjects, rankSettings, record.classId);
       const requiredCoreSubjects = rankedSubjects.filter((subject) => !electiveSubjects.has(subject));
       const availableElectives = rankedSubjects.filter((subject) => electiveSubjects.has(subject));
@@ -454,7 +470,11 @@ export function buildGradeTotalScoreSegmentReport(
   ];
 
   return {
-    title: `${exam.name}总分分数段汇总表（${template.scoreMode === "raw" ? "原始分" : "赋分"}）`,
+    customName: customTotal?.name,
+    customId: customTotal?.id,
+    title: customTotal
+      ? `${exam.name}${customTotal.name}分数段汇总表（${customTotal.scoreMode === "raw" ? "原始分" : "赋分"}）`
+      : `${exam.name}总分分数段汇总表（${template.scoreMode === "raw" ? "原始分" : "赋分"}）`,
     reportDate: exam.examDate || exam.createdAt.slice(0, 10),
     segmentMax,
     segmentMin,
@@ -464,7 +484,7 @@ export function buildGradeTotalScoreSegmentReport(
     classes,
     columns,
     rows,
-    summaryRows,
+    summaryRows: customTotal ? summaryRows.filter((row) => row.key === "attendedCount") : summaryRows,
     validTotalCounts,
   };
 }

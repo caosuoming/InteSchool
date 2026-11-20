@@ -79,7 +79,6 @@ export default function LectureListPage() {
       setLoading(true);
       const data = await lectureService.listLectures({
         teacherId: teacher.id,
-        schoolId: teacher.schoolId!,
         keyword,
         chapterIds: checkedChapters,
         chapterLogic,
