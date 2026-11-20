@@ -10,9 +10,10 @@ import { teacherResourceScopeId } from "@/lib/personal-resource-scope";
 import { useSchoolResourceOptions, includeCurrentOption } from "@/hooks/useSchoolResourceOptions";
 import { uploadFile } from "@/services/api";
 import { coursewareService } from "@/services/courseware";
+import { materialService } from "@/services/material";
 import { useAuthStore } from "@/stores/auth";
 import { toast } from "@/stores/ui";
-import type { Courseware, ResourceSemester } from "@/types";
+import type { Courseware, Material, ResourceSemester } from "@/types";
 
 export default function GeoGebraEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +23,7 @@ export default function GeoGebraEditorPage() {
   const resourceScopeId = teacher ? teacherResourceScopeId(teacher) : undefined;
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear } =
     useSchoolResourceOptions(resourceScopeId);
-  const [existing, setExisting] = useState<Courseware | null>(null);
+  const [existing, setExisting] = useState<Courseware | Material | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
@@ -43,16 +44,18 @@ export default function GeoGebraEditorPage() {
     if (!id) return;
     let active = true;
     setLoading(true);
-    coursewareService.getCourseware(id).then((courseware) => {
+    Promise.all([coursewareService.getCourseware(id), materialService.getMaterial(id)]).then(([courseware, material]) => {
+      const materialEntry = material?.fileName?.toLowerCase().endsWith(".ggb") ? material : null;
+      const entry = courseware?.migratedToMaterial ? materialEntry : (courseware || materialEntry);
       if (!active) return;
-      if (!courseware || courseware.type !== "ggb" || courseware.teacherId !== teacher?.id) {
+      if (!entry || (entry.type !== "ggb" && entry.type !== "file") || entry.teacherId !== teacher?.id) {
         throw new Error("GeoGebra 课件不存在或无权编辑");
       }
-      setExisting(courseware);
-      setTitle(courseware.title);
-      setGrade(courseware.grade);
-      setSchoolYear(courseware.schoolYear);
-      setSemester(courseware.semester || "上学期");
+      setExisting(entry);
+      setTitle(entry.title);
+      setGrade(entry.grade);
+      setSchoolYear(entry.schoolYear);
+      setSemester(entry.semester || "上学期");
     }).catch((cause) => {
       if (active) setError(cause instanceof Error ? cause.message : "加载课件失败");
     }).finally(() => {
@@ -67,7 +70,7 @@ export default function GeoGebraEditorPage() {
 
   const selectedGrade = grade || defaultGrade;
   const selectedSchoolYear = schoolYear || defaultSchoolYear;
-  const fileUrl = existing ? getCoursewareFileUrl(existing) : undefined;
+  const fileUrl = existing ? (existing.type === "ggb" ? getCoursewareFileUrl(existing as Courseware) : existing.fileUrl) : undefined;
 
   useEffect(() => {
     if (loading || error || (id && !existing)) return;
@@ -137,8 +140,16 @@ export default function GeoGebraEditorPage() {
         fileSize: file.size,
       };
       const saved = existing
-        ? await coursewareService.updateCourseware(existing.id, fields)
-        : await coursewareService.createCourseware(teacher.id, resourceScopeId, {
+        ? (existing.type === "ggb"
+            ? await coursewareService.updateCourseware(existing.id, fields)
+            : await materialService.updateMaterial(existing.id, fields))
+        : teacher.subject === "数学"
+          ? await materialService.createMaterial(teacher.id, resourceScopeId, {
+              ...fields, chapterIds: [], knowledgePointIds: [], type: "file",
+              content: mode === "geometry" ? "GeoGebra 几何画板" : "GeoGebra 交互素材",
+              tags: [mode === "geometry" ? "几何画板" : "GeoGebra"],
+            })
+          : await coursewareService.createCourseware(teacher.id, resourceScopeId, {
             ...fields,
             chapterIds: [],
             knowledgePointIds: [],
@@ -146,7 +157,7 @@ export default function GeoGebraEditorPage() {
             content: mode === "geometry" ? "GeoGebra 几何画板" : "GeoGebra 交互课件",
             tags: [mode === "geometry" ? "几何画板" : "GeoGebra"],
           });
-      toast.success("已保存到课件库", "可从上课课件编辑器中插入该 GGB 课件");
+      toast.success(teacher.subject === "数学" ? "已保存到素材库" : "已保存到课件库", "可从上课课件编辑器中插入该 GGB 素材");
       if (!existing) navigate("/geogebra/" + saved.id + "/edit", { replace: true });
       else setExisting(saved);
     } catch (cause) {
@@ -159,15 +170,15 @@ export default function GeoGebraEditorPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" onClick={() => navigate("/my-resources/coursewares")}>
-          <ArrowLeft className="w-4 h-4" />返回课件库
+        <Button variant="ghost" onClick={() => navigate(teacher?.subject === "数学" ? "/my-resources/materials" : "/my-resources/coursewares")}>
+          <ArrowLeft className="w-4 h-4" />{teacher?.subject === "数学" ? "返回素材库" : "返回课件库"}
         </Button>
         <h1 className="font-serif text-xl font-semibold text-ink-900">
           {mode === "geometry" ? "制作几何画板" : "制作 GGB"}
         </h1>
         <div className="flex-1" />
         <Button variant="gold" onClick={() => void save()} disabled={!ready || loading || Boolean(error)} loading={saving}>
-          <Save className="w-4 h-4" />保存到课件库
+          <Save className="w-4 h-4" />{teacher?.subject === "数学" ? "保存到素材库" : "保存到课件库"}
         </Button>
       </div>
       <div className="grid gap-3 rounded-lg border border-ink-100 bg-paper p-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -186,7 +197,7 @@ export default function GeoGebraEditorPage() {
         {error && <div role="alert" className="absolute inset-0 flex items-center justify-center p-6 text-red-700">{error}</div>}
       </div>
       <p className="text-xs text-ink-500">
-        制作完成后点击“保存到课件库”。保存为标准 .ggb 文件，插入上课课件后保留几何对象的交互操作。在线编辑器需要能够访问 GeoGebra 服务。
+        制作完成后点击“{teacher?.subject === "数学" ? "保存到素材库" : "保存到课件库"}”。保存为标准 .ggb 文件，插入上课课件后保留几何对象的交互操作。在线编辑器需要能够访问 GeoGebra 服务。
       </p>
     </div>
   );

@@ -1869,6 +1869,8 @@ export interface Courseware {
   editorUrl?: string;
   /** 从试卷或讲义生成的上课课件所对应的“我的上课”课件。 */
   lessonCoursewareId?: string;
+  /** 旧版数学媒体已归入素材库；保留原记录仅兼容外部引用。 */
+  migratedToMaterial?: boolean;
   /** 生成该课件的源文档类型。 */
   sourceResourceType?: "examPaper" | "lecture";
   /** 生成该课件的源文档 ID；拆解文档指向正稿。 */
@@ -3069,10 +3071,21 @@ export interface LessonSlideGeoGebraElement extends LessonSlideElementBase {
   src: string;
   title: string;
   coursewareId?: string;
+  materialId?: string;
+}
+
+/** 上传的 HTML 网页素材。使用沙箱嵌入或按钮在新标签页打开。 */
+export interface LessonSlideWebpageElement extends LessonSlideElementBase {
+  kind: "webpage";
+  src: string;
+  title: string;
+  materialId?: string;
+  displayMode: "embed" | "button";
+  backgroundColor?: string;
 }
 
 /** 可在课件画布中自由移动、缩放的元素。 */
-export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement;
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement | LessonSlideWebpageElement;
 
 /** 导入外部课件时尚未分配本地 ID 的自由画布元素。 */
 export type PptSlideImportElement =

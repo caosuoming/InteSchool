@@ -22,5 +22,7 @@ describe("material media detection", () => {
     expect(inferMaterialTypeFromFile({ name: "lesson.webm", type: "" })).toBe("video");
     expect(inferMaterialTypeFromFile({ name: "diagram.png", type: "" })).toBe("image");
     expect(inferMaterialTypeFromFile({ name: "attachment.pdf", type: "application/pdf" })).toBe("file");
+    expect(inferMaterialTypeFromFile({ name: "animation.html", type: "text/html" })).toBe("file");
+    expect(inferMaterialTypeFromFile({ name: "geometry.ggb", type: "" })).toBe("file");
   });
 });

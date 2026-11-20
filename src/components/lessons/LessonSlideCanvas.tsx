@@ -462,6 +462,16 @@ export function LessonSlideCanvas({
                 backgroundColor={typeof canvasStyle?.backgroundColor === "string" ? canvasStyle.backgroundColor : "#FFFFFF"}
                 compact
               />
+            ) : element.kind === "webpage" ? (
+              element.displayMode === "button" ? (
+                <div className="flex h-full w-full items-center justify-center rounded-md" style={{ backgroundColor: element.backgroundColor || "#FFFFFF" }}>
+                  <a href={element.src} target="_blank" rel="noopener noreferrer" className="rounded-md bg-sky-700 px-4 py-2 text-center text-sm font-semibold text-white" onPointerDown={(event) => event.stopPropagation()}>
+                    打开{element.title || "网页动画"}
+                  </a>
+                </div>
+              ) : (
+                <iframe src={element.src} title={element.title || "网页素材"} sandbox="allow-scripts" referrerPolicy="no-referrer" loading="lazy" className="h-full w-full rounded-md border-0" style={{ backgroundColor: element.backgroundColor || "#FFFFFF" }} onPointerDown={(event) => event.stopPropagation()} />
+              )
             ) : element.kind === "audio" || element.kind === "video" ? (
               <LessonMediaElement
                 element={element}

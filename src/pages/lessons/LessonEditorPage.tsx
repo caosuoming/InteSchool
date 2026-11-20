@@ -165,7 +165,7 @@ export function LessonEditorPage() {
   const [basketQuestionsLoading, setBasketQuestionsLoading] = useState(false);
   const [geogebraPickerOpen, setGeogebraPickerOpen] = useState(false);
   const [geogebraInsertMode, setGeogebraInsertMode] = useState<"slide" | "element">("slide");
-  const [geogebraCoursewares, setGeogebraCoursewares] = useState<Courseware[]>([]);
+  const [geogebraCoursewares, setGeogebraCoursewares] = useState<(Courseware | Material)[]>([]);
   const [geogebraPickerLoading, setGeogebraPickerLoading] = useState(false);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [basketMaterials, setBasketMaterials] = useState<Material[]>([]);
@@ -770,7 +770,19 @@ export function LessonEditorPage() {
     if (!currentSlide || currentSlide.type === "courseware") return;
     let element: LessonSlideElement | null = null;
 
-    if (material.type === "image") {
+    if (material.fileUrl && /\.html?(?:[?#]|$)/i.test(material.fileName || material.fileUrl)) {
+      element = {
+        id: genId("element"), kind: "webpage", src: material.fileUrl,
+        title: material.title, materialId: material.id,
+        displayMode: "embed", backgroundColor: "#FFFFFF",
+        x: 8, y: 8, width: 75, height: 72,
+      };
+    } else if (/\.ggb(?:[?#]|$)/i.test(material.fileName || "") && material.fileUrl) {
+      element = {
+        id: genId("element"), kind: "geogebra", src: material.fileUrl,
+        title: material.title, x: 10, y: 10, width: 75, height: 75,
+      };
+    } else if (material.type === "image") {
       if (!material.fileUrl) {
         toast.error("图片素材缺少可用文件");
         return;
@@ -1320,8 +1332,14 @@ export function LessonEditorPage() {
     setGeogebraPickerOpen(true);
     setGeogebraPickerLoading(true);
     try {
-      const available = await coursewareService.listCoursewares({ teacherId: teacher.id });
-      setGeogebraCoursewares(available.filter((item) => item.type === "ggb" && Boolean(getCoursewareFileUrl(item))));
+      const [available, materials] = await Promise.all([
+        coursewareService.listCoursewares({ teacherId: teacher.id }),
+        materialService.listMaterials({ teacherId: teacher.id }),
+      ]);
+      setGeogebraCoursewares([
+        ...materials.filter((item) => /\.ggb$/i.test(item.fileName || "") && Boolean(item.fileUrl)),
+        ...available.filter((item) => item.type === "ggb" && Boolean(getCoursewareFileUrl(item))),
+      ]);
     } catch (error) {
       toast.error("加载 GGB 课件失败", error instanceof Error ? error.message : undefined);
     } finally {
@@ -1329,15 +1347,16 @@ export function LessonEditorPage() {
     }
   };
 
-  const insertGeoGebraCourseware = (source: Courseware) => {
+  const insertGeoGebraCourseware = (source: Courseware | Material) => {
+    const sourceUrl = "onlineAccessToken" in source ? getCoursewareFileUrl(source as Courseware) : source.fileUrl;
     if (geogebraInsertMode === "element" && currentSlide?.type !== "courseware") {
       if (!currentSlide) return;
       const element: LessonSlideElement = {
         id: genId("element"),
         kind: "geogebra",
-        src: getCoursewareFileUrl(source)!,
+        src: sourceUrl!,
         title: source.title,
-        coursewareId: source.id,
+        ...(source.type === "ggb" ? { coursewareId: source.id } : { materialId: source.id }),
         x: 12,
         y: 12,
         width: 68,
@@ -1358,8 +1377,7 @@ export function LessonEditorPage() {
       coursewareType: "ggb",
       fileUrl: source.fileUrl,
       fileName: source.fileName,
-      onlineAccessToken: source.onlineAccessToken,
-      editorUrl: source.editorUrl,
+      ...("onlineAccessToken" in source ? { onlineAccessToken: source.onlineAccessToken, editorUrl: source.editorUrl } : {}),
       relatedQuestionIds: [],
       askableStudentIds: [],
     };
@@ -1606,7 +1624,7 @@ export function LessonEditorPage() {
                     type="button"
                     onClick={() => void openGeoGebraPicker("slide")}
                     className="rounded p-1 text-ink-500 hover:bg-ink-200/50 hover:text-ink-800"
-                    title="插入 GGB 课件"
+                    title="插入 GGB 素材"
                     aria-label="插入 GGB 课件"
                   >
                     <Blocks className="h-4 w-4" />
@@ -2118,17 +2136,17 @@ export function LessonEditorPage() {
       <Modal
         open={geogebraPickerOpen}
         onClose={() => setGeogebraPickerOpen(false)}
-        title="插入 GGB 课件"
+        title="插入 GGB 素材"
         description={geogebraInsertMode === "element" && currentSlide?.type !== "courseware"
-          ? "选择课件库中的 GeoGebra 课件，插入当前页面。可拖动、缩放并在上课时交互。"
-          : "选择课件库中的 GeoGebra 课件，在当前页之后插入一个可交互的课件页面。"}
+          ? "选择素材库中的 GeoGebra 文件，插入当前页面。可拖动、缩放并在上课时交互。"
+          : "选择素材库中的 GeoGebra 文件，在当前页之后插入一个可交互的课件页面。"}
         size="lg"
       >
         {geogebraPickerLoading ? (
           <div className="py-10 text-center text-sm text-ink-500">正在加载 GGB 课件...</div>
         ) : geogebraCoursewares.length === 0 ? (
           <div className="space-y-3 py-6 text-center">
-            <p className="text-sm text-ink-500">课件库中暂无 GGB 文件，请先在素材库制作并保存。</p>
+            <p className="text-sm text-ink-500">素材库中暂无 GGB 文件，请先在素材库制作并保存。</p>
             <Button variant="outline" size="sm" onClick={() => openPage("/geogebra/new?mode=classic")}>
               <Plus className="w-4 h-4" />制作 GGB
             </Button>
