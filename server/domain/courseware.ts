@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { reflectionService } from "./reflection.js";
 import { assertResourceCapacity } from "./quota.js";
+import { assertMathCoursewareUpload } from "../lib/math-courseware-rules.js";
 
 function matchFilter(c: Courseware, filter: ResourceFilter): boolean {
   if (filter.keyword) {
@@ -110,6 +111,8 @@ export const coursewareService = {
     await delay(400);
     maybeThrowError();
     assertResourceCapacity(teacherId, "courseware");
+    const subject = db.read("teachers").find((teacher) => teacher.id === teacherId)?.subject;
+    assertMathCoursewareUpload(subject, input.type, input.fileUrl, input.fileName);
     const now = new Date().toISOString();
     const courseware: Courseware = {
       id: genId("cw"),
@@ -150,6 +153,12 @@ export const coursewareService = {
     db.update("coursewares", (list) =>
       list.map((c) => {
         if (c.id === id) {
+          if (normalizedPatch.fileUrl !== undefined || normalizedPatch.fileName !== undefined || normalizedPatch.type !== undefined) {
+            const subject = db.read("teachers").find((teacher) => teacher.id === c.teacherId)?.subject;
+            assertMathCoursewareUpload(subject, normalizedPatch.type || c.type,
+              normalizedPatch.fileUrl === undefined ? c.fileUrl : normalizedPatch.fileUrl,
+              normalizedPatch.fileName === undefined ? c.fileName : normalizedPatch.fileName);
+          }
           const nextFileUrl = normalizedPatch.fileUrl === undefined ? c.fileUrl : normalizedPatch.fileUrl;
           updated = {
             ...c,
@@ -210,6 +219,7 @@ export const coursewareService = {
     maybeThrowError();
     const source = db.read("coursewares").find((c) => c.id === sourceId);
     if (!source) throw new Error("原课件不存在");
+    if (source.migratedToMaterial) throw new Error("该资源已归入素材库");
     assertResourceCapacity(source.teacherId, "courseware");
     const now = new Date().toISOString();
     const duplicated: Courseware = {
