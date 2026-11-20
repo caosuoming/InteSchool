@@ -6,7 +6,22 @@ export type UsageColumnRole =
   | "ignore" | "studentName" | "studentNo"
   | `score:${number}` | `answer:${number}` | `subscore:${number}:${string}`;
 export interface UsageColumn { index: number; header: string; role: UsageColumnRole }
-export interface UsageMetadataConflict { column: string; questionNo: number; attribute: "score" | "answer"; excel: string; paper: string }
+export interface UsageMetadataConflict {
+  column: string;
+  questionNo: number;
+  paperQuestionId: string;
+  attribute: "score" | "answer";
+  excel: string;
+  paper: string;
+}
+export interface UsageMetadataUpdate {
+  paperQuestionId: string;
+  attribute: "score" | "answer";
+  expected: string;
+  value: string;
+}
+export const usageConflictKey = (conflict: Pick<UsageMetadataConflict, "paperQuestionId" | "attribute">) =>
+  `${conflict.paperQuestionId}:${conflict.attribute}`;
 export interface UsageImportItem {
   studentId: string;
   paperQuestionId: string;
@@ -26,7 +41,13 @@ export interface UsagePreview {
 
 // Preserve the separator between question number and maximum score: "1 2分 答案B".
 function parseEncodedHeader(header: string): RegExpMatchArray | null {
-  return header.normalize("NFKC").trim().match(/^(?:第)?(\d+)(?:题|小题)?[\s:：、，,]+(\d+(?:\.\d+)?)\s*分(?:[\s,，、;；]*(?:正确)?答案\s*([A-Za-z0-9]+))?$/i);
+  return header.normalize("NFKC").trim().match(/^(?:第)?(\d+)(?:题|小题)?[\s:：、，,]+(\d+(?:\.\d+)?)\s*分(?:[\s,，、;；]*(?:正确|标准)?答案\s*[:：]?\s*[（(]?([A-Za-z0-9]+(?:[\s、,，/／]*[A-Za-z0-9]+)*)[）)]?)?$/i);
+}
+
+// Multiple-choice answers with the same selections are equivalent regardless of order or punctuation.
+export function normalizeUsageAnswer(answer: string): string {
+  const compact = answer.normalize("NFKC").toUpperCase().replace(/[\s、,，/／]/g, "");
+  return /^[A-H]+$/.test(compact) ? [...compact].sort().join("") : compact;
 }
 
 const isBlank = (value: UsageCell | undefined) => value === undefined || value === null || String(value).trim() === "";
@@ -127,20 +148,28 @@ export function prepareUsageImport(
   columns: UsageColumn[],
   paperQuestions: ExamPaperQuestion[],
   students: Student[],
+  selectedSources: Record<string, "paper" | "excel"> = {},
 ): UsagePreview {
   const roles = columns.filter((column) => column.role !== "ignore");
   const warnings: string[] = [];
   const conflicts: UsageMetadataConflict[] = [];
+  const effectiveScores = new Map<string, number>();
   columns.forEach((column) => {
+    // Only an encoded *score* header carries the maximum score and answer key.
+    if (!column.role.startsWith("score:")) return;
     const questionNo = Number(column.role.split(":")[1]);
     const question = paperQuestions[questionNo - 1];
-    if (!question) return;
     const encoded = parseEncodedHeader(column.header);
-    if (!encoded) return;
-    if (Math.abs(Number(encoded[2]) - question.score) > 0.000001)
-      conflicts.push({ column: column.header, questionNo, attribute: "score", excel: encoded[2], paper: String(question.score) });
-    if (encoded[3] && (question.answer || "").trim() && encoded[3].toUpperCase() !== (question.answer || "").trim().toUpperCase())
-      conflicts.push({ column: column.header, questionNo, attribute: "answer", excel: encoded[3], paper: (question.answer || "").trim() });
+    if (!question || !encoded || Number(encoded[1]) !== questionNo) return;
+    if (Math.abs(Number(encoded[2]) - question.score) > 0.000001) {
+      const conflict = { column: column.header, questionNo, paperQuestionId: question.id,
+        attribute: "score" as const, excel: encoded[2], paper: String(question.score) };
+      conflicts.push(conflict);
+      if (selectedSources[usageConflictKey(conflict)] === "excel") effectiveScores.set(question.id, Number(encoded[2]));
+    }
+    if (encoded[3] && normalizeUsageAnswer(encoded[3]) !== normalizeUsageAnswer((question.answer || "").trim()))
+      conflicts.push({ column: column.header, questionNo, paperQuestionId: question.id,
+        attribute: "answer", excel: encoded[3], paper: (question.answer || "").trim() });
   });
   if (!roles.some((column) => column.role === "studentNo" || column.role === "studentName"))
     return { entries: [], matchedStudents: 0, unmatchedStudents: [], warnings: ["请先映射学生姓名或学号列"], mappedColumns: 0 };
@@ -229,7 +258,7 @@ export function prepareUsageImport(
       const key = `${item.studentId}:${item.paperQuestionId}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
-      const max = paperQuestions.find((q) => q.id === item.paperQuestionId)?.score || 0;
+      const max = effectiveScores.get(item.paperQuestionId) ?? paperQuestions.find((q) => q.id === item.paperQuestionId)?.score ?? 0;
       const earned = item.earnedScore ?? (item.subScores ? Object.values(item.subScores).reduce((a, b) => a + b, 0) : undefined);
       const subTotal = item.subScores ? Object.values(item.subScores).reduce((a, b) => a + b, 0) : undefined;
       if (max > 0 && (earned !== undefined && earned > max + 0.000001
