@@ -418,6 +418,37 @@ describe("exam invigilation table", () => {
     expect(table.rows[0].roomTeacherIds["room-2"]).toBeNull();
   });
 
+  it("groups nonadjacent room numbers at the same physical location", () => {
+    const input = arrangement();
+    input.rooms[2].location = input.rooms[0].location;
+    input.assignments.push({
+      ...input.assignments[0],
+      id: "physics:s3",
+      studentId: "s3",
+      roomId: "room-unused",
+      roomNumber: "3",
+      roomName: "3",
+      roomLocation: "教学楼101",
+    });
+    const table = buildExamInvigilationTable(input, config());
+    expect(table.roomLocationGroups.map((group) => group.roomIds)).toEqual([
+      ["room-1", "room-unused"],
+      ["room-2"],
+    ]);
+    expect(table.rows[0].roomTeacherIds["room-unused"]).toBeNull();
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBeTruthy();
+  });
+
+  it("does not count patrol duties as invigilation time or sessions", () => {
+    const table = buildExamInvigilationTable(arrangement(), config());
+    expect(table.patrolTeacherIds).toEqual(["leader"]);
+    expect(table.teacherStats.find((item) => item.teacherId === "leader")).toMatchObject({
+      minutes: 0,
+      sessions: 0,
+    });
+    expect(table.teacherStats.find((item) => item.teacherId === "physics")?.minutes).toBeGreaterThan(0);
+  });
+
   it("orders columns by numeric room number instead of assignment insertion order", () => {
     const input = arrangement();
     input.rooms[0].number = "10考场";

@@ -82,9 +82,16 @@ function defaultConfig(arrangement: ExamArrangement, teacherOptions: GradeTeache
 function configForArrangement(
   arrangement: ExamArrangement,
   teacherOptions: GradeTeacherOption[],
+  previous?: ExamInvigilationConfig,
 ): ExamInvigilationConfig {
   const defaults = defaultConfig(arrangement, teacherOptions);
-  const current = arrangement.invigilation ? cloneConfig(arrangement.invigilation) : defaults;
+  const current = arrangement.invigilation ? cloneConfig(arrangement.invigilation) : previous
+    ? { ...defaults, teachers: structuredClone(previous.teachers), teacherRequirements: structuredClone(previous.teacherRequirements || {}),
+        teacherNotes: structuredClone(previous.teacherNotes || {}), patrolTeacherIds: [...(previous.patrolTeacherIds || [])],
+        footerNote: previous.footerNote, autoArrangePriority: previous.autoArrangePriority,
+        subjectTimes: defaults.subjectTimes.map((time) => ({ ...time, durationMinutes:
+          previous.subjectTimes.find((item) => item.subject === time.subject)?.durationMinutes || time.durationMinutes })) }
+    : defaults;
   const timesBySubject = new Map(current.subjectTimes.map((item) => [item.subject, item]));
   current.subjectTimes = defaults.subjectTimes.map((fallback) => (
     timesBySubject.get(fallback.subject) || fallback
@@ -242,6 +249,7 @@ export function InvigilationTableSection({
   const [showLongest, setShowLongest] = useState(false);
   const [showShortest, setShowShortest] = useState(false);
   const [roomColumnWidth, setRoomColumnWidth] = useState(52);
+  const [outsideColumnWidth, setOutsideColumnWidth] = useState(112);
   const [roomBandWidth, setRoomBandWidth] = useState<number | null>(null);
   const roomWidthDragRef = useRef<{ pointerId: number; startX: number; startWidth: number; sign: number } | null>(null);
   const firstRoomHeaderRef = useRef<HTMLTableCellElement>(null);
@@ -309,7 +317,9 @@ export function InvigilationTableSection({
       setSelectedCells([]);
       return;
     }
-    setConfig(configForArrangement(selectedArrangement, teacherOptions));
+    const latestSaved = arrangements.filter((item) => item.id !== selectedArrangement.id && item.invigilation)
+      .sort((a, b) => arrangementDateKey(b).localeCompare(arrangementDateKey(a)))[0];
+    setConfig(configForArrangement(selectedArrangement, teacherOptions, latestSaved?.invigilation));
     setSelectedCells([]);
   }, [selectedArrangement, teacherOptions]);
 
@@ -380,10 +390,12 @@ export function InvigilationTableSection({
     [config, historicalTeacherMinutes, selectedArrangement],
   );
 
-  const cumulativeTeacherStats = useMemo(() => (invigilation?.teacherStats || []).map((stat) => ({
-    ...stat,
-    cumulativeMinutes: stat.minutes + (historicalTeacherMinutes[stat.teacherId] || 0),
-  })), [historicalTeacherMinutes, invigilation]);
+  const cumulativeTeacherStats = useMemo(() => (invigilation?.teacherStats || [])
+    .filter((stat) => !invigilation?.patrolTeacherIds.includes(stat.teacherId))
+    .map((stat) => ({
+      ...stat,
+      cumulativeMinutes: stat.minutes + (historicalTeacherMinutes[stat.teacherId] || 0),
+    })), [historicalTeacherMinutes, invigilation]);
 
   const sortedTeacherStats = useMemo(() => {
     return [...cumulativeTeacherStats].sort((left, right) => {
@@ -394,17 +406,12 @@ export function InvigilationTableSection({
   }, [cumulativeTeacherStats, statsSort]);
   const durationExtremes = useMemo(() => {
     const shortestMinutes = Math.min(...cumulativeTeacherStats.map((stat) => stat.cumulativeMinutes));
-    // Patrol teachers accumulate duty on every row, but are not candidates
-    // for the "longest invigilation" comparison.
-    const longestCandidates = cumulativeTeacherStats.filter(
-      (stat) => !invigilation?.patrolTeacherIds.includes(stat.teacherId),
-    );
-    const longestMinutes = Math.max(...longestCandidates.map((stat) => stat.cumulativeMinutes));
+    const longestMinutes = Math.max(...cumulativeTeacherStats.map((stat) => stat.cumulativeMinutes));
     return {
       shortest: cumulativeTeacherStats.filter((stat) => stat.cumulativeMinutes === shortestMinutes),
-      longest: longestCandidates.filter((stat) => stat.cumulativeMinutes === longestMinutes),
+      longest: cumulativeTeacherStats.filter((stat) => stat.cumulativeMinutes === longestMinutes),
     };
-  }, [cumulativeTeacherStats, invigilation?.patrolTeacherIds]);
+  }, [cumulativeTeacherStats]);
   const unfilledRoomCount = invigilation?.rows.reduce((sum, row) => (
     sum + invigilation.roomLocationGroups.filter((group) => (
       group.roomIds.some((id) => (row.roomStudentCounts[id] || 0) > 0)
@@ -585,9 +592,9 @@ export function InvigilationTableSection({
       const saved = await examArrangementService.saveInvigilationConfig(schoolId, selectedArrangement.id, config);
       setArrangements((current) => current.map((item) => item.id === saved.id ? saved : item));
       setConfig(saved.invigilation ? cloneConfig(saved.invigilation) : config);
-      toast.success("监考配置已保存", "当前考试的监考名单、时间和排表已保存。");
+      toast.success("监考表已保存", "当前考试监考表已保存；同年级下次排表将复用教师、场外、巡考和学科时长配置。");
     } catch (error) {
-      toast.error("保存监考配置失败", error instanceof Error ? error.message : undefined);
+      toast.error("保存监考表失败", error instanceof Error ? error.message : undefined);
     } finally {
       setSaving(false);
     }
@@ -915,17 +922,11 @@ export function InvigilationTableSection({
           />
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void saveConfig()} disabled={!config || saving || readOnly}>
-            {saving ? <Spinner size={16} /> : <Save className="h-4 w-4" />}保存监考配置
-          </Button>
           {selectedArrangement?.invigilation && canEditSelected && (
             <Button variant="ghost" onClick={() => void deleteConfig()}>
               <Trash2 className="h-4 w-4 text-red-500" />移入回收站
             </Button>
           )}
-          <Button variant="gold" onClick={() => void download()} disabled={!selectedArrangement || downloading || !statistics?.rooms.length}>
-            {downloading ? <Spinner size={16} /> : <Download className="h-4 w-4" />}下载 Excel
-          </Button>
         </div>
       </div>
     </Card>
@@ -1244,28 +1245,6 @@ export function InvigilationTableSection({
             <div className="overflow-x-auto rounded-xl border border-ink-100">
               <table className="min-w-max table-auto border-collapse text-xs">
                 <tbody>
-                  <tr className="bg-[#f0f6f6]">
-                    <th colSpan={4} className="border-r border-[#b6c7cf]" />
-                    {invigilation.roomLocationGroups.length > 1 && (
-                      <th colSpan={invigilation.roomLocationGroups.length - 1} />
-                    )}
-                    <th style={roomColumnStyle} className="border-r border-[#b6c7cf] px-0 py-1">
-                      <div className="flex items-center justify-between gap-0.5" aria-label="拖动刻度统一调整考场列宽">
-                        <button type="button" aria-label="拖动左侧刻度调整考场列宽"
-                          className="touch-none cursor-ew-resize px-0.5 text-ink-700"
-                          onPointerDown={(event) => startRoomWidthDrag(event, -1)}
-                          onPointerMove={moveRoomWidthDrag} onPointerUp={endRoomWidthDrag} onPointerCancel={endRoomWidthDrag}
-                        ><span className="block h-4 border-l-2 border-ink-700" /></button>
-                        <ArrowLeftRight aria-hidden="true" className="h-3 w-3 min-w-0 flex-1 text-ink-600" />
-                        <button type="button" aria-label="拖动右侧刻度调整考场列宽"
-                          className="touch-none cursor-ew-resize px-0.5 text-ink-700"
-                          onPointerDown={(event) => startRoomWidthDrag(event, 1)}
-                          onPointerMove={moveRoomWidthDrag} onPointerUp={endRoomWidthDrag} onPointerCancel={endRoomWidthDrag}
-                        ><span className="block h-4 border-r-2 border-ink-700" /></button>
-                      </div>
-                    </th>
-                    <th colSpan={2} />
-                  </tr>
                   <tr className="bg-[#dcecef] text-xs font-medium text-ink-800">
                     <th colSpan={4} className="border-b border-r border-[#b6c7cf] px-1 py-1.5 text-center">考试安排</th>
                     {invigilation.roomLocationGroups.map((group, index) => (
@@ -1282,7 +1261,27 @@ export function InvigilationTableSection({
                         {wrapInvigilationHeaderLabel(group.roomLocation).map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}
                       </th>
                     ))}
-                    <th rowSpan={3} className="whitespace-nowrap border-b border-r border-[#b6c7cf] px-1 py-1.5 text-center align-middle">场外监考</th>
+                    <th rowSpan={3} style={{ width: outsideColumnWidth, minWidth: outsideColumnWidth }} className="border-b border-r border-[#b6c7cf] px-1 py-1.5 text-center align-middle">
+                      <div className="flex flex-col items-center gap-1">
+                        <span>场外监考</span>
+                        <div className="flex items-center gap-1" aria-label="调整考场及场外列宽">
+                          <button type="button" aria-label="拖动左侧刻度调整考场列宽"
+                            className="touch-none cursor-ew-resize px-1" onPointerDown={(event) => startRoomWidthDrag(event, -1)}
+                            onPointerMove={moveRoomWidthDrag} onPointerUp={endRoomWidthDrag} onPointerCancel={endRoomWidthDrag}>
+                            <span className="block h-4 border-l-2 border-ink-700" />
+                          </button>
+                          <ArrowLeftRight aria-hidden="true" className="h-3 w-3" />
+                          <button type="button" aria-label="拖动右侧刻度调整考场列宽"
+                            className="touch-none cursor-ew-resize px-1" onPointerDown={(event) => startRoomWidthDrag(event, 1)}
+                            onPointerMove={moveRoomWidthDrag} onPointerUp={endRoomWidthDrag} onPointerCancel={endRoomWidthDrag}>
+                            <span className="block h-4 border-r-2 border-ink-700" />
+                          </button>
+                        </div>
+                        <input type="range" min={80} max={240} value={outsideColumnWidth}
+                          aria-label="单独调整场外监考列宽" onChange={(event) => setOutsideColumnWidth(Number(event.target.value))}
+                          className="w-20 accent-gold-500" />
+                      </div>
+                    </th>
                     <th rowSpan={3} className="whitespace-nowrap border-b border-[#b6c7cf] px-1 py-1.5 text-center align-middle">巡考</th>
                   </tr>
                   <tr className="bg-[#e5f0f2] text-xs text-ink-700">
@@ -1406,6 +1405,7 @@ export function InvigilationTableSection({
                           const duplicate = row.outsideTeacherIds.some((id) => row.duplicateTeacherIds.includes(id));
                           return (
                             <td
+                              style={{ width: outsideColumnWidth, minWidth: outsideColumnWidth }}
                               className={cn(
                                 "cursor-pointer border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors hover:bg-gold-50/60",
                                 showLongest && row.outsideTeacherIds.includes(durationExtremes.longest[0]?.teacherId || "") && "bg-amber-200",
@@ -1516,6 +1516,14 @@ export function InvigilationTableSection({
             </div>
           )}
         </Card>
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={() => void saveConfig()} disabled={!config || saving || readOnly}>
+            {saving ? <Spinner size={16} /> : <Save className="h-4 w-4" />}保存监考表
+          </Button>
+          <Button variant="gold" onClick={() => void download()} disabled={!selectedArrangement || downloading || !statistics?.rooms.length}>
+            {downloading ? <Spinner size={16} /> : <Download className="h-4 w-4" />}下载 Excel
+          </Button>
+        </div>
         </div>
 
         <div
