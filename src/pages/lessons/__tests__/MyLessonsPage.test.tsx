@@ -185,7 +185,7 @@ function courseware(
 }
 
 describe("MyLessonsPage classroom publishing", () => {
-  it("selects several eligible papers, shows prior dates and saves one combined homework", async () => {
+  it("selects papers without existing class assignment, shows prior dates and saves one combined homework", async () => {
     vi.mocked(examPaperService.listPapers).mockResolvedValue([
       { id: "paper-1", title: "函数练习卷", teacherId: "teacher-1", schoolId: "school-1", classIds: ["class-1"] },
       { id: "paper-2", title: "单元试卷", teacherId: "teacher-1", schoolId: "school-1", classIds: ["class-1"] },
@@ -197,7 +197,7 @@ describe("MyLessonsPage classroom publishing", () => {
     render(<MemoryRouter initialEntries={["/my-lessons?tab=homework"]}><MyLessonsPage /></MemoryRouter>);
     expect(await screen.findByText("函数练习卷")).toBeInTheDocument();
     expect(screen.getByText("已于 2026-10-08 布置过")).toBeInTheDocument();
-    expect(screen.queryByText("其他班级试卷")).not.toBeInTheDocument();
+    expect(screen.getByText("其他班级试卷")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: /函数练习卷/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /单元试卷/ }));
     fireEvent.click(screen.getByRole("button", { name: "发布作业" }));
@@ -207,6 +207,23 @@ describe("MyLessonsPage classroom publishing", () => {
       }),
     ));
     expect(classroomHomeworkService.createHomework).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers unpublished and unassigned papers newest first", async () => {
+    vi.mocked(examPaperService.listPapers).mockResolvedValue([
+      { id: "old", title: "较早试卷", classIds: ["class-2"], status: "published", createdAt: "2026-01-01T00:00:00Z" },
+      { id: "new", title: "最新草稿试卷", classIds: [], status: "draft", createdAt: "2026-11-01T00:00:00Z" },
+    ] as any);
+    render(<MemoryRouter initialEntries={["/my-lessons?tab=homework"]}><MyLessonsPage /></MemoryRouter>);
+    const newest = await screen.findByText("最新草稿试卷");
+    const older = screen.getByText("较早试卷");
+    expect(newest.compareDocumentPosition(older) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText("尚未关联班级").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("checkbox", { name: /最新草稿试卷/ }));
+    fireEvent.click(screen.getByRole("button", { name: "发布作业" }));
+    await waitFor(() => expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
+      "teacher-1", "school-1", expect.objectContaining({ examPaperIds: ["new"], classIds: ["class-1"] }),
+    ));
   });
 
   beforeEach(() => {
