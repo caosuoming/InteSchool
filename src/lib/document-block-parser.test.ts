@@ -712,6 +712,80 @@ describe("document block parser", () => {
     });
   });
 
+  it("maps an embedded math reference-answer and scoring heading to unanswered questions", () => {
+    const blocks = parseDocumentBlocks([
+      "安徽省八校高三数学联考试卷",
+      "一、选择题",
+      "1. 计算 1+1 的值 A. 1 B. 2 C. 3 D. 4",
+      "2. 判断不等式 A. 对 B. 错 C. 未知 D. 均不对",
+      "二、填空题",
+      "3. 求方程 x+2=0 的根：____。",
+      "安徽省八校联考数学参考答案与评分细则：1. B 由计算可知 1+1=2。",
+      "2 AC 根据条件可排除其他选项。",
+      "3. -2 代入原方程验证。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(3);
+    expect(questions.map((q) => q.answer)).toEqual(["B", "AC", "-2"]);
+    expect(questions.map((q) => q.analysis)).toEqual([
+      "由计算可知 1+1=2。",
+      "根据条件可排除其他选项。",
+      "代入原方程验证。",
+    ]);
+    expect(questions.map((q) => q.questionType)).toEqual(["single", "multiple", "short"]);
+    expect(blocks.every((block) => !block.content.includes("参考答案"))).toBe(true);
+  });
+
+  it.each(["解析", "评分细则", "评分标准"])(
+    "maps a math solution section labelled %s even without 答案",
+    (heading) => {
+      const blocks = parseDocumentBlocks([
+        "1. 选择正确结论 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 求 x+1=2 的解：____。",
+        heading,
+        "1. C 故选择第三项。",
+        "2. $1$ 解得 x=1。",
+      ].join("\n"), { ...config, subject: "数学" });
+      expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+      expect(blocks.map((block) => block.answer)).toEqual(["C", "$1$"]);
+      expect(blocks.map((block) => block.analysis)).toEqual([
+        "故选择第三项。",
+        "解得 x=1。",
+      ]);
+    },
+  );
+
+  it("splits compact choice keys from the actual math paper's scoring guide", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 命题 p 的否定是哪项 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 求集合的交集 A. 甲 B. 乙 C. 丙 D. 丁",
+      "3. 判断对数不等式 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2027 届高三 10 月教学质量检测·数学参考答案、解析及评分细则",
+      "1.A 命题 p 的否定为全称命题。故选 A。",
+      "2. D M={x|x>1}，所以选择 D。",
+      "3. B 由对数的单调性可知结论成立。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(3);
+    expect(questions.map((q) => q.answer)).toEqual(["A", "D", "B"]);
+    expect(questions[0].analysis).toContain("命题 p 的否定");
+    expect(questions[1].analysis).toContain("M={x|x>1}");
+    expect(questions[2].analysis).toContain("对数的单调性");
+  });
+
+  it("keeps inline math prose about 解析 when the questions already have answers", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 解析几何的基本运算 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：A",
+      "2. 求出解析式。",
+      "答案：x=2",
+      "3. 已知 f(x)，求解析式。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(3);
+    expect(blocks.filter((block) => block.type === "question").map((q) => q.answer))
+      .toEqual(["A", "x=2", undefined]);
+  });
+
   it("maps a trailing 答案与解析 section back to numbered questions", () => {
     const blocks = parseDocumentBlocks(
       [

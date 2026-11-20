@@ -23,6 +23,13 @@ describe("normalizeLegacyOmmlMathText", () => {
       .toBe("记 $\\mathbb{Q}$ 为给定对象。");
   });
 
+  it("repairs missing invisible right delimiters in historical set-builder formulas", () => {
+    const broken = String.raw`已知集合 $A=\left\{x\left|-1\leq x<3\right \right\}$`;
+    const repaired = String.raw`已知集合 $A=\left\{x\left|-1\leq x<3\right. \right\}$`;
+    expect(normalizeLegacyOmmlMathText(broken)).toBe(repaired);
+    expect(normalizeLegacyOmmlMathText(repaired)).toBe(repaired);
+  });
+
   it("repairs Unicode vertical delimiters in stored OMML formulas", () => {
     expect(
       normalizeLegacyOmmlMathText(
