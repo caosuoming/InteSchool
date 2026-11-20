@@ -413,6 +413,9 @@ describe("MyExamsPage", () => {
     expect(invigilationTable.getAllByRole("checkbox", { name: /高三1班教室监考单元格/ })).toHaveLength(2);
     expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
     const durationCard = screen.getByRole("region", { name: "监考时长面板" });
+    expect(within(durationCard).queryByRole("button", { name: "选择监考教师 年级领导" })).not.toBeInTheDocument();
+    expect(invigilationTable.getByRole("slider", { name: "单独调整场外监考列宽" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存监考表" })).toBeInTheDocument();
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
     const teacherConfigCard = teachersHeading.closest(".card-base");
     expect(teacherConfigCard).not.toBeNull();

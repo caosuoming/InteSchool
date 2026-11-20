@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExamSeatAssignment } from "@/types";
+import type { ExamArrangement, ExamSeatAssignment } from "@/types";
 import {
   downloadExamPreviewPdf,
+  downloadExamPrintRoomStatistics,
   downloadDeskLabels,
   groupDeskLabels,
   groupDeskLabelsByRoom,
@@ -178,5 +179,41 @@ describe("groupDeskLabels", () => {
     expect(saveVectorExamPdf).toHaveBeenCalledWith([first, second], "期末考试_考场安排", 210, 297);
     await downloadExamPreviewPdf([first], "桌贴", "8K");
     expect(saveVectorExamPdf).toHaveBeenLastCalledWith([first], "桌贴", 260, 370);
+  });
+
+  it("exports table one in natural room order and table two with mixed-subject counts", async () => {
+    const arrangement: ExamArrangement = {
+      id: "exam-1", schoolId: "school-1", teacherId: "teacher-1",
+      cohortKey: "grade-1", cohortLabel: "高二", name: "期中考试",
+      examDate: "2026-10-20", mode: "subject",
+      subjects: ["物理", "历史"], separateSubjects: ["物理", "历史"],
+      rooms: [
+        { id: "r10", name: "10", number: "10", location: "教学楼101", capacity: 30 },
+        { id: "r2", name: "2", number: "2", location: "教学楼101", capacity: 30 },
+      ],
+      classRules: [], studentSubjects: [],
+      assignments: [
+        assignment({ id: "p1", roomId: "r10", roomNumber: "10", roomName: "10", roomLocation: "教学楼101", subjectLabel: "物理" }),
+        assignment({ id: "h1", roomId: "r2", roomNumber: "2", roomName: "2", roomLocation: "教学楼101", subjectLabel: "历史", studentId: "s2", studentNo: "002" }),
+      ],
+      invigilation: {
+        teachers: [
+          { id: "physics", name: "物理老师", subject: "物理" },
+          { id: "history", name: "历史老师", subject: "历史" },
+        ],
+        subjectTimes: [
+          { subject: "物理", date: "2026-10-20", period: "morning", time: "09:00", durationMinutes: 90 },
+          { subject: "历史", date: "2026-10-20", period: "morning", time: "09:00", durationMinutes: 90 },
+        ],
+        patrolTeacherIds: [], overrides: {},
+      },
+      createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
+    };
+    await downloadExamPrintRoomStatistics(arrangement);
+    const sheets = writeXlsxFile.mock.calls[0][0];
+    expect(sheets[0].data[0].slice(1, 3).map((cell: { value: string }) => cell.value)).toEqual(["2", "10"]);
+    expect(sheets[1].data[1][4].value).toBe("2、10");
+    expect(sheets[1].data[3][4].value).toContain("物理 1人");
+    expect(sheets[1].data[3][4].value).toContain("历史 1人");
   });
 });
