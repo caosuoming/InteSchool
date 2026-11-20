@@ -204,24 +204,50 @@ describe("LessonEditorPage preview query", () => {
     expect(mocks.unpublishCourseware).not.toHaveBeenCalled();
   });
 
-  it("inserts an existing GGB courseware slide and persists its file reference", async () => {
-    mocks.listLibraryCoursewares.mockResolvedValue([{
-      id: "ggb-courseware", type: "ggb", teacherId: teacher.id, title: "交互圆",
-      fileUrl: "/api/files/circle", onlineAccessToken: "token-123",
-      fileName: "circle.ggb", content: "圆", tags: [],
-    }]);
+  it("removes the GGB slide toolbar shortcut without disabling GGB elements", async () => {
     renderPage("/my-lessons/lesson-courseware-1/edit");
-    fireEvent.click(await screen.findByRole("button", { name: "插入 GGB 课件" }));
-    fireEvent.click(await screen.findByRole("button", { name: "插入" }));
-    const saveButton = screen.getByRole("button", { name: "保存" });
-    expect(saveButton).toBeEnabled();
-    fireEvent.click(saveButton);
-    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalled());
-    const slides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
-    expect(slides[1]).toMatchObject({
-      type: "courseware", title: "交互圆", coursewareType: "ggb",
-      fileUrl: "/api/files/circle", onlineAccessToken: "token-123",
+    await screen.findByRole("button", { name: "添加页面" });
+    expect(screen.queryByRole("button", { name: "插入 GGB 课件" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "插入 GGB" })).toBeInTheDocument();
+  });
+
+  it("reorders slides while keeping the selected slide and saves the new order", async () => {
+    mocks.getCourseware.mockResolvedValue({
+      ...courseware,
+      slides: [
+        { id: "slide-1", type: "knowledge", title: "第一页", content: "第一段" },
+        { id: "slide-2", type: "knowledge", title: "第二页", content: "第二段" },
+        { id: "slide-3", type: "knowledge", title: "第三页", content: "第三段" },
+      ],
     });
+    renderPage("/my-lessons/lesson-courseware-1/edit");
+    await screen.findByRole("button", { name: "拖动排序：第 1 页" });
+    expect(screen.getAllByRole("button", { name: /拖动排序：第/ })).toHaveLength(3);
+    fireEvent.click(screen.getByText("第二段").closest(".group")!);
+    expect(screen.getByText("第 2 页，共 3 页")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下移第 1 页" }));
+    expect(screen.getByText("第 1 页，共 3 页")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalled());
+    const savedSlides = mocks.updateCourseware.mock.calls.at(-1)?.[1].slides as LessonCourseware["slides"];
+    expect(savedSlides.map((slide) => slide.id)).toEqual(["slide-2", "slide-1", "slide-3"]);
+  });
+
+  it("aligns the question ordinal with the first line of its stem", async () => {
+    mocks.getCourseware.mockResolvedValue({
+      ...courseware,
+      slides: [
+        { id: "slide-1", type: "question", title: "题目一", questionSnapshot: { stem: "首题题干", type: "shortAnswer" } },
+        { id: "slide-2", type: "question", title: "题目二", questionSnapshot: { stem: "第二题题干", type: "shortAnswer" } },
+      ],
+    });
+    renderPage("/my-lessons/lesson-courseware-1/edit");
+    const number = await screen.findByTestId("lesson-question-number");
+    expect(number).toHaveTextContent("1.");
+    expect(number.parentElement).toHaveClass("flex", "items-start");
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(number).toHaveTextContent("2.");
   });
 
   it("inserts a GGB element into the active slide without creating another page", async () => {

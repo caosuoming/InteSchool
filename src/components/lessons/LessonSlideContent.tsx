@@ -11,6 +11,7 @@ import {
 interface LessonSlideContentProps {
   slide: LessonSlide;
   questionVisibility?: Partial<LessonQuestionContentVisibility>;
+  questionNumber?: number;
   editable?: boolean;
   selectedTextRegion?: LessonSlideTextRegion | null;
   onSelectTextRegion?: (region: LessonSlideTextRegion) => void;
@@ -21,6 +22,7 @@ interface LessonSlideContentProps {
 export function LessonSlideContent({
   slide,
   questionVisibility,
+  questionNumber,
   editable = false,
   selectedTextRegion,
   onSelectTextRegion,
@@ -101,11 +103,22 @@ export function LessonSlideContent({
     return (
       <div className={cn("h-full overflow-hidden px-[4%] pb-[4%] pt-[2.5%]", className)}>
         <div className="w-full space-y-5">
-          <div
-            {...textRegionProps("stem")}
-            className={cn("w-full text-2xl leading-relaxed text-ink-900", textRegionProps("stem").className)}
-          >
-            <MathHtml>{question.stem}</MathHtml>
+          <div className="flex w-full items-start gap-3">
+            {questionNumber !== undefined && (
+              <span
+                className="shrink-0 pt-0 font-mono text-2xl leading-relaxed text-ink-900"
+                aria-label="题目编号"
+                data-testid="lesson-question-number"
+              >
+                {questionNumber}.
+              </span>
+            )}
+            <div
+              {...textRegionProps("stem")}
+              className={cn("min-w-0 flex-1 text-2xl leading-relaxed text-ink-900", textRegionProps("stem").className)}
+            >
+              <MathHtml>{question.stem}</MathHtml>
+            </div>
           </div>
 
           {visibility.options && question.options && question.options.length > 0 && (
