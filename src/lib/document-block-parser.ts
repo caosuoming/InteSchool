@@ -1235,19 +1235,32 @@ function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
   // Accept this only when an explicit solution field immediately follows it.
   const compactEntry = /^(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?((?:【\s*(?:答案|解析|详解|解答)\s*】|(?:参考)?答案\s*[:：]|(?:解析|详解|解答|解)\s*[:：]).*)$/.exec(line);
   if (compactEntry) return [{ number: normalizeQuestionNumber(compactEntry[1]), rest: compactEntry[2].replace(/^解\s*[:：]\s*/, "").trim() }];
-  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
+  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})(?:\s*[-‐–—－~～至]\s*([\d０-９]{1,4}))?\s*(?:题\s*)?[、.．:：)）]\s*/g;
   const markers = [...line.matchAll(markerPattern)];
   if (markers.length === 0) return [];
   const firstIndex = markers[0].index || 0;
   if (line.slice(0, firstIndex).trim()) return [];
 
-  return markers.map((marker, index) => ({
-    number: normalizeQuestionNumber(marker[2]),
-    rest: line.slice(
+  return markers.flatMap((marker, index) => {
+    const rest = line.slice(
       (marker.index || 0) + marker[0].length,
       markers[index + 1]?.index ?? line.length,
-    ).trim(),
-  }));
+    ).trim();
+    if (!marker[3]) return [{ number: normalizeQuestionNumber(marker[2]), rest }];
+
+    const first = Number(normalizeQuestionNumber(marker[2]));
+    const last = Number(normalizeQuestionNumber(marker[3]));
+    const count = last - first + 1;
+    // A range such as "1-4. DACB" is a sequence of four single-choice
+    // answers. Never guess the mapping if its length is inconsistent.
+    if (count < 2 || count > 50) return [];
+    const letters = normalizeStructuralText(rest).replace(/[\s,，、;；/]/g, "").toUpperCase();
+    if (!/^[A-H]+$/.test(letters) || letters.length !== count) return [];
+    return [...letters].map((answer, offset) => ({
+      number: String(first + offset),
+      rest: answer,
+    }));
+  });
 }
 
 function normalizeTableHeader(value: string): string {
@@ -1466,6 +1479,12 @@ function parseTrailingSolutions(
             || currentField;
         }
       }
+      continue;
+    }
+
+    // Do not append a malformed compact range to the preceding answer.
+    if (/^(?:第\s*)?[\d０-９]{1,4}\s*[-‐–—－~～至]\s*[\d０-９]{1,4}\s*[、.．:：)）]/.test(line)) {
+      submitCurrent();
       continue;
     }
 
