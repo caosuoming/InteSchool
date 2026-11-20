@@ -294,6 +294,7 @@ describe("StudentInteractionPage", () => {
     await waitFor(() => {
       expect(studentInteractionService.setStudentIgnored).toHaveBeenCalledWith("student-1", true);
     });
+    expect(screen.getByText("不关注")).toHaveClass("text-red-700");
     expect(screen.getByRole("button", { name: "取消不关注甲同学" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "关注甲同学" })).toBeInTheDocument();
   });
