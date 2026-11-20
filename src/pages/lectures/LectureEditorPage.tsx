@@ -617,14 +617,14 @@ export default function LectureEditorPage() {
       );
     }
     if (teacher && addSource === "examPaper") {
-      examPaperService.listPapers({ teacherId: teacher.id, schoolId: teacher.schoolId! }).then(setOtherPapers);
+      examPaperService.listPapers({ teacherId: teacher.id }).then(setOtherPapers);
     }
     if (teacher && addSource === "courseware") {
-      coursewareService.listCoursewares({ schoolId: teacher.schoolId! }).then(setCoursewareList);
+      coursewareService.listCoursewares({ teacherId: teacher.id }).then(setCoursewareList);
       setSelectedResourceIds([]);
     }
     if (teacher && addSource === "material") {
-      materialService.listMaterials({ schoolId: teacher.schoolId! }).then(setMaterialList);
+      materialService.listMaterials({ teacherId: teacher.id }).then(setMaterialList);
       setSelectedResourceIds([]);
     }
   }, [addSource, teacher, id]);
@@ -1276,14 +1276,14 @@ export default function LectureEditorPage() {
     let newSections: LectureSection[] = [];
     if (addSource === "basket" && selectedBasket) {
       const candidateIds = selectedBasket.questionIds.filter((questionId) => selectedQuestionIds.includes(questionId));
-      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: candidateIds });
+      questionsToAdd = await questionService.listQuestions({ ids: candidateIds });
     } else if (addSource === "bank") {
-      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: selectedQuestionIds });
+      questionsToAdd = await questionService.listQuestions({ ids: selectedQuestionIds });
     } else if (addSource === "examPaper" && selectedOtherPaper) {
       const candidateIds = selectedOtherPaper.questions
         .map((question) => question.questionId)
         .filter((questionId): questionId is string => Boolean(questionId) && selectedQuestionIds.includes(questionId));
-      questionsToAdd = await questionService.listQuestions({ schoolId: teacher!.schoolId!, ids: candidateIds });
+      questionsToAdd = await questionService.listQuestions({ ids: candidateIds });
     } else if (addSource === "lecture" && selectedOtherLecture) {
       const now = Date.now();
       newSections = flattenLectureSections(selectedOtherLecture.sections)

@@ -106,6 +106,74 @@ describe("personal resource RPC authorization", () => {
       .resolves.toEqual({ savedDonationIds: [], savedAlbumKeys: [] });
   });
 
+  it("keeps extracted documents editable after switching schools without changing their usage audience", async () => {
+    const appState = state();
+    const teacher = appState.teachers[0];
+    teacher.schoolId = "school-a";
+    teacher.affiliations = [
+      { id: "a", schoolId: "school-a", subject: "数学", status: "active", isCurrent: true },
+      { id: "b", schoolId: "school-b", subject: "英语", status: "active", isCurrent: false },
+    ];
+    teacher.currentAffiliationId = "a";
+    const store = storeFor(appState);
+
+    const created = await invokeRpc(store, session(), "lecture", "createLecture", [
+      teacher.id, "school-a", {
+        title: "跨校讲义", chapterIds: [], knowledgePointIds: [], grade: "高一",
+        schoolYear: "2026-2027", classIds: ["class-at-school-a"], studentIds: [],
+        sections: [],
+      },
+    ]) as Lecture;
+    expect(created.schoolId).toBe("school-a");
+
+    teacher.schoolId = "school-b";
+    teacher.subject = "英语";
+    teacher.currentAffiliationId = "b";
+    teacher.affiliations[0].isCurrent = false;
+    teacher.affiliations[1].isCurrent = true;
+    const listed = await invokeRpc(store, session(), "lecture", "listLectures", [{
+      teacherId: teacher.id,
+    }]) as Lecture[];
+    expect(listed.map((item) => item.id)).toContain(created.id);
+    expect((await invokeRpc(store, session(), "lecture", "getLecture", [created.id]) as Lecture)?.schoolId)
+      .toBe("school-a");
+
+    // Extracted copies retain the original school's ownership and classification.
+    const source = (appState.lectures as Lecture[]).find((item) => item.id === created.id)!;
+    source.subject = undefined;
+    const extracted = await invokeRpc(store, session(), "lecture", "createExtractCopy",
+      [created.id, []]) as Lecture;
+    expect(extracted).toMatchObject({
+      schoolId: "school-a", subject: "数学", isExtractCopy: true,
+      sourceResourceId: created.id,
+    });
+
+    const updated = await invokeRpc(store, session(), "lecture", "updateLecture", [
+      created.id, { title: "跨校讲义修订" },
+    ]) as Lecture;
+    expect(updated).toMatchObject({
+      title: "跨校讲义修订", schoolId: "school-a",
+      classIds: ["class-at-school-a"],
+    });
+
+    const shared = await invokeRpc(store, session(), "share", "createShare", [{
+      fromTeacherId: teacher.id, fromSchoolId: "school-b",
+      toTeacherId: "teacher-2", scope: "friends", resourceType: "lecture",
+      resourceId: created.id, resourceTitle: "跨校讲义修订",
+    }]) as { fromSchoolId: string; resourceId: string };
+    expect(shared).toMatchObject({ fromSchoolId: "school-b", resourceId: created.id });
+    await expect(invokeRpc(store, session(), "lecture", "listLectures", [{
+      teacherId: teacher.id, schoolId: "school-a",
+    }])).rejects.toThrow("无权访问其他学校的数据");
+
+    teacher.schoolId = "school-a";
+    teacher.subject = "数学";
+    teacher.currentAffiliationId = "a";
+    const backInOriginalSchool = await invokeRpc(store, session(), "lecture", "listLectures",
+      [{ teacherId: teacher.id }]) as Lecture[];
+    expect(backInOriginalSchool.map((item) => item.id)).toContain(extracted.id);
+  });
+
   it("still rejects another school's scope embedded in resource filters", async () => {
     const store = storeFor(state());
 
