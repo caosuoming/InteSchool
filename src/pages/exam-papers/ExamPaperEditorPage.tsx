@@ -64,7 +64,7 @@ import {
 } from "@/components/resource/DocumentMetadataModal";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
 import { ExamPaperUsageImportModal } from "./ExamPaperUsageImportModal";
-import type { UsageImportItem } from "@/lib/exam-usage-spreadsheet";
+import type { UsageImportItem, UsageMetadataUpdate } from "@/lib/exam-usage-spreadsheet";
 import {
   commonScoreUnderHeading,
   questionIdsUnderHeading,
@@ -1702,9 +1702,14 @@ export default function ExamPaperEditorPage() {
     }
   };
 
-  const handleImportUsage = async (items: UsageImportItem[]) => {
+  const handleImportUsage = async (items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[]) => {
     if (!paper || paper.teacherId !== teacher?.id || prepTaskId) throw new Error("无权导入此试卷的数据");
-    const result = await examPaperService.importUsageData(paper.id, items);
+    const result = await examPaperService.importUsageData(paper.id, items, metadataUpdates);
+    if (result.updatedPaper) {
+      setPaper(result.updatedPaper);
+      setPaperQuestions(result.updatedPaper.questions);
+      setSavedDraft(examPaperSaveStateFromPaper(result.updatedPaper));
+    }
     setIsUsedDocument(true);
     await refreshCompletionRecords();
     toast.success(`已导入 ${result.studentCount} 名学生的 ${result.imported} 条答题记录`);

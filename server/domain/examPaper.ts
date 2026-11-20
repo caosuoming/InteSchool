@@ -9,7 +9,7 @@ import type {
 import { db } from "../runtime-db.js";
 import type { TeacherRecord } from "../types.js";
 import { publishAnswerSheetsForUsage } from "./document-resource-lock.js";
-import type { UsageImportItem } from "../../src/lib/exam-usage-spreadsheet.js";
+import type { UsageImportItem, UsageMetadataUpdate } from "../../src/lib/exam-usage-spreadsheet.js";
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { questionService, recordQuestionUsage } from "./question.js";
 import { reflectionService } from "./reflection.js";
@@ -124,7 +124,9 @@ function newlyReferencedQuestionIds(
 
 export const examPaperService = {
   /** 经 RPC 注入当前登录教师，校验试卷和学生后原子导入明细。 */
-  async importUsageData(paperId: string, items: UsageImportItem[], teacher: TeacherRecord): Promise<{ imported: number; studentCount: number }> {
+  async importUsageData(
+    paperId: string, items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[], teacher: TeacherRecord,
+  ): Promise<{ imported: number; studentCount: number; updatedPaper?: ExamPaper }> {
     const paper = (db.read("examPapers") as ExamPaper[]).find((candidate) => candidate.id === paperId);
     if (!paper || paper.teacherId !== teacher.id || paper.schoolId !== teacher.schoolId) {
       throw new Error("无权导入此试卷的使用数据");
@@ -132,7 +134,37 @@ export const examPaperService = {
     if (!Array.isArray(items) || !items.length || items.length > 20000) {
       throw new Error("导入数据为空或超过单次 20000 条限制");
     }
-    const questionById = new Map(paper.questions.map((question) => [question.id, question]));
+    if (!Array.isArray(metadataUpdates) || metadataUpdates.length > paper.questions.length * 2) {
+      throw new Error("试卷题目信息修改无效");
+    }
+    const revisedQuestions = paper.questions.map((question) => ({ ...question }));
+    const revisedById = new Map(revisedQuestions.map((question) => [question.id, question]));
+    const seenMetadata = new Set<string>();
+    for (const update of metadataUpdates) {
+      if (!update || typeof update.paperQuestionId !== "string"
+        || (update.attribute !== "score" && update.attribute !== "answer")
+        || typeof update.expected !== "string" || typeof update.value !== "string") {
+        throw new Error("试卷题目信息修改无效");
+      }
+      const question = revisedById.get(update.paperQuestionId);
+      if (!question) throw new Error("题目信息修改不属于当前试卷");
+      const key = `${update.paperQuestionId}:${update.attribute}`;
+      if (seenMetadata.has(key)) throw new Error("重复的题目信息修改");
+      seenMetadata.add(key);
+      const current = update.attribute === "score" ? String(question.score) : (question.answer || "").trim();
+      if (current !== update.expected) throw new Error("试卷题目已发生变化，请重新核对后导入");
+      if (update.attribute === "score") {
+        const next = Number(update.value);
+        if (!update.value.trim() || !Number.isFinite(next) || next < 0 || next > 10000)
+          throw new Error("Excel 题目满分无效");
+        question.score = next;
+      } else {
+        const answer = update.value.trim();
+        if (!answer || answer.length > 256) throw new Error("Excel 标准答案无效");
+        question.answer = answer;
+      }
+    }
+    const questionById = revisedById;
     const linkedById = new Map((paper.contentBlocks || [])
       .filter((block) => block.type === "question" && block.examPaperQuestionId && block.questionId)
       .map((block) => [block.examPaperQuestionId!, block.questionId!]));
@@ -146,6 +178,23 @@ export const examPaperService = {
     const now = new Date().toISOString();
     const existing = new Map<string, AnswerRecord>((db.read("answerRecords") as AnswerRecord[] || []).map((record) =>
       [`${record.lectureId}:${record.studentId}:${record.questionId}`, record] as const));
+    // Update the grading ceiling of existing records when the teacher adopts Excel's full mark.
+    // Reject a smaller maximum that would invalidate scores already saved for this paper.
+    for (const before of paper.questions) {
+      const revised = revisedById.get(before.id)!;
+      if (before.score === revised.score) continue;
+      const questionId = before.questionId || linkedById.get(before.id) || `exam-item:${paper.id}:${before.id}`;
+      for (const [key, record] of existing) {
+        if (record.lectureId !== paperId || record.questionId !== questionId) continue;
+        if (record.earnedScore !== undefined && record.earnedScore > revised.score + 1e-6)
+          throw new Error(`第${paper.questions.indexOf(before) + 1}题已有学生得分超过新的满分，无法修改`);
+        const score = record.earnedScore === undefined ? record.score
+          : revised.score <= 0 ? "done"
+            : record.earnedScore >= revised.score - 1e-6 ? "correct"
+              : record.earnedScore === 0 ? "wrong" : "partial";
+        existing.set(key, { ...record, maxScore: revised.score, score, isCorrect: score === "correct" });
+      }
+    }
     const seen = new Set<string>();
     const changes: AnswerRecord[] = [];
     for (const item of items) {
@@ -198,12 +247,27 @@ export const examPaperService = {
     for (const record of changes) {
       existing.set(`${record.lectureId}:${record.studentId}:${record.questionId}`, record);
     }
+    if (metadataUpdates.length) {
+      db.update("examPapers", (papers) => papers.map((item) => item.id === paperId
+        ? { ...item, questions: revisedQuestions,
+          totalScore: revisedQuestions.reduce((sum, question) => sum + question.score, 0),
+          updatedAt: now }
+        : item));
+    }
     db.update("answerRecords", () => [...existing.values()]);
     const touched = new Set(changes.map((record) => record.questionId));
     db.update("questions", (questions) => questions.map((question) => touched.has(question.id)
       ? { ...question, lastUsedAt: now } : question));
     publishAnswerSheetsForUsage([paperId], now);
-    return { imported: changes.length, studentCount: new Set(changes.map((record) => record.studentId)).size };
+    return {
+      imported: changes.length,
+      studentCount: new Set(changes.map((record) => record.studentId)).size,
+      ...(metadataUpdates.length ? { updatedPaper: withDerivedKnowledgePoints({ ...paper,
+        questions: revisedQuestions,
+        totalScore: revisedQuestions.reduce((sum, question) => sum + question.score, 0),
+        updatedAt: now,
+      }) } : {}),
+    };
   },
 
   async listPapers(filter: ResourceFilter = {}): Promise<ExamPaper[]> {

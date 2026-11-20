@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import type { ExamPaperQuestion, Student } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { MathHtml } from "@/components/ui/MathHtml";
 import {
-  detectUsageHeader, prepareUsageImport, readUsageWorkbook,
-  type UsageColumn, type UsageColumnRole, type UsageImportItem, type UsageSheet,
+  detectUsageHeader, prepareUsageImport, readUsageWorkbook, usageConflictKey,
+  type UsageColumn, type UsageColumnRole, type UsageImportItem, type UsageMetadataUpdate, type UsageSheet,
 } from "@/lib/exam-usage-spreadsheet";
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
   onClose: () => void;
   questions: ExamPaperQuestion[];
   students: Student[];
-  onImport: (items: UsageImportItem[]) => Promise<void>;
+  onImport: (items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[]) => Promise<void>;
 }
 
 function field(role: UsageColumnRole) {
@@ -38,18 +39,19 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
   const [columns, setColumns] = useState<UsageColumn[]>([]);
   const [filename, setFilename] = useState("");
   const [working, setWorking] = useState(false);
-  const [confirmedConflicts, setConfirmedConflicts] = useState(false);
+  const [sources, setSources] = useState<Record<string, "paper" | "excel">>({});
   const [error, setError] = useState("");
   const sheet = sheets[selectedSheet];
   const preview = useMemo(() => sheet
-    ? prepareUsageImport(sheet, headerRow, columns, questions, students)
-    : null, [sheet, headerRow, columns, questions, students]);
+    ? prepareUsageImport(sheet, headerRow, columns, questions, students, sources)
+    : null, [sheet, headerRow, columns, questions, students, sources]);
+  const conflictsResolved = preview?.conflicts?.every((conflict) => Boolean(sources[usageConflictKey(conflict)])) ?? true;
 
   function activateSheet(workbook: UsageSheet[], index: number, row?: number) {
     const chosen = workbook[index];
     if (!chosen) return;
     const detected = detectUsageHeader(chosen, questions.length);
-    setConfirmedConflicts(false);
+    setSources({});
     setSelectedSheet(index);
     setHeaderRow(row ?? detected.headerRow);
     setColumns(row === undefined ? detected.columns : (chosen.rows[row] || []).map((cell, i) => ({
@@ -60,7 +62,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
 
   async function loadFile(file: File) {
     setWorking(true);
-    setConfirmedConflicts(false);
+    setSources({});
     setError("");
     try {
       const workbook = await readUsageWorkbook(file);
@@ -77,11 +79,15 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
   }
 
   async function submit() {
-    if (!preview?.entries.length || (preview.conflicts?.length && !confirmedConflicts)) return;
+    if (!preview?.entries.length || !conflictsResolved) return;
     setWorking(true);
     setError("");
     try {
-      await onImport(preview.entries);
+      const metadataUpdates: UsageMetadataUpdate[] = (preview.conflicts || [])
+        .filter((conflict) => sources[usageConflictKey(conflict)] === "excel")
+        .map((conflict) => ({ paperQuestionId: conflict.paperQuestionId,
+          attribute: conflict.attribute, expected: conflict.paper, value: conflict.excel }));
+      await onImport(preview.entries, metadataUpdates);
       setSheets([]);
       setFilename("");
       onClose();
@@ -93,7 +99,9 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
   }
 
   const questionOptions = questions.map((question, index) => (
-    <option key={question.id} value={index + 1}>第{index + 1}题（{question.score}分）</option>
+    <option key={question.id} value={index + 1}>
+      第{index + 1}题（{question.score}分，答案：{question.answer?.trim().slice(0, 30) || "未设置"}）
+    </option>
   ));
 
   return (
@@ -107,7 +115,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
         <>
           <Button variant="outline" onClick={onClose} disabled={working}>取消</Button>
           <Button variant="gold" onClick={() => void submit()}
-            disabled={working || !preview?.entries.length || students.length === 0 || (Boolean(preview?.conflicts?.length) && !confirmedConflicts)} loading={working}>
+            disabled={working || !preview?.entries.length || students.length === 0 || !conflictsResolved} loading={working}>
             确认导入 {preview?.entries.length || 0} 条
           </Button>
         </>
@@ -155,9 +163,11 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
                   {columns.map((column) => {
                     const parts = column.role.split(":");
                     const kind = field(column.role);
-                    const update = (part: "field" | "question" | "sub", value: string) =>
+                    const update = (part: "field" | "question" | "sub", value: string) => {
+                      setSources({});
                       setColumns((current) => current.map((item) => item.index === column.index
                         ? { ...item, role: changeRole(item, part, value) } : item));
+                    };
                     return <tr key={column.index} className="border-t border-ink-100">
                       <td className="p-2 text-ink-700">{column.header}</td>
                       <td className="p-2">
@@ -193,11 +203,32 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
           {preview && <div className="space-y-2 rounded-lg border border-ink-200 p-3">
             {Boolean(preview.conflicts?.length) && <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">
               <p className="font-semibold">Excel 标注与试卷数据存在差异，请人工确认</p>
-              {preview.conflicts?.map((conflict, index) => <p key={index} className="text-xs">
-                第{conflict.questionNo}题{conflict.attribute === "score" ? "分值" : "答案"}：Excel 为 {conflict.excel}，试卷为 {conflict.paper}
-              </p>)}
-              <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={confirmedConflicts} onChange={(event) => setConfirmedConflicts(event.target.checked)} />
-                我已核对差异，仍按当前试卷题号导入学生数据（不修改试卷答案与分值）</label>
+              <p className="mb-2 text-xs">请逐项选择采用的数据来源；选择 Excel 会同步修改试卷题目信息。</p>
+              {preview.conflicts?.map((conflict) => {
+                const question = questions.find((item) => item.id === conflict.paperQuestionId);
+                const key = usageConflictKey(conflict);
+                return <fieldset key={key} className="my-2 rounded-md border border-amber-200 bg-white p-3">
+                  <legend className="px-1 text-xs font-semibold">第{conflict.questionNo}题{conflict.attribute === "score" ? "分值" : "标准答案"}不同</legend>
+                  {conflict.attribute === "answer" && question && <div className="mb-2 max-h-52 overflow-auto text-xs text-ink-800">
+                    <MathHtml>{question.stem || "（无题干）"}</MathHtml>
+                    {question.options?.map((option, index) => <div key={index} className="mt-1 flex gap-1">
+                      <span>{String.fromCharCode(65 + index)}.</span><MathHtml>{option}</MathHtml>
+                    </div>)}
+                  </div>}
+                  <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input type="radio" name={key} checked={sources[key] === "paper"}
+                        onChange={() => setSources((current) => ({ ...current, [key]: "paper" }))} />
+                      采用试卷（{conflict.paper || "未设置"}{conflict.attribute === "score" ? "分" : ""}）
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input type="radio" name={key} checked={sources[key] === "excel"}
+                        onChange={() => setSources((current) => ({ ...current, [key]: "excel" }))} />
+                      采用 Excel（{conflict.excel}{conflict.attribute === "score" ? "分" : ""}）
+                    </label>
+                  </div>
+                </fieldset>;
+              })}
             </div>}
             {preview.firstStudent && <details open className="text-xs text-ink-700"><summary>首位匹配学生：{preview.firstStudent.name}（Excel 原始数据）</summary>
               <div className="mt-1 max-h-24 overflow-auto">{preview.firstStudent.values.map((cell, index) =>
