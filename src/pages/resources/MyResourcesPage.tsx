@@ -19,6 +19,8 @@ import { questionService } from "@/services/question";
 import { readResourceCache, resourceCacheKey, writeResourceCache } from "@/lib/resource-cache";
 import { prepService } from "@/services/prep";
 import { examPaperService } from "@/services/examPaper";
+import { scannerService, type ScannerPageRecord } from "@/services/scanner";
+import { scannerSheetStatistics } from "@/lib/scanner-statistics";
 import { coursewareService } from "@/services/courseware";
 import { materialService } from "@/services/material";
 import { lectureService } from "@/services/lecture";
@@ -139,6 +141,7 @@ interface AnswerSheetLibraryItem {
   sourceId: string;
   sourceType: "examPaper" | "lecture";
   sourceTitle: string;
+  answerSheetRevisionId?: string;
   chapterIds: string[];
   knowledgePointIds: string[];
   grade: string;
@@ -835,6 +838,18 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [basketInsightsLoading, setBasketInsightsLoading] = useState(false);
 
   const schoolId = teacher?.schoolId || "sch-1";
+  const [answerSheetScans, setAnswerSheetScans] = useState<ScannerPageRecord[] | null>(null);
+  useEffect(() => {
+    if (activeTab !== "answerSheet" || !teacher?.schoolId) {
+      setAnswerSheetScans(null);
+      return;
+    }
+    let active = true;
+    scannerService.listPages(teacher.schoolId)
+      .then((pages) => { if (active) setAnswerSheetScans(pages); })
+      .catch(() => { if (active) setAnswerSheetScans(null); });
+    return () => { active = false; };
+  }, [activeTab, teacher?.schoolId]);
   const resourceOptionsSchoolId = activeTab === "question" ? null : schoolId;
   const { gradeOptions, schoolYearOptions, semesterOptions, defaultGrade, defaultSchoolYear, defaultSemester, ready: resourceOptionsReady } = useSchoolResourceOptions(resourceOptionsSchoolId);
   const {
@@ -1739,6 +1754,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         sourceId: paper.id,
         sourceType: "examPaper" as const,
         sourceTitle: paper.title,
+        answerSheetRevisionId: paper.answerSheetRevisionId,
         chapterIds: paper.chapterIds,
         knowledgePointIds: paper.knowledgePointIds,
         grade: paper.grade,
@@ -1755,6 +1771,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         sourceId: lecture.id,
         sourceType: "lecture" as const,
         sourceTitle: lecture.title,
+        answerSheetRevisionId: lecture.answerSheetRevisionId,
         chapterIds: lecture.chapterIds,
         knowledgePointIds: lecture.knowledgePointIds,
         grade: lecture.grade,
@@ -3851,14 +3868,31 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                   description={`${item.sourceType === "examPaper" ? "试卷" : "讲义"}：${item.sourceTitle}`}
                   titleIcon={<Layout className="h-4 w-4 text-gold-600" />}
                   titleActions={(
-                    <Badge variant={item.sourceType === "examPaper" ? "amber" : "teal"}>
-                      {item.sourceType === "examPaper" ? "试卷" : "讲义"}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={item.sourceType === "examPaper" ? "amber" : "teal"}>
+                        {item.sourceType === "examPaper" ? "试卷" : "讲义"}
+                      </Badge>
+                      {answerSheetScans && scannerSheetStatistics(answerSheetScans, {
+                        id: item.sourceId, type: item.sourceType === "examPaper" ? "paper" : "lecture",
+                        answerSheetRevisionId: item.answerSheetRevisionId,
+                      }).exceptions > 0 && <button type="button" className="text-xs text-amber-700 underline" onClick={(event) => {
+                        event.stopPropagation();
+                        openPage("/homework-exams/exams");
+                      }}>处理异常扫描</button>}
+                    </div>
                   )}
                   meta={[
                     { label: "年级", value: item.grade },
                     { label: "学年", value: item.schoolYear },
                     { label: "学期", value: item.semester || "上学期" },
+                    ...(answerSheetScans ? [{ label: "扫描记录", value: (() => {
+                      const stats = scannerSheetStatistics(answerSheetScans, {
+                        id: item.sourceId, type: item.sourceType === "examPaper" ? "paper" : "lecture",
+                        answerSheetRevisionId: item.answerSheetRevisionId,
+                      });
+                      return stats.total + " 张 · 有效 " + stats.valid + " 张 · 异常 " + stats.exceptions + " 张"
+                        + (stats.classes.length ? " · " + stats.classes.map((entry) => entry.name + " " + entry.count + " 份").join("、") : "");
+                    })() }] : []),
                   ]}
                   updatedAt={item.updatedAt}
                   onClick={() => openPage(item.sourceType === "examPaper"
