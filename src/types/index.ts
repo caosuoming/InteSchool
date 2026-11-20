@@ -2334,6 +2334,8 @@ export type QuestionSearchField = "stem" | "analysis" | "summary" | "remark";
 
 export interface QuestionFilter {
   subject?: string;
+  /** RPC internal: include the owner's questions from other school identities. */
+  ownerSubjectSchoolId?: string | null;
   keyword?: string;
   /** 关键词搜索范围；未设置或为空时搜索全部支持字段 */
   searchFields?: QuestionSearchField[];
