@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   DocumentRecord,
+  DashboardDocumentSummary,
   RecognitionResult,
   WebAnnotationStats,
   QuestionType,
@@ -170,6 +171,18 @@ export const aiService = {
 
   async getDocument(docId: string): Promise<DocumentRecord | null> {
     return db.read("documents").find((document) => document.id === docId) || null;
+  },
+
+  async getDashboardDocumentSummary(teacherId: string, weekStartIso: string): Promise<DashboardDocumentSummary> {
+    const start = Date.parse(weekStartIso);
+    if (!Number.isFinite(start)) throw new Error("无效的统计时间");
+    const documents = db.read("documents").filter((item) => item.teacherId === teacherId);
+    return {
+      weekly: documents.filter((item) => Date.parse(item.createdAt) >= start).length,
+      recognized: documents.filter((item) => item.status === "recognized")
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .map(({ id, fileName }) => ({ id, fileName })),
+    };
   },
 
   async listDocuments(teacherId: string): Promise<DocumentRecord[]> {

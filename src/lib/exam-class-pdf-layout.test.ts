@@ -43,6 +43,19 @@ describe("measured A4 class PDF layout", () => {
     expect(pages[0].querySelector<HTMLElement>(".exam-class-arrangement-grid")?.style.gridTemplateRows).not.toBe("");
   });
 
+  it("increases font size when fewer rows leave more vertical room", () => {
+    mockBrowserLayout();
+    const host = document.createElement("div");
+    const [small] = layoutClassPdfPages([sourcePage("small", 4)], host, "compress");
+    const [large] = layoutClassPdfPages([sourcePage("large", 8)], host, "compress");
+    const smallFont = parseFloat(small.style.getPropertyValue("--class-print-font-size"));
+    const largeFont = parseFloat(large.style.getPropertyValue("--class-print-font-size"));
+    expect(smallFont).toBeGreaterThan(5.45);
+    expect(smallFont).toBeGreaterThan(largeFont);
+    expect(small.querySelectorAll(".exam-class-arrangement-student")).toHaveLength(4);
+    expect(large.querySelectorAll(".exam-class-arrangement-student")).toHaveLength(8);
+  });
+
   it("detects overflow using the full class and distributes cards evenly over two pages", () => {
     mockBrowserLayout();
     const source = [sourcePage("A", 8, 0), sourcePage("A", 2, 1), sourcePage("B", 2)];

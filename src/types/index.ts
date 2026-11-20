@@ -2345,6 +2345,7 @@ export interface QuestionFilter {
   errorReasonLogic?: FilterLogic;
   noChapter?: boolean;
   noKnowledge?: boolean;
+  noMethod?: boolean;
   difficulty?: number[];
   recommendation?: number[];
   type?: QuestionType[];
@@ -2541,6 +2542,19 @@ export interface DocumentSection {
   content: string;
   level: number;
   children: DocumentSection[];
+}
+
+/** Small dashboard payloads deliberately omit potentially large body/section data. */
+export interface DashboardLectureSummary {
+  total: number;
+  weekly: number;
+  drafts: Array<Pick<Lecture, "id" | "title" | "updatedAt">>;
+  recent: Array<Pick<Lecture, "id" | "title" | "grade" | "schoolYear" | "status" | "updatedAt"> & { sectionCount: number }>;
+}
+
+export interface DashboardDocumentSummary {
+  weekly: number;
+  recognized: Array<Pick<DocumentRecord, "id" | "fileName">>;
 }
 
 export interface DocumentRecord {

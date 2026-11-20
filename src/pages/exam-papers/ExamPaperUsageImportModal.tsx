@@ -38,6 +38,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
   const [columns, setColumns] = useState<UsageColumn[]>([]);
   const [filename, setFilename] = useState("");
   const [working, setWorking] = useState(false);
+  const [confirmedConflicts, setConfirmedConflicts] = useState(false);
   const [error, setError] = useState("");
   const sheet = sheets[selectedSheet];
   const preview = useMemo(() => sheet
@@ -48,6 +49,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
     const chosen = workbook[index];
     if (!chosen) return;
     const detected = detectUsageHeader(chosen, questions.length);
+    setConfirmedConflicts(false);
     setSelectedSheet(index);
     setHeaderRow(row ?? detected.headerRow);
     setColumns(row === undefined ? detected.columns : (chosen.rows[row] || []).map((cell, i) => ({
@@ -58,6 +60,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
 
   async function loadFile(file: File) {
     setWorking(true);
+    setConfirmedConflicts(false);
     setError("");
     try {
       const workbook = await readUsageWorkbook(file);
@@ -74,7 +77,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
   }
 
   async function submit() {
-    if (!preview?.entries.length) return;
+    if (!preview?.entries.length || (preview.conflicts?.length && !confirmedConflicts)) return;
     setWorking(true);
     setError("");
     try {
@@ -104,7 +107,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
         <>
           <Button variant="outline" onClick={onClose} disabled={working}>取消</Button>
           <Button variant="gold" onClick={() => void submit()}
-            disabled={working || !preview?.entries.length || students.length === 0} loading={working}>
+            disabled={working || !preview?.entries.length || students.length === 0 || (Boolean(preview?.conflicts?.length) && !confirmedConflicts)} loading={working}>
             确认导入 {preview?.entries.length || 0} 条
           </Button>
         </>
@@ -188,6 +191,18 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
             </div>
           </div>
           {preview && <div className="space-y-2 rounded-lg border border-ink-200 p-3">
+            {Boolean(preview.conflicts?.length) && <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">
+              <p className="font-semibold">Excel 标注与试卷数据存在差异，请人工确认</p>
+              {preview.conflicts?.map((conflict, index) => <p key={index} className="text-xs">
+                第{conflict.questionNo}题{conflict.attribute === "score" ? "分值" : "答案"}：Excel 为 {conflict.excel}，试卷为 {conflict.paper}
+              </p>)}
+              <label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={confirmedConflicts} onChange={(event) => setConfirmedConflicts(event.target.checked)} />
+                我已核对差异，仍按当前试卷题号导入学生数据（不修改试卷答案与分值）</label>
+            </div>}
+            {preview.firstStudent && <details open className="text-xs text-ink-700"><summary>首位匹配学生：{preview.firstStudent.name}（Excel 原始数据）</summary>
+              <div className="mt-1 max-h-24 overflow-auto">{preview.firstStudent.values.map((cell, index) =>
+                <p key={index}>{cell.header}：{cell.value || "—"}</p>)}</div>
+            </details>}
             <p className="font-medium text-ink-900">导入预览：匹配 {preview.matchedStudents} 名学生、{preview.mappedColumns} 列题目数据、{preview.entries.length} 条答题记录</p>
             <p className="text-xs text-ink-500">空白单元格不覆盖已有记录；相同学生和题目的有效字段会合并保存。导入会覆盖对应题目的既有得分。</p>
             {preview.warnings.length > 0 && <div className="max-h-24 overflow-y-auto text-xs text-amber-700">

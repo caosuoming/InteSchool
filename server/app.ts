@@ -1,3 +1,4 @@
+import { runDueDuplicateSchedules } from "./domain/scheduledDuplicate.js";
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import type { IncomingMessage, Server as HttpServer, ServerResponse } from "node:http";
@@ -11,7 +12,7 @@ import fastifyStatic from "@fastify/static";
 import { ZodError, z } from "zod";
 import { loadConfig, type ServerConfig } from "./config.js";
 import { DatabaseStore, DuplicateAccountError } from "./database.js";
-import { invokeRpc, isPublicRpcCall, withSerializedState } from "./rpc.js";
+import { invokeRpc, isPublicRpcCall, withReadOnlyState, withSerializedState } from "./rpc.js";
 import { runWithState } from "./runtime-db.js";
 import { createThirdPartyCard } from "./domain/scanner.js";
 import {
@@ -187,6 +188,7 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
       prefix: "/",
       wildcard: false,
       decorateReply: true,
+      preCompressed: true,
       maxAge: 0,
       immutable: false,
       setHeaders(reply, path) {
@@ -211,7 +213,17 @@ export async function buildApp(overrides: Partial<ServerConfig> = {}): Promise<B
 
 
 
+  const duplicateTimer = setInterval(() => {
+    void withReadOnlyState(store, (state) =>
+      ((state.duplicateSchedules || []) as Array<{ enabled: boolean; nextRunAt: string | null }>).some(
+        (schedule) => schedule.enabled && schedule.nextRunAt && schedule.nextRunAt <= new Date().toISOString(),
+      )).then((due) => due ? withSerializedState(store, (state) =>
+        runWithState(state, () => runDueDuplicateSchedules(), store)) : undefined)
+      .catch((error) => app.log.error({ error }, "duplicate schedule tick failed"));
+  }, 60_000);
+  duplicateTimer.unref();
   app.addHook("onClose", async () => {
+    clearInterval(duplicateTimer);
     await store.close();
   });
   await store.cleanupSessions();
