@@ -4,6 +4,7 @@ import {
   useCallback,
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   type ClipboardEvent as ReactClipboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -508,7 +509,8 @@ export function LessonEditorPage() {
     currentSlide?.type === "question" && Boolean(currentQuestion?.knowledgePointIds?.length),
   );
 
-  useEffect(() => {
+  // Reset stale selections before the new slide can be interacted with.
+  useLayoutEffect(() => {
     setSelectedElementId(null);
     setSelectedTextRegion(null);
   }, [currentSlide?.id]);
