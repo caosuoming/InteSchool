@@ -19,6 +19,25 @@ import { moveExamPaperToLecture } from "./document-library-move.js";
 import { examPaperKnowledgePointIds } from "./document-knowledge.js";
 import { withPaperAnnotationSummary } from "./document-annotation-summary.js";
 import { subjectAwareDefaultQuestionScore } from "../../src/lib/question-default-score.js";
+import { splitGeographyChoiceGroup } from "../../src/lib/geography-paper-layout.js";
+
+function mergeNumberedAnswers(previous: string | undefined, incoming: string): string {
+  if (!previous) return incoming;
+  const parse = (value: string) => {
+    const lines = value.split("\n").filter((line) => line.trim());
+    const pairs = lines.map((line) => /^(\d+)[.．、]\s+(.+)$/.exec(line.trim()));
+    if (pairs.length !== lines.length || pairs.some((pair) => !pair)) return null;
+    const mapped = new Map(pairs.map((pair) => [Number(pair![1]), pair![2]]));
+    return mapped.size === lines.length ? mapped : null;
+  };
+  const prior = parse(previous);
+  const next = parse(incoming);
+  if (!prior || !next) return incoming;
+  for (const [number, answer] of next) prior.set(number, answer);
+  return [...prior].sort(([a], [b]) => a - b)
+    .map(([number, answer]) => String(number) + ". " + answer).join("\n");
+}
+
 
 function withDerivedKnowledgePoints(paper: ExamPaper): ExamPaper {
   return { ...withUsagePublishedAnswerSheet(paper), knowledgePointIds: examPaperKnowledgePointIds(paper) };
@@ -218,18 +237,27 @@ export const examPaperService = {
         || item.earnedScore < 0 || item.earnedScore > 10000)) throw new Error("题目得分格式无效");
       if (item.studentAnswer !== undefined && (typeof item.studentAnswer !== "string" || item.studentAnswer.length > 2048))
         throw new Error("学生答案长度超出限制");
-      const points = item.earnedScore ?? (subScores ? Object.values(subScores).reduce((sum, n) => sum + n, 0) : undefined);
+      const old = existing.get(key);
+      const grouped = paper.subject?.trim() === "地理" && question.type === "single"
+        ? splitGeographyChoiceGroup(question.stem) : null;
+      if (grouped && subScores && Object.keys(subScores).some((part) => Number(part) > grouped.questions.length))
+        throw new Error("题组小题号超出范围");
+      const mergedSubScores = subScores ? { ...(old?.subScores || {}), ...subScores } : old?.subScores;
+      const subTotal = mergedSubScores ? Object.values(mergedSubScores).reduce((sum, n) => sum + n, 0) : undefined;
+      const points = item.earnedScore ?? (subScores ? subTotal : undefined);
       const maxScore = question.score;
-      const subTotal = subScores ? Object.values(subScores).reduce((sum, n) => sum + n, 0) : undefined;
       if (maxScore > 0 && (points !== undefined && points > maxScore + 1e-6
-        || subTotal !== undefined && subTotal > maxScore + 1e-6)
-        || item.earnedScore !== undefined && subTotal !== undefined && subTotal > item.earnedScore + 1e-6)
+        || (subScores && subTotal !== undefined && subTotal > maxScore + 1e-6))
+        || item.earnedScore !== undefined && subScores && subTotal !== undefined && subTotal > item.earnedScore + 1e-6)
         throw new Error("题目得分或小题分数超过卷面满分");
       if (points === undefined && !item.studentAnswer?.trim()) throw new Error("有空的答题记录");
-      const old = existing.get(key);
       const score = points === undefined
         ? old?.score || "done"
         : maxScore <= 0 ? "done" : points >= maxScore - 1e-6 ? "correct" : points === 0 ? "wrong" : "partial";
+      const studentAnswer = grouped && item.studentAnswer
+        ? mergeNumberedAnswers(old?.studentAnswer, item.studentAnswer)
+        : item.studentAnswer ?? old?.studentAnswer;
+      if (studentAnswer && studentAnswer.length > 2048) throw new Error("学生答案长度超出限制");
       changes.push({
         ...old,
         id: old?.id || genId("ar"),
@@ -239,8 +267,8 @@ export const examPaperService = {
         score, isCorrect: score === "correct", source: "import",
         earnedScore: points ?? old?.earnedScore,
         maxScore: points === undefined ? old?.maxScore : maxScore,
-        subScores: subScores ?? old?.subScores,
-        studentAnswer: item.studentAnswer ?? old?.studentAnswer,
+        subScores: mergedSubScores,
+        studentAnswer,
         answeredAt: now,
       });
     }

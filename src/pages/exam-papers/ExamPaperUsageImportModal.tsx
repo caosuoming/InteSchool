@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
 import {
-  detectUsageHeader, prepareUsageImport, readUsageWorkbook, usageConflictKey,
+  canAdoptUsageExcelAnswer, detectUsageHeader, getUsageMetadataUpdates, getUsageQuestionSlots, prepareUsageImport, readUsageWorkbook, usageConflictKey,
   type UsageColumn, type UsageColumnRole, type UsageImportItem, type UsageMetadataUpdate, type UsageSheet,
 } from "@/lib/exam-usage-spreadsheet";
 
@@ -12,6 +12,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   questions: ExamPaperQuestion[];
+  subject?: string;
   students: Student[];
   onImport: (items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[]) => Promise<void>;
 }
@@ -20,11 +21,17 @@ function field(role: UsageColumnRole) {
   return role.split(":")[0];
 }
 
-function changeRole(column: UsageColumn, part: "field" | "question" | "sub", value: string): UsageColumnRole {
+function changeRole(column: UsageColumn, part: "field" | "question" | "sub", value: string, slots: ReturnType<typeof getUsageQuestionSlots>): UsageColumnRole {
   const pieces = column.role.split(":");
   const kind = part === "field" ? value : pieces[0];
   if (kind === "ignore" || kind === "studentName" || kind === "studentNo") return kind;
-  const question = part === "question" ? value : pieces[1] || "1";
+  const previous = pieces[0];
+  const question = part === "question" ? value
+    : part === "field" && kind === "subscore" && previous !== "subscore"
+      ? String((slots[Number(pieces[1]) - 1]?.questionIndex ?? 0) + 1)
+      : part === "field" && previous === "subscore" && kind !== "subscore"
+        ? String(slots.find((slot) => slot.questionIndex === Number(pieces[1]) - 1)?.number ?? 1)
+        : pieces[1] || "1";
   if (kind === "subscore") {
     const sub = part === "sub" ? value : pieces[2] || "1";
     return `subscore:${Number(question)}:${Number(sub) || 1}`;
@@ -32,7 +39,8 @@ function changeRole(column: UsageColumn, part: "field" | "question" | "sub", val
   return `${kind}:${Number(question)}` as UsageColumnRole;
 }
 
-export function ExamPaperUsageImportModal({ open, onClose, questions, students, onImport }: Props) {
+export function ExamPaperUsageImportModal({ open, onClose, questions, subject, students, onImport }: Props) {
+  const slots = useMemo(() => getUsageQuestionSlots(questions, subject), [questions, subject]);
   const [sheets, setSheets] = useState<UsageSheet[]>([]);
   const [selectedSheet, setSelectedSheet] = useState(0);
   const [headerRow, setHeaderRow] = useState(0);
@@ -43,14 +51,14 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
   const [error, setError] = useState("");
   const sheet = sheets[selectedSheet];
   const preview = useMemo(() => sheet
-    ? prepareUsageImport(sheet, headerRow, columns, questions, students, sources)
-    : null, [sheet, headerRow, columns, questions, students, sources]);
+    ? prepareUsageImport(sheet, headerRow, columns, questions, students, sources, subject)
+    : null, [sheet, headerRow, columns, questions, students, sources, subject]);
   const conflictsResolved = preview?.conflicts?.every((conflict) => Boolean(sources[usageConflictKey(conflict)])) ?? true;
 
   function activateSheet(workbook: UsageSheet[], index: number, row?: number) {
     const chosen = workbook[index];
     if (!chosen) return;
-    const detected = detectUsageHeader(chosen, questions.length);
+    const detected = detectUsageHeader(chosen, slots.length);
     setSources({});
     setSelectedSheet(index);
     setHeaderRow(row ?? detected.headerRow);
@@ -83,10 +91,9 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
     setWorking(true);
     setError("");
     try {
-      const metadataUpdates: UsageMetadataUpdate[] = (preview.conflicts || [])
-        .filter((conflict) => sources[usageConflictKey(conflict)] === "excel")
-        .map((conflict) => ({ paperQuestionId: conflict.paperQuestionId,
-          attribute: conflict.attribute, expected: conflict.paper, value: conflict.excel }));
+      const metadataUpdates: UsageMetadataUpdate[] = getUsageMetadataUpdates(
+        questions, subject, preview.conflicts || [], sources,
+      );
       await onImport(preview.entries, metadataUpdates);
       setSheets([]);
       setFilename("");
@@ -98,10 +105,13 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
     }
   }
 
-  const questionOptions = questions.map((question, index) => (
-    <option key={question.id} value={index + 1}>
-      第{index + 1}题（{question.score}分，答案：{question.answer?.trim().slice(0, 30) || "未设置"}）
+  const questionOptions = slots.map((slot) => (
+    <option key={slot.number} value={slot.number}>
+      第{slot.number}题{slot.part ? "（题组第" + slot.part + "小题）" : ""}（{slot.maxScore}分，答案：{slot.answer?.slice(0, 30) || "未设置"}）
     </option>
+  ));
+  const parentOptions = questions.map((question, index) => (
+    <option key={question.id} value={index + 1}>第{index + 1}个试卷题目（{question.score}分）</option>
   ));
 
   return (
@@ -110,7 +120,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
       onClose={() => { if (!working) onClose(); }}
       title="上传试卷使用数据"
       size="xl"
-      description="按学生学号或姓名匹配使用班级，按卷面题号保存得分、选择题作答与小题得分。"
+      description="按学生学号或姓名匹配使用班级；地理选择题组按卷面每道小题逐题匹配，成绩汇总保存到所属题组。"
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={working}>取消</Button>
@@ -163,13 +173,14 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
                   {columns.map((column) => {
                     const parts = column.role.split(":");
                     const kind = field(column.role);
+                    const currentSlot = kind === "subscore" ? undefined : slots[Number(parts[1]) - 1];
                     const update = (part: "field" | "question" | "sub", value: string) => {
                       setSources({});
                       setColumns((current) => current.map((item) => item.index === column.index
-                        ? { ...item, role: changeRole(item, part, value) } : item));
+                        ? { ...item, role: changeRole(item, part, value, slots) } : item));
                     };
                     return <tr key={column.index} className="border-t border-ink-100">
-                      <td className="p-2 text-ink-700">{column.header}</td>
+                      <td className="p-2 text-ink-700">{column.header}{currentSlot?.part ? "（题组第" + currentSlot.part + "小题）" : ""}</td>
                       <td className="p-2">
                         <select aria-label={`${column.header}字段类型`} className="input-base w-full min-w-24"
                           value={kind} onChange={(event) => update("field", event.target.value)}>
@@ -185,7 +196,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
                         {["score", "answer", "subscore"].includes(kind) &&
                           <select aria-label={`${column.header}题号`} className="input-base w-full min-w-24"
                             value={parts[1] || "1"} onChange={(event) => update("question", event.target.value)}>
-                            {questionOptions}
+                            {kind === "subscore" ? parentOptions : questionOptions}
                           </select>}
                       </td>
                       <td className="p-2">
@@ -223,6 +234,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, students, 
                     </label>
                     <label className="flex cursor-pointer items-center gap-2">
                       <input type="radio" name={key} checked={sources[key] === "excel"}
+                        disabled={!canAdoptUsageExcelAnswer(questions, subject, conflict)}
                         onChange={() => setSources((current) => ({ ...current, [key]: "excel" }))} />
                       采用 Excel（{conflict.excel}{conflict.attribute === "score" ? "分" : ""}）
                     </label>
