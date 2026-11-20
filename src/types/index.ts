@@ -1637,6 +1637,8 @@ export interface Question {
   /** 属性区块显示顺序：chapter=章节目录，knowledge=知识点目录，remark=备注 */
   sectionOrder?: string[];
   sourceDocId?: string;
+  /** 合并题目时保留多个来源文档的关联。 */
+  sourceDocIds?: string[];
   /** 学校“来源”设置中的值。 */
   sourceType?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
