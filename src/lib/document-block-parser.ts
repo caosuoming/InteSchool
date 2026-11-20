@@ -640,10 +640,14 @@ function isSequentialMathQuestionStart(
   return Boolean(candidate && currentNumber && Number(candidate) === Number(currentNumber) + 1);
 }
 
+const mathQuestionPromptPrefixPattern =
+  /^(?:[（(【［][^）)】］]{1,40}[）)】］]\s*)?(?:已知|设|若|求|计算|证明|求证|判断|下列|选择|指出|写出|解答|阅读|根据|如图|关于|在|有)/;
+
 function shouldContinueNumberedSummary(
   line: string,
   block: Partial<DocumentBlock>,
   config: DocumentParseConfig,
+  nextLine?: string,
 ): boolean {
   const candidate = extractLeadingQuestionNumber(line);
   if (!candidate) return false;
@@ -662,6 +666,20 @@ function shouldContinueNumberedSummary(
   // exception is the expected next top-level question. Word/PDF extraction can
   // put its number (for example, "4.") on a line by itself.
   const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
+  if (
+    config.subject?.trim() === "数学"
+    && currentQuestionNumber
+    && candidateNumber === Number(currentQuestionNumber) + 1
+  ) {
+    // A numbered summary can end at the same number as its parent question.
+    // A following numbered math prompt is then the next question, even when
+    // the summary itself was a sequential list. Word may separate "4." from
+    // its actual stem, so inspect the next nonempty line in that case.
+    const stem = candidate.rest || nextLine || "";
+    if (mathQuestionPromptPrefixPattern.test(stem.trim())) {
+      return false;
+    }
+  }
   if (config.subject?.trim() === "数学" && previous && candidateNumber === Number(previous.number) + 1) {
     return true;
   }
@@ -1883,7 +1901,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       currentBlock.type === "question"
       && currentQuestionField === "summary"
       && !confirmedMathStart
-      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config))
+      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config, nextNonEmptyLine(lineIndex)))
     ) {
       appendQuestionField(currentBlock, "summary", line);
       continue;
