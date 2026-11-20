@@ -2278,7 +2278,8 @@ export function PresentationMode({
 
   const renderPanelContent = (tab: SideTab) => {
     if (tab === "homework") return <HomeworkHistoryPanel records={homeworkRecords} students={students}
-      followedStudentIds={followedStudentIds} highlightFollowed={highlightFollowedHomeworkStudents} />;
+      followedStudentIds={followedStudentIds} highlightFollowed={highlightFollowedHomeworkStudents}
+      ignoredStudentIds={ignoredStudentIds} />;
     if (tab === "display") {
       return (
         <div role="group" aria-label="显示内容开关" className="flex items-center gap-1 whitespace-nowrap">

@@ -37,6 +37,22 @@ describe("HomeworkHistoryPanel", () => {
     expect(screen.queryByRole("img", { name: "原姓名已关注" })).not.toBeInTheDocument();
   });
 
+  it("hides ignored students from historical missing lists and counts", () => {
+    const first = overview("1", "2026-08-01");
+    first.studentIds = ["student-1", "student-2", "student-3"];
+    first.submittedStudentIds = [];
+    const second = overview("2", "2026-08-02");
+    second.studentIds = ["student-1", "student-2", "student-3"];
+    second.submittedStudentIds = [];
+    render(<HomeworkHistoryPanel records={[first, second]}
+      students={[{ id: "student-2", name: "乙同学" }, { id: "student-3", name: "丙同学" }]}
+      ignoredStudentIds={new Set(["student-1", "student-3"])} />);
+
+    expect(screen.queryByText(/原姓名/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/丙同学/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("乙同学（2次）")).toHaveLength(2);
+  });
+
   it("renders categories and notes for historical homework photos", () => {
     const record = overview("1", "2026-08-01");
     record.images = [{ ...record.images![0], category: "poor", note: "步骤错误，需要订正" }];
