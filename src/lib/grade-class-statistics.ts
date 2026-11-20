@@ -1,4 +1,5 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
+import { gradeCustomRanks, gradeCustomTotals } from "./grade-custom-totals.js";
 import { expectedGradeSubjectCount, totalRankingGroupKey } from "./grade-statistics.js";
 import { inferGradeAcademicTrackFromSelection } from "./grade-total-score-segment.js";
 import { isAssignableGradeSubject } from "./grade-subjects.js";
@@ -11,6 +12,8 @@ export interface GradeClassStatisticsOptions {
   showRawTotal: boolean;
   showAssignedTotal: boolean;
   comparisonExamIds: string[];
+  /** Visible custom totals; each enables score, class rank and grade rank. */
+  customTotalIds?: string[];
 }
 
 export const DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS: GradeClassStatisticsOptions = {
@@ -21,6 +24,7 @@ export const DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS: GradeClassStatisticsOptions
   showRawTotal: false,
   showAssignedTotal: false,
   comparisonExamIds: [],
+  customTotalIds: [],
 };
 
 export type GradeClassStatisticsColumnKind =
@@ -36,7 +40,10 @@ export type GradeClassStatisticsColumnKind =
   | "rawTotalGradeRank"
   | "assignedTotal"
   | "assignedTotalClassRank"
-  | "assignedTotalGradeRank";
+  | "assignedTotalGradeRank"
+  | "customTotal"
+  | "customTotalClassRank"
+  | "customTotalGradeRank";
 
 export interface GradeClassStatisticsColumn {
   key: string;
@@ -115,6 +122,9 @@ interface ExamRankedRecord {
   rawTotalGradeRank: number | null;
   assignedTotalClassRank: number | null;
   assignedTotalGradeRank: number | null;
+  customTotals: Record<string, number | null>;
+  customClassRanks: Record<string, number | null>;
+  customGradeRanks: Record<string, number | null>;
 }
 
 function finite(value: number | null | undefined): number | null {
@@ -185,9 +195,13 @@ function ranksByClass(
   return ranksByGroup(records, score, (record) => record.classId);
 }
 
-function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRankedRecord> {
+function rankedRecords(exam: GradeExam, subjects: string[], visibleCustomIds: string[] = []): Map<string, ExamRankedRecord> {
   // Use the exam's subject structure, not the current scores: clearing the last
   // complete student's grade must not lower the required number of subjects.
+  const visible = new Set(visibleCustomIds);
+  const customTotals = gradeCustomTotals(exam.settings.templates.find((template) => template.kind === "classAverage"), exam.subjects)
+    .filter((total) => visible.has(total.id));
+  const customRanks = Object.fromEntries(customTotals.map((total) => [total.id, gradeCustomRanks(exam, total)]));
   const expectedCount = expectedGradeSubjectCount(exam.subjects, exam.records);
   const classSettings = new Map(exam.settings.classSubjects.map((item) => [item.classId, item]));
   const rankedSubjects = (record: GradeScoreRecord) => {
@@ -259,6 +273,9 @@ function rankedRecords(exam: GradeExam, subjects: string[]): Map<string, ExamRan
     rawTotalGradeRank: rawTotalGradeRanks.get(record.studentId) ?? null,
     assignedTotalClassRank: assignedTotalClassRanks.get(record.studentId) ?? null,
     assignedTotalGradeRank: assignedTotalGradeRanks.get(record.studentId) ?? null,
+    customTotals: Object.fromEntries(customTotals.map((total) => [total.id, customRanks[total.id].scores.get(record.studentId) ?? null])),
+    customClassRanks: Object.fromEntries(customTotals.map((total) => [total.id, customRanks[total.id].classRanks.get(record.studentId) ?? null])),
+    customGradeRanks: Object.fromEntries(customTotals.map((total) => [total.id, customRanks[total.id].gradeRanks.get(record.studentId) ?? null])),
   }]));
 }
 
@@ -347,6 +364,15 @@ function buildColumns(
         { key: metricKey(exam.id, "assignedTotalGradeRank"), label: `${prefix}总分（赋分）年级排名`, kind: "assignedTotalGradeRank", examId: exam.id, width: 20 },
       );
     }
+    gradeCustomTotals(exam.settings.templates.find((template) => template.kind === "classAverage"), exam.subjects)
+      .filter((total) => (options.customTotalIds || []).includes(total.id))
+      .forEach((total) => {
+        columns.push(
+          { key: metricKey(exam.id, `custom:${total.id}`), label: `${prefix}${total.name}`, kind: "customTotal", examId: exam.id, width: 16 },
+          { key: metricKey(exam.id, `customClassRank:${total.id}`), label: `${prefix}${total.name}班级排名`, kind: "customTotalClassRank", examId: exam.id, width: 20 },
+          { key: metricKey(exam.id, `customGradeRank:${total.id}`), label: `${prefix}${total.name}年级排名`, kind: "customTotalGradeRank", examId: exam.id, width: 20 },
+        );
+      });
   });
   return columns;
 }
@@ -380,6 +406,11 @@ function fillExamValues(
     values[metricKey(examId, "rawTotalClassRank")] = ranked?.rawTotalClassRank ?? null;
     values[metricKey(examId, "rawTotalGradeRank")] = ranked?.rawTotalGradeRank ?? null;
   }
+  (options.customTotalIds || []).forEach((id) => {
+    values[metricKey(examId, `custom:${id}`)] = ranked?.customTotals[id] ?? null;
+    values[metricKey(examId, `customClassRank:${id}`)] = ranked?.customClassRanks[id] ?? null;
+    values[metricKey(examId, `customGradeRank:${id}`)] = ranked?.customGradeRanks[id] ?? null;
+  });
   if (options.showAssignedTotal) {
     values[metricKey(examId, "assignedTotal")] = ranked?.assignedTotal ?? null;
     values[metricKey(examId, "assignedTotalClassRank")] = ranked?.assignedTotalClassRank ?? null;
@@ -396,6 +427,9 @@ export function buildGradeClassStatisticsReport(
     ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS,
     ...options,
     comparisonExamIds: [...new Set(options.comparisonExamIds)].filter((id) => id !== currentExam.id),
+    customTotalIds: [...new Set(options.customTotalIds || [])].filter((id) =>
+      gradeCustomTotals(currentExam.settings.templates.find((template) => template.kind === "classAverage"), currentExam.subjects)
+        .some((total) => total.id === id)),
   };
   const comparisonsById = new Map(candidateComparisonExams.map((exam) => [exam.id, exam]));
   const comparisons = normalizedOptions.comparisonExamIds
@@ -403,7 +437,7 @@ export function buildGradeClassStatisticsReport(
     .filter((exam): exam is GradeExam => Boolean(exam));
   const includedExams = [currentExam, ...comparisons];
   const subjects = [...currentExam.subjects];
-  const rankedByExam = new Map(includedExams.map((exam) => [exam.id, rankedRecords(exam, subjects)]));
+  const rankedByExam = new Map(includedExams.map((exam) => [exam.id, rankedRecords(exam, subjects, normalizedOptions.customTotalIds)]));
   const currentRecordsByClass = new Map<string, GradeScoreRecord[]>();
   currentExam.records.forEach((record) => {
     const current = currentRecordsByClass.get(record.classId) || [];

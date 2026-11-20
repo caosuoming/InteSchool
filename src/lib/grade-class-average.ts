@@ -1,6 +1,7 @@
 import type {
   GradeClassAverageOptions,
   GradeClassAverageSubjectScoreMode,
+  GradeCustomTotalScore,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -8,6 +9,7 @@ import type {
   GradeScoreRecord,
   GradeStatisticsTemplate,
 } from "../types/index.js";
+import { gradeCustomTotal, gradeCustomTotals } from "./grade-custom-totals.js";
 import { averageGradeValues } from "./grade-reports.js";
 import { expectedGradeSubjectCount, participatingGradeRecords, rankedClassSubjects } from "./grade-statistics.js";
 import { isAssignableGradeSubject } from "./grade-subjects.js";
@@ -28,11 +30,13 @@ export interface GradeClassAverageRow {
   subjectAverages: Record<string, GradeClassAverageScorePair>;
   subjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
   totalAverages: GradeClassAverageScorePair;
+  customAverages: Record<string, number | null>;
 }
 
 export interface GradeClassAverageSummary {
   subjectValues: Record<string, GradeClassAverageScorePair>;
   totalValues: GradeClassAverageScorePair;
+  customValues: Record<string, number | null>;
 }
 
 export interface GradeClassAverageGroup {
@@ -47,6 +51,7 @@ export interface GradeClassAverageReport {
   title: string;
   reportDate: string;
   subjects: string[];
+  customTotals: GradeCustomTotalScore[];
   options: Required<Pick<
     GradeClassAverageOptions,
     | "showTeacherRows"
@@ -158,6 +163,7 @@ export function buildDefaultClassAverageOptions(
       ])),
     ])),
     totalScoreMode: scoreMode,
+    customTotals: [],
     showTeacherRows: true,
     showGroupDifference: true,
     showGroupAverage: true,
@@ -205,6 +211,7 @@ export function resolveClassAverageOptions(
       ])),
     ])),
     totalScoreMode: options?.totalScoreMode || scoreMode,
+    customTotals: (options?.customTotals || []).filter((total) => total.subjects.length > 0 && total.subjects.every((subject) => exam.subjects.includes(subject))),
     showTeacherRows: options?.showTeacherRows ?? true,
     showGroupDifference: options?.showGroupDifference ?? true,
     showGroupAverage: options?.showGroupAverage ?? true,
@@ -246,6 +253,7 @@ function summaryForRecords(
   examSubjects: string[],
   expectedCount: number,
   settings: GradeExamSettings,
+  customTotals: GradeCustomTotalScore[] = [],
 ): GradeClassAverageSummary {
   const totalForRecord = (record: GradeScoreRecord, mode: GradeScoreMode) => {
     const examRanked = rankedClassSubjects(examSubjects, settings, record.classId);
@@ -253,6 +261,7 @@ function summaryForRecords(
     return recordTotal(record, reportRanked, mode, examRanked, Math.min(expectedCount, examRanked.length));
   };
   return {
+    customValues: Object.fromEntries(customTotals.map((total) => [total.id, averageGradeValues(records.map((record) => gradeCustomTotal(record, total)))])),
     subjectValues: Object.fromEntries(subjects.map((subject) => [
       subject,
       {
@@ -270,12 +279,14 @@ function summaryForRecords(
 function differenceForRows(
   rows: GradeClassAverageRow[],
   subjects: string[],
+  customTotals: GradeCustomTotalScore[] = [],
 ): GradeClassAverageSummary {
   const difference = (values: Array<number | null>): number | null => {
     const numbers = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
     return numbers.length > 1 ? round(Math.max(...numbers) - Math.min(...numbers)) : null;
   };
   return {
+    customValues: Object.fromEntries(customTotals.map((total) => [total.id, difference(rows.map((row) => row.customAverages[total.id]))])),
     subjectValues: Object.fromEntries(subjects.map((subject) => [
       subject,
       {
@@ -360,6 +371,7 @@ export function buildGradeClassAverageReport(
   settings: GradeExamSettings = exam.settings,
 ): GradeClassAverageReport {
   const options = resolveClassAverageOptions(exam, context, template.classAverageOptions, template.scoreMode);
+  const customTotals = gradeCustomTotals(template, exam.subjects);
   const subjects = template.subjects.filter((subject) => exam.subjects.includes(subject));
   const effectiveSubjects = subjects.length > 0 ? subjects : [...exam.subjects];
   const expectedCount = expectedGradeSubjectCount(exam.subjects, participatingGradeRecords(exam.records));
@@ -377,7 +389,7 @@ export function buildGradeClassAverageReport(
     .map((classId) => {
       const records = recordsByClass.get(classId) || [];
       const className = contextClassNames.get(classId) || records[0]?.className || "未知班级";
-      const summary = summaryForRecords(records, effectiveSubjects, exam.subjects, expectedCount, settings);
+      const summary = summaryForRecords(records, effectiveSubjects, exam.subjects, expectedCount, settings, customTotals);
       return {
         classId,
         className,
@@ -399,6 +411,7 @@ export function buildGradeClassAverageReport(
           subjectScoreModeForClass(options, classId, subject, template.scoreMode),
         ])),
         totalAverages: summary.totalValues,
+        customAverages: summary.customValues,
       } satisfies GradeClassAverageRow;
     });
 
@@ -409,8 +422,8 @@ export function buildGradeClassAverageReport(
     return {
       category,
       rows,
-      difference: differenceForRows(rows, effectiveSubjects),
-      average: summaryForRecords(groupRecords, effectiveSubjects, exam.subjects, expectedCount, settings),
+      difference: differenceForRows(rows, effectiveSubjects, customTotals),
+      average: summaryForRecords(groupRecords, effectiveSubjects, exam.subjects, expectedCount, settings, customTotals),
       subjectScoreModes: combinedSubjectScoreModes(rows, effectiveSubjects, template.scoreMode),
     } satisfies GradeClassAverageGroup;
   });
@@ -447,12 +460,14 @@ export function buildGradeClassAverageReport(
       }];
     })),
     totalValues: summaryForRecords(unifiedTotalRecords, effectiveSubjects, exam.subjects, expectedCount, settings).totalValues,
+    customValues: Object.fromEntries(customTotals.map((total) => [total.id, averageGradeValues(unifiedTotalRecords.map((record) => gradeCustomTotal(record, total)))])),
   };
 
   return {
     title: `${exam.name}班级平均分统计表`,
     reportDate: fallbackReportDate(exam),
     subjects: effectiveSubjects,
+    customTotals,
     options,
     groups,
     overallAverage,

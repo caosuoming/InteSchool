@@ -5,6 +5,8 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Plus,
+  Trash2,
   RotateCcw,
   SlidersHorizontal,
   Table2,
@@ -12,6 +14,7 @@ import {
 import type {
   GradeClassAverageOptions,
   GradeClassAverageSubjectScoreMode,
+  GradeCustomTotalScore,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -107,6 +110,23 @@ export function GradeClassAverageTable({
         ? { ...item, classAverageOptions: nextOptions }
         : item),
     });
+  };
+
+  const updateCustomTotals = (totals: GradeCustomTotalScore[]) => updateOptions({ customTotals: totals });
+  const addCustomTotal = () => {
+    if ((resolvedOptions.customTotals?.length || 0) >= 12 || exam.subjects.length === 0) return;
+    updateCustomTotals([
+      ...(resolvedOptions.customTotals || []),
+      {
+        id: `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        name: `个性化总分${(resolvedOptions.customTotals?.length || 0) + 1}`,
+        subjects: [...exam.subjects],
+        scoreMode: resolvedOptions.totalScoreMode || effectiveTemplate.scoreMode,
+      },
+    ]);
+  };
+  const patchCustomTotal = (id: string, patch: Partial<GradeCustomTotalScore>) => {
+    updateCustomTotals((resolvedOptions.customTotals || []).map((total) => total.id === id ? { ...total, ...patch } : total));
   };
 
   const moveClass = (classId: string, delta: -1 | 1) => {
@@ -267,6 +287,55 @@ export function GradeClassAverageTable({
                 />
                 {label}
               </label>
+            ))}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-ink-200 bg-paper p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-medium text-ink-800">个性化总分</div>
+                <p className="mt-1 text-xs text-ink-500">每项勾选的学科均有有效成绩时才计入总分。自动同步到表二、表五和表六。</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={addCustomTotal} disabled={(resolvedOptions.customTotals?.length || 0) >= 12}>
+                <Plus className="h-3.5 w-3.5" />新增总分
+              </Button>
+            </div>
+            {(resolvedOptions.customTotals || []).map((total) => (
+              <div key={total.id} className="space-y-2 rounded border border-ink-100 p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    aria-label={`${total.name}名称`}
+                    value={total.name}
+                    maxLength={30}
+                    onChange={(event) => patchCustomTotal(total.id, { name: event.target.value })}
+                    className="w-44 rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs"
+                  />
+                  <select
+                    aria-label={`${total.name}计分类型`}
+                    value={total.scoreMode}
+                    onChange={(event) => patchCustomTotal(total.id, { scoreMode: event.target.value as GradeCustomTotalScore["scoreMode"] })}
+                    className="rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs"
+                  >
+                    <option value="raw">原始分</option>
+                    <option value="assigned">赋分</option>
+                  </select>
+                  <button type="button" aria-label={`删除${total.name}`} onClick={() => updateCustomTotals((resolvedOptions.customTotals || []).filter((item) => item.id !== total.id))} className="text-red-600">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                  {exam.subjects.map((subject) => (
+                    <label key={subject} className="flex items-center gap-1.5">
+                      <input type="checkbox" aria-label={`${total.name}${subject}`} checked={total.subjects.includes(subject)} onChange={(event) => {
+                        const subjects = event.target.checked
+                          ? [...total.subjects, subject] : total.subjects.filter((item) => item !== subject);
+                        if (subjects.length > 0) patchCustomTotal(total.id, { subjects });
+                      }} />
+                      {subject}
+                    </label>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
 
@@ -471,6 +540,7 @@ export function GradeClassAverageTable({
                   <th key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{subject}</th>
                 ))}
                 <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">总分平均</th>
+                {report.customTotals.map((total) => <th key={total.id} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{total.name}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -506,6 +576,7 @@ export function GradeClassAverageTable({
                           </td>
                         ))}
                         <td className="border border-ink-300 px-3 py-2" />
+                        {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-3 py-2" />)}
                       </tr>
                     ) : null;
                     const scoreRow = (
@@ -525,6 +596,7 @@ export function GradeClassAverageTable({
                         <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                           {displayScore(row.totalAverages, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                         </td>
+                        {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.customAverages[total.id]?.toFixed(2) ?? "—"}</td>)}
                       </tr>
                     );
                     return teacherRow ? [teacherRow, scoreRow] : [scoreRow];
@@ -541,6 +613,7 @@ export function GradeClassAverageTable({
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
                         {displayScore(group.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
+                      {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{group.difference.customValues[total.id]?.toFixed(2) ?? "—"}</td>)}
                     </tr>
                   )] : []),
                   ...(group.rows.length > 1 && report.options.showGroupAverage ? [(
@@ -557,6 +630,7 @@ export function GradeClassAverageTable({
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums">
                         {displayScore(group.average.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
                       </td>
+                      {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{group.average.customValues[total.id]?.toFixed(2) ?? "—"}</td>)}
                     </tr>
                   )] : []),
                 ];
@@ -578,6 +652,7 @@ export function GradeClassAverageTable({
                       report.options.totalScoreMode || effectiveTemplate.scoreMode,
                     )}
                   </td>
+                  {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center font-bold">{report.overallAverage.customValues[total.id]?.toFixed(2) ?? "—"}</td>)}
                 </tr>
               )}
             </tbody>

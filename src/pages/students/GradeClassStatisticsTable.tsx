@@ -14,6 +14,7 @@ import {
 } from "@/lib/grade-class-statistics";
 import { toast } from "@/stores/ui";
 import type { GradeExam } from "@/types";
+import { gradeCustomTotals } from "@/lib/grade-custom-totals";
 import { isAssignableGradeSubject } from "@/lib/grade-subjects";
 
 interface GradeClassStatisticsTableProps {
@@ -36,6 +37,10 @@ export function GradeClassStatisticsTable({
   onOptionsChange,
   onDownload,
 }: GradeClassStatisticsTableProps) {
+  const customTotals = useMemo(() =>
+    gradeCustomTotals(exam.settings.templates.find((item) => item.kind === "classAverage"), exam.subjects),
+    [exam.settings.templates, exam.subjects],
+  );
   const report = useMemo(
     () => buildGradeClassStatisticsReport(exam, comparisonExams, options),
     [comparisonExams, exam, options],
@@ -174,6 +179,21 @@ export function GradeClassStatisticsTable({
               />
               总分（赋分）及排名
             </label>
+            {customTotals.map((total) => (
+              <label key={total.id} className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  aria-label={`显示${total.name}及排名`}
+                  checked={(options.customTotalIds || []).includes(total.id)}
+                  onChange={(event) => patchOptions({
+                    customTotalIds: event.target.checked
+                      ? [...(options.customTotalIds || []), total.id]
+                      : (options.customTotalIds || []).filter((id) => id !== total.id),
+                  })}
+                />
+                {total.name}及排名
+              </label>
+            ))}
           </div>
         </div>
 
