@@ -35,7 +35,7 @@ ENV NODE_ENV=production \
     INTESCHOOL_LOGGER=true
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends dumb-init ruby \
+    && apt-get install -y --no-install-recommends dumb-init ruby python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -45,6 +45,8 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/build ./build
 COPY --from=build --chown=node:node /app/server/seed-state.json ./server/seed-state.json
+COPY --from=build --chown=node:node /app/server/lib/legacy-equation-mtef.py ./server/lib/legacy-equation-mtef.py
+COPY --from=build --chown=node:node /app/server/lib/legacy-equation-mtef.LICENSE ./server/lib/legacy-equation-mtef.LICENSE
 RUN mkdir -p /app/data/uploads && chown -R node:node /app/data
 
 USER node
