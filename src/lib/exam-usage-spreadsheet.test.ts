@@ -139,6 +139,8 @@ describe("Issue #1503: geography grouped question data import", () => {
       [4, "standalone", undefined, 4, "C"],
     ]);
     expect(getUsageQuestionSlots(geography, "历史")).toHaveLength(2);
+    expect(getUsageQuestionSlots([{ ...geography[0], answer: "（4）B（5）D（6）A" }], "地理")
+      .map((slot) => slot.answer)).toEqual(["B", "D", "A"]);
   });
 
   it("maps each Excel score and answer into its geography group while keeping following questions aligned", () => {

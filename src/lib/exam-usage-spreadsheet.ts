@@ -20,7 +20,7 @@ export function getUsageQuestionSlots(questions: ExamPaperQuestion[], subject?: 
     const answers = new Map<number, string>();
     if (group) {
       const aligned = alignGeographyQuestionAnswer(question.stem, question.answer || "", question.type, subject);
-      const markers = [...aligned.matchAll(/(?:^|\s)(\d+)[.．、]\s*/g)];
+      const markers = [...aligned.matchAll(/(?<!\d)(\d+)[.．、]\s*/g)];
       if (markers.length === count && markers.every((match, index) => Number(match[1]) === group.originalNumbers[index])) {
         markers.forEach((match, index) => {
           const value = aligned.slice(match.index! + match[0].length, markers[index + 1]?.index ?? aligned.length).trim();
