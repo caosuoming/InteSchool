@@ -2135,7 +2135,7 @@ function normalizeBlockFillBlankArea(block: DocumentBlock): void {
   block.content = content;
 }
 
-const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
+const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用|过|给定|根据|以).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
 
 /** Recover later prompts from interleaved math worked examples. */
 function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
