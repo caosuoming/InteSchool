@@ -238,7 +238,8 @@ export const examPaperService = {
       if (item.studentAnswer !== undefined && (typeof item.studentAnswer !== "string" || item.studentAnswer.length > 2048))
         throw new Error("学生答案长度超出限制");
       const old = existing.get(key);
-      const grouped = paper.subject?.trim() === "地理" && question.type === "single"
+      const subject = paper.subject?.trim() || teacher.subject?.trim();
+      const grouped = subject === "地理" && question.type === "single"
         ? splitGeographyChoiceGroup(question.stem) : null;
       if (grouped && subScores && Object.keys(subScores).some((part) => Number(part) > grouped.questions.length))
         throw new Error("题组小题号超出范围");

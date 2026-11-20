@@ -61,22 +61,23 @@ describe("试卷使用数据批量导入", () => {
   it("preserves geography subquestion scores and answers across partial imports", async () => {
     const dbState = state();
     (dbState.examPapers as ExamPaper[])[0] = {
-      ...paper, subject: "地理",
+      ...paper, subject: undefined,
       questions: [{
         id: "geo", score: 6, type: "single",
         stem: "读图回答1—3题。\n1. 甲地？\nA. 甲\nB. 乙\n2. 乙地？\nA. 甲\nB. 乙\n3. 丙地？\nA. 甲\nB. 乙",
         answer: "（1）A （2）B （3）A",
       }],
     } as ExamPaper;
+    const geographyTeacher = { ...teacher, subject: "地理" } as TeacherRecord;
     await runWithState(dbState, async () => {
       await examPaperService.importUsageData("paper1", [{
         studentId: "s1", paperQuestionId: "geo", subScores: { "1": 2, "2": 0 },
         studentAnswer: "1. A\n2. A",
-      }], [], teacher);
+      }], [], geographyTeacher);
       await examPaperService.importUsageData("paper1", [{
         studentId: "s1", paperQuestionId: "geo", subScores: { "3": 2 },
         studentAnswer: "3. A",
-      }], [], teacher);
+      }], [], geographyTeacher);
       expect(dbState.answerRecords).toHaveLength(1);
       expect((dbState.answerRecords as AnswerRecord[])[0]).toMatchObject({
         subScores: { "1": 2, "2": 0, "3": 2 },
@@ -85,7 +86,7 @@ describe("试卷使用数据批量导入", () => {
       });
       await expect(examPaperService.importUsageData("paper1", [{
         studentId: "s1", paperQuestionId: "geo", subScores: { "4": 2 },
-      }], [], teacher)).rejects.toThrow("小题号");
+      }], [], geographyTeacher)).rejects.toThrow("小题号");
     });
   });
 
