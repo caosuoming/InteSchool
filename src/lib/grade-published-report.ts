@@ -1,3 +1,4 @@
+import { gradeCustomTotals } from "./grade-custom-totals.js";
 import { buildGradeReportNotes } from "./grade-report-notes.js";
 import type { GradeExam, GradeImportContext } from "../types/index.js";
 import {
@@ -41,6 +42,7 @@ export interface GradePublishedReportBundle {
   reportNotes: string[];
   classAverage?: GradeClassAverageReport;
   totalScoreSegment?: GradeTotalScoreSegmentReport;
+  customTotalSegments?: GradeTotalScoreSegmentReport[];
   subjectScoreSegment?: GradeSubjectScoreSegmentReport;
   electiveScoreSegment?: GradeElectiveScoreSegmentReport;
   totalScoreRanking?: GradePublishedTotalScoreRankingReport;
@@ -73,6 +75,9 @@ export function buildGradePublishedReportBundle(
     );
   }
   if (totalScoreSegmentTemplate) {
+    const customTotals = gradeCustomTotals(classAverageTemplate, exam.subjects);
+    bundle.customTotalSegments = customTotals.map((total) =>
+      buildGradeTotalScoreSegmentReport(exam, totalScoreSegmentTemplate, context, classAverageTemplate, exam.settings, total));
     bundle.totalScoreSegment = buildGradeTotalScoreSegmentReport(
       exam,
       totalScoreSegmentTemplate,
@@ -99,9 +104,11 @@ export function buildGradePublishedReportBundle(
       context,
       classAverageTemplate,
     );
+    const customRankingTables = customTotals.flatMap((total) =>
+      buildGradeTotalScoreRankingReport(exam, totalScoreSegmentTemplate, context, classAverageTemplate, total).tables);
     bundle.totalScoreRanking = {
       ...ranking,
-      tables: ranking.tables.map((table) => ({
+      tables: [...ranking.tables, ...customRankingTables].map((table) => ({
         ...table,
         rows: table.rows.map((row) => ({
           rank: row.rank,

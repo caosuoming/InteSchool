@@ -1086,7 +1086,17 @@ export interface GradeTemplateColumn {
   width?: number;
 }
 
+/** One independently configured total, calculated only for students with all selected scores. */
+export interface GradeCustomTotalScore {
+  id: string;
+  name: string;
+  subjects: string[];
+  scoreMode: GradeScoreMode;
+}
+
 export interface GradeClassAverageOptions {
+  /** Additional totals configured in 表一 and reused by 表二、表五、表六. */
+  customTotals?: GradeCustomTotalScore[];
   /** 报表标题；为空时根据考试名称自动生成。 */
   title?: string;
   /** 报表日期，格式为 YYYY-MM-DD。 */

@@ -225,6 +225,7 @@ describe("grade class average report", () => {
       totalAverages: { raw: 170, assigned: 170 },
     });
     expect(group.difference).toEqual({
+      customValues: {},
       subjectValues: {
         数学: { raw: 20, assigned: 20 },
         英语: { raw: 20, assigned: 20 },
@@ -232,6 +233,7 @@ describe("grade class average report", () => {
       totalValues: { raw: 0, assigned: 0 },
     });
     expect(group.average).toEqual({
+      customValues: {},
       subjectValues: {
         数学: { raw: 83.33, assigned: 83.33 },
         英语: { raw: 86.67, assigned: 86.67 },
