@@ -1,8 +1,9 @@
 // @vitest-environment node
 
+import CFB from "cfb";
 import JSZip from "jszip";
 import { describe, expect, it, vi } from "vitest";
-import { convertMathTypeDocxToOmml, type MathTypeDecoder } from "../lib/mathtype-docx.js";
+import { convertMathTypeDocxToOmml, probeMathTypeRuntime, type MathTypeDecoder } from "../lib/mathtype-docx.js";
 
 const DOCUMENT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -298,6 +299,39 @@ describe("MathType DOCX conversion", () => {
         "有 1 个 MathType 公式保留为原始对象",
       ],
     });
+  });
+
+  it("preserves original equations when a decoder returns an empty MathML root", async () => {
+    const original = await createDocx();
+    const result = await convertMathTypeDocxToOmml(original, async () =>
+      new Map([["rIdEquation", '<math xmlns="http://www.w3.org/1998/Math/MathML"/>']]),
+    );
+
+    expect(result.buffer).toBe(original);
+    expect(result).toMatchObject({ detectedCount: 1, convertedCount: 0, failedCount: 1 });
+    expect(result.warnings).toContain("公式 rIdEquation 转换结果为空，已保留原始对象");
+  });
+
+  it("converts legacy MathType 3 equations missing equation_options", async () => {
+    const runtime = await probeMathTypeRuntime();
+    if (!runtime.available) return;
+
+    // Minimal synthetic MTEF v3: x+1. The older header has no equation_options.
+    const mtef = Buffer.from("030101031e0a011283780002862b00028831000000", "hex");
+    const header = Buffer.alloc(28);
+    header.writeUInt32LE(28, 0);
+    header.writeUInt32LE(2, 4);
+    header.writeUInt32LE(mtef.length, 8);
+    const compound = CFB.utils.cfb_new();
+    CFB.utils.cfb_add(compound, "Equation Native", Buffer.concat([header, mtef]));
+    const ole = Buffer.from(CFB.write(compound, { type: "buffer" }));
+
+    const result = await convertMathTypeDocxToOmml(await createDocx({ ole }));
+    expect(result).toMatchObject({ detectedCount: 1, convertedCount: 1, failedCount: 0 });
+    const zip = await JSZip.loadAsync(result.buffer);
+    const documentXml = await zip.file("word/document.xml")!.async("string");
+    expect(documentXml).toContain("<m:oMath");
+    expect(documentXml).not.toContain("<w:object");
   });
 
   it("reports per-equation decoder errors instead of silently dropping them", async () => {
