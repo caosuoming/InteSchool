@@ -84,7 +84,7 @@ export function ScannerReviewPanel({ schoolId, students, sheetId, onRecordsChang
           <a href={`/api/files/${encodeURIComponent(record.fileId)}`} target="_blank" rel="noreferrer" className="shrink-0"><img src={`/api/files/${encodeURIComponent(record.fileId)}`} alt="扫描卷原图" loading="lazy" className="h-28 w-24 object-contain bg-mist" /></a>
           <div className="min-w-0 flex-1 space-y-1 text-xs text-ink-600">
             <p className="font-medium text-ink-900">{record.sheetType === "paper" ? "试卷" : "讲义"} · {record.sheetId}</p>
-            <p>{record.qrCurrent ?? record.verified ? (record.manualVerifiedAt ? "已人工确认答题卡版本" : "二维码已核对") : "二维码缺失或版本已变化（异常）"}</p>
+            <p>{record.qrCurrent ?? record.verified ? (record.manualVerifiedAt ? "已人工确认答题卡版本" : "二维码已核对") : record.qrPayload ? "二维码版本已变化（异常）" : "二维码缺失，待核对"}</p>
             <p>{new Date(record.createdAt).toLocaleString("zh-CN")}</p>
             <p>{record.studentId ? `已关联：${students.find((student) => student.id === record.studentId)?.name || record.studentId}${record.studentClassName ? ` · ${record.studentClassName}` : ""}` : "尚未匹配学生（异常卷）"}</p>
             <p>{record.reviewedAt ? `扫描已复查 · ${new Date(record.reviewedAt).toLocaleString("zh-CN")}` : "已扫描未复查"}</p>
