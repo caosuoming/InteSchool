@@ -126,6 +126,7 @@ const SLIDE_BACKGROUND_PRESETS = [
 ] as const;
 
 function elementLabel(element: LessonSlideElement, index: number): string {
+  if (element.kind === "webpage") return element.title || `网页 ${index + 1}`;
   if (element.kind === "geogebra") return element.title || `GeoGebra ${index + 1}`;
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
   if (element.kind === "audio") return element.title || `音频 ${index + 1}`;
@@ -135,6 +136,7 @@ function elementLabel(element: LessonSlideElement, index: number): string {
 }
 
 function elementPreviewText(element: LessonSlideElement, index: number): string {
+  if (element.kind === "webpage") return element.title || `网页 ${index + 1}`;
   if (element.kind === "geogebra") return element.title || `GeoGebra ${index + 1}`;
   if (element.kind === "image") return element.alt || `图片 ${index + 1}`;
   if (element.kind === "audio") return element.title || `音频 ${index + 1}`;
@@ -486,7 +488,7 @@ export function LessonEditorInspector({
                       : element.kind === "audio" ? <Music2 className="h-3.5 w-3.5" />
                       : element.kind === "video" ? <Video className="h-3.5 w-3.5" />
                       : element.kind === "geogebra" ? <Blocks className="h-3.5 w-3.5" />
-                      : element.href ? <LinkIcon className="h-3.5 w-3.5" />
+                      : element.kind === "webpage" || (element.kind === "text" && element.href) ? <LinkIcon className="h-3.5 w-3.5" />
                       : <Type className="h-3.5 w-3.5" />}
                     {element.kind === "text" ? (
                       <MathHtml className="min-w-0 flex-1 truncate text-xs leading-5 [&_.katex-formula-block]:inline">
@@ -531,13 +533,15 @@ export function LessonEditorInspector({
                 : selectedElement.kind === "geogebra" ? <Blocks className="h-4 w-4" />
                 : selectedElement.kind === "audio" ? <Music2 className="h-4 w-4" />
                 : selectedElement.kind === "video" ? <Video className="h-4 w-4" />
-                : selectedElement.href ? <LinkIcon className="h-4 w-4" />
+                : selectedElement.kind === "webpage" ? <LinkIcon className="h-4 w-4" />
+                : selectedElement.kind === "text" && selectedElement.href ? <LinkIcon className="h-4 w-4" />
                 : <Type className="h-4 w-4" />}
               {selectedElement.kind === "image" ? "图片元素"
                 : selectedElement.kind === "geogebra" ? "GeoGebra 课件"
                 : selectedElement.kind === "audio" ? "音频素材"
                 : selectedElement.kind === "video" ? "视频素材"
-                : selectedElement.href ? "超链接元素"
+                : selectedElement.kind === "webpage" ? "网页素材"
+                : selectedElement.kind === "text" && selectedElement.href ? "超链接元素"
                 : "文本元素"}
             </div>
 
@@ -594,6 +598,18 @@ export function LessonEditorInspector({
                   onChange={(event) => onUpdateElement({ alt: event.target.value })}
                   placeholder="课件图片"
                 />
+              </div>
+            ) : selectedElement.kind === "webpage" ? (
+              <div className="space-y-3">
+                <label className="block text-xs font-medium text-ink-600">显示方式</label>
+                <select aria-label="网页素材显示方式" className="input-base w-full" value={selectedElement.displayMode} onChange={(event) => onUpdateElement({ displayMode: event.target.value as "embed" | "button" })}>
+                  <option value="embed">嵌入当前页面</option>
+                  <option value="button">点击按钮在新页面打开</option>
+                </select>
+                <label className="block text-xs font-medium text-ink-600">背景颜色</label>
+                <Input aria-label="网页素材背景颜色" type="color" value={selectedElement.backgroundColor || "#FFFFFF"} onChange={(event) => onUpdateElement({ backgroundColor: event.target.value })} />
+                <label className="block text-xs font-medium text-ink-600">标题</label>
+                <Input value={selectedElement.title} onChange={(event) => onUpdateElement({ title: event.target.value })} />
               </div>
             ) : selectedElement.kind === "geogebra" ? (
               <div>

@@ -225,29 +225,27 @@ function groupRoomsByLocation(rooms: ExamInvigilationRoomColumn[]): {
   rooms: ExamInvigilationRoomColumn[];
   groups: ExamInvigilationRoomLocationGroup[];
 } {
-  // Sort by room number before grouping. Only adjacent rooms at the same
-  // location can share a column; otherwise grouping could produce 1, 3, 2.
+  // Sort individual rooms naturally, then group all rooms sharing a physical location.
   const sortedRooms = [...rooms].sort((left, right) => (
     left.roomNumber.localeCompare(right.roomNumber, "zh-CN", { numeric: true })
     || left.roomId.localeCompare(right.roomId)
   ));
-  const groups: ExamInvigilationRoomLocationGroup[] = [];
+  // Group by physical location, even when virtual room numbers are interleaved.
+  const byLocation = new Map<string, ExamInvigilationRoomLocationGroup>();
   for (const room of sortedRooms) {
-    const last = groups[groups.length - 1];
-    if (last?.roomLocation === room.roomLocation) {
-      last.roomIds.push(room.roomId);
-      last.roomNumbers.push(room.roomNumber);
-      last.studentCount += room.studentCount;
-    } else {
-      groups.push({
-        roomLocation: room.roomLocation,
-        roomIds: [room.roomId],
-        roomNumbers: [room.roomNumber],
-        studentCount: room.studentCount,
-      });
+    const location = room.roomLocation.trim() || room.roomNumber;
+    let group = byLocation.get(location);
+    if (!group) {
+      group = { roomLocation: location, roomIds: [], roomNumbers: [], studentCount: 0 };
+      byLocation.set(location, group);
     }
+    group.roomIds.push(room.roomId);
+    group.roomNumbers.push(room.roomNumber);
+    group.studentCount += room.studentCount;
   }
-  return { rooms: sortedRooms, groups };
+  const groups = [...byLocation.values()];
+  const roomsById = new Map(sortedRooms.map((room) => [room.roomId, room]));
+  return { rooms: groups.flatMap((group) => group.roomIds.map((id) => roomsById.get(id)!)), groups };
 }
 
 function duplicateTeacherIds(assignments: Array<string | null | undefined>): string[] {
@@ -541,7 +539,6 @@ export function buildExamInvigilationTable(
 
     Object.values(roomTeacherIds).forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
     outsideTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
-    patrolTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
 
     const first = input.times[0];
     return {

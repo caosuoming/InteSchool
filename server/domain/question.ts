@@ -196,7 +196,9 @@ function expandKnowledgePointAliases(
 
 function matchFilter(q: Question, filter: QuestionFilter): boolean {
   if (filter.subject && resourceSubject({ teachers: db.read("teachers") } as unknown as import("../types.js").AppState,
-    q as unknown as Record<string, unknown>) !== filter.subject) return false;
+    q as unknown as Record<string, unknown>) !== filter.subject
+    && !(filter.ownerSubjectSchoolId !== undefined && q.teacherId === filter.teacherId
+      && q.schoolId !== filter.ownerSubjectSchoolId)) return false;
   if (filter.keyword) {
     const kw = filter.keyword.trim().toLowerCase();
     const searchFields = filter.searchFields?.length

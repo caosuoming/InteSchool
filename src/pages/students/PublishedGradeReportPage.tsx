@@ -65,6 +65,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                 <th key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{subject}</th>
               ))}
               <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">总分平均</th>
+              {(report.customTotals || []).map((total) => <th key={total.id} className="border border-ink-300 px-2 py-1.5">{total.name}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -100,6 +101,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                         </td>
                       ))}
                       <td className="border border-ink-300 px-3 py-2" />
+                      {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5" />)}
                     </tr>
                   ) : null;
                   const scoreRow = (
@@ -119,6 +121,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                         {scoreText(row.totalAverages, report.options.totalScoreMode || "assigned")}
                       </td>
+                      {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{row.customAverages?.[total.id]?.toFixed(2) ?? "—"}</td>)}
                     </tr>
                   );
                   return teacherRow ? [teacherRow, scoreRow] : [scoreRow];
@@ -135,6 +138,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                     <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
                       {scoreText(group.difference.totalValues, report.options.totalScoreMode || "assigned")}
                     </td>
+                    {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{group.difference.customValues?.[total.id]?.toFixed(2) ?? "—"}</td>)}
                   </tr>
                 )] : []),
                 ...(group.rows.length > 1 && report.options.showGroupAverage ? [(
@@ -151,6 +155,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                     <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums">
                       {scoreText(group.average.totalValues, report.options.totalScoreMode || "assigned")}
                     </td>
+                    {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{group.average.customValues?.[total.id]?.toFixed(2) ?? "—"}</td>)}
                   </tr>
                 )] : []),
               ];
@@ -166,6 +171,7 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                 <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
                   {scoreText(report.overallAverage.totalValues, report.options.totalScoreMode || "assigned")}
                 </td>
+                {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{report.overallAverage.customValues?.[total.id]?.toFixed(2) ?? "—"}</td>)}
               </tr>
             )}
           </tbody>
@@ -179,8 +185,8 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
   );
 }
 
-function TotalScoreTable({ bundle }: { bundle: GradePublishedReportBundle }) {
-  const report = bundle.totalScoreSegment;
+function TotalScoreTable({ bundle, customReport }: { bundle: GradePublishedReportBundle; customReport?: NonNullable<GradePublishedReportBundle["totalScoreSegment"]> }) {
+  const report = customReport || bundle.totalScoreSegment;
   if (!report) return null;
 
   return (
@@ -209,7 +215,7 @@ function TotalScoreTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                 ))}
               </tr>
             ))}
-            <tr data-testid="track-standard-summary" className="bg-amber-50/40">
+            {!report.customName && <tr data-testid="track-standard-summary" className="bg-amber-50/40">
               <td colSpan={report.columns.length + 1} className="border border-ink-300 px-3 py-2 text-center text-[11px] text-ink-700">
                 <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-1">
                   {(["science", "arts"] as const).map((track) => (
@@ -227,7 +233,7 @@ function TotalScoreTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                   ))}
                 </div>
               </td>
-            </tr>
+            </tr>}
             {report.summaryRows.map((row) => (
               <tr key={row.key} className="bg-paper">
                 <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold text-ink-800">{row.label}</th>
@@ -380,7 +386,7 @@ function TotalScoreRankingTables({ bundle }: { bundle: GradePublishedReportBundl
   return (
     <Card className="space-y-8 overflow-hidden p-5">
       {report.tables.map((rankingTable) => (
-        <section key={rankingTable.key} className="overflow-x-auto">
+        <section key={`${rankingTable.totalId || "standard"}:${rankingTable.key}`} className="overflow-x-auto">
           <ReportHeading title={rankingTable.title} date={report.reportDate} />
           <table className="w-max min-w-full table-auto border-collapse text-[11px]">
             <thead>
@@ -392,7 +398,7 @@ function TotalScoreRankingTables({ bundle }: { bundle: GradePublishedReportBundl
                 {report.subjects.map((subject) => (
                   <th key={subject} className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
                 ))}
-                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">总分（{report.scoreModeLabel}）</th>
+                <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{rankingTable.totalLabel || "总分"}（{rankingTable.scoreModeLabel || report.scoreModeLabel}）</th>
               </tr>
             </thead>
             <tbody>
@@ -500,6 +506,7 @@ export default function PublishedGradeReportPage() {
         </Card>
         <ClassAverageTable bundle={bundle} />
         <TotalScoreTable bundle={bundle} />
+        {bundle.customTotalSegments?.map((report) => <TotalScoreTable key={report.customId} bundle={bundle} customReport={report} />)}
         <SubjectTables bundle={bundle} />
         <ElectiveTables bundle={bundle} />
         <TotalScoreRankingTables bundle={bundle} />

@@ -13,8 +13,10 @@ import type {
 export interface QuestionDuplicateReviewItem {
   id: string;
   similarity: number;
-  existing: Question;
+  existing: Question | Pick<Question, "id" | "stem" | "options" | "answer" | "analysis" | "summary">;
   canMerge: boolean;
+  existingSources?: string[];
+  incomingSources?: string[];
   incoming: Pick<
     ExtractedQuestionItem,
     "stem" | "options" | "answer" | "analysis" | "summary"
@@ -448,6 +450,17 @@ export function QuestionDuplicateReviewModal({
 
               {expanded && (
                 <div className="divide-y divide-ink-100 border-t border-ink-100">
+                  {(item.existingSources || item.incomingSources) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 text-xs">
+                      {([item.existingSources, item.incomingSources] as Array<string[] | undefined>).map((sources, sourceIndex) => (
+                        <div key={sourceIndex} className="p-4 md:border-r border-ink-100">
+                          <p className="font-semibold text-ink-700 mb-1">来源文档</p>
+                          {sources?.length ? sources.map((source) => <p key={source} className="break-words">{source}</p>)
+                            : <p className="text-ink-500">未关联来源文档</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {detailFields.map(({ key, label }) => {
                     const existingValue = displayValue(item.existing[key]);
                     const incomingValue = displayValue(item.incoming[key]);

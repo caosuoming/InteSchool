@@ -8,6 +8,14 @@ function asElement(html: string): HTMLDivElement {
 }
 
 describe("extract text renderer", () => {
+  it("renders the formerly red set-builder expressions from issue 1540", () => {
+    const source = String.raw`已知集合 $A=\left\{x\left|-1\leq x<3\right \right\}$，求交集。`;
+    const container = asElement(renderExtractText(source, [], false));
+    expect(container.querySelector(".katex-error")).toBeNull();
+    expect(container.querySelector(".katex")).not.toBeNull();
+    expect(container.querySelector(".katex-html")?.textContent).not.toContain(String.raw`\right`);
+  });
+
   it("renders unmarked cases in the extraction review without exposing LaTeX commands", () => {
     const container = asElement(renderExtractText(
       String.raw`解得\begin{cases}x=4, y=3\end{cases}。`,

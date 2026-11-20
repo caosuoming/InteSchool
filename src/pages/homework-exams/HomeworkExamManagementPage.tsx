@@ -7,6 +7,7 @@ import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
 import { ScannerReviewPanel } from "./ScannerReviewPanel";
 import { ThirdPartyCardEditor } from "@/components/scanner/ThirdPartyCardEditor";
 import { scannerService, type ScannerPageRecord, type ThirdPartyCard } from "@/services/scanner";
+import { scannerSheetStatistics } from "@/lib/scanner-statistics";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -266,8 +267,8 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
           section === "exams" ? examPublishService.listPublications(schoolId) : Promise.resolve([]),
           (section === "exams" ? classService.listStudentsBySchool(schoolId) : classService.listMyStudents(schoolId, teacherId)).catch(() => [] as Student[]),
           section === "homework" ? scannerService.listThirdPartyCards(schoolId) : Promise.resolve([]),
-          section === "homework" ? scannerService.listPages(schoolId).then((records) => ({ records, failed: false }))
-            .catch(() => ({ records: [] as ScannerPageRecord[], failed: true })) : Promise.resolve({ records: [] as ScannerPageRecord[], failed: false }),
+          scannerService.listPages(schoolId).then((records) => ({ records, failed: false }))
+            .catch(() => ({ records: [] as ScannerPageRecord[], failed: true })),
         ]);
         const personalIds = new Set(classItems.filter((item) => item.type === "personal").map((item) => item.id));
         const classIds = section === "homework"
@@ -346,6 +347,11 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
   } else {
     managedRecords.sort((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt));
   }
+  // Recently scanned exam papers stay visible above unscanned documents.
+  const scannedPaperIds = new Set(scannerPages.filter((record) => record.sheetType === "paper").map((record) => record.sheetId));
+  managedRecords.sort((left, right) =>
+    Number(right.kind === "paper" && scannedPaperIds.has(right.item.id))
+    - Number(left.kind === "paper" && scannedPaperIds.has(left.item.id)));
 
   const categorizedPaperIds = new Set(papers.filter((item) =>
     item.managementCategory === "exam").map((item) => item.id));
@@ -499,7 +505,12 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
         <Link to="/homework-exams/homework" className={`flex-1 rounded-lg px-4 py-2.5 text-center text-sm font-medium ${isHomework ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-mist"}`}>作业管理</Link>
         <Link to="/homework-exams/exams" className={`flex-1 rounded-lg px-4 py-2.5 text-center text-sm font-medium ${!isHomework ? "bg-ink-900 text-white" : "text-ink-600 hover:bg-mist"}`}>考试管理</Link>
       </div>
-      {!isHomework && schoolId && <ScannerReviewPanel schoolId={schoolId} students={students} />}
+      {schoolId && <details className="mb-5 rounded-xl border border-ink-100 bg-paper p-3">
+        <summary className="cursor-pointer text-sm font-medium text-ink-900">
+          扫描件处理 · {scannerPages.length} 张 · 异常 {scannerPages.filter((record) => !(record.qrCurrent ?? record.verified) || !record.studentId).length} 张
+        </summary>
+        <div className="mt-3"><ScannerReviewPanel schoolId={schoolId} students={students} onRecordsChange={onScannerRecordsChange} /></div>
+      </details>}
       {!schoolId ? (
         <Card><p className="py-10 text-center text-sm text-ink-500">请切换到学校身份后查看作业考试。</p></Card>
       ) : loading ? (
@@ -526,7 +537,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
             className="overflow-x-auto border-b border-ink-100" role="region" tabIndex={0} aria-label="作业管理表格上方横向滚动条">
             <div style={{ width: tableWidth, height: 1 }} aria-hidden="true" />
           </div>}
-          {scannerError && isHomework && <p role="alert" className="px-4 py-2 text-sm text-red-600">扫描记录加载失败，暂时无法显示扫描状态。请刷新重试。</p>}
+          {scannerError && <p role="alert" className="px-4 py-2 text-sm text-red-600">扫描记录加载失败，暂时无法显示扫描状态。请刷新重试。</p>}
           <div ref={tableScrollRef} onScroll={() => syncScroll("table")} className="overflow-x-auto" aria-label={isHomework ? "作业管理表格，可横向滚动查看后续列" : "考试管理表格"} role="region" tabIndex={0}>
             <table className={`text-left text-sm ${isHomework ? "min-w-[1600px] table-fixed" : "w-full min-w-[1000px]"}`} style={isHomework ? { width: tableWidth } : undefined}>
               {isHomework && <colgroup>
@@ -572,7 +583,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                         {card.paperId && papers.find((paper) => paper.id === card.paperId) && (
                           <button type="button" disabled={scannerError} className="text-teal-700 hover:underline disabled:opacity-50"
                             onClick={() => setScanPaper(papers.find((paper) => paper.id === card.paperId)!)}>
-                            {scannerError ? "扫描状态未知" : scanStatus(scannerPages, card.paperId)}
+                            {scannerError ? "扫描状态未知" : `扫描 ${scannerPages.filter((record) => record.sheetType === "paper" && record.sheetId === card.paperId).length} 张`}
                           </button>
                         )}
                       </div></td>
@@ -619,7 +630,7 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                       <td className={`whitespace-nowrap px-4 py-3 ${groupPosition.grouped ? "border-r-2 border-ink-900" : ""}`}><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link>{record.kind === "paper" && <button type="button" disabled={scannerError}
                         className="text-teal-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setScanPaper(record.item)}
                         aria-label={`查看「${record.item.title}」答题卡扫描情况：${scannerError ? "加载失败" : scanStatus(scannerPages, record.item.id)}`}>
-                        {scannerError ? "扫描状态未知" : scanStatus(scannerPages, record.item.id)}
+                        {scannerError ? "扫描状态未知" : `${scanStatus(scannerPages, record.item.id)}（${scannerSheetStatistics(scannerPages, { id: record.item.id, type: "paper", answerSheetRevisionId: record.item.answerSheetRevisionId }).total} 张）`}
                       </button>}</div></td>
                     </tr>
                   );
@@ -637,7 +648,11 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                         <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(item.createdAt)}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(item.unlockAt)}</td>
                         <td className="whitespace-nowrap px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                        <td className="whitespace-nowrap px-4 py-3"><Link to={`/exam-papers/${encodeURIComponent(item.examPaperId)}`} className="text-teal-700 hover:underline">查看 / 管理</Link></td>
+                        <td className="whitespace-nowrap px-4 py-3"><Link to={`/exam-papers/${encodeURIComponent(item.examPaperId)}`} className="text-teal-700 hover:underline">查看 / 管理</Link>
+  {scannerPages.some((page) => page.sheetType === "paper" && page.sheetId === item.examPaperId) && <button type="button" className="ml-3 text-teal-700 hover:underline" onClick={() => {
+    const paper = papers.find((entry) => entry.id === item.examPaperId);
+    if (paper) setScanPaper(paper);
+  }}>扫描 {scannerPages.filter((page) => page.sheetType === "paper" && page.sheetId === item.examPaperId).length} 张</button>}</td>
                       </tr>
                     );
                   })}
@@ -651,7 +666,10 @@ export default function HomeworkExamManagementPage({ section }: { section: Secti
                         <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateTime(record.kind === "paper" ? record.item.createdAt : record.item.publishAt)}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-ink-600">{dateRange(record.item.assignedDate, record.item.assignedEndDate)}</td>
                         <td className="px-4 py-3"><Badge variant={statusVariant(status)}>{status}</Badge></td>
-                        <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link></div></td>
+                        <td className="whitespace-nowrap px-4 py-3"><div className="flex items-center gap-3"><button type="button" className="text-teal-700 hover:underline" onClick={() => beginEdit(record)}>编辑</button><Link to="/my-students?tab=homework" className="text-teal-700 hover:underline">作业记录</Link>
+  {record.kind === "paper" && <button type="button" disabled={scannerError} className="text-teal-700 hover:underline disabled:opacity-50" onClick={() => setScanPaper(record.item)}>
+    扫描 {scannerPages.filter((page) => page.sheetType === "paper" && page.sheetId === record.item.id).length} 张
+  </button>}</div></td>
                       </tr>
                     );
                   })}

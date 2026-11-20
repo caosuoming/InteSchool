@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   listBaskets: vi.fn(),
   removeQuestion: vi.fn(),
   getMaterial: vi.fn(),
+  listMaterials: vi.fn(),
   listMyStudents: vi.fn(),
   listMyClasses: vi.fn(),
   listPersonalClasses: vi.fn(),
@@ -95,7 +96,7 @@ vi.mock("@/services/basket", () => ({
   },
 }));
 vi.mock("@/services/material", () => ({
-  materialService: { getMaterial: mocks.getMaterial },
+  materialService: { getMaterial: mocks.getMaterial, listMaterials: mocks.listMaterials },
 }));
 vi.mock("@/services/studentInteraction", () => ({
   studentInteractionService: {
@@ -144,6 +145,7 @@ describe("LessonEditorPage preview query", () => {
     mocks.removeQuestion.mockResolvedValue(undefined);
     window.confirm = vi.fn(() => false);
     mocks.getMaterial.mockResolvedValue(null);
+    mocks.listMaterials.mockResolvedValue([]);
     mocks.listMyStudents.mockResolvedValue([]);
     mocks.listMyClasses.mockResolvedValue([]);
     mocks.listPersonalClasses.mockResolvedValue([]);

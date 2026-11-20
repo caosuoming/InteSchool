@@ -64,7 +64,7 @@ import {
 } from "@/components/resource/DocumentMetadataModal";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
 import { ExamPaperUsageImportModal } from "./ExamPaperUsageImportModal";
-import type { UsageImportItem } from "@/lib/exam-usage-spreadsheet";
+import type { UsageImportItem, UsageMetadataUpdate } from "@/lib/exam-usage-spreadsheet";
 import {
   commonScoreUnderHeading,
   questionIdsUnderHeading,
@@ -596,8 +596,8 @@ export default function ExamPaperEditorPage() {
       const qIds = nextPaperQuestions.map((q) => q.questionId).filter(Boolean) as string[];
       const missingQuestionIds = qIds.filter((questionId) => !qMap[questionId]);
       if (missingQuestionIds.length > 0) {
-        const all = await questionService.listQuestions({ schoolId });
-        all.forEach((q) => { if (missingQuestionIds.includes(q.id)) qMap[q.id] = q; });
+        const all = await questionService.listQuestions({ ids: missingQuestionIds });
+        all.forEach((q) => { qMap[q.id] = q; });
       }
       setQuestions(qMap);
     } catch (error) {
@@ -611,7 +611,7 @@ export default function ExamPaperEditorPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, navigationDraft, prepPassword, prepTaskId, schoolId]);
+  }, [id, navigate, navigationDraft, prepPassword, prepTaskId]);
 
   useEffect(() => {
     loadPaper();
@@ -697,12 +697,12 @@ export default function ExamPaperEditorPage() {
 
   useEffect(() => {
     if (teacher && addSource === "examPaper") {
-      examPaperService.listPapers({ schoolId, teacherId: teacher.id }).then((ps) =>
+      examPaperService.listPapers({ teacherId: teacher.id }).then((ps) =>
         setOtherPapers(ps.filter((p) => p.id !== id)),
       );
     }
     if (teacher && addSource === "lecture") {
-      lectureService.listLectures({ schoolId, teacherId: teacher.id }).then(setOtherLectures);
+      lectureService.listLectures({ teacherId: teacher.id }).then(setOtherLectures);
     }
   }, [addSource, schoolId, teacher, id]);
 
@@ -1233,19 +1233,19 @@ export default function ExamPaperEditorPage() {
     }
     let toAdd: Question[] = [];
     if (addSource === "basket" && selectedBasket) {
-      const all = await questionService.listQuestions({ schoolId });
-      toAdd = all.filter((q) => selectedBasket.questionIds.includes(q.id) && selectedQuestionIds.includes(q.id));
+      const all = await questionService.listQuestions({ ids: selectedQuestionIds });
+      toAdd = all.filter((q) => selectedBasket.questionIds.includes(q.id));
     } else if (addSource === "bank") {
-      toAdd = await questionService.listQuestions({ schoolId, ids: selectedQuestionIds });
+      toAdd = await questionService.listQuestions({ ids: selectedQuestionIds });
     } else if (addSource === "examPaper" && selectedPaper) {
-      const all = await questionService.listQuestions({ schoolId, ids: selectedQuestionIds });
+      const all = await questionService.listQuestions({ ids: selectedQuestionIds });
       const byId = new Map(all.map((question) => [question.id, question]));
       toAdd = selectedPaper.questions
         .filter((pq) => pq.questionId && selectedQuestionIds.includes(pq.questionId))
         .map((pq) => byId.get(pq.questionId!))
         .filter((question): question is Question => Boolean(question));
     } else if (addSource === "lecture" && selectedLecture) {
-      const all = await questionService.listQuestions({ schoolId, ids: selectedQuestionIds });
+      const all = await questionService.listQuestions({ ids: selectedQuestionIds });
       const byId = new Map(all.map((question) => [question.id, question]));
       const qIds = getLectureQuestionSections(selectedLecture.sections)
         .filter((s) => s.type === "question" && s.questionId)
@@ -1702,9 +1702,14 @@ export default function ExamPaperEditorPage() {
     }
   };
 
-  const handleImportUsage = async (items: UsageImportItem[]) => {
+  const handleImportUsage = async (items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[]) => {
     if (!paper || paper.teacherId !== teacher?.id || prepTaskId) throw new Error("无权导入此试卷的数据");
-    const result = await examPaperService.importUsageData(paper.id, items);
+    const result = await examPaperService.importUsageData(paper.id, items, metadataUpdates);
+    if (result.updatedPaper) {
+      setPaper(result.updatedPaper);
+      setPaperQuestions(result.updatedPaper.questions);
+      setSavedDraft(examPaperSaveStateFromPaper(result.updatedPaper));
+    }
     setIsUsedDocument(true);
     await refreshCompletionRecords();
     toast.success(`已导入 ${result.studentCount} 名学生的 ${result.imported} 条答题记录`);
@@ -2222,6 +2227,7 @@ export default function ExamPaperEditorPage() {
           open={usageImportOpen}
           onClose={() => setUsageImportOpen(false)}
           questions={usageQuestions}
+          subject={geographySubject}
           students={audienceStudents}
           onImport={handleImportUsage}
         />}

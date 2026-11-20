@@ -33,7 +33,14 @@ export function tagNewPersonalResources(state: AppState, teacher: TeacherRecord,
     const resources = state[collection];
     if (!existing || !Array.isArray(resources)) continue;
     for (const resource of resources as Record<string, unknown>[]) {
-      if (resource.teacherId === teacher.id && typeof resource.id === "string" && !existing.has(resource.id)) resource.subject = subject;
+      if (resource.teacherId === teacher.id && typeof resource.id === "string" && !existing.has(resource.id)) {
+        // An extracted/duplicated document can keep its source school's scope.
+        // In that case, preserve the source affiliation's subject instead of
+        // silently reclassifying it under the currently selected school.
+        resource.subject = typeof resource.schoolId === "string" && resource.schoolId !== teacher.schoolId
+          ? resourceSubject(state, resource) || subject
+          : subject;
+      }
     }
   }
 }
@@ -49,5 +56,8 @@ export function filterPersonalResources<T extends Record<string, unknown>>(
 ): T[] {
   const subject = selectedSubject(teacher);
   if (!subject) return resources;
-  return resources.filter((resource) => resource.teacherId !== teacher.id || resourceSubject(state, resource) === subject);
+  return resources.filter((resource) =>
+    resource.teacherId !== teacher.id
+    || (typeof resource.schoolId === "string" && resource.schoolId !== teacher.schoolId)
+    || resourceSubject(state, resource) === subject);
 }

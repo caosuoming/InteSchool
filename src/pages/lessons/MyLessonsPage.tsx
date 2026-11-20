@@ -343,7 +343,9 @@ export function MyLessonsPage() {
       );
       const preferred = activeClasses.map((item) => item.id);
       setClasses(activeClasses);
-      setAvailablePapers(paperItems.filter((paper) => paper.classIds?.some((id) => assignedClassIds.has(id))));
+      setAvailablePapers([...paperItems].sort((left, right) =>
+        (Date.parse(right.createdAt || right.updatedAt) || 0)
+        - (Date.parse(left.createdAt || left.updatedAt) || 0)));
       setHomeworks(homeworkItems.filter((item) => item.managementCategory !== "exam"));
       setNotices(noticeItems);
       setSelectedClassIds((current) => {
@@ -605,17 +607,6 @@ export function MyLessonsPage() {
     }
     if (selectedClassIds.length === 0) {
       toast.warning("请选择至少一个发布班级");
-      return;
-    }
-    if (selectedPaperIds.some((id) => !availablePapers.find((paper) =>
-      paper.id === id && paper.classIds?.some((classId) => selectedClassIds.includes(classId))))) {
-      toast.warning("所选试卷中有不适用于发布班级的试卷，请调整班级或试卷");
-      return;
-    }
-    if (!homeworkContent.trim() && homeworkAttachments.length === 0 && selectedClassIds.some((classId) =>
-      !selectedPaperIds.some((id) => availablePapers.some((paper) =>
-        paper.id === id && paper.classIds?.includes(classId))))) {
-      toast.warning("所选试卷未覆盖全部发布班级，请调整班级或补充试卷");
       return;
     }
     const existingHomework = editingHomeworkId
@@ -1268,7 +1259,7 @@ export function MyLessonsPage() {
                 />
                 <div className="max-h-64 space-y-1 overflow-y-auto">
                   {availablePapers.filter((paper) => paper.title.toLowerCase().includes(paperSearch.trim().toLowerCase())).length === 0
-                    ? <p className="px-2 py-3 text-sm text-ink-500">暂无适用于任教班级的试卷</p>
+                    ? <p className="px-2 py-3 text-sm text-ink-500">试卷库中暂无试卷</p>
                     : availablePapers.filter((paper) => paper.title.toLowerCase().includes(paperSearch.trim().toLowerCase())).map((paper) => {
                       const previousDates = [...new Set([
                         ...homeworks.filter((item) => item.id !== editingHomeworkId && item.examPaperIds?.includes(paper.id)).map((item) => item.assignedDate),
@@ -1282,7 +1273,7 @@ export function MyLessonsPage() {
                               ? ids.filter((id) => id !== paper.id) : [...ids, paper.id])} />
                           <span className="min-w-0 flex-1">
                             <span className="block break-words text-sm text-ink-800">{paper.title}</span>
-                            <span className="block text-xs text-ink-500">{paper.classIds?.map((id) => classNames.get(id)).filter(Boolean).join("、")}</span>
+                            <span className="block text-xs text-ink-500">{paper.classIds?.map((id) => classNames.get(id)).filter(Boolean).join("、") || "尚未关联班级"}</span>
                             {previousDates.length > 0 && <span className="block text-xs text-amber-700">已于 {previousDates.join("、")} 布置过</span>}
                           </span>
                         </label>
@@ -1291,7 +1282,7 @@ export function MyLessonsPage() {
                 </div>
               </div>
             </details>
-            <span className="text-xs text-ink-400">附件最多 8 个；试卷可多选，与作业合并发布</span>
+            <span className="text-xs text-ink-400">附件最多 8 个；试卷可多选，发布后自动将所选班级加入试卷使用对象</span>
           </div>
           {homeworkUploads.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label="作业附件上传中">

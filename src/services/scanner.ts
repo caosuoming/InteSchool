@@ -32,8 +32,15 @@ export interface ScannerPageRecord {
   verified: boolean;
   studentId: string | null;
   status: "pending" | "assigned";
+  /** Current school enrollment, derived at read time; never supplied by the scanner. */
+  studentClassId?: string | null;
+  studentClassName?: string | null;
+  qrCurrent?: boolean;
   reviewedAt?: string | null;
   reviewedBy?: string | null;
+  manualVerifiedAt?: string | null;
+  manualVerifiedBy?: string | null;
+  manualVerifiedRevisionId?: string | null;
   createdAt: string;
 }
 
@@ -101,7 +108,7 @@ export const scannerService = {
     return scannerService.updatePage(pageId, { studentId });
   },
 
-  async updatePage(pageId: string, patch: { studentId?: string | null; reviewed?: boolean }): Promise<ScannerPageRecord> {
+  async updatePage(pageId: string, patch: { studentId?: string | null; reviewed?: boolean; manualVerified?: boolean }): Promise<ScannerPageRecord> {
     return apiRequest<ScannerPageRecord>(`/api/scanner/pages/${encodeURIComponent(pageId)}`, {
       method: "PATCH", body: JSON.stringify(patch),
     }, true);

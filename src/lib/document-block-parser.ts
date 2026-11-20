@@ -640,10 +640,14 @@ function isSequentialMathQuestionStart(
   return Boolean(candidate && currentNumber && Number(candidate) === Number(currentNumber) + 1);
 }
 
+const mathQuestionPromptPrefixPattern =
+  /^(?:[（(【［][^）)】］]{1,40}[）)】］]\s*)?(?:已知|设|若|求|计算|证明|求证|判断|下列|选择|指出|写出|解答|阅读|根据|如图|关于|在|有)/;
+
 function shouldContinueNumberedSummary(
   line: string,
   block: Partial<DocumentBlock>,
   config: DocumentParseConfig,
+  nextLine?: string,
 ): boolean {
   const candidate = extractLeadingQuestionNumber(line);
   if (!candidate) return false;
@@ -662,6 +666,20 @@ function shouldContinueNumberedSummary(
   // exception is the expected next top-level question. Word/PDF extraction can
   // put its number (for example, "4.") on a line by itself.
   const currentQuestionNumber = extractQuestionNumber(block.content || "", config);
+  if (
+    config.subject?.trim() === "数学"
+    && currentQuestionNumber
+    && candidateNumber === Number(currentQuestionNumber) + 1
+  ) {
+    // A numbered summary can end at the same number as its parent question.
+    // A following numbered math prompt is then the next question, even when
+    // the summary itself was a sequential list. Word may separate "4." from
+    // its actual stem, so inspect the next nonempty line in that case.
+    const stem = candidate.rest || nextLine || "";
+    if (mathQuestionPromptPrefixPattern.test(stem.trim())) {
+      return false;
+    }
+  }
   if (config.subject?.trim() === "数学" && previous && candidateNumber === Number(previous.number) + 1) {
     return true;
   }
@@ -1187,7 +1205,7 @@ function trailingSolutionHeadingKind(text: string): TrailingSolutionHeadingKind 
 const geographySummaryLabelSource = String.raw`(?:【|［|\[)?\s*(?:难度|知识点|点睛)\s*(?:】|］|\])?\s*[:：]?\s*`;
 const geographySummaryStartPattern = /^(?:(?:【|［|\[)\s*(?:难度|知识点|点睛)\s*(?:】|］|\])|(?:难度|知识点|点睛)\s*[:：])/;
 
-const builtInTrailingAnalysisKeywords = ["详解", "【详解】", "【解答】"];
+const builtInTrailingAnalysisKeywords = ["详解", "【详解】", "【解答】", "评分细则", "【评分细则】", "评分标准"];
 const builtInAnalysisAsSummaryKeywords = ["分析", "【分析】", "分析："];
 
 function isAnalysisAsSummaryKeyword(keyword: string): boolean {
@@ -1217,19 +1235,45 @@ function splitNumberedTrailingEntries(line: string): NumberedTrailingEntry[] {
   // Accept this only when an explicit solution field immediately follows it.
   const compactEntry = /^(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?((?:【\s*(?:答案|解析|详解|解答)\s*】|(?:参考)?答案\s*[:：]|(?:解析|详解|解答|解)\s*[:：]).*)$/.exec(line);
   if (compactEntry) return [{ number: normalizeQuestionNumber(compactEntry[1]), rest: compactEntry[2].replace(/^解\s*[:：]\s*/, "").trim() }];
-  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})\s*(?:题\s*)?[、.．:：)）]\s*/g;
+  const markerPattern = /(^|[\s\u3000]+)(?:第\s*)?([\d０-９]{1,4})(?:\s*[-‐–—－~～至]\s*([\d０-９]{1,4}))?\s*(?:题\s*)?[、.．:：)）]\s*/g;
   const markers = [...line.matchAll(markerPattern)];
   if (markers.length === 0) return [];
   const firstIndex = markers[0].index || 0;
   if (line.slice(0, firstIndex).trim()) return [];
 
-  return markers.map((marker, index) => ({
-    number: normalizeQuestionNumber(marker[2]),
-    rest: line.slice(
+  return markers.flatMap((marker, index) => {
+    const rest = line.slice(
       (marker.index || 0) + marker[0].length,
       markers[index + 1]?.index ?? line.length,
-    ).trim(),
-  }));
+    ).trim();
+    if (!marker[3]) return [{ number: normalizeQuestionNumber(marker[2]), rest }];
+
+    const first = Number(normalizeQuestionNumber(marker[2]));
+    const last = Number(normalizeQuestionNumber(marker[3]));
+    const count = last - first + 1;
+    // A range such as "1-4. DACB" is a sequence of four single-choice
+    // answers. Never guess the mapping if its length is inconsistent.
+    if (count < 2 || count > 50) return [];
+    const letters = normalizeStructuralText(rest).replace(/[\s,，、;；/]/g, "").toUpperCase();
+    if (!/^[A-H]+$/.test(letters) || letters.length !== count) return [];
+    return [...letters].map((answer, offset) => ({
+      number: String(first + offset),
+      rest: answer,
+    }));
+  });
+}
+
+function splitMathConciseTrailingAnswer(solution: TrailingSolution): void {
+  if (!solution.answer || solution.analysis) return;
+  // In answer keys, "1. B 由题意..." and "13. -2 代入..." have no
+  // explicit 解析 label. Only split a short, unmistakable answer token.
+  const match = /^([A-H]{1,4}(?:[、,，;；][A-H]{1,4})*|[+\-−]?\d+(?:\.\d+)?(?:[/／]\d+)?|\$[^$\n]{1,70}\$)[ \t\u3000]+([^\n]+(?:\n[\s\S]*)?)$/i.exec(solution.answer.trim());
+  if (!match) return;
+  const isChoiceAnswer = /^[A-H]{1,4}(?:[、,，;；][A-H]{1,4})*$/i.test(match[1]);
+  const hasExplanationCue = /^(?:由|根据|因为|所以|故|利用|可得|可知|解得|代入|结合|设|当|因此|从|作|令|对|若|注意|本题|首先|∵|∴)/.test(match[2]);
+  if (!hasExplanationCue && (!isChoiceAnswer || match[2].length < 3)) return;
+  solution.answer = match[1];
+  solution.analysis = match[2].trim();
 }
 
 function normalizeTableHeader(value: string): string {
@@ -1469,6 +1513,12 @@ function parseTrailingSolutions(
       continue;
     }
 
+    // Do not append a malformed compact range to the preceding answer.
+    if (/^(?:第\s*)?[\d０-９]{1,4}\s*[-‐–—－~～至]\s*[\d０-９]{1,4}\s*[、.．:：)）]/.test(line)) {
+      submitCurrent();
+      continue;
+    }
+
     let entry = extractLeadingQuestionNumber(line);
     if (entry && isNestedTrailingAnswerLine(line, entry, current)) {
       currentField = appendTrailingSolutionLine(current!, line, currentField, patterns)
@@ -1477,7 +1527,9 @@ function parseTrailingSolutions(
     }
     if (!entry) {
       const bareNumber = /^([\d０-９]{1,4})\s+(.+)$/.exec(line);
-      if (bareNumber && anchoredPatterns.some((pattern) => pattern?.test(bareNumber[2]))) {
+      if (bareNumber && (anchoredPatterns.some((pattern) => pattern?.test(bareNumber[2]))
+        || (config.subject?.trim() === "数学"
+          && /^(?:[A-H]{1,4}(?![a-z])|[+\-−]?\d+(?:\.\d+)?(?:[/／]\d+)?|\$[^$\n]{1,70}\$)(?:[ \t\u3000]|$)/i.test(bareNumber[2])))) {
         entry = {
           number: normalizeQuestionNumber(bareNumber[1]),
           rest: bareNumber[2].trim(),
@@ -1501,6 +1553,7 @@ function parseTrailingSolutions(
     currentField = appendTrailingSolutionLine(current, line, currentField, patterns);
   }
   submitCurrent();
+  if (config.subject?.trim() === "数学") solutions.forEach(splitMathConciseTrailingAnswer);
   if (config.subject?.trim() === "化学") {
     for (const solution of solutions) {
       const match = /^\s*[（(]?\s*([A-Da-d]{1,4})\s*[）)]?\s*[，,。.;；]?\s*(?:【\s*)?解析(?:\s*】)?\s*[:：]\s*([\s\S]*)$/.exec(solution.answer || "");
@@ -1901,7 +1954,7 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
       currentBlock.type === "question"
       && currentQuestionField === "summary"
       && !confirmedMathStart
-      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config))
+      && (mathDecimal || shouldContinueNumberedSummary(line, currentBlock, config, nextNonEmptyLine(lineIndex)))
     ) {
       appendQuestionField(currentBlock, "summary", line);
       continue;
@@ -2153,7 +2206,7 @@ function normalizeBlockFillBlankArea(block: DocumentBlock): void {
   block.content = content;
 }
 
-const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
+const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用|过|给定|根据|以).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
 
 /** Recover later prompts from interleaved math worked examples. */
 function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {
@@ -2792,27 +2845,52 @@ export function parseDocumentBlocks(content: string, config: DocumentParseConfig
   const lines = answerOnlyStart >= 0
     ? sourceLines.slice(0, answerOnlyStart)
     : sourceLines;
-  const solutionHeadingIndexes = lines
-    .map((line, index) => ({ index, kind: trailingSolutionHeadingKind(line.trim()) }))
-    .filter((entry): entry is { index: number; kind: TrailingSolutionHeadingKind } => Boolean(entry.kind))
-    .reverse();
+  type HeadingCandidate = {
+    index: number;
+    kind: TrailingSolutionHeadingKind;
+    embedded?: { prefix: string; remainder: string };
+  };
+  const solutionHeadingIndexes: HeadingCandidate[] = lines.flatMap((line, index): HeadingCandidate[] => {
+    const kind = trailingSolutionHeadingKind(line.trim());
+    if (kind) return [{ index, kind }];
+    if (config.subject?.trim() !== "数学") return [];
+    // Word may embed a heading between other text in a paragraph.
+    const marker = /参考\s*答案(?:\s*(?:与|及|和|以及)\s*(?:解析|评分\s*细则))?|答案\s*(?:与|及|和|以及)?\s*解析|评分\s*细则|评分\s*标准|解析/.exec(line);
+    return marker ? [{
+      index,
+      kind: "answerAnalysis",
+      embedded: { prefix: line.slice(0, marker.index), remainder: line.slice(marker.index + marker[0].length) },
+    }] : [];
+  }).reverse();
 
-  for (const { index: headingIndex, kind } of solutionHeadingIndexes) {
+  for (const { index: headingIndex, kind, embedded } of solutionHeadingIndexes) {
     const headingLine = lines[headingIndex].trim();
-    const inlineAnswers = headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:以及|与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
-    const solutionLines = inlineAnswers !== headingLine
+    const inlineAnswers = embedded
+      ? embedded.remainder.replace(/^(?:\s*(?:及|与|和|以及)?\s*(?:解析|评分\s*细则|评分\s*标准)\s*)*[，,：:]?\s*/, "")
+      : headingLine.replace(/^(?:【\s*)?(?:参考)?答案(?:(?:以及|与|和|及)?解析)?(?:\s*】)?\s*[:：]\s*/, "");
+    const solutionLines = embedded || inlineAnswers !== headingLine
       ? [inlineAnswers, ...lines.slice(headingIndex + 1)]
       : lines.slice(headingIndex + 1);
     const solutions = parseTrailingSolutions(solutionLines, config);
     if (solutions.length === 0 || (chemistry && kind === "answer")) continue;
 
-    const blocks = parseDocumentBlocksCore(lines.slice(0, headingIndex).join("\n"), config);
+    const beforeHeading = embedded && /^\s*(?:第\s*\d+\s*题|\d{1,4}\s*[.．、])/.test(embedded.prefix)
+      ? [...lines.slice(0, headingIndex), embedded.prefix]
+      : lines.slice(0, headingIndex);
+    const blocks = parseDocumentBlocksCore(beforeHeading.join("\n"), config);
     const questions = blocks.filter((block) => block.type === "question");
     if (questions.length === 0) continue;
+    if (embedded) {
+      // An isolated mention of "解析" in a question must not delimit a key.
+      if (questions.length < 2 || questions.some((question) => question.answer || question.analysis)) continue;
+      const numbers = new Set(questions.map((question) => extractQuestionNumber(question.content, config)).filter(Boolean));
+      const matched = solutions.filter((solution) => numbers.has(solution.number)).length;
+      if (matched < 2 || matched * 2 < solutions.length) continue;
+    }
     if (kind === "answer" && questions.some((question) => question.answer || question.analysis)) continue;
 
     const merged = mergeTrailingSolutions(blocks, solutions, config, {
-      allowPositionalFallback: kind !== "answer",
+      allowPositionalFallback: kind !== "answer" && !embedded,
     });
     const requiredMatches = kind === "answer" && config.subject?.trim() !== "地理"
       ? Math.min(2, questions.length) : 1;

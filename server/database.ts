@@ -1,3 +1,4 @@
+import { migrateMathCoursewareMaterials } from "./lib/math-courseware-migration.js";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -195,6 +196,11 @@ export class DatabaseStore {
       await store.reloadStateCache();
       await store.ensureDemoAccount();
       await store.ensureBootstrapAdmin();
+      const beforeMigration = store.loadState();
+      const nextState = structuredClone(beforeMigration);
+      if (migrateMathCoursewareMaterials(nextState) > 0) {
+        await store.saveState(beforeMigration, nextState);
+      }
       return store;
     } catch (error) {
       await sql.close();
@@ -1428,7 +1434,8 @@ export class DatabaseStore {
   ): Promise<{ items: Question[]; total: number }> {
     const { clauses, params } = questionSearchWhere(filter);
     params.push(teacherId);
-    clauses.push(`(owner_id = $${params.length} OR coalesce((data_json->>'isShared')::boolean, false))`);
+    const viewerParam = params.length;
+    clauses.push(`(owner_id = $${viewerParam} OR coalesce((data_json->>'isShared')::boolean, false))`);
 
     // Keep multi-subject teacher libraries on the indexed SQL pagination path.
     // Legacy questions without a stored subject inherit it from their owner's
@@ -1451,7 +1458,7 @@ export class DatabaseStore {
       const legacySchoolsParam = params.length;
       if (inheritedOtherSchools) params.push(affiliatedSchoolIds);
       const otherSchoolsParam = params.length;
-      clauses.push(`(
+      const subjectClause = `(
         btrim(coalesce(data_json->>'subject', '')) = $${subjectParam}
         OR (
           nullif(btrim(data_json->>'subject'), '') IS NULL
@@ -1460,7 +1467,14 @@ export class DatabaseStore {
             ${inheritedOtherSchools ? `OR NOT coalesce(school_id = ANY($${otherSchoolsParam}::text[]), false)` : ""}
           )
         )
-      )`);
+      )`;
+      if (filter.ownerSubjectSchoolId !== undefined) {
+        params.push(filter.ownerSubjectSchoolId);
+        clauses.push(`(${subjectClause} OR
+          (owner_id = $${viewerParam} AND school_id IS DISTINCT FROM $${params.length}))`);
+      } else {
+        clauses.push(subjectClause);
+      }
     }
 
     const countResult = await this.sql.query<{ total: string | number }>(`

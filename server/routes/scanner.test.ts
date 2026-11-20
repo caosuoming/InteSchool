@@ -99,6 +99,48 @@ describe("scanned page persistence and permissions", () => {
     expect(image.rawPayload.subarray(0, 8)).toEqual(png.subarray(0, 8));
   });
 
+  it("audits manual QR verification and derives students' current class", async () => {
+    const data = payload(png);
+    const uploaded = await built.app.inject({
+      method: "POST",
+      url: "/api/scanner/pages?" + new URLSearchParams({ schoolId, sheetId, sheetType: "paper" }),
+      headers: { cookie, "x-inteschool-csrf": csrf, "content-type": data.contentType },
+      payload: data.body,
+    });
+    expect(uploaded.statusCode).toBe(200);
+    const id = uploaded.json().id as string;
+    const patch = (body: Record<string, unknown>) => built.app.inject({
+      method: "PATCH", url: "/api/scanner/pages/" + id,
+      headers: { cookie, "x-inteschool-csrf": csrf }, payload: body,
+    });
+    const first = await patch({ manualVerified: true });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({ qrCurrent: true, manualVerifiedBy: "tch-1", manualVerifiedRevisionId: null });
+    expect(first.json().manualVerifiedAt).toBeTruthy();
+
+    const student = (built.store.loadState().students as Array<{ id: string; schoolId: string; classId: string }>)
+      .find((entry) => entry.schoolId === schoolId && entry.classId)!;
+    const assigned = await patch({ studentId: student.id, reviewed: true });
+    expect(assigned.statusCode).toBe(200);
+    expect(assigned.json()).toMatchObject({ studentId: student.id, studentClassId: student.classId, qrCurrent: true });
+    const withdrawn = await patch({ manualVerified: false });
+    expect(withdrawn.json()).toMatchObject({
+      manualVerifiedAt: null, manualVerifiedBy: null, qrCurrent: false, reviewedAt: null,
+    });
+    const rescan = await patch({ manualVerified: true });
+    expect(rescan.json().qrCurrent).toBe(true);
+    await withSerializedState(built.store, (state) => {
+      const sheet = (state.examPapers as Array<Record<string, unknown>>).find((item) => item.id === sheetId)!;
+      sheet.answerSheetRevisionId = "manual-revision";
+    });
+    const latest = await built.app.inject({ method: "GET", url: "/api/scanner/pages?schoolId=" + schoolId, headers: { cookie } });
+    expect(latest.json().find((row: { id: string }) => row.id === id).qrCurrent).toBe(false);
+    await withSerializedState(built.store, (state) => {
+      const sheet = (state.examPapers as Array<Record<string, unknown>>).find((item) => item.id === sheetId)!;
+      delete sheet.answerSheetRevisionId;
+    });
+  });
+
   it("rejects obsolete QR codes after a sheet revision is replaced", async () => {
     const data = payload(png);
     const upload = async (qrPayload: string) => built.app.inject({

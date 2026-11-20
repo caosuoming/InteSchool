@@ -91,15 +91,28 @@ function normalizePaperIds(paperIds: string[] | undefined): string[] {
   return [...new Set(paperIds)];
 }
 
-function validatePapers(paperIds: string[], schoolId: string, classIds: string[]): void {
+function validatePapers(paperIds: string[], schoolId: string): void {
   const papers = db.read("examPapers") as ExamPaper[];
   for (const id of paperIds) {
     const paper = papers.find((item) => item.id === id);
-    if (!paper || paper.schoolId !== schoolId
-      || !paper.classIds?.some((classId) => classIds.includes(classId))) {
-      throw new Error("所选试卷不存在或不适用于发布班级");
+    if (!paper || paper.schoolId !== schoolId) {
+      throw new Error("所选试卷不存在或不属于当前学校");
     }
   }
+}
+
+function addPaperUsageClasses(paperIds: string[], classIds: string[]): void {
+  if (paperIds.length === 0) return;
+  const selectedIds = new Set(paperIds);
+  const now = new Date().toISOString();
+  db.update("examPapers", (papers: ExamPaper[]) => papers.map((paper) => {
+    if (!selectedIds.has(paper.id)) return paper;
+    const current = paper.classIds || [];
+    const added = classIds.filter((id) => !current.includes(id));
+    return added.length > 0
+      ? { ...paper, classIds: [...current, ...added], updatedAt: now }
+      : paper;
+  }));
 }
 
 function validateInput(input: ClassroomHomeworkInput, paperIds: string[]): ClassroomHomeworkAttachment[] {
@@ -187,12 +200,7 @@ export const classroomHomeworkService = {
       throw new Error("只能向自己的任教班级发布作业");
     }
 
-    validatePapers(paperIds, schoolId, uniqueClassIds);
-    if (!input.content.trim() && attachments.length === 0 && uniqueClassIds.some((id) =>
-      !paperIds.some((paperId) => (db.read("examPapers") as ExamPaper[])
-        .some((paper) => paper.id === paperId && paper.classIds?.includes(id))))) {
-      throw new Error("所选试卷未覆盖全部发布班级");
-    }
+    validatePapers(paperIds, schoolId);
     const affiliation = currentAffiliation(teacher);
     const now = new Date().toISOString();
     const homework: ClassroomHomework = {
@@ -215,6 +223,7 @@ export const classroomHomeworkService = {
     };
 
     db.update("classroomHomeworks", (items: ClassroomHomework[]) => [homework, ...items]);
+    addPaperUsageClasses(paperIds, uniqueClassIds);
     return homework;
   },
 
@@ -257,12 +266,7 @@ export const classroomHomeworkService = {
       throw new Error("只能向自己的任教班级发布作业");
     }
 
-    validatePapers(paperIds, schoolId, uniqueClassIds);
-    if (!input.content.trim() && attachments.length === 0 && uniqueClassIds.some((id) =>
-      !paperIds.some((paperId) => (db.read("examPapers") as ExamPaper[])
-        .some((paper) => paper.id === paperId && paper.classIds?.includes(id))))) {
-      throw new Error("所选试卷未覆盖全部发布班级");
-    }
+    validatePapers(paperIds, schoolId);
     const affiliation = currentAffiliation(teacher);
     const updated: ClassroomHomework = {
       ...existing,
@@ -281,6 +285,7 @@ export const classroomHomeworkService = {
     db.update("classroomHomeworks", (items: ClassroomHomework[]) => items.map((item) => (
       item.id === id ? updated : item
     )));
+    addPaperUsageClasses(paperIds, uniqueClassIds);
     return updated;
   },
 

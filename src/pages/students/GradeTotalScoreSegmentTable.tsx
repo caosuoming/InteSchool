@@ -16,6 +16,7 @@ import {
   DEFAULT_TOTAL_SCORE_SEGMENT_MIN,
   DEFAULT_TOTAL_SCORE_SEGMENT_SIZE,
 } from "@/lib/grade-total-score-segment";
+import { gradeCustomTotals } from "@/lib/grade-custom-totals";
 import { exportGradeTotalScoreSegmentReport } from "@/lib/grade-spreadsheet";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -75,6 +76,9 @@ export function GradeTotalScoreSegmentTable({
     ),
     [context, effectiveClassAverageTemplate, effectiveTemplate, exam, settings],
   );
+  const customReports = useMemo(() => gradeCustomTotals(effectiveClassAverageTemplate, exam.subjects).map((total) =>
+    buildGradeTotalScoreSegmentReport(exam, effectiveTemplate, context, effectiveClassAverageTemplate, settings, total),
+  ), [effectiveClassAverageTemplate, exam, effectiveTemplate, context, settings]);
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
   const standardStats = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey) => {
     const column = report.columns.find((item) => item.kind === "subtotal" && item.track === track);
@@ -206,7 +210,7 @@ export function GradeTotalScoreSegmentTable({
       const teacherId = useAuthStore.getState().teacher?.id;
       if (!teacherId) throw new Error("请先登录");
       await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-      await exportGradeTotalScoreSegmentReport(report, exam.name, buildGradeReportNotes(exam, settings));
+      await exportGradeTotalScoreSegmentReport(report, exam.name, buildGradeReportNotes(exam, settings), customReports);
       toast.success("总分分数段汇总表已导出");
     } catch (error) {
       toast.error("导出失败", error instanceof Error ? error.message : undefined);
@@ -479,6 +483,30 @@ export function GradeTotalScoreSegmentTable({
           </div>
         </div>
       )}
+      {customReports.map((custom) => (
+        <section key={custom.customId} className="overflow-x-auto border-t border-ink-100 p-5">
+          <div className="mb-3 flex min-w-max items-center justify-between gap-4">
+            <h3 className="font-serif text-lg font-semibold text-ink-900">{custom.title}</h3>
+            <div className="text-xs text-ink-500">统计学科：{gradeCustomTotals(effectiveClassAverageTemplate, exam.subjects).find((total) => total.id === custom.customId)?.subjects.join("、")}</div>
+          </div>
+          <table className="w-max min-w-full table-auto border-collapse text-[11px]">
+            <thead><tr className="bg-ink-50">
+              <th className="border border-ink-300 px-2 py-1.5">分数段</th>
+              {custom.columns.map((column) => <th key={column.key} className="border border-ink-300 px-2 py-1.5">{column.label}</th>)}
+            </tr></thead>
+            <tbody>
+              {custom.rows.map((row) => <tr key={row.threshold}>
+                <th className="border border-ink-300 px-2 py-1.5">{row.threshold}分以上</th>
+                {custom.columns.map((column) => <td key={column.key} className="border border-ink-300 px-2 py-1.5 text-center">{row.counts[column.key] || ""}</td>)}
+              </tr>)}
+              <tr className="bg-ink-50">
+                <th className="border border-ink-300 px-2 py-1.5">实考人数</th>
+                {custom.columns.map((column) => <td key={column.key} className="border border-ink-300 px-2 py-1.5 text-center">{custom.validTotalCounts[column.key] || ""}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      ))}
       <GradeReportNotes notes={buildGradeReportNotes(exam, settings)} />
     </Card>
   );

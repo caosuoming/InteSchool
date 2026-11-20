@@ -1,4 +1,5 @@
 import type {
+  GradeCustomTotalScore,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -6,6 +7,7 @@ import type {
   GradeScoreRecord,
   GradeStatisticsTemplate,
 } from "../types/index.js";
+import { gradeCustomTotal } from "./grade-custom-totals.js";
 import { resolveClassAverageOptions } from "./grade-class-average.js";
 import {
   inferGradeAcademicTrackFromSelection,
@@ -32,6 +34,9 @@ export interface GradeTotalScoreRankingTable {
   key: string;
   title: string;
   rows: GradeTotalScoreRankingRow[];
+  totalLabel?: string;
+  totalId?: string;
+  scoreModeLabel?: string;
 }
 
 export interface GradeTotalScoreRankingReport {
@@ -57,9 +62,14 @@ function rankedRows(
   classLabels: Record<string, string>,
   topN: number,
   settings: GradeExamSettings,
+  customTotal?: GradeCustomTotalScore,
 ): GradeTotalScoreRankingRow[] {
   const sorted = records
     .flatMap((record) => {
+      if (customTotal) {
+        const score = gradeCustomTotal(record, customTotal);
+        return score === null ? [] : [{ record, score }];
+      }
       const ranked = rankedClassSubjects(template.subjects, settings, record.classId);
       return ranked.length ? [{
         record,
@@ -101,10 +111,13 @@ export function buildGradeTotalScoreRankingReport(
   template: GradeStatisticsTemplate,
   context: GradeImportContext,
   classAverageTemplate?: GradeStatisticsTemplate,
+  customTotal?: GradeCustomTotalScore,
 ): GradeTotalScoreRankingReport {
-  const effectiveTemplate = template.subjects.length > 0
-    ? template
-    : { ...template, subjects: [...exam.subjects] };
+  const effectiveTemplate = customTotal
+    ? { ...template, subjects: customTotal.subjects, scoreMode: customTotal.scoreMode }
+    : template.subjects.length > 0
+      ? template
+      : { ...template, subjects: [...exam.subjects] };
   const classOptions = resolveClassAverageOptions(
     exam,
     context,
@@ -141,8 +154,11 @@ export function buildGradeTotalScoreRankingReport(
     limit: number,
   ): GradeTotalScoreRankingTable => ({
     key,
-    title: `${exam.name}${label}（${scoreModeLabel}）`,
-    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit, exam.settings),
+    title: `${exam.name}${customTotal ? customTotal.name : ""}${label}（${scoreModeLabel}）`,
+    totalLabel: customTotal?.name,
+    totalId: customTotal?.id,
+    scoreModeLabel,
+    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit, exam.settings, customTotal),
   });
 
   const rankedGroups = new Map<string, GradeScoreRecord[]>();

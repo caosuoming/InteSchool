@@ -269,6 +269,43 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    ["4. 已知 y，求 y。", "4. 已知 y，求 y。"],
+    ["４．已知 y，求 y。", "４．已知 y，求 y。"],
+    ["4.\n已知 y，求 y。", "4.\n已知 y，求 y。"],
+    ["４．\n已知 y，求 y。", "４．\n已知 y，求 y。"],
+  ])("recovers question 4 after a numbered math summary: %s", (source, expected) => {
+    const blocks = parseDocumentBlocks([
+      "3．已知 x，求 x。",
+      "总结：",
+      "1. 先审题。",
+      "2. 分类讨论。",
+      "3. 复核结论。",
+      source,
+      "5．已知 z，求 z。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions.map((block) => block.content)).toEqual([
+      "3．已知 x，求 x。",
+      expected,
+      "5．已知 z，求 z。",
+    ]);
+    expect(questions[0].summary).toBe("1. 先审题。\n2. 分类讨论。\n3. 复核结论。");
+  });
+
+  it("keeps numbered summary items when they do not introduce a new math question", () => {
+    const blocks = parseDocumentBlocks([
+      "3．已知 x，求 x。",
+      "总结：",
+      "1. 先审题。",
+      "2. 分类讨论。",
+      "3. 复核结论。",
+      "4. 继续检查边界值。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(1);
+    expect(blocks[0].summary).toContain("4. 继续检查边界值。");
+  });
+
   it("recovers consecutive math questions when their number punctuation is missing", () => {
     const blocks = parseDocumentBlocks([
       "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：",
@@ -673,6 +710,80 @@ describe("document block parser", () => {
       options: [],
       answer: "①③",
     });
+  });
+
+  it("maps an embedded math reference-answer and scoring heading to unanswered questions", () => {
+    const blocks = parseDocumentBlocks([
+      "安徽省八校高三数学联考试卷",
+      "一、选择题",
+      "1. 计算 1+1 的值 A. 1 B. 2 C. 3 D. 4",
+      "2. 判断不等式 A. 对 B. 错 C. 未知 D. 均不对",
+      "二、填空题",
+      "3. 求方程 x+2=0 的根：____。",
+      "安徽省八校联考数学参考答案与评分细则：1. B 由计算可知 1+1=2。",
+      "2 AC 根据条件可排除其他选项。",
+      "3. -2 代入原方程验证。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(3);
+    expect(questions.map((q) => q.answer)).toEqual(["B", "AC", "-2"]);
+    expect(questions.map((q) => q.analysis)).toEqual([
+      "由计算可知 1+1=2。",
+      "根据条件可排除其他选项。",
+      "代入原方程验证。",
+    ]);
+    expect(questions.map((q) => q.questionType)).toEqual(["single", "multiple", "short"]);
+    expect(blocks.every((block) => !block.content.includes("参考答案"))).toBe(true);
+  });
+
+  it.each(["解析", "评分细则", "评分标准"])(
+    "maps a math solution section labelled %s even without 答案",
+    (heading) => {
+      const blocks = parseDocumentBlocks([
+        "1. 选择正确结论 A. 甲 B. 乙 C. 丙 D. 丁",
+        "2. 求 x+1=2 的解：____。",
+        heading,
+        "1. C 故选择第三项。",
+        "2. $1$ 解得 x=1。",
+      ].join("\n"), { ...config, subject: "数学" });
+      expect(blocks.filter((block) => block.type === "question")).toHaveLength(2);
+      expect(blocks.map((block) => block.answer)).toEqual(["C", "$1$"]);
+      expect(blocks.map((block) => block.analysis)).toEqual([
+        "故选择第三项。",
+        "解得 x=1。",
+      ]);
+    },
+  );
+
+  it("splits compact choice keys from the actual math paper's scoring guide", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 命题 p 的否定是哪项 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2. 求集合的交集 A. 甲 B. 乙 C. 丙 D. 丁",
+      "3. 判断对数不等式 A. 甲 B. 乙 C. 丙 D. 丁",
+      "2027 届高三 10 月教学质量检测·数学参考答案、解析及评分细则",
+      "1.A 命题 p 的否定为全称命题。故选 A。",
+      "2. D M={x|x>1}，所以选择 D。",
+      "3. B 由对数的单调性可知结论成立。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(3);
+    expect(questions.map((q) => q.answer)).toEqual(["A", "D", "B"]);
+    expect(questions[0].analysis).toContain("命题 p 的否定");
+    expect(questions[1].analysis).toContain("M={x|x>1}");
+    expect(questions[2].analysis).toContain("对数的单调性");
+  });
+
+  it("keeps inline math prose about 解析 when the questions already have answers", () => {
+    const blocks = parseDocumentBlocks([
+      "1. 解析几何的基本运算 A. 甲 B. 乙 C. 丙 D. 丁",
+      "答案：A",
+      "2. 求出解析式。",
+      "答案：x=2",
+      "3. 已知 f(x)，求解析式。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(3);
+    expect(blocks.filter((block) => block.type === "question").map((q) => q.answer))
+      .toEqual(["A", "x=2", undefined]);
   });
 
   it("maps a trailing 答案与解析 section back to numbered questions", () => {
@@ -3222,5 +3333,44 @@ describe("compact grouped mathematics answer keys", () => {
     const parsed = blocks.filter((item) => item.type === "question");
     expect(parsed).toHaveLength(3);
     expect(parsed.every((item) => !item.answer)).toBe(true);
+});
+
+describe("issue 1539: interleaved mathematics essay prompts", () => {
+  const math = { ...config, subject: "数学" };
+
+  it("regroups a later proof prompt beginning with 过 and keeps solutions numbered", () => {
+    const blocks = parseDocumentBlocks([
+      "B组",
+      "11．已知双曲线 C 的左、右顶点分别为 A、B，左焦点为 F。",
+      "(1) 求双曲线 C 的标准方程；",
+      "【解答】由题意可得双曲线的标准方程为 x²-y²/3=1。",
+      "(2) 过左焦点 F 的直线 l 分别交双曲线 C 的左、右两支于 N、M，直线 AM 与 BN 相交于点 T，求证：点 T 在定直线上。",
+      "【解答】设交点坐标并联立方程，解得点 T 的横坐标为常数。",
+      "C组",
+      "12．已知抛物线，求其焦点坐标。",
+    ].join("\n"), math);
+
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(["B组", "C组"]);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].content).toContain("(1) 求双曲线");
+    expect(questions[0].content).toContain("(2) 过左焦点 F");
+    expect(questions[0].analysis).toContain("（1）由题意可得");
+    expect(questions[0].analysis).toContain("（2）设交点坐标");
+    expect(questions[0].analysis).not.toContain("(2) 过左焦点");
+    expect(questions[1].content).toContain("12．已知抛物线");
+  });
+
+  it("does not promote a numbered proof step into an essay prompt", () => {
+    const question = parseDocumentBlocks([
+      "四、解答题",
+      "11．已知双曲线 C，求其标准方程。",
+      "(1) 求出参数 a；",
+      "【解答】先根据离心率建立关系式。",
+      "(2) 过点 A 作辅助线，由相似三角形可得 b 的值。",
+    ].join("\n"), math).find((block) => block.type === "question")!;
+    expect(question.content).not.toContain("(2) 过点 A");
+    expect(question.analysis).toContain("(2) 过点 A");
   });
 });

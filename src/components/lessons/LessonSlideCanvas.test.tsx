@@ -58,6 +58,23 @@ describe("LessonSlideCanvas", () => {
     expect(screen.getByTestId("embedded-ggb")).toHaveAttribute("data-src", "/api/ggb");
   });
 
+  it("renders web animations in a sandbox or an external open button", () => {
+    const page = { id: "web-1", kind: "webpage" as const, src: "/api/files/animation", title: "函数动画", x: 10, y: 10, width: 70, height: 65, backgroundColor: "#F1F7FF" };
+    const { rerender } = render(
+      <LessonSlideCanvas elements={[{ ...page, displayMode: "embed" }]}><div>课堂</div></LessonSlideCanvas>,
+    );
+    const frame = screen.getByTitle("函数动画");
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(frame).toHaveAttribute("src", "/api/files/animation");
+    rerender(
+      <LessonSlideCanvas elements={[{ ...page, displayMode: "button" }]}><div>课堂</div></LessonSlideCanvas>,
+    );
+    const link = screen.getByRole("link", { name: "打开函数动画" });
+    expect(link).toHaveAttribute("href", "/api/files/animation");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
   it("scales fixed-size slide content to match the fullscreen reference size", async () => {
     render(
       <LessonSlideCanvas

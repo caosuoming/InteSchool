@@ -60,7 +60,7 @@ vi.mock("@/pages/question-bank/QuestionBankPage", () => ({
 }));
 
 vi.mock("@/services/question", () => ({
-  questionService: { listQuestions: vi.fn() },
+  questionService: { listQuestions: vi.fn(), updateQuestion: vi.fn() },
 }));
 vi.mock("@/services/examPaper", () => ({
   examPaperService: {
@@ -72,7 +72,7 @@ vi.mock("@/services/courseware", () => ({
   coursewareService: { listCoursewares: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("@/services/material", () => ({
-  materialService: { listMaterials: vi.fn() },
+  materialService: { listMaterials: vi.fn(), updateMaterial: vi.fn() },
 }));
 vi.mock("@/services/lecture", () => ({
   lectureService: {
@@ -113,6 +113,7 @@ vi.mock("@/services/analytics", () => ({
     listUsedDocumentIds: vi.fn().mockResolvedValue([]),
     listAnswerRecordsByStudents: vi.fn(),
     getKnowledgeMastery: vi.fn(),
+    annotateTreeWithStudentProgress: vi.fn(),
   },
 }));
 vi.mock("@/services/basket", () => ({
@@ -401,6 +402,106 @@ describe("MyResourcesPage resource basket", () => {
 
     expect(analyticsService.listAnswerRecordsByStudents).toHaveBeenCalledWith([studentOne.id]);
     expect(analyticsService.getKnowledgeMastery).toHaveBeenCalledWith([studentOne.id], "school-1");
+  });
+
+  it("edits question and material directories from the resource basket", async () => {
+    const populatedBasket = {
+      ...createdBasket, questionIds: [basketQuestion.id], materialIds: [basketMaterial.id],
+    };
+    const chapters: TreeNode = {
+      ...emptyTree,
+      children: [
+        { id: "chapter-1", name: "原章节", type: "chapter", count: 1, children: [] },
+        { id: "chapter-2", name: "新章节", type: "chapter", count: 0, children: [] },
+      ],
+    };
+    const methods: TreeNode = {
+      ...emptyTree, type: "method",
+      children: [{ id: "method-1", name: "归纳思想", type: "method", count: 0, children: [] }],
+    };
+    vi.mocked(knowledgeService.getChapterTree).mockResolvedValue(chapters);
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue(methods);
+    vi.mocked(basketService.listBaskets).mockResolvedValue([populatedBasket]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(populatedBasket);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([basketQuestion]);
+    vi.mocked(materialService.listMaterials).mockResolvedValue([basketMaterial]);
+    vi.mocked(questionService.updateQuestion).mockImplementation(async (_id, patch) => ({
+      ...basketQuestion, ...patch,
+    }));
+    vi.mocked(materialService.updateMaterial).mockImplementation(async (_id, patch) => ({
+      ...basketMaterial, ...patch,
+    }));
+
+    render(<MemoryRouter><MyResourcesPage initialTab="basket" /></MemoryRouter>);
+    fireEvent.click(await screen.findByText("复习资料"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑题目属性" }));
+    expect(await screen.findByRole("heading", { name: "编辑资源属性" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消勾选原章节" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消勾选原章节" }));
+    fireEvent.click(screen.getByRole("button", { name: "勾选新章节" }));
+    fireEvent.click(screen.getByRole("button", { name: "勾选归纳思想" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
+    await waitFor(() => {
+      expect(questionService.updateQuestion).toHaveBeenCalledWith(basketQuestion.id, {
+        chapterIds: ["chapter-2"], knowledgePointIds: ["kp-1"], thoughtMethodIds: ["method-1"],
+      });
+    });
+    expect(await screen.findByRole("button", { name: "编辑素材属性" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑素材属性" }));
+    expect(await screen.findByRole("button", { name: "取消勾选原章节" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "勾选归纳思想" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
+    await waitFor(() => {
+      expect(materialService.updateMaterial).toHaveBeenCalledWith(basketMaterial.id, {
+        chapterIds: ["chapter-1"], knowledgePointIds: ["kp-1"], thoughtMethodIds: ["method-1"],
+      });
+    });
+  });
+
+  it("defaults to knowledge mastery and optionally shows real chapter/method progress", async () => {
+    const q = { ...basketQuestion, thoughtMethodIds: ["method-1"] };
+    const populatedBasket = { ...createdBasket, questionIds: [q.id] };
+    vi.mocked(basketService.listBaskets).mockResolvedValue([populatedBasket]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(populatedBasket);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([q]);
+    vi.mocked(knowledgeService.getChapterTree).mockResolvedValue({
+      ...emptyTree,
+      children: [{ id: "chapter-1", name: "代数章节", type: "chapter", count: 1, children: [] }],
+    });
+    vi.mocked(knowledgeService.getMethodTree).mockResolvedValue({
+      ...emptyTree, type: "method",
+      children: [{ id: "method-1", name: "归纳法", type: "method", count: 1, children: [] }],
+    });
+    vi.mocked(analyticsService.annotateTreeWithStudentProgress).mockImplementation(async (tree) => ({
+      ...tree,
+      children: tree.children.map((child) => ({ ...child, masteryRate: 0.75 })),
+    }));
+
+    render(<MemoryRouter><MyResourcesPage initialTab="basket" /></MemoryRouter>);
+    fireEvent.click(await screen.findByText("复习资料"));
+    await screen.findByRole("button", { name: "编辑题目属性" });
+    expect(screen.getByRole("checkbox", { name: "知识点" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "章节课" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "方法" })).not.toBeChecked();
+    expect(screen.queryByText("章节课掌握情况")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "章节课" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "方法" }));
+    expect(await screen.findByText("章节课掌握情况")).toBeInTheDocument();
+    expect(await screen.findByText("方法掌握情况")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText("基本掌握 75%")).toHaveLength(2);
+    });
+    expect(analyticsService.annotateTreeWithStudentProgress).toHaveBeenCalledWith(
+      expect.anything(), [studentOne.id], "chapter",
+    );
+    expect(analyticsService.annotateTreeWithStudentProgress).toHaveBeenCalledWith(
+      expect.anything(), [studentOne.id], "method",
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "章节课" }));
+    expect(screen.queryByText("章节课掌握情况")).not.toBeInTheDocument();
   });
 
   it("removes questions and materials from the selected basket", async () => {

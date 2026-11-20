@@ -1086,7 +1086,17 @@ export interface GradeTemplateColumn {
   width?: number;
 }
 
+/** One independently configured total, calculated only for students with all selected scores. */
+export interface GradeCustomTotalScore {
+  id: string;
+  name: string;
+  subjects: string[];
+  scoreMode: GradeScoreMode;
+}
+
 export interface GradeClassAverageOptions {
+  /** Additional totals configured in 表一 and reused by 表二、表五、表六. */
+  customTotals?: GradeCustomTotalScore[];
   /** 报表标题；为空时根据考试名称自动生成。 */
   title?: string;
   /** 报表日期，格式为 YYYY-MM-DD。 */
@@ -1637,6 +1647,8 @@ export interface Question {
   /** 属性区块显示顺序：chapter=章节目录，knowledge=知识点目录，remark=备注 */
   sectionOrder?: string[];
   sourceDocId?: string;
+  /** 合并题目时保留多个来源文档的关联。 */
+  sourceDocIds?: string[];
   /** 学校“来源”设置中的值。 */
   sourceType?: string;
   /** 从平台资源创建副本时记录来源；此类副本不可再次捐赠。 */
@@ -1869,6 +1881,8 @@ export interface Courseware {
   editorUrl?: string;
   /** 从试卷或讲义生成的上课课件所对应的“我的上课”课件。 */
   lessonCoursewareId?: string;
+  /** 旧版数学媒体已归入素材库；保留原记录仅兼容外部引用。 */
+  migratedToMaterial?: boolean;
   /** 生成该课件的源文档类型。 */
   sourceResourceType?: "examPaper" | "lecture";
   /** 生成该课件的源文档 ID；拆解文档指向正稿。 */
@@ -2330,6 +2344,8 @@ export type QuestionSearchField = "stem" | "analysis" | "summary" | "remark";
 
 export interface QuestionFilter {
   subject?: string;
+  /** RPC internal: include the owner's questions from other school identities. */
+  ownerSubjectSchoolId?: string | null;
   keyword?: string;
   /** 关键词搜索范围；未设置或为空时搜索全部支持字段 */
   searchFields?: QuestionSearchField[];
@@ -3069,10 +3085,21 @@ export interface LessonSlideGeoGebraElement extends LessonSlideElementBase {
   src: string;
   title: string;
   coursewareId?: string;
+  materialId?: string;
+}
+
+/** 上传的 HTML 网页素材。使用沙箱嵌入或按钮在新标签页打开。 */
+export interface LessonSlideWebpageElement extends LessonSlideElementBase {
+  kind: "webpage";
+  src: string;
+  title: string;
+  materialId?: string;
+  displayMode: "embed" | "button";
+  backgroundColor?: string;
 }
 
 /** 可在课件画布中自由移动、缩放的元素。 */
-export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement;
+export type LessonSlideElement = LessonSlideTextElement | LessonSlideImageElement | LessonSlideMediaElement | LessonSlideGeoGebraElement | LessonSlideWebpageElement;
 
 /** 导入外部课件时尚未分配本地 ID 的自由画布元素。 */
 export type PptSlideImportElement =
