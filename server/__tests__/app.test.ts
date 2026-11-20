@@ -2838,7 +2838,7 @@ describe("production backend", () => {
     expect(missingDownload.statusCode).toBe(404);
   });
 
-  it("serves uploaded GeoGebra courseware through a tokenized public preview URL", async () => {
+  it("rejects math GGB uploads but serves non-math GeoGebra courseware through a token URL", async () => {
     const session = await login(built.app);
     const multipart = multipartPayload(
       "function.ggb",
@@ -2858,8 +2858,8 @@ describe("production backend", () => {
     expect(uploadResponse.statusCode).toBe(200);
     const uploaded = uploadResponse.json<{ url: string }>();
 
-    const createResponse = await built.app.inject({
-      method: "POST",
+    const request = {
+      method: "POST" as const,
       url: "/api/rpc",
       headers: {
         cookie: session.cookie,
@@ -2883,7 +2883,18 @@ describe("production backend", () => {
           tags: [],
         }],
       },
-    });
+    };
+    const rejected = await built.app.inject(request);
+    expect(rejected.statusCode).toBe(400);
+
+    const before = built.store.loadState();
+    const after = structuredClone(before);
+    const owner = after.teachers.find((teacher) => teacher.id === "tch-1");
+    expect(owner?.subject).toBe("数学");
+    owner!.subject = "物理";
+    await built.store.saveState(before, after);
+
+    const createResponse = await built.app.inject(request);
     expect(createResponse.statusCode).toBe(200);
     const created = createResponse.json<{ result: { onlineAccessToken: string } }>().result;
     expect(created.onlineAccessToken).toEqual(expect.any(String));
