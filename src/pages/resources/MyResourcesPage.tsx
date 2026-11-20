@@ -833,6 +833,29 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [basketAnswerRecords, setBasketAnswerRecords] = useState<AnswerRecord[]>([]);
   const [basketMastery, setBasketMastery] = useState<KnowledgeMastery[]>([]);
   const [basketInsightsLoading, setBasketInsightsLoading] = useState(false);
+  const [basketMasteryVisible, setBasketMasteryVisible] = useState({
+    chapter: false,
+    knowledge: true,
+    method: false,
+  });
+  const [basketDirectoryProgress, setBasketDirectoryProgress] = useState<{
+    chapter: TreeNode | null;
+    method: TreeNode | null;
+  }>({ chapter: null, method: null });
+  const [basketDirectoryLoading, setBasketDirectoryLoading] = useState({
+    chapter: false,
+    method: false,
+  });
+  const [basketEditTarget, setBasketEditTarget] = useState<{
+    type: "question" | "material";
+    id: string;
+  } | null>(null);
+  const [basketEditChapterIds, setBasketEditChapterIds] = useState<string[]>([]);
+  const [basketEditKnowledgeIds, setBasketEditKnowledgeIds] = useState<string[]>([]);
+  const [basketEditMethodIds, setBasketEditMethodIds] = useState<string[]>([]);
+  const [basketEditLoading, setBasketEditLoading] = useState(false);
+  const [basketEditSaving, setBasketEditSaving] = useState(false);
+  const [basketMetadataRevision, setBasketMetadataRevision] = useState(0);
 
   const schoolId = teacher?.schoolId || "sch-1";
   const resourceOptionsSchoolId = activeTab === "question" ? null : schoolId;
@@ -867,6 +890,22 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   );
   const chapterNameMap = useMemo(() => treeNameMap(chapterTree), [chapterTree]);
   const knowledgeNameMap = useMemo(() => treeNameMap(knowledgeTree), [knowledgeTree]);
+  const basketChapterNames = useMemo(
+    () => treeNameMap(basketDirectoryProgress.chapter || chapterTree),
+    [basketDirectoryProgress.chapter, chapterTree],
+  );
+  const basketMethodNames = useMemo(
+    () => treeNameMap(basketDirectoryProgress.method || methodTree),
+    [basketDirectoryProgress.method, methodTree],
+  );
+  const basketChapterProgressMap = useMemo(
+    () => basketProgressNodeMap(basketDirectoryProgress.chapter),
+    [basketDirectoryProgress.chapter],
+  );
+  const basketMethodProgressMap = useMemo(
+    () => basketProgressNodeMap(basketDirectoryProgress.method),
+    [basketDirectoryProgress.method],
+  );
   const basketMasteryMap = useMemo(
     () => new Map(basketMastery.map((item) => [item.knowledgePointId, item])),
     [basketMastery],
@@ -1311,7 +1350,98 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
       if (!cancelled) setBasketInsightsLoading(false);
     });
     return () => { cancelled = true; };
-  }, [selectedBasket, basketAudienceStudentIds, schoolId]);
+  }, [selectedBasket, basketAudienceStudentIds, schoolId, basketMetadataRevision]);
+
+  const showBasketChapterMastery = basketMasteryVisible.chapter;
+  const showBasketMethodMastery = basketMasteryVisible.method;
+  useEffect(() => {
+    let cancelled = false;
+    if (activeTab !== "basket" || !selectedBasketId || basketAudienceStudentIds.length === 0) {
+      setBasketDirectoryProgress({ chapter: null, method: null });
+      setBasketDirectoryLoading({ chapter: false, method: false });
+      return () => { cancelled = true; };
+    }
+
+    const kinds = (["chapter", "method"] as const).filter((kind) =>
+      kind === "chapter" ? showBasketChapterMastery : showBasketMethodMastery);
+    setBasketDirectoryProgress({ chapter: null, method: null });
+    setBasketDirectoryLoading({
+      chapter: kinds.includes("chapter"),
+      method: kinds.includes("method"),
+    });
+    for (const kind of kinds) {
+      const scope = teacher?.id || schoolId;
+      const treePromise = kind === "chapter"
+        ? knowledgeService.getChapterTree(scope)
+        : knowledgeService.getMethodTree(scope);
+      void treePromise
+        .then((tree) => analyticsService.annotateTreeWithStudentProgress(
+          tree, basketAudienceStudentIds, kind,
+        ))
+        .then((progress) => {
+          if (!cancelled) setBasketDirectoryProgress((current) => ({ ...current, [kind]: progress }));
+        })
+        .catch((error) => {
+          if (!cancelled) toast.error("掌握情况加载失败", error instanceof Error ? error.message : undefined);
+        })
+        .finally(() => {
+          if (!cancelled) setBasketDirectoryLoading((current) => ({ ...current, [kind]: false }));
+        });
+    }
+    return () => { cancelled = true; };
+  }, [
+    activeTab, selectedBasketId, basketAudienceStudentIds, schoolId, teacher?.id,
+    showBasketChapterMastery, showBasketMethodMastery, basketMetadataRevision,
+  ]);
+
+  const openBasketResourceEditor = async (type: "question" | "material", resource: Question | Material) => {
+    setBasketEditTarget({ type, id: resource.id });
+    setBasketEditChapterIds([...(resource.chapterIds || [])]);
+    setBasketEditKnowledgeIds([...(resource.knowledgePointIds || [])]);
+    setBasketEditMethodIds([...(resource.thoughtMethodIds || [])]);
+    setBasketEditLoading(true);
+    const scope = teacher?.id || schoolId;
+    try {
+      const [chapters, knowledge, methods] = await Promise.all([
+        chapterTree ? Promise.resolve(chapterTree) : knowledgeService.getChapterTree(scope),
+        knowledgeTree ? Promise.resolve(knowledgeTree) : knowledgeService.getKnowledgeTree(scope),
+        methodTree ? Promise.resolve(methodTree) : knowledgeService.getMethodTree(scope),
+      ]);
+      setChapterTree(chapters);
+      setKnowledgeTree(knowledge);
+      setMethodTree(methods);
+    } catch (error) {
+      toast.error("属性目录加载失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setBasketEditLoading(false);
+    }
+  };
+
+  const saveBasketResourceProperties = async () => {
+    if (!basketEditTarget || basketEditSaving) return;
+    setBasketEditSaving(true);
+    const patch = {
+      chapterIds: basketEditChapterIds,
+      knowledgePointIds: basketEditKnowledgeIds,
+      thoughtMethodIds: basketEditMethodIds,
+    };
+    try {
+      if (basketEditTarget.type === "question") {
+        const updated = await questionService.updateQuestion(basketEditTarget.id, patch);
+        setBasketQuestions((current) => current.map((item) => item.id === updated.id ? updated : item));
+      } else {
+        const updated = await materialService.updateMaterial(basketEditTarget.id, patch);
+        setBasketMaterials((current) => current.map((item) => item.id === updated.id ? updated : item));
+      }
+      setBasketEditTarget(null);
+      setBasketMetadataRevision((current) => current + 1);
+      toast.success("资源属性已更新");
+    } catch (error) {
+      toast.error("保存资源属性失败", error instanceof Error ? error.message : undefined);
+    } finally {
+      setBasketEditSaving(false);
+    }
+  };
 
   const loadBaskets = useCallback(async () => {
     if (!teacher) return;
@@ -3255,6 +3385,26 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                             </label>
                           ))}
                         </fieldset>
+                        <span className="h-5 w-px bg-ink-200" aria-hidden="true" />
+                        <fieldset className="flex items-center gap-x-3 gap-y-1 flex-wrap" aria-label="选择掌握情况">
+                          {([
+                            { key: "chapter", label: "章节课" },
+                            { key: "knowledge", label: "知识点" },
+                            { key: "method", label: "方法" },
+                          ] as const).map(({ key, label }) => (
+                            <label key={key} className="inline-flex items-center gap-1.5 text-xs text-ink-600 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={basketMasteryVisible[key]}
+                                onChange={(event) => setBasketMasteryVisible((current) => ({
+                                  ...current, [key]: event.target.checked,
+                                }))}
+                                className="w-3.5 h-3.5 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
+                              />
+                              {label}
+                            </label>
+                          ))}
+                        </fieldset>
                       </div>
                       <button
                         onClick={selectAllQuestions}
@@ -3373,7 +3523,17 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                 </div>
                               )}
 
-                              {isTreeEnabled("knowledge") && q.knowledgePointIds.length > 0 && (
+                              {basketMasteryVisible.chapter && q.chapterIds.length > 0 && (
+                                <BasketDirectoryMastery
+                                  label="章节课"
+                                  ids={q.chapterIds}
+                                  names={basketChapterNames}
+                                  progress={basketChapterProgressMap}
+                                  audienceStudentCount={basketAudienceStudentIds.length}
+                                  loading={basketDirectoryLoading.chapter}
+                                />
+                              )}
+                              {basketMasteryVisible.knowledge && isTreeEnabled("knowledge") && q.knowledgePointIds.length > 0 && (
                                 <div className="mt-2 pt-2 border-t border-ink-100/80">
                                   <div className="text-[11px] text-ink-400 mb-1.5">知识点掌握情况</div>
                                   <div className="flex flex-wrap gap-1.5">
@@ -3408,7 +3568,26 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                                   </div>
                                 </div>
                               )}
+                              {basketMasteryVisible.method && (q.thoughtMethodIds?.length || 0) > 0 && (
+                                <BasketDirectoryMastery
+                                  label="方法"
+                                  ids={q.thoughtMethodIds || []}
+                                  names={basketMethodNames}
+                                  progress={basketMethodProgressMap}
+                                  audienceStudentCount={basketAudienceStudentIds.length}
+                                  loading={basketDirectoryLoading.method}
+                                />
+                              )}
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => void openBasketResourceEditor("question", q)}
+                              className="p-1 rounded text-ink-300 hover:text-gold-600 hover:bg-gold-50 flex-shrink-0"
+                              title="编辑属性"
+                              aria-label="编辑题目属性"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleRemoveBasketQuestion(q.id)}
@@ -3452,6 +3631,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
                           material={material}
                           selected={selectedMaterialIds.has(material.id)}
                           onToggleSelection={() => toggleMaterialSelection(material.id)}
+                          onEdit={() => void openBasketResourceEditor("material", material)}
                           onRemove={() => handleRemoveBasketMaterial(material.id)}
                         />
                       ))}
@@ -4959,6 +5139,58 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         </div>
       </Modal>
 
+      <Modal
+        open={!!basketEditTarget}
+        onClose={() => { if (!basketEditSaving) setBasketEditTarget(null); }}
+        title="编辑资源属性"
+        description="修改资源关联的章节课、知识点和思想方法，保存后立即生效。"
+        size="xl"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setBasketEditTarget(null)} disabled={basketEditSaving}>取消</Button>
+            <Button variant="gold" onClick={() => void saveBasketResourceProperties()} loading={basketEditSaving} disabled={basketEditLoading || !chapterTree || !knowledgeTree || !methodTree}>
+              保存属性
+            </Button>
+          </div>
+        }
+      >
+        {basketEditLoading || !chapterTree || !knowledgeTree || !methodTree ? (
+          <div className="flex justify-center py-10"><Spinner size={24} /></div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-3 max-h-[60vh] overflow-y-auto">
+            <SearchableTree
+              data={chapterTree}
+              title="章节课"
+              checkable
+              cascadeCheck={false}
+              checkedIds={basketEditChapterIds}
+              onCheck={setBasketEditChapterIds}
+              searchPlaceholder="搜索章节课..."
+            />
+            <SearchableTree
+              data={knowledgeTree}
+              title="知识点"
+              accent="teal"
+              checkable
+              cascadeCheck={false}
+              checkedIds={basketEditKnowledgeIds}
+              onCheck={setBasketEditKnowledgeIds}
+              searchPlaceholder="搜索知识点..."
+            />
+            <SearchableTree
+              data={methodTree}
+              title="思想方法"
+              accent="teal"
+              checkable
+              cascadeCheck={false}
+              checkedIds={basketEditMethodIds}
+              onCheck={setBasketEditMethodIds}
+              searchPlaceholder="搜索思想方法..."
+            />
+          </div>
+        )}
+      </Modal>
+
       {/* 新建资源篮弹窗 */}
       <Modal
         open={creatingBasket}
@@ -5754,10 +5986,61 @@ export function ResourceCard({ title, titleIcon, titleActions, primaryActions, c
   );
 }
 
+function basketProgressNodeMap(root: TreeNode | null): Map<string, TreeNode> {
+  const result = new Map<string, TreeNode>();
+  const walk = (node: TreeNode) => {
+    result.set(node.id, node);
+    node.children.forEach(walk);
+  };
+  if (root) walk(root);
+  return result;
+}
+
+function BasketDirectoryMastery({
+  label, ids, names, progress, audienceStudentCount, loading,
+}: {
+  label: string;
+  ids: string[];
+  names: Map<string, string>;
+  progress: Map<string, TreeNode>;
+  audienceStudentCount: number;
+  loading: boolean;
+}) {
+  return (
+    <div className="mt-2 pt-2 border-t border-ink-100/80">
+      <div className="text-[11px] text-ink-400 mb-1.5">{label}掌握情况</div>
+      <div className="flex flex-wrap gap-1.5">
+        {ids.map((id) => {
+          const node = progress.get(id);
+          const rate = node?.masteryRate;
+          const level = rate === undefined ? null
+            : rate >= 0.8 ? "mastered" : rate >= 0.6 ? "basic" : "weak";
+          const presentation = level ? masteryPresentation[level] : null;
+          return (
+            <span key={id} className={cn(
+              "inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px]",
+              presentation?.className || "border-ink-100 bg-mist text-ink-500",
+            )}>
+              <span>{names.get(id) || node?.name || `未命名${label}`}</span>
+              <span className="font-medium">
+                {audienceStudentCount === 0 ? "未选择对象"
+                  : loading ? "统计中"
+                    : rate === undefined ? "暂无数据"
+                      : `${presentation?.label} ${Math.round(rate * 100)}%`}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface BasketMaterialListItemProps {
   material: Material;
   selected: boolean;
   onToggleSelection: () => void;
+  onEdit?: () => void;
   onRemove: () => void;
 }
 
@@ -5765,6 +6048,7 @@ export function BasketMaterialListItem({
   material,
   selected,
   onToggleSelection,
+  onEdit,
   onRemove,
 }: BasketMaterialListItemProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -5839,6 +6123,17 @@ export function BasketMaterialListItem({
             )
           )}
         </div>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex-shrink-0 rounded p-1 text-ink-300 hover:bg-gold-50 hover:text-gold-600"
+            title="编辑属性"
+            aria-label="编辑素材属性"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onRemove}
