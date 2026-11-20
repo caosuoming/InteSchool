@@ -1,5 +1,5 @@
 import type { ExamPaperQuestion, Student } from "../types/index.js";
-import { alignGeographyQuestionAnswer, splitGeographyChoiceGroup } from "./geography-paper-layout";
+import { alignGeographyQuestionAnswer, splitGeographyChoiceGroup } from "./geography-paper-layout.js";
 
 export interface UsageQuestionSlot {
   number: number;
