@@ -5,11 +5,53 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { toast } from "@/stores/ui";
 import { rpcCall } from "@/services/api";
+import { MathHtml } from "@/components/ui/MathHtml";
+import { QuestionDuplicateReviewModal } from "@/components/extract/QuestionDuplicateReviewModal";
+import type { DuplicateQuestionMergeFields, Question } from "@/types";
 
 type Kind = "library" | "student";
 type Repeat = "once" | "daily" | "weekend";
 interface Schedule { id: string; kind: Kind; repeat: Repeat; enabled: boolean; nextRunAt: string | null; lastRunAt?: string }
-interface Candidate { id: string; kind: Kind; leftStem: string; rightStem: string; similarity: number; studentCount?: number }
+interface CandidateQuestion extends Pick<Question, "id" | "stem" | "options" | "answer" | "analysis" | "summary" | "subject"> {
+  sources: string[];
+}
+interface Candidate {
+  id: string; kind: Kind; leftQuestion: CandidateQuestion | null; rightQuestion: CandidateQuestion | null;
+  similarity: number; studentCount?: number;
+}
+
+function CandidateQuestionPreview({ question }: { question: CandidateQuestion | null }) {
+  if (!question) return <p className="text-ink-500">题目已删除</p>;
+  return (
+    <div className="space-y-1.5">
+      <MathHtml className="whitespace-pre-wrap">{question.stem}</MathHtml>
+      {question.options?.map((option, index) => (
+        <div className="flex gap-2" key={index}>
+          <span className="font-semibold">{String.fromCharCode(65 + index)}.</span>
+          <MathHtml className="flex-1 whitespace-pre-wrap">{option}</MathHtml>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CandidateQuestionDetails({ question }: { question: CandidateQuestion | null }) {
+  if (!question) return null;
+  return (
+    <div className="space-y-2 text-xs">
+      <div><h5 className="font-semibold">来源文档</h5>
+        {question.sources.length ? question.sources.map((source) => <p key={source}>{source}</p>)
+          : <p className="text-ink-500">未关联来源文档</p>}
+      </div>
+      {(["answer", "analysis", "summary"] as const).map((field) => (
+        <div key={field}>
+          <h5 className="font-semibold">{({ answer: "答案", analysis: "解析", summary: "总结" } as const)[field]}</h5>
+          <MathHtml className="whitespace-pre-wrap">{question[field] || "（无）"}</MathHtml>
+        </div>
+      ))}
+    </div>
+  );
+}
 const kindLabel: Record<Kind, string> = { library: "本库重题搜索", student: "同一题检索" };
 const repeatLabel: Record<Repeat, string> = { once: "执行一次", daily: "每天执行", weekend: "每周末执行" };
 const displayDate = (date?: string | null) => date ? new Date(date).toLocaleString("zh-CN") : "无";
@@ -22,6 +64,8 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
   const [repeat, setRepeat] = useState<Repeat>("once");
   const [time, setTime] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [mergeCandidate, setMergeCandidate] = useState<Candidate | null>(null);
   const refresh = useCallback(async () => {
     const [nextTasks, nextCandidates] = await Promise.all([
       rpcCall<Schedule[]>("scheduledDuplicate", "listSchedules", [teacherId]),
@@ -31,11 +75,18 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
     setCandidates(nextCandidates);
   }, [teacherId]);
   useEffect(() => { void refresh().catch(() => toast.error("预约任务加载失败")); }, [refresh]);
-  async function execute(action: () => Promise<unknown>, success: string) {
+  async function execute(action: () => Promise<unknown>, success: string): Promise<boolean> {
     setBusy(true);
-    try { await action(); await refresh(); toast.success(success); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "操作失败"); }
+    try { await action(); await refresh(); toast.success(success); return true; }
+    catch (error) { toast.error(error instanceof Error ? error.message : "操作失败"); return false; }
     finally { setBusy(false); }
+  }
+  function toggleExpanded(id: string) {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   }
   return (
     <>
@@ -46,7 +97,7 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
           {candidates.length > 0 && <button className="ml-3 text-gold-600 hover:underline" onClick={() => setOpen(true)}>处理待办</button>}
         </div>
       </Card>
-      <Modal open={open} onClose={() => setOpen(false)} title="预约定时任务" description="定时扫描并人工确认相似题目；确认过的题目对不会重复提醒。" size="lg">
+      <Modal open={open && !mergeCandidate} onClose={() => setOpen(false)} title="预约定时任务" description="定时扫描并人工确认相似题目；确认过的题目对不会重复提醒。" size="lg">
         <div className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="text-sm">任务类型
@@ -85,13 +136,22 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
             {candidates.map((item) => <div key={item.id} className="border rounded-lg p-3 space-y-2 text-sm">
               <div className="font-medium">{kindLabel[item.kind]} · 相似度 {(item.similarity * 100).toFixed(0)}% {item.studentCount ? `· 涉及 ${item.studentCount} 条作答` : ""}</div>
               <div className="grid sm:grid-cols-2 gap-2">
-                <div className="bg-mist p-3 rounded-md"><div className="text-ink-500 mb-1">我的题库</div><div className="whitespace-pre-wrap break-words">{item.leftStem}</div></div>
-                <div className="bg-mist p-3 rounded-md"><div className="text-ink-500 mb-1">待比对题目</div><div className="whitespace-pre-wrap break-words">{item.rightStem}</div></div>
+                <div className="bg-mist p-3 rounded-md"><div className="text-ink-500 mb-1">我的题库</div><CandidateQuestionPreview question={item.leftQuestion} /></div>
+                <div className="bg-mist p-3 rounded-md"><div className="text-ink-500 mb-1">待比对题目</div><CandidateQuestionPreview question={item.rightQuestion} /></div>
               </div>
-              <div className="flex gap-2 justify-end">
+              {expandedIds.has(item.id) && (
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div className="border rounded-md p-3"><CandidateQuestionDetails question={item.leftQuestion} /></div>
+                  <div className="border rounded-md p-3"><CandidateQuestionDetails question={item.rightQuestion} /></div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 justify-end">
+                <Button variant="ghost" size="sm" onClick={() => toggleExpanded(item.id)}>
+                  {expandedIds.has(item.id) ? "收起详情" : "展开来源、答案、解析和总结"}
+                </Button>
                 {item.kind === "library" ? <>
                   <Button variant="ghost" size="sm" disabled={busy} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "resolveCandidate", [teacherId, item.id, "keep"]), "已保留两题")}>保留</Button>
-                  <Button size="sm" disabled={busy} onClick={() => { if (window.confirm("确定将右侧重复题合并进左侧题目？此操作不可撤销。")) void execute(() => rpcCall("scheduledDuplicate", "resolveCandidate", [teacherId, item.id, "merge"]), "已合并"); }}>合并</Button>
+                  <Button size="sm" disabled={busy || !item.leftQuestion || !item.rightQuestion} onClick={() => setMergeCandidate(item)}>合并</Button>
                 </> : <>
                   <Button variant="ghost" size="sm" disabled={busy} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "resolveCandidate", [teacherId, item.id, "add"]), "已新增至题库")}>新增</Button>
                   <Button size="sm" disabled={busy} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "resolveCandidate", [teacherId, item.id, "same"]), "已认定同一题")}>认定同一题</Button>
@@ -101,6 +161,28 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
           </div>
         </div>
       </Modal>
+      {mergeCandidate?.leftQuestion && mergeCandidate.rightQuestion && (
+        <QuestionDuplicateReviewModal
+          mode="merge"
+          items={[{
+            id: mergeCandidate.id,
+            similarity: mergeCandidate.similarity,
+            existing: mergeCandidate.leftQuestion,
+            incoming: mergeCandidate.rightQuestion,
+            existingSources: mergeCandidate.leftQuestion.sources,
+            incomingSources: mergeCandidate.rightQuestion.sources,
+            canMerge: true,
+          }]}
+          existingLabel="题目一"
+          incomingLabel="题目二"
+          onClose={() => setMergeCandidate(null)}
+          onConfirm={(resolutions) => {
+            const fields: DuplicateQuestionMergeFields = resolutions[mergeCandidate.id].fields;
+            void execute(() => rpcCall("scheduledDuplicate", "resolveCandidate", [teacherId, mergeCandidate.id, "merge", fields]), "已合并并同步来源文档")
+              .then((success) => { if (success) setMergeCandidate(null); });
+          }}
+        />
+      )}
     </>
   );
 }

@@ -57,6 +57,19 @@ describe("QuestionDuplicateReviewModal", () => {
     expect(incoming.querySelector("mark")).not.toBeNull();
   });
 
+  it("shows both source documents alongside the details", async () => {
+    const user = userEvent.setup();
+    render(<QuestionDuplicateReviewModal
+      items={[{ ...item, existingSources: ["试卷：模拟卷一"], incomingSources: ["讲义：习题二"] }]}
+      mode="merge"
+      onClose={vi.fn()}
+      onConfirm={vi.fn()}
+    />);
+    await user.click(screen.getByRole("button", { name: /点击上传题题干展开详情/ }));
+    expect(screen.getByText("试卷：模拟卷一")).toBeInTheDocument();
+    expect(screen.getByText("讲义：习题二")).toBeInTheDocument();
+  });
+
   it("renders formulas without breaking changed formula delimiters", async () => {
     const user = userEvent.setup();
     render(
