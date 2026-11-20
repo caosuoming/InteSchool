@@ -11,6 +11,8 @@ import { buildAnswerSheetQrPayload } from "@/lib/answer-sheet";
 import { schoolService } from "@/services/school";
 import { SCANNER_DEVICE_KEY, SCANNER_SCHOOL_KEY, scannerService, type PublishedScannerSheet, type ScannerDevice } from "@/services/scanner";
 import type { School } from "@/types";
+import { scannerSheetStatistics } from "@/lib/scanner-statistics";
+import type { ScannerPageRecord } from "@/services/scanner";
 
 interface ScannedImage {
   url: string;
@@ -30,6 +32,8 @@ export default function ScannerPage() {
   const [loadingSchools, setLoadingSchools] = useState(true);
   const [loadingSheets, setLoadingSheets] = useState(false);
   const [sheets, setSheets] = useState<PublishedScannerSheet[]>([]);
+  const [savedPages, setSavedPages] = useState<ScannerPageRecord[] | null>(null);
+  const [savedPagesError, setSavedPagesError] = useState(false);
   const [devices, setDevices] = useState<ScannerDevice[]>([]);
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem(SCANNER_DEVICE_KEY) || "");
   const deviceIdRef = useRef(deviceId);
@@ -125,6 +129,21 @@ export default function ScannerPage() {
   const selectedSchool = schools.find((school) => school.id === schoolId);
   const selectedDevice = devices.find((device) => device.id === deviceId);
   const canUpload = Boolean(teacher?.schoolId && teacher.schoolId === schoolId);
+  useEffect(() => {
+    if (!canUpload) {
+      setSavedPages(null);
+      setSavedPagesError(false);
+      return;
+    }
+    let active = true;
+    setSavedPages(null);
+    setSavedPagesError(false);
+    scannerService.listPages(schoolId)
+      .then((records) => { if (active) setSavedPages(records); })
+      .catch(() => { if (active) setSavedPagesError(true); });
+    return () => { active = false; };
+  }, [schoolId, canUpload]);
+  const selectedStats = selected && savedPages ? scannerSheetStatistics(savedPages, selected) : null;
   const schoolOptions = useMemo(() => schools.map((school) => ({
     value: school.id, label: school.city ? `${school.name} · ${school.city}` : school.name,
   })), [schools]);
@@ -217,6 +236,7 @@ export default function ScannerPage() {
     setSelected(null);
     clearImages();
     setSheets([]);
+    setSavedPages(null);
     setGradeFilter("");
     setSubjectFilter("");
     setClassFilter("");
@@ -290,7 +310,8 @@ export default function ScannerPage() {
     for (const scan of queue) {
       setScans((current) => current.map((item) => item.url === scan.url ? { ...item, uploading: true } : item));
       try {
-        await scannerService.uploadPage(scan.image, schoolId, selected, scan.qrPayload);
+        const saved = await scannerService.uploadPage(scan.image, schoolId, selected, scan.qrPayload);
+        setSavedPages((current) => current ? [saved, ...current] : current);
         setScans((current) => current.map((item) => item.url === scan.url ? { ...item, uploaded: true, uploading: false } : item));
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "上传失败，请重试");
@@ -412,6 +433,15 @@ export default function ScannerPage() {
                           <h3 className="mt-3 line-clamp-2 font-semibold text-ink-900">{sheet.title}</h3>
                           <p className="mt-2 text-xs text-ink-500">{sheet.grade} · {sheet.schoolYear} · {sheet.subject}</p>
                           {!!sheet.classes?.length && <p className="mt-1 text-xs text-ink-500">{sheet.classes.map((item) => item.name).join("、")}</p>}
+                          {canUpload && savedPages && (() => {
+                            const stats = scannerSheetStatistics(savedPages, sheet);
+                            return <div className="mt-2 space-y-1 text-xs text-ink-600" aria-label={`扫描统计 ${sheet.title}`}>
+                              <p>有效答题卡 {stats.valid} 张 · 共扫描 {stats.total} 张 · 异常 {stats.exceptions} 张</p>
+                              {!!stats.classes.length && <p>班级：{stats.classes.map((entry) => `${entry.name} ${entry.count} 份`).join("、")}</p>}
+                              {stats.unknownClass > 0 && <p>未识别班级 {stats.unknownClass} 份</p>}
+                              {stats.exceptions > 0 && <Link className="text-amber-700 underline" to="/homework-exams/exams">处理异常扫描记录</Link>}
+                            </div>;
+                          })()}
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button type="button" disabled={scanning || uploading || !deviceId} onClick={() => void scanSheet(sheet)}
                               aria-label={`使用扫描仪采集${sheet.title}`} className="text-sm text-gold-700 hover:underline disabled:opacity-50">{scanning && selected?.id === sheet.id && selected.type === sheet.type ? "正在处理…" : "使用扫描仪"}</button>
@@ -444,8 +474,10 @@ export default function ScannerPage() {
                 </aside>
               </div>
             )}
+            {canUpload && savedPagesError && <p role="alert" className="text-sm text-amber-700">扫描统计暂不可用，请刷新页面后重试；扫描上传仍可继续。</p>}
             {selected && <section className="space-y-4 rounded-xl border border-ink-100 bg-paper p-5 sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold text-ink-900">{selected.title}</h2><p className="mt-1 text-xs text-ink-500">已采集 {scans.length} 页 · 已上传 {scans.filter((scan) => scan.uploaded).length} 页</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => void scanSheet(selected)} loading={scanning} disabled={uploading || !deviceId}><RefreshCw className="h-4 w-4" />继续扫描</Button><Button variant="outline" onClick={() => chooseAnswerImages(selected)} disabled={scanning || uploading}>继续导入图片</Button><Button onClick={() => void uploadPending()} disabled={!canUpload || !pendingCount || scanning} loading={uploading}>确认试卷并上传 {pendingCount} 页</Button></div></div>
+              {selectedStats && <p className="text-sm text-ink-700">历史记录：有效 {selectedStats.valid} 张，共 {selectedStats.total} 张，异常 {selectedStats.exceptions} 张。{selectedStats.classes.map((entry) => `${entry.name} ${entry.count} 份`).join("、")}</p>}
               <p className="text-xs text-ink-500">逐页核对二维码与试卷名称。无法识别二维码的页面会保存为待处理异常卷；二维码指向其他试卷的页面禁止上传到当前试卷。</p>
               {scans.length > 0 && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{scans.map((scan, index) => (
                 <div key={scan.url} className="overflow-hidden rounded-lg border border-ink-100"><img src={scan.url} alt={`扫描结果第 ${index + 1} 张`} className="w-full max-h-72 object-contain bg-mist" /><div className="p-3 space-y-2"><p className="text-sm font-medium">第 {index + 1} 页 · {scan.uploaded ? "已上传" : scan.uploading ? "正在上传" : scan.qrPayload === expectedQr ? "二维码已匹配" : scan.qrPayload ? "二维码与选定试卷不符" : "二维码未识别（异常卷）"}</p><a href={scan.url} download={scan.name} className="flex items-center justify-center gap-2 text-sm text-gold-700 hover:underline"><Download className="h-4 w-4" />下载第 {index + 1} 张</a></div></div>
