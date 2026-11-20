@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   updateMaterial: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  teacher: { id: "teacher-1", schoolId: "school-1", subject: "物理" },
 }));
 
 vi.mock("@/lib/geogebra", () => ({
@@ -31,7 +32,7 @@ vi.mock("@/services/courseware", () => ({
 }));
 vi.mock("@/services/material", () => ({ materialService: { getMaterial: mocks.getMaterial, createMaterial: mocks.createMaterial, updateMaterial: mocks.updateMaterial } }));
 vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({ teacher: { id: "teacher-1", schoolId: "school-1" } }),
+  useAuthStore: () => ({ teacher: mocks.teacher }),
 }));
 vi.mock("@/stores/ui", () => ({
   toast: { success: mocks.toastSuccess, error: mocks.toastError, warning: vi.fn() },
@@ -69,6 +70,7 @@ const saved = {
 describe("GeoGebraEditorPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.teacher.subject = "物理";
     mocks.loadGeoGebra.mockResolvedValue(class {
       constructor(private readonly params: Record<string, unknown>) {}
       inject() {
@@ -108,6 +110,32 @@ describe("GeoGebraEditorPage", () => {
     await waitFor(() => expect(mocks.updateCourseware).toHaveBeenCalledWith("ggb-1",
       expect.objectContaining({ title: "圆的切线", fileUrl: "/api/files/ggb" })));
     expect(mocks.createCourseware).not.toHaveBeenCalled();
+  });
+
+  it("saves a new math GGB as a material rather than a courseware", async () => {
+    mocks.teacher.subject = "数学";
+    mocks.createMaterial.mockResolvedValue({ id: "material-1", type: "file", fileName: "圆的切线.ggb" });
+    renderPage("/geogebra/new?mode=geometry");
+    const button = await screen.findByRole("button", { name: "保存到素材库" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.createMaterial).toHaveBeenCalledWith("teacher-1", "school-1",
+      expect.objectContaining({ type: "file", fileName: "圆的切线.ggb", fileUrl: "/api/files/ggb" })));
+    expect(mocks.createCourseware).not.toHaveBeenCalled();
+  });
+
+  it("updates a migrated GGB material, not the archived courseware", async () => {
+    mocks.teacher.subject = "数学";
+    mocks.getCourseware.mockResolvedValue({ ...saved, migratedToMaterial: true });
+    mocks.getMaterial.mockResolvedValue({ ...saved, type: "file", fileName: "circle.ggb" });
+    mocks.updateMaterial.mockResolvedValue({ ...saved, type: "file", fileName: "circle.ggb" });
+    renderPage("/geogebra/ggb-1/edit");
+    const button = await screen.findByRole("button", { name: "保存到素材库" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.updateMaterial).toHaveBeenCalledWith("ggb-1",
+      expect.objectContaining({ fileUrl: "/api/files/ggb" })));
+    expect(mocks.updateCourseware).not.toHaveBeenCalled();
   });
 
   it("rejects editing a resource owned by another teacher", async () => {

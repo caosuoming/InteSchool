@@ -48,7 +48,7 @@ export default function GeoGebraEditorPage() {
       const materialEntry = material?.fileName?.toLowerCase().endsWith(".ggb") ? material : null;
       const entry = courseware?.migratedToMaterial ? materialEntry : (courseware || materialEntry);
       if (!active) return;
-      if (!entry || ("onlineAccessToken" in entry && entry.type !== "ggb") || entry.teacherId !== teacher?.id) {
+      if (!entry || (entry.type !== "ggb" && entry.type !== "file") || entry.teacherId !== teacher?.id) {
         throw new Error("GeoGebra 课件不存在或无权编辑");
       }
       setExisting(entry);
@@ -70,7 +70,7 @@ export default function GeoGebraEditorPage() {
 
   const selectedGrade = grade || defaultGrade;
   const selectedSchoolYear = schoolYear || defaultSchoolYear;
-  const fileUrl = existing ? ("onlineAccessToken" in existing ? getCoursewareFileUrl(existing as Courseware) : existing.fileUrl) : undefined;
+  const fileUrl = existing ? (existing.type === "ggb" ? getCoursewareFileUrl(existing as Courseware) : existing.fileUrl) : undefined;
 
   useEffect(() => {
     if (loading || error || (id && !existing)) return;
@@ -140,7 +140,7 @@ export default function GeoGebraEditorPage() {
         fileSize: file.size,
       };
       const saved = existing
-        ? ("onlineAccessToken" in existing
+        ? (existing.type === "ggb"
             ? await coursewareService.updateCourseware(existing.id, fields)
             : await materialService.updateMaterial(existing.id, fields))
         : teacher.subject === "数学"

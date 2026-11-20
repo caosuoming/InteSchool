@@ -1375,7 +1375,7 @@ export function LessonEditorPage() {
       title: source.title,
       content: source.description || source.content,
       coursewareType: "ggb",
-      fileUrl: sourceUrl,
+      fileUrl: source.fileUrl,
       fileName: source.fileName,
       ...("onlineAccessToken" in source ? { onlineAccessToken: source.onlineAccessToken, editorUrl: source.editorUrl } : {}),
       relatedQuestionIds: [],
