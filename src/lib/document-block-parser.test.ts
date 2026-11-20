@@ -3333,6 +3333,7 @@ describe("compact grouped mathematics answer keys", () => {
     const parsed = blocks.filter((item) => item.type === "question");
     expect(parsed).toHaveLength(3);
     expect(parsed.every((item) => !item.answer)).toBe(true);
+  });
 });
 
 describe("issue 1539: interleaved mathematics essay prompts", () => {
