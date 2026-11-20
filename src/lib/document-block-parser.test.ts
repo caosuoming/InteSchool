@@ -269,6 +269,43 @@ describe("document block parser", () => {
     });
   });
 
+  it.each([
+    ["4. 已知 y，求 y。", "4. 已知 y，求 y。"],
+    ["４．已知 y，求 y。", "４．已知 y，求 y。"],
+    ["4.\n已知 y，求 y。", "4.\n已知 y，求 y。"],
+    ["４．\n已知 y，求 y。", "４．\n已知 y，求 y。"],
+  ])("recovers question 4 after a numbered math summary: %s", (source, expected) => {
+    const blocks = parseDocumentBlocks([
+      "3．已知 x，求 x。",
+      "总结：",
+      "1. 先审题。",
+      "2. 分类讨论。",
+      "3. 复核结论。",
+      source,
+      "5．已知 z，求 z。",
+    ].join("\n"), { ...config, subject: "数学" });
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions.map((block) => block.content)).toEqual([
+      "3．已知 x，求 x。",
+      expected,
+      "5．已知 z，求 z。",
+    ]);
+    expect(questions[0].summary).toBe("1. 先审题。\n2. 分类讨论。\n3. 复核结论。");
+  });
+
+  it("keeps numbered summary items when they do not introduce a new math question", () => {
+    const blocks = parseDocumentBlocks([
+      "3．已知 x，求 x。",
+      "总结：",
+      "1. 先审题。",
+      "2. 分类讨论。",
+      "3. 复核结论。",
+      "4. 继续检查边界值。",
+    ].join("\n"), { ...config, subject: "数学" });
+    expect(blocks.filter((block) => block.type === "question")).toHaveLength(1);
+    expect(blocks[0].summary).toContain("4. 继续检查边界值。");
+  });
+
   it("recovers consecutive math questions when their number punctuation is missing", () => {
     const blocks = parseDocumentBlocks([
       "61.（苏教版必修第一册）指出下列语句中的全称量词或存在量词：",
