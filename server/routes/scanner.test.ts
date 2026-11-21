@@ -168,7 +168,7 @@ describe("scanned page persistence and permissions", () => {
 
   it("saves per-question review drafts with answer-key comparisons, version locks, and no gradebook side effects", async () => {
     const questions = [
-      { id: "choice-1", type: "single", score: 5, answer: "B" },
+      { id: "choice-1", type: "single", score: 5, answer: "B", options: ["A", "B", "C", "D", "E"] },
       { id: "fill-1", type: "short", score: 4, answer: "42" },
       { id: "essay-1", type: "essay", score: 10, answer: "" },
     ];
@@ -195,7 +195,7 @@ describe("scanned page persistence and permissions", () => {
     const rubric = await built.app.inject({ method: "GET", url: baseUrl + "/grading-questions", headers: { cookie } });
     expect(rubric.statusCode).toBe(200);
     expect(rubric.json()).toEqual([
-      { id: "choice-1", number: 1, kind: "choice", fullScore: 5 },
+      { id: "choice-1", number: 1, kind: "choice", fullScore: 5, optionCount: 5 },
       { id: "fill-1", number: 2, kind: "fill", fullScore: 4 },
       { id: "essay-1", number: 3, kind: "essay", fullScore: 10 },
     ]);
