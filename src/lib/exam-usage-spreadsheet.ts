@@ -72,10 +72,17 @@ export interface UsageImportItem {
   subScores?: Record<string, number>;
   studentAnswer?: string;
 }
+export interface UsageUnmatchedRow {
+  rowNumber: number;
+  name: string;
+  studentNo: string;
+  reason: string;
+}
 export interface UsagePreview {
   entries: UsageImportItem[];
   matchedStudents: number;
   unmatchedStudents: string[];
+  unmatchedRows?: UsageUnmatchedRow[];
   warnings: string[];
   mappedColumns: number;
   conflicts?: UsageMetadataConflict[];
@@ -250,6 +257,7 @@ export function prepareUsageImport(
   students: Student[],
   selectedSources: Record<string, "paper" | "excel"> = {},
   subject?: string,
+  manualStudentIds: Record<number, string> = {},
 ): UsagePreview {
   const slots = getUsageQuestionSlots(paperQuestions, subject);
   const roles = columns.filter((column) => column.role !== "ignore");
@@ -313,6 +321,7 @@ export function prepareUsageImport(
   const entries: UsageImportItem[] = [];
   const seenStudents = new Set<string>();
   const unmatched: string[] = [];
+  const unmatchedRows: UsageUnmatchedRow[] = [];
   const seenKeys = new Set<string>();
   let matchedStudents = 0;
   let firstStudent: UsagePreview["firstStudent"];
@@ -327,7 +336,16 @@ export function prepareUsageImport(
       || normalizedStudentNumber.get(numericStudentNo(no)) || [] : [];
     const nameMatches = name ? studentName.get(name) || [] : [];
     const matches = (no ? noMatches : nameMatches).filter((student) => !name || student.name.trim() === name);
-    const student = matches.length === 1 ? matches[0] : undefined;
+    // Only a student in the selected audience may be mapped manually.
+    // A manual selection also resolves cases where Excel has a different name/number.
+    const manuallySelected = manualStudentIds[i + 1];
+    const student = manuallySelected
+      ? students.find((candidate) => candidate.id === manuallySelected)
+      : matches.length === 1 ? matches[0] : undefined;
+    if (matches.length !== 1 || manuallySelected) {
+      unmatchedRows.push({ rowNumber: i + 1, name, studentNo: no,
+        reason: manuallySelected ? "已手动指定" : matches.length > 1 ? "多个同名或同学号学生" : "未找到对应学生" });
+    }
     if (!student) {
       unmatched.push(`第${i + 1}行：${name || "(无姓名)"} ${no}`.trim());
       continue;
@@ -400,6 +418,7 @@ export function prepareUsageImport(
   if (unmatched.length) warnings.unshift(`有${unmatched.length}行未匹配到使用班级中的学生，不会导入`);
   if (!entries.length) warnings.unshift("没有可导入的答题数据");
   return {
-    entries, matchedStudents, unmatchedStudents: unmatched.slice(0, 50), warnings, mappedColumns: scores.length, conflicts, firstStudent,
+    entries, matchedStudents, unmatchedStudents: unmatched.slice(0, 50),
+    unmatchedRows, warnings, mappedColumns: scores.length, conflicts, firstStudent,
   };
 }

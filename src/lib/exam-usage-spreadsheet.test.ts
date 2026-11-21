@@ -45,6 +45,27 @@ describe("试卷 Excel 使用数据映射", () => {
     expect(preview.unmatchedStudents).toHaveLength(1);
   });
 
+  it("对未匹配和重名行手动指定使用班级学生，禁止映射到班级外", () => {
+    const sheet: UsageSheet = { name: "成绩", rows: [
+      ["姓名", "学号", "第1题得分"],
+      ["张三", "", 4],
+      ["外校录入别名", "009", 3],
+    ] };
+    const columns = detectUsageHeader(sheet, questions.length).columns;
+    const initial = prepareUsageImport(sheet, 0, columns, questions, students);
+    expect(initial.entries).toHaveLength(0);
+    expect(initial.unmatchedRows?.map((row) => row.rowNumber)).toEqual([2, 3]);
+
+    const mapped = prepareUsageImport(sheet, 0, columns, questions, students, {}, undefined, { 2: "s3", 3: "s2" });
+    expect(mapped.entries).toEqual([
+      { studentId: "s3", paperQuestionId: "q1", earnedScore: 4 },
+      { studentId: "s2", paperQuestionId: "q1", earnedScore: 3 },
+    ]);
+    expect(mapped.unmatchedStudents).toEqual([]);
+    expect(mapped.unmatchedRows?.map((row) => row.rowNumber)).toEqual([2, 3]);
+    expect(prepareUsageImport(sheet, 0, columns, questions, students, {}, undefined, { 2: "not-a-student" }).entries).toEqual([]);
+  });
+
   it("不导入越界得分、未匹配学生和重复行", () => {
     const sheet: UsageSheet = { name: "成绩", rows: [
       ["姓名", "学号", "第1题得分"],
