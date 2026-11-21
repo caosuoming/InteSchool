@@ -349,6 +349,9 @@ function normalizeClassAverageOptions(
       totals.push({ id, name, subjects, scoreMode: value.scoreMode === "raw" ? "raw" : "assigned" });
       return totals;
     }, []),
+    scoreColumnOrder: unique(options.scoreColumnOrder || []).filter((key) => key === "total"
+      || (key.startsWith("subject:") && subjectSet.has(key.slice(8)))
+      || (key.startsWith("custom:") && (options.customTotals || []).some((total) => total.id === key.slice(7)))),
     showTeacherRows: optionalBoolean(options.showTeacherRows),
     showGroupDifference: optionalBoolean(options.showGroupDifference),
     showGroupAverage: optionalBoolean(options.showGroupAverage),
@@ -423,6 +426,21 @@ function normalizeTotalScoreSegmentOptions(
   );
 
   return {
+    generalThresholds: {
+      highScore1: normalizeThreshold(options.generalThresholds?.highScore1),
+      highScore2: normalizeThreshold(options.generalThresholds?.highScore2),
+      firstTier: normalizeThreshold(options.generalThresholds?.firstTier),
+      undergraduate: normalizeThreshold(options.generalThresholds?.undergraduate),
+    },
+    generalStandardVisibility: Object.fromEntries((["highScore1", "highScore2", "firstTier", "undergraduate"] as const)
+      .flatMap((key) => typeof options.generalStandardVisibility?.[key] === "boolean"
+        ? [[key, options.generalStandardVisibility[key]]] : [])),
+    trackStandardVisibility: Object.fromEntries((["science", "arts"] as const).map((track) => [
+      track,
+      Object.fromEntries((["highScore1", "highScore2", "firstTier", "undergraduate"] as const)
+        .flatMap((key) => typeof options.trackStandardVisibility?.[track]?.[key] === "boolean"
+          ? [[key, options.trackStandardVisibility[track]?.[key]]] : [])),
+    ])),
     highScore1Threshold: normalizeThreshold(options.highScore1Threshold),
     highScore2Threshold: normalizeThreshold(options.highScore2Threshold),
     firstTierThreshold: normalizeThreshold(options.firstTierThreshold),

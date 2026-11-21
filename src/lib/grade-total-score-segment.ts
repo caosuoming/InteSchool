@@ -60,6 +60,9 @@ export interface GradeTotalScoreSegmentReport {
   segmentMax: number;
   segmentMin: number;
   segmentSize: number;
+  generalStandards: Record<GradeTotalScoreTargetKey, number | null>;
+  generalVisibility: Record<GradeTotalScoreTargetKey, boolean>;
+  trackVisibility: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, boolean>>;
   trackStandards: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, number | null>>;
   separateStandards: Array<{
     key: string;
@@ -180,7 +183,10 @@ export function inferGradeClassAcademicTrack(
   return "unclassified";
 }
 
-function buildColumns(classes: GradeTotalScoreSegmentClass[]): GradeTotalScoreSegmentColumn[] {
+function buildColumns(
+  classes: GradeTotalScoreSegmentClass[],
+  trackVisibility: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, boolean>>,
+): GradeTotalScoreSegmentColumn[] {
   const columns: GradeTotalScoreSegmentColumn[] = [];
   const appendTrack = (track: GradeAcademicTrack, label: string) => {
     const trackClasses = classes.filter((classItem) => classItem.track === track);
@@ -192,7 +198,7 @@ function buildColumns(classes: GradeTotalScoreSegmentClass[]): GradeTotalScoreSe
       track,
       classIds: [classItem.classId],
     }));
-    if (trackClasses.length > 0) {
+    if (trackClasses.length > 0 && TARGET_KEYS.some((key) => trackVisibility[track][key])) {
       columns.push({
         key: SUBTOTAL_KEYS[track],
         label,
@@ -226,21 +232,44 @@ function sumNumbers(values: Array<number | null | undefined>): number | null {
   return numbers.length > 0 ? numbers.reduce((sum, value) => sum + value, 0) : null;
 }
 
+function generalStandardVisible(
+  template: GradeStatisticsTemplate,
+  key: GradeTotalScoreTargetKey,
+): boolean {
+  return template.totalScoreSegmentOptions?.generalStandardVisibility?.[key] === true;
+}
+
+function trackStandardVisible(
+  template: GradeStatisticsTemplate,
+  track: GradeAcademicTrack,
+  key: GradeTotalScoreTargetKey,
+): boolean {
+  return template.totalScoreSegmentOptions?.trackStandardVisibility?.[track]?.[key] !== false;
+}
+
+function legacyThreshold(template: GradeStatisticsTemplate, key: GradeTotalScoreTargetKey): number | undefined {
+  const options = template.totalScoreSegmentOptions || {};
+  return {
+    highScore1: options.highScore1Threshold,
+    highScore2: options.highScore2Threshold,
+    firstTier: options.firstTierThreshold,
+    undergraduate: options.undergraduateThreshold,
+  }[key];
+}
+
 function thresholdForTrack(
   template: GradeStatisticsTemplate,
   track: GradeAcademicTrackClassification,
   key: GradeTotalScoreTargetKey,
 ): number | undefined {
   const options = template.totalScoreSegmentOptions || {};
-  const legacyThresholds: Record<GradeTotalScoreTargetKey, number | undefined> = {
-    highScore1: options.highScore1Threshold,
-    highScore2: options.highScore2Threshold,
-    firstTier: options.firstTierThreshold,
-    undergraduate: options.undergraduateThreshold,
-  };
-  return track === "science" || track === "arts"
-    ? options.trackThresholds?.[track]?.[key] ?? legacyThresholds[key]
-    : legacyThresholds[key];
+  const general = generalStandardVisible(template, key) ? options.generalThresholds?.[key] : undefined;
+  if (track === "science" || track === "arts") {
+    if (!trackStandardVisible(template, track, key)) return general;
+    return options.trackThresholds?.[track]?.[key] ?? legacyThreshold(template, key) ?? general;
+  }
+  // Preserve old unified thresholds for historical reports without new standard visibility settings.
+  return general ?? (Object.keys(options.generalStandardVisibility || {}).length > 0 ? undefined : legacyThreshold(template, key));
 }
 
 export function buildGradeTotalScoreSegmentReport(
@@ -289,7 +318,14 @@ export function buildGradeTotalScoreSegmentReport(
     ...sourceClasses.filter((classItem) => classItem.track === "arts"),
     ...sourceClasses.filter((classItem) => classItem.track === "unclassified"),
   ];
-  const columns = buildColumns(classes);
+  const generalVisibility = Object.fromEntries(TARGET_KEYS.map((key) => [
+    key, generalStandardVisible(template, key),
+  ])) as GradeTotalScoreSegmentReport["generalVisibility"];
+  const trackVisibility = Object.fromEntries((["science", "arts"] as const).map((track) => [
+    track,
+    Object.fromEntries(TARGET_KEYS.map((key) => [key, trackStandardVisible(template, track, key)])),
+  ])) as GradeTotalScoreSegmentReport["trackVisibility"];
+  const columns = buildColumns(classes, trackVisibility);
 
   const studentSelections = new Map(context.students.map((student) => [student.id, student.subjectSelection || ""]));
   const electiveSubjects = new Set<string>(ELECTIVE_GRADE_SUBJECTS);
@@ -369,6 +405,9 @@ export function buildGradeTotalScoreSegmentReport(
       segmentOptions.separateRankThresholds?.[key]?.[targetKey] ?? null,
     ])) as Record<GradeTotalScoreTargetKey, number | null>,
   }));
+  const generalStandards = Object.fromEntries(TARGET_KEYS.map((key) => [
+    key, segmentOptions.generalThresholds?.[key] ?? null,
+  ])) as GradeTotalScoreSegmentReport["generalStandards"];
   const trackStandards = Object.fromEntries((["science", "arts"] as const).map((track) => [
     track,
     Object.fromEntries(TARGET_KEYS.map((key) => [
@@ -448,6 +487,24 @@ export function buildGradeTotalScoreSegmentReport(
     });
   };
 
+  const generalCountValues = (key: GradeTotalScoreTargetKey) => {
+    const threshold = generalStandards[key];
+    const perClass = Object.fromEntries(classes.map((classItem) => [
+      classItem.classId,
+      threshold === null ? null : (totalsByClass.get(classItem.classId) || [])
+        .filter((total) => total >= threshold).length,
+    ]));
+    return valuesByColumns(perClass, (classIds) => sumNumbers(classIds.map((classId) => perClass[classId])));
+  };
+  const extraGeneralRows = TARGET_KEYS.filter((key) => generalVisibility[key]
+    && (["science", "arts"] as const).some((track) => trackVisibility[track][key]))
+    .map((key) => ({
+      key: `general-${key}Count`,
+      label: `通用${{ highScore1: "高分1", highScore2: "高分2", firstTier: "一本", undergraduate: "本科" }[key]}达线数`,
+      kind: "count" as const,
+      values: generalCountValues(key),
+    }));
+
   const summaryRows: GradeTotalScoreSummaryRow[] = [
     {
       key: "attendedCount",
@@ -467,6 +524,7 @@ export function buildGradeTotalScoreSegmentReport(
     { key: "undergraduateTarget", label: "本科目标", kind: "target", targetKey: "undergraduate", values: targetValues("undergraduate") },
     { key: "undergraduateCount", label: "本科人数", kind: "count", values: countValues("undergraduate") },
     { key: "undergraduateRate", label: "本科率", kind: "rate", values: rateValues("undergraduate") },
+    ...extraGeneralRows,
   ];
 
   return {
@@ -479,12 +537,19 @@ export function buildGradeTotalScoreSegmentReport(
     segmentMax,
     segmentMin,
     segmentSize,
+    generalStandards,
+    generalVisibility,
+    trackVisibility,
     trackStandards,
     separateStandards,
     classes,
     columns,
     rows,
-    summaryRows: customTotal ? summaryRows.filter((row) => row.key === "attendedCount") : summaryRows,
+    summaryRows: customTotal ? summaryRows.filter((row) => row.key === "attendedCount") : summaryRows.filter((row) => {
+      const key = TARGET_KEYS.find((candidate) => row.key.startsWith(candidate));
+      return !key || generalVisibility[key]
+        || (["science", "arts"] as const).some((track) => trackVisibility[track][key]);
+    }),
     validTotalCounts,
   };
 }

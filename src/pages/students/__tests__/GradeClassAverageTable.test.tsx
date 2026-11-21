@@ -215,6 +215,14 @@ describe("GradeClassAverageTable", () => {
     expect(categorySettings.templates[0].classAverageOptions.classCategories["class-1"])
       .toBe("物化实验");
 
+    await user.click(screen.getByRole("button", { name: "新增总分" }));
+    expect(screen.getByRole("columnheader", { name: "个性化总分1" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "左移个性化总分1" }));
+    expect(onChange.mock.lastCall?.[0].templates[0].classAverageOptions.scoreColumnOrder)
+      .toEqual(["subject:数学", "subject:化学", expect.stringMatching(/^custom:/), "total"]);
+    const headings = screen.getAllByRole("columnheader").map((column) => column.textContent);
+    expect(headings.indexOf("个性化总分1")).toBeLessThan(headings.indexOf("总分平均"));
+
     await user.click(screen.getByRole("checkbox", { name: "显示高三(1)班" }));
     const hiddenSettings = onChange.mock.lastCall?.[0];
     expect(hiddenSettings.templates[0].classAverageOptions.hiddenClassIds).toContain("class-1");

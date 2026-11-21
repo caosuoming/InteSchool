@@ -311,6 +311,44 @@ describe("combined grade exports", () => {
     expect(overallRow[5]?.value).toBe(195);
   });
 
+  it("exports reordered custom totals using the same columns as table one", async () => {
+    const report = buildGradeClassAverageReport(exam, {
+      ...classAverageTemplate,
+      classAverageOptions: {
+        customTotals: [{ id: "custom-1", name: "语文专项", subjects: ["语文"], scoreMode: "raw" }],
+        scoreColumnOrder: ["custom:custom-1", "subject:化学", "total", "subject:语文"],
+      },
+    }, context, settings);
+    await exportGradeClassAverageReport(report);
+    const rows = writeXlsxFile.mock.calls[0][0] as ExportRow[];
+    expect(rows[1].map((cell) => cell?.value)).toEqual([
+      "类别", "班级", "班主任 / 人数", "语文专项", "化学", "总分平均", "语文",
+    ]);
+    const firstScoreRow = rows.find((row) => row[2]?.value === "1 人" && row[3]?.value === 120)!;
+    expect(firstScoreRow.slice(3).map((cell) => cell?.value)).toEqual([120, 90, 210, 120]);
+  });
+
+  it("exports general-only standards without arts/science subtotal columns", async () => {
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...totalScoreSegmentTemplate,
+      totalScoreSegmentOptions: {
+        generalThresholds: { highScore1: 190 },
+        generalStandardVisibility: { highScore1: true },
+        trackStandardVisibility: {
+          science: { highScore1: false, highScore2: false, firstTier: false, undergraduate: false },
+          arts: { highScore1: false, highScore2: false, firstTier: false, undergraduate: false },
+        },
+      },
+    }, context, classAverageTemplate);
+    await exportGradeTotalScoreSegmentReport(report);
+    const rows = writeXlsxFile.mock.calls[0][0] as ExportRow[];
+    expect(rows[1].map((cell) => cell?.value)).toEqual(["总分分数段", "1班", "2班", "总计"]);
+    const summary = rows.find((row) => String(row[0]?.value).includes("通用标准"))!;
+    expect(summary[0]?.value).toContain("高分1 190分");
+    expect(String(summary[0]?.value)).not.toContain("理科标准");
+    expect(rows.some((row) => row[0]?.value === "高分2达线数")).toBe(false);
+  });
+
   it("exports separate ranking group standards alongside the summary counts", async () => {
     const separateSettings = {
       ...settings,

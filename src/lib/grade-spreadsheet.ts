@@ -611,8 +611,22 @@ function classAverageWorkbookSheet(
   usedNames: Set<string>,
   sheetName = "表一、班级平均分",
 ): CombinedWorkbookSheet {
-  const headers = ["类别", "班级", "班主任 / 人数", ...report.subjects, "总分平均", ...report.customTotals.map((total) => total.name)];
+  const headers = ["类别", "班级", "班主任 / 人数", ...report.columns.map((column) => column.label)];
   const rows: CombinedWorkbookRow[] = [titleRow(report.title, headers.length, report.reportDate), headingRow(headers)];
+  const scoreCells = (
+    summary: { subjectValues: GradeClassAverageReport["overallAverage"]["subjectValues"];
+      totalValues: GradeClassAverageReport["overallAverage"]["totalValues"];
+      customValues: GradeClassAverageReport["overallAverage"]["customValues"] },
+    modes: Record<string, "raw" | "assigned" | "both">,
+    backgroundColor?: string,
+  ) => report.columns.map((column) => {
+    const value = column.kind === "subject"
+      ? classAverageScoreCellValue(summary.subjectValues[column.subject!], modes[column.subject!])
+      : column.kind === "total"
+        ? classAverageScoreCellValue(summary.totalValues, report.options.totalScoreMode || "assigned")
+        : summary.customValues[column.customId!];
+    return classAverageScoreWorkbookCell(value, { fontWeight: "bold", ...(backgroundColor ? { backgroundColor } : {}) });
+  });
 
   report.groups.forEach((group) => {
     const summaryRows = group.rows.length > 1
@@ -630,64 +644,36 @@ function classAverageWorkbookSheet(
           })
         : null;
       categoryRendered = true;
-
+      const summary = {
+        subjectValues: row.subjectAverages,
+        totalValues: row.totalAverages,
+        customValues: row.customAverages,
+      };
       if (report.options.showTeacherRows) {
         rows.push([
           categoryCell,
           combinedWorkbookCell(row.classLabel, { rowSpan: 2, fontWeight: "bold" }),
           combinedWorkbookCell(row.homeroomTeachers.join("、") || "—"),
-          ...report.subjects.map((subject) => combinedWorkbookCell(
-            row.subjectTeachers[subject]?.join("、") || "—",
+          ...report.columns.map((column) => combinedWorkbookCell(
+            column.kind === "subject" ? row.subjectTeachers[column.subject!]?.join("、") || "—" : null,
           )),
-          combinedWorkbookCell(null),
-          ...report.customTotals.map(() => combinedWorkbookCell(null)),
         ]);
-        rows.push([
-          null,
-          null,
-          combinedWorkbookCell(`${row.studentCount} 人`),
-          ...report.subjects.map((subject) => classAverageScoreWorkbookCell(classAverageScoreCellValue(
-            row.subjectAverages[subject],
-            row.subjectScoreModes[subject],
-          ), { fontWeight: "bold" })),
-          classAverageScoreWorkbookCell(classAverageScoreCellValue(
-            row.totalAverages,
-            report.options.totalScoreMode || "assigned",
-          ), { fontWeight: "bold" }),
-          ...report.customTotals.map((total) => classAverageScoreWorkbookCell(row.customAverages[total.id], { fontWeight: "bold" })),
-        ]);
+        rows.push([null, null, combinedWorkbookCell(`${row.studentCount} 人`), ...scoreCells(summary, row.subjectScoreModes)]);
       } else {
         rows.push([
           categoryCell,
           combinedWorkbookCell(row.classLabel, { fontWeight: "bold" }),
           combinedWorkbookCell(`${row.studentCount} 人`),
-          ...report.subjects.map((subject) => classAverageScoreWorkbookCell(classAverageScoreCellValue(
-            row.subjectAverages[subject],
-            row.subjectScoreModes[subject],
-          ), { fontWeight: "bold" })),
-          classAverageScoreWorkbookCell(classAverageScoreCellValue(
-            row.totalAverages,
-            report.options.totalScoreMode || "assigned",
-          ), { fontWeight: "bold" }),
-          ...report.customTotals.map((total) => classAverageScoreWorkbookCell(row.customAverages[total.id], { fontWeight: "bold" })),
+          ...scoreCells(summary, row.subjectScoreModes),
         ]);
       }
     });
-
     if (group.rows.length > 1 && report.options.showGroupDifference) {
       rows.push([
         null,
         combinedWorkbookCell("分差", { fontWeight: "bold", backgroundColor: "#FFFBEB" }),
         combinedWorkbookCell(null, { backgroundColor: "#FFFBEB" }),
-        ...report.subjects.map((subject) => classAverageScoreWorkbookCell(classAverageScoreCellValue(
-          group.difference.subjectValues[subject],
-          group.subjectScoreModes[subject],
-        ), { backgroundColor: "#FFFBEB" })),
-        classAverageScoreWorkbookCell(classAverageScoreCellValue(
-          group.difference.totalValues,
-          report.options.totalScoreMode || "assigned",
-        ), { fontWeight: "bold", backgroundColor: "#FFFBEB" }),
-        ...report.customTotals.map((total) => classAverageScoreWorkbookCell(group.difference.customValues[total.id], { backgroundColor: "#FFFBEB" })),
+        ...scoreCells(group.difference, group.subjectScoreModes, "#FFFBEB"),
       ]);
     }
     if (group.rows.length > 1 && report.options.showGroupAverage) {
@@ -698,15 +684,7 @@ function classAverageWorkbookSheet(
           backgroundColor: "#EFF6FF",
         }),
         combinedWorkbookCell(null, { backgroundColor: "#EFF6FF" }),
-        ...report.subjects.map((subject) => classAverageScoreWorkbookCell(classAverageScoreCellValue(
-          group.average.subjectValues[subject],
-          group.subjectScoreModes[subject],
-        ), { fontWeight: "bold", backgroundColor: "#EFF6FF" })),
-        classAverageScoreWorkbookCell(classAverageScoreCellValue(
-          group.average.totalValues,
-          report.options.totalScoreMode || "assigned",
-        ), { fontWeight: "bold", backgroundColor: "#EFF6FF" }),
-        ...report.customTotals.map((total) => classAverageScoreWorkbookCell(group.average.customValues[total.id], { backgroundColor: "#EFF6FF" })),
+        ...scoreCells(group.average, group.subjectScoreModes, "#EFF6FF"),
       ]);
     }
   });
@@ -714,36 +692,20 @@ function classAverageWorkbookSheet(
   if (report.options.showOverallAverage) {
     rows.push([
       combinedWorkbookCell(classAverageOverallLabel(report), {
-        columnSpan: 3,
-        fontWeight: "bold",
-        backgroundColor: "#F3F4F6",
-        wrap: true,
+        columnSpan: 3, fontWeight: "bold", backgroundColor: "#F3F4F6", wrap: true,
       }),
       null,
       null,
-      ...report.subjects.map((subject) => classAverageScoreWorkbookCell(classAverageScoreCellValue(
-        report.overallAverage.subjectValues[subject],
-        report.overallSubjectScoreModes[subject],
-      ), { fontWeight: "bold", backgroundColor: "#F3F4F6" })),
-      classAverageScoreWorkbookCell(classAverageScoreCellValue(
-        report.overallAverage.totalValues,
-        report.options.totalScoreMode || "assigned",
-      ), { fontWeight: "bold", backgroundColor: "#F3F4F6" }),
-      ...report.customTotals.map((total) => classAverageScoreWorkbookCell(report.overallAverage.customValues[total.id], { backgroundColor: "#F3F4F6" })),
+      ...scoreCells(report.overallAverage, report.overallSubjectScoreModes, "#F3F4F6"),
     ]);
   }
-
   return {
     sheet: uniqueWorkbookSheetName(sheetName, usedNames),
     data: rows,
     stickyRowsCount: 2,
     columns: [
-      { width: 14 },
-      { width: 14 },
-      { width: 18 },
-      ...report.subjects.map(() => ({ width: 14 })),
-      { width: 14 },
-      ...report.customTotals.map(() => ({ width: 18 })),
+      { width: 14 }, { width: 14 }, { width: 18 },
+      ...report.columns.map((column) => ({ width: column.kind === "custom" ? 18 : 14 })),
     ],
   };
 }
@@ -772,12 +734,20 @@ function totalScoreSegmentWorkbookSheet(
       )),
     ]);
   });
-  const standardSummary = (["science", "arts"] as const).map((track) => {
-    const values = report.trackStandards[track];
-    const trackLabel = track === "science" ? "理科标准" : "文科标准";
-    const display = (value: number | null) => value === null ? "未设置" : `${value}分`;
-    return `${trackLabel}：高分1 ${display(values.highScore1)} | 高分2 ${display(values.highScore2)} | 一本 ${display(values.firstTier)} | 二本 ${display(values.undergraduate)}`;
-  }).join("    ");
+  const labels = { highScore1: "高分1", highScore2: "高分2", firstTier: "一本", undergraduate: "本科" } as const;
+  const keys = Object.keys(labels) as Array<keyof typeof labels>;
+  const display = (value: number | null) => value === null ? "未设置" : `${value}分`;
+  const standardSummary = [
+    ...(keys.filter((key) => report.generalVisibility[key]).length > 0
+      ? [`通用标准：${keys.filter((key) => report.generalVisibility[key]).map((key) => `${labels[key]} ${display(report.generalStandards[key])}`).join(" | ")}`]
+      : []),
+    ...(["science", "arts"] as const).flatMap((track) => {
+      const visible = keys.filter((key) => report.trackVisibility[track][key]);
+      return visible.length > 0 ? [
+        `${track === "science" ? "理科" : "文科"}标准：${visible.map((key) => `${labels[key]} ${display(report.trackStandards[track][key])}`).join(" | ")}`,
+      ] : [];
+    }),
+  ].join("    ");
   if (!report.customName) rows.push([
     combinedWorkbookCell(standardSummary, {
       fontWeight: "bold",

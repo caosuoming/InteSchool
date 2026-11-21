@@ -29,6 +29,7 @@ export interface GradeElectiveScoreSegmentSubjectReport {
   title: string;
   gradeLabels: string[];
   thresholds: number[];
+  scoreMode: "raw" | "assigned";
   rows: GradeElectiveScoreSegmentRow[];
   totalCandidateCount: number;
   totalGradeCounts: Record<string, number>;
@@ -77,10 +78,10 @@ function assignedGradeLabel(value: number | null | undefined, rules: GradeBandRu
 function thresholdScore(
   rawScore: number | null | undefined,
   assignedScore: number | null | undefined,
+  mode: "raw" | "assigned",
 ): number | null {
-  if (typeof rawScore === "number" && Number.isFinite(rawScore)) return rawScore;
-  if (typeof assignedScore === "number" && Number.isFinite(assignedScore)) return assignedScore;
-  return null;
+  const value = mode === "assigned" ? assignedScore : rawScore;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export function buildGradeElectiveScoreSegmentReport(
@@ -113,6 +114,16 @@ export function buildGradeElectiveScoreSegmentReport(
       const hasImportedAssignedScores = participatingGradeRecords(exam.records).some(
         (record) => typeof record.sourceAssignedScores?.[subject] === "number",
       );
+      const hasAssignedScores = participatingGradeRecords(exam.records).some((record) =>
+        typeof record.assignedScores[subject] === "number"
+        && Number.isFinite(record.assignedScores[subject]),
+      );
+      const scoreMode = hasAssignedScores && (hasImportedAssignedScores
+        || (settings.assignmentRules[subject]?.length || 0) > 0
+        || participatingGradeRecords(exam.records).some((record) =>
+          typeof record.assignedScores[subject] === "number"
+          && record.assignedScores[subject] !== record.scores[subject]))
+        ? "assigned" : "raw";
       const usesAssignedScores = (classOptions.classOrder || []).some((classId) => {
         if (hiddenClassIds.has(classId)) return false;
         const mode = classOptions.subjectScoreModes?.[classId]?.[subject];
@@ -133,7 +144,7 @@ export function buildGradeElectiveScoreSegmentReport(
             }))
             .map((scores) => ({
               ...scores,
-              threshold: thresholdScore(scores.raw, scores.assigned),
+              threshold: thresholdScore(scores.raw, scores.assigned, scoreMode),
             }))
             .filter((scores) => scores.threshold !== null || typeof scores.assigned === "number");
           const configuredForClass = classSubjectSettings.get(classId)?.examSubjects.includes(subject) ?? false;
@@ -179,6 +190,7 @@ export function buildGradeElectiveScoreSegmentReport(
         title: `${exam.name}${subject}选修分数段统计表`,
         gradeLabels,
         thresholds,
+        scoreMode,
         rows,
         totalCandidateCount,
         totalGradeCounts,

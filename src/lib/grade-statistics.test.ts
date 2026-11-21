@@ -414,6 +414,29 @@ describe("grade statistics", () => {
     });
   });
 
+  it("normalizes universal standards, visibility and column placement", () => {
+    const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1"]);
+    const average = settings.templates.find((item) => item.kind === "classAverage")!;
+    average.classAverageOptions = {
+      customTotals: [{ id: "c1", name: "自定义", subjects: ["数学"], scoreMode: "raw" }],
+      scoreColumnOrder: ["custom:c1", "subject:化学", "custom:missing", "total", "subject:数学"],
+    };
+    const segment = settings.templates.find((item) => item.kind === "totalScoreSegment")!;
+    segment.totalScoreSegmentOptions = {
+      generalThresholds: { highScore1: 620, undergraduate: 2100 },
+      generalStandardVisibility: { highScore1: true, highScore2: false },
+      trackStandardVisibility: { science: { highScore1: false }, arts: { firstTier: true } },
+    };
+    const normalized = normalizeGradeSettings(settings, ["数学", "化学"], ["class-1"]);
+    expect(normalized.templates.find((item) => item.kind === "classAverage")?.classAverageOptions?.scoreColumnOrder)
+      .toEqual(["custom:c1", "subject:化学", "total", "subject:数学"]);
+    expect(normalized.templates.find((item) => item.kind === "totalScoreSegment")?.totalScoreSegmentOptions).toMatchObject({
+      generalThresholds: { highScore1: 620, undergraduate: 2000 },
+      generalStandardVisibility: { highScore1: true, highScore2: false },
+      trackStandardVisibility: { science: { highScore1: false }, arts: { firstTier: true } },
+    });
+  });
+
   it("normalizes the separate ranking top-N independently", () => {
     const settings = buildDefaultGradeSettings(["数学"], ["class-1"]);
     const template = settings.templates.find((item) => item.kind === "totalScoreSegment")!;

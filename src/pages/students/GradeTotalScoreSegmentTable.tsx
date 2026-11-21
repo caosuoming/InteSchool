@@ -90,6 +90,13 @@ export function GradeTotalScoreSegmentTable({
       ? `${((count / candidates) * 100).toFixed(1)}%`
       : "—"}）`;
   };
+  const generalStandardStats = (targetKey: GradeTotalScoreTargetKey) => {
+    const row = report.summaryRows.find((item) => item.key === `general-${targetKey}Count`)
+      || report.summaryRows.find((item) => item.key === `${targetKey}Count`);
+    const count = row?.values.__total__;
+    const total = report.validTotalCounts.__total__;
+    return typeof count === "number" ? `${count}人（${total > 0 ? `${((count / total) * 100).toFixed(1)}%` : "—"}）` : "—人（—）";
+  };
   const separateStandardStats = (classIds: string[], targetKey: GradeTotalScoreTargetKey) => {
     const counts = report.summaryRows.find((row) => row.key === `${targetKey}Count`)?.values;
     const candidates = report.validTotalCounts;
@@ -136,6 +143,30 @@ export function GradeTotalScoreSegmentTable({
       ...patch,
     },
   });
+
+  const updateGeneralThreshold = (targetKey: GradeTotalScoreTargetKey, value: string) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({ generalThresholds: {
+      ...options.generalThresholds,
+      [targetKey]: optionalNumber(value),
+    } });
+  };
+  const toggleGeneralVisibility = (targetKey: GradeTotalScoreTargetKey, visible: boolean) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({ generalStandardVisibility: {
+      ...options.generalStandardVisibility,
+      [targetKey]: visible,
+    } });
+    void autoSave();
+  };
+  const toggleTrackVisibility = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey, visible: boolean) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({ trackStandardVisibility: {
+      ...options.trackStandardVisibility,
+      [track]: { ...options.trackStandardVisibility?.[track], [targetKey]: visible },
+    } });
+    void autoSave();
+  };
 
   const updateTrackThreshold = (
     track: GradeAcademicTrack,
@@ -229,7 +260,7 @@ export function GradeTotalScoreSegmentTable({
           <div>
             <div className="font-medium text-ink-900">表二、总分分数段汇总表（{scoreModeLabel}）</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              按物理类、历史类分组汇总达到各总分阈值的累计人数，并自动生成理科小计、文科小计和总计。
+              按选定的通用、理科和文科标准统计达线人数；仅启用通用标准时隐藏文理科小计。
             </div>
           </div>
         </div>
@@ -303,6 +334,11 @@ export function GradeTotalScoreSegmentTable({
                 ["undergraduate", "二本"],
               ] as const).map(([targetKey, label]) => (
                 <div key={`${track}-${targetKey}`} className="flex items-end gap-2">
+                  <label className="mb-3 flex items-center gap-1 text-[11px] text-ink-600">
+                    <input type="checkbox" aria-label={`显示${track === "science" ? "理科" : "文科"}${label}标准`}
+                      checked={report.trackVisibility[track][targetKey]}
+                      onChange={(event) => toggleTrackVisibility(track, targetKey, event.target.checked)} />显示
+                  </label>
                   <div className="w-32">
                     <Input
                       label={`${track === "science" ? "理科" : "文科"}${label}标准`}
@@ -326,6 +362,27 @@ export function GradeTotalScoreSegmentTable({
                 <RotateCcw className="h-3.5 w-3.5" />恢复默认
               </Button>
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-ink-200 pt-3" data-testid="general-standard-settings">
+            <span className="mb-2 text-xs font-semibold text-ink-800">通用总分标准</span>
+            {TOTAL_SCORE_STANDARD_LABELS.map(([targetKey, label]) => (
+              <div key={targetKey} className="flex items-end gap-2">
+                <label className="mb-3 flex items-center gap-1 text-[11px] text-ink-600">
+                  <input type="checkbox" aria-label={`显示通用${label}标准`}
+                    checked={report.generalVisibility[targetKey]}
+                    onChange={(event) => toggleGeneralVisibility(targetKey, event.target.checked)} />显示
+                </label>
+                <div className="w-32">
+                  <Input label={`通用${label}标准`} type="number" min={0} max={2000}
+                    value={effectiveTemplate.totalScoreSegmentOptions?.generalThresholds?.[targetKey] ?? ""}
+                    onChange={(event) => updateGeneralThreshold(targetKey, event.target.value)}
+                    onBlur={() => void autoSave()} />
+                </div>
+                <output aria-label={`通用${label}达线统计`} className="mb-2 whitespace-nowrap text-xs tabular-nums text-ink-600">
+                  {report.generalVisibility[targetKey] ? generalStandardStats(targetKey) : "未显示"}
+                </output>
+              </div>
+            ))}
           </div>
           {report.separateStandards.length > 0 && (
             <div data-testid="separate-standard-groups" className="mt-3 space-y-3 border-t border-ink-200 pt-3">
@@ -359,7 +416,7 @@ export function GradeTotalScoreSegmentTable({
             </div>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 text-[11px] text-ink-400">
-            <span>含物理的选科归入理科，含历史的选科归入文科；单独排名组可配置专门标准，留空则沿用文理科标准。修改保存到当前届年级。</span>
+            <span>显示勾选控制标准；理科/文科优先适用本类标准，未启用时采用通用标准。单独排名组可另设标准。修改保存到当前届年级。</span>
             {autoSaving && <span className="text-emerald-700">正在自动保存…</span>}
           </div>
         </div>
@@ -412,12 +469,23 @@ export function GradeTotalScoreSegmentTable({
                   className="border border-ink-300 px-3 py-2 text-center text-[11px] text-ink-700"
                 >
                   <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-1">
-                    {(["science", "arts"] as const).map((track) => (
+                    {TOTAL_SCORE_STANDARD_LABELS.some(([key]) => report.generalVisibility[key]) && (
+                      <span className="whitespace-nowrap">
+                        <span className="font-semibold text-ink-900">通用标准：</span>
+                        {TOTAL_SCORE_STANDARD_LABELS.filter(([key]) => report.generalVisibility[key]).map(([key, label], index) => (
+                          <span key={key}>
+                            {index > 0 && <span className="mx-1.5 text-ink-300">|</span>}
+                            {label} {report.generalStandards[key] === null ? "未设置" : `${report.generalStandards[key]}分`}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                    {(["science", "arts"] as const).filter((track) => TOTAL_SCORE_STANDARD_LABELS.some(([key]) => report.trackVisibility[track][key])).map((track) => (
                       <span key={track} className="whitespace-nowrap">
                         <span className="font-semibold text-ink-900">
                           {track === "science" ? "理科标准" : "文科标准"}：
                         </span>
-                        {TOTAL_SCORE_STANDARD_LABELS.map(([key, label], index) => (
+                        {TOTAL_SCORE_STANDARD_LABELS.filter(([key]) => report.trackVisibility[track][key]).map(([key, label], index) => (
                           <span key={key}>
                             {index > 0 && <span className="mx-1.5 text-ink-300">|</span>}
                             {label} {report.trackStandards[track][key] === null
@@ -479,7 +547,7 @@ export function GradeTotalScoreSegmentTable({
             </tbody>
           </table>
           <div className="mt-2 text-xs text-ink-400">
-            本科人数和本科率分别按理科、文科的“二本标准”统计；达线比例以无缺考科目、有有效总分的学生为分母；目标人数修改后自动保存到当前届年级。
+            本科人数和本科率按选中的本科达线标准统计；达线比例以有有效总分的学生为分母；目标人数修改后自动保存到当前届年级。
           </div>
         </div>
       )}

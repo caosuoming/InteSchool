@@ -132,9 +132,7 @@ export function GradeElectiveScoreSegmentTable({
           <div>
             <div className="font-medium text-ink-900">表四、选修分数段</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              {hasGradeStatistics
-                ? "分别统计化学、生物、政治、地理的实考人数、A-E 等级人数和原始分累计达分人数；任课教师来自当前年级配置。"
-                : "分别统计化学、生物、政治、地理的实考人数和原始分累计达分人数；表一仅使用原始分时不显示等级人数。"}
+              分数段有赋分时采用赋分，没有赋分时采用原始分；{!hasGradeStatistics && "表一仅使用原始分时不显示等级人数。"}A-E 等级列按当前表一的赋分显示设置决定。
             </div>
           </div>
         </div>
@@ -166,7 +164,7 @@ export function GradeElectiveScoreSegmentTable({
             ))}
           </div>
           <div className="mt-2 text-[11px] text-ink-400">
-            {hasGradeStatistics ? "A-E 等级按当前赋分规则统计；" : "当前表一仅显示原始分，不统计 A-E 等级；"}后续阈值按原始分从高到低累计统计。以逗号或空格分隔多个阈值；{autoSaving ? "正在自动保存…" : "失焦后自动保存到当前届年级。"}
+            {hasGradeStatistics ? "A-E 等级按当前赋分规则统计；" : "当前表一仅显示原始分，不统计 A-E 等级；"}有赋分按赋分、无赋分按原始分累计统计。以逗号或空格分隔多个阈值；{autoSaving ? "正在自动保存…" : "失焦后自动保存到当前届年级。"}
           </div>
         </div>
       )}
@@ -183,6 +181,7 @@ export function GradeElectiveScoreSegmentTable({
             <section key={subjectReport.subject} className="overflow-x-auto">
               <div className="mb-3 flex min-w-max items-end justify-between gap-4 px-1">
                 <h3 className="font-serif text-lg font-semibold text-ink-900">{subjectReport.title}</h3>
+                <span className="text-xs text-ink-500">分数段：{subjectReport.scoreMode === "assigned" ? "赋分" : "原始分"}</span>
                 <div className="shrink-0 text-sm font-medium text-ink-600">{report.reportDate.replace(/-/g, ".")}</div>
               </div>
               <table className="w-max min-w-full table-auto border-collapse text-[11px]">

@@ -1097,6 +1097,8 @@ export interface GradeCustomTotalScore {
 export interface GradeClassAverageOptions {
   /** Additional totals configured in 表一 and reused by 表二、表五、表六. */
   customTotals?: GradeCustomTotalScore[];
+  /** 表一的学科、总分及个性化总分列排序；新增列会自动追加。 */
+  scoreColumnOrder?: string[];
   /** 报表标题；为空时根据考试名称自动生成。 */
   title?: string;
   /** 报表日期，格式为 YYYY-MM-DD。 */
@@ -1137,6 +1139,12 @@ export interface GradeTotalScoreTrackThresholds {
 }
 
 export interface GradeTotalScoreSegmentOptions {
+  /** 通用总分达线标准，适用于全部班级。 */
+  generalThresholds?: GradeTotalScoreTrackThresholds;
+  /** 通用标准是否展示；旧数据默认关闭。 */
+  generalStandardVisibility?: Partial<Record<GradeTotalScoreTargetKey, boolean>>;
+  /** 文理科标准是否展示；旧数据默认开启。 */
+  trackStandardVisibility?: Partial<Record<GradeAcademicTrack, Partial<Record<GradeTotalScoreTargetKey, boolean>>>>;
   /** 旧数据使用的统一高分 1 达线标准；新数据优先使用 trackThresholds。 */
   highScore1Threshold?: number;
   /** 旧数据使用的统一高分 2 达线标准；新数据优先使用 trackThresholds。 */
