@@ -727,10 +727,11 @@ function totalScoreSegmentWorkbookSheet(
   ];
   report.rows.forEach((row) => {
     rows.push([
-      combinedWorkbookCell(`${row.threshold}分以上`, { fontWeight: "bold" }),
+      combinedWorkbookCell(`${row.threshold}分以上${row.isSpecial ? "（特别）" : ""}`, { fontWeight: row.isSpecial ? "bold" : "normal" }),
       ...report.columns.map((column) => combinedWorkbookCell(
         row.counts[column.key] || null,
-        column.kind === "class" ? {} : { backgroundColor: "#ECFDF5", fontWeight: "bold" },
+        { ...(column.kind !== "class" ? { backgroundColor: "#ECFDF5" } : {}),
+          ...(row.isSpecial ? { fontWeight: "bold" } : {}) },
       )),
     ]);
   });
@@ -748,7 +749,7 @@ function totalScoreSegmentWorkbookSheet(
       ] : [];
     }),
   ].join("    ");
-  if (!report.customName) rows.push([
+  if (standardSummary) rows.push([
     combinedWorkbookCell(standardSummary, {
       fontWeight: "bold",
       backgroundColor: "#FFFBEB",
@@ -763,7 +764,7 @@ function totalScoreSegmentWorkbookSheet(
     const values = group.thresholds;
     rows.push([
       combinedWorkbookCell(
-        `${group.label}（${group.classLabels.join("、")}）：高分1 ${display(values.highScore1)} | 高分2 ${display(values.highScore2)} | 一本 ${display(values.firstTier)} | 二本 ${display(values.undergraduate)}`,
+        `${group.label}（${group.classLabels.join("、")}）：高分1 ${display(values.highScore1)} | 高分2 ${display(values.highScore2)} | 一本 ${display(values.firstTier)} | 本科 ${display(values.undergraduate)}`,
         { fontWeight: "bold", backgroundColor: "#FFFBEB", columnSpan: report.columns.length + 1, height: 34, wrap: true },
       ),
       ...Array.from({ length: report.columns.length }, () => null),
@@ -940,7 +941,7 @@ function totalScoreRankingWorkbookSheets(
   sheetPrefix = "表五-",
 ): CombinedWorkbookSheet[] {
   return report.tables.map((table) => {
-    const headers = ["名次", "学号", "姓名", "班级", ...report.subjects, `${table.totalLabel || "总分"}（${table.scoreModeLabel || report.scoreModeLabel}）`];
+    const headers = ["名次", "学号", "姓名", "班级", ...table.subjects, `${table.totalLabel || "总分"}（${table.scoreModeLabel || report.scoreModeLabel}）`];
     const sheetLabel = table.totalLabel
       ? `${table.totalLabel}-${table.key}`
       : table.key === "science" ? "理科" : table.key === "arts" ? "文科"
@@ -955,7 +956,7 @@ function totalScoreRankingWorkbookSheets(
           combinedWorkbookCell(row.studentNo || "—"),
           combinedWorkbookCell(row.studentName, { fontWeight: "bold" }),
           combinedWorkbookCell(row.classLabel),
-          ...report.subjects.map((subject) => combinedWorkbookCell(row.subjectScores[subject])),
+          ...table.subjects.map((subject) => combinedWorkbookCell(row.subjectScores[subject])),
           combinedWorkbookCell(row.score, { fontWeight: "bold" }),
         ]),
       ],
@@ -965,7 +966,7 @@ function totalScoreRankingWorkbookSheets(
         { width: 16 },
         { width: 14 },
         { width: 14 },
-        ...report.subjects.map(() => ({ width: 12 })),
+        ...table.subjects.map(() => ({ width: 12 })),
         { width: 14 },
       ],
     };

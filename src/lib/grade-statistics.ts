@@ -425,7 +425,36 @@ function normalizeTotalScoreSegmentOptions(
       .filter(([, thresholds]) => (thresholds as number[]).length > 0),
   );
 
+  const normalizeSpecial = (values: number[] | undefined) => [...new Set((values || [])
+    .filter((value) => Number.isFinite(value))
+    .map((value) => Math.max(0, Math.min(2000, Number(value)))))]
+    .sort((a, b) => b - a).slice(0, 40);
+  const customEntries = <T>(values: Record<string, T> | undefined) =>
+    Object.entries(values || {}).filter(([id]) => id.length > 0 && id.length <= 64).slice(0, 12);
+  const normalizeTotalStandards = (values: GradeTotalScoreSegmentOptions["generalThresholds"]) => ({
+    highScore1: normalizeThreshold(values?.highScore1),
+    highScore2: normalizeThreshold(values?.highScore2),
+    firstTier: normalizeThreshold(values?.firstTier),
+    undergraduate: normalizeThreshold(values?.undergraduate),
+  });
   return {
+    specialThresholds: normalizeSpecial(options.specialThresholds),
+    customTotalSpecialThresholds: Object.fromEntries(customEntries(options.customTotalSpecialThresholds)
+      .map(([id, values]) => [id, normalizeSpecial(values)])),
+    customTotalRanges: Object.fromEntries(customEntries(options.customTotalRanges)
+      .map(([id, range]) => [id, {
+        segmentMax: normalizeThreshold(range?.segmentMax),
+        segmentMin: normalizeThreshold(range?.segmentMin),
+        segmentSize: Number.isFinite(range?.segmentSize)
+          ? Math.max(1, Math.min(500, Math.round(Number(range.segmentSize)))) : undefined,
+      }])),
+    customTotalGeneralThresholds: Object.fromEntries(customEntries(options.customTotalGeneralThresholds)
+      .map(([id, values]) => [id, normalizeTotalStandards(values)])),
+    customTotalGeneralVisibility: Object.fromEntries(customEntries(options.customTotalGeneralVisibility)
+      .map(([id, values]) => [id, Object.fromEntries(
+        (["highScore1", "highScore2", "firstTier", "undergraduate"] as const)
+          .flatMap((key) => typeof values?.[key] === "boolean" ? [[key, values[key]]] : []),
+      )])),
     generalThresholds: {
       highScore1: normalizeThreshold(options.generalThresholds?.highScore1),
       highScore2: normalizeThreshold(options.generalThresholds?.highScore2),

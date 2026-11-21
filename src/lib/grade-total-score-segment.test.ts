@@ -107,6 +107,57 @@ const context: GradeImportContext = {
 };
 
 describe("buildGradeTotalScoreSegmentReport", () => {
+  it("sorts class numbers naturally across tracks when only general standards are visible", () => {
+    const thirdClass = {
+      ...context.classes[0], id: "class-10", name: "高三(10)班",
+    };
+    const tenthRecord = {
+      ...exam.records[0], id: "record-10", classId: "class-10", className: "高三(10)班",
+    };
+    const noTrack = { highScore1: false, highScore2: false, firstTier: false, undergraduate: false };
+    const report = buildGradeTotalScoreSegmentReport(
+      { ...exam, records: [...exam.records, tenthRecord] },
+      { ...template, totalScoreSegmentOptions: {
+        generalThresholds: { highScore1: 90 },
+        generalStandardVisibility: { highScore1: true },
+        trackStandardVisibility: { science: noTrack, arts: noTrack },
+      } },
+      { ...context, classes: [...context.classes, thirdClass],
+        classProfiles: {
+          "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学"], hasImportedScores: true },
+          "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
+        },
+      },
+      { ...classAverageTemplate, classAverageOptions: {
+        ...classAverageTemplate.classAverageOptions,
+        classOrder: ["class-10", "class-2", "class-1"],
+      } },
+    );
+    expect(report.columns.map((column) => column.label))
+      .toEqual(["一班", "二班", "10班", "总计"]);
+    expect(report.columns.some((column) => column.kind === "subtotal")).toBe(false);
+  });
+
+  it("adds special score lines and independently configured universal lines for custom totals", () => {
+    const customTotal = { id: "math-only", name: "数学总分", subjects: ["数学"], scoreMode: "raw" as const };
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...template,
+      totalScoreSegmentOptions: {
+        customTotalRanges: { "math-only": { segmentMax: 100, segmentMin: 80, segmentSize: 10 } },
+        customTotalSpecialThresholds: { "math-only": [95] },
+        customTotalGeneralThresholds: { "math-only": { highScore1: 90, undergraduate: 80 } },
+        customTotalGeneralVisibility: { "math-only": { highScore1: true, undergraduate: true } },
+      },
+    }, context, classAverageTemplate, exam.settings, customTotal);
+    expect(report.rows.map((row) => row.threshold)).toEqual([100, 95, 90, 80]);
+    expect(report.rows.find((row) => row.threshold === 95)?.isSpecial).toBe(true);
+    expect(report.generalStandards.highScore1).toBe(90);
+    expect(report.generalVisibility.undergraduate).toBe(true);
+    expect(report.columns.some((column) => column.kind === "subtotal")).toBe(false);
+    expect(report.summaryRows.find((row) => row.key === "highScore1Count")?.values.__total__).toBe(2);
+    expect(report.summaryRows.find((row) => row.key === "undergraduateCount")?.values.__total__).toBe(3);
+  });
+
   it("uses universal standard alone without science and arts subtotals", () => {
     const allDisabled = { highScore1: false, highScore2: false, firstTier: false, undergraduate: false };
     const report = buildGradeTotalScoreSegmentReport(exam, {
@@ -157,7 +208,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
   it("builds cumulative threshold rows with classes as columns", () => {
     const report = buildGradeTotalScoreSegmentReport(exam, template, context, classAverageTemplate);
 
-    expect(report.classes.map((item) => item.classLabel)).toEqual(["二班", "一班"]);
+    expect(report.classes.map((item) => item.classLabel)).toEqual(["一班", "二班"]);
     expect(report.rows.map((row) => row.threshold)).toEqual([100, 90, 80]);
     expect(report.rows.map((row) => [row.counts["class-2"], row.counts["class-1"]])).toEqual([
       [1, 0],
@@ -360,7 +411,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     expect(report.separateStandards).toHaveLength(1);
     expect(report.separateStandards[0].classIds).toEqual(["class-1"]);
   });
-  it("counts only complete examinees and uses configured ranking subjects for thresholds", () => {
+  it("counts complete examinees using all examined subjects, not ranking subsets", () => {
     const reportExam: GradeExam = {
       ...exam,
       subjects: ["数学", "语文"],
@@ -397,7 +448,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
     });
     expect(report.rows[0].counts).toEqual({
-      "class-1": 0, "class-2": 1, __science_subtotal__: 0, __arts_subtotal__: 1, __total__: 1,
+      "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,
     });
     expect(byKey.highScore1Count.values).toEqual({
       "class-1": 1, "class-2": 1, __science_subtotal__: 1, __arts_subtotal__: 1, __total__: 2,

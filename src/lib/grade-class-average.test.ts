@@ -236,6 +236,21 @@ describe("grade class average report", () => {
     expect(report.reportDate).toBe("2026-01-27");
   });
 
+  it("uses the sum of all nine examined subjects for the ordinary total average", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const fullExam: GradeExam = {
+      ...exam,
+      subjects,
+      records: exam.records.map((record) => ({
+        ...record,
+        scores: Object.fromEntries(subjects.map((subject) => [subject, 50])),
+        assignedScores: Object.fromEntries(subjects.map((subject) => [subject, 50])),
+      })),
+    };
+    const result = buildGradeClassAverageReport(fullExam, template, context);
+    expect(result.groups[0].rows[0].totalAverages).toEqual({ raw: 450, assigned: 450 });
+  });
+
   it("calculates class differences and student-weighted summaries", () => {
     const report = buildGradeClassAverageReport(exam, template, context);
     const group = report.groups[0];
@@ -425,7 +440,7 @@ describe("grade class average report", () => {
       ...template,
       subjects: ["数学"],
     }, context);
-    expect(subsetReport.groups[0].rows[0].totalAverages).toEqual({ raw: 100, assigned: 110 });
+    expect(subsetReport.groups[0].rows[0].totalAverages).toEqual({ raw: 190, assigned: 200 });
   });
 
   it("counts real zero scores but not absent or assigned-only scores", () => {

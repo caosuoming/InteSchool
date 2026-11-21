@@ -40,7 +40,7 @@ const TOTAL_SCORE_STANDARD_LABELS: Array<[GradeTotalScoreTargetKey, string]> = [
   ["highScore1", "高分1"],
   ["highScore2", "高分2"],
   ["firstTier", "一本"],
-  ["undergraduate", "二本"],
+  ["undergraduate", "本科"],
 ];
 
 export function GradeTotalScoreSegmentTable({
@@ -198,6 +198,40 @@ export function GradeTotalScoreSegmentTable({
     });
   };
 
+  const parseScoreLines = (value: string) => [...new Set(value.split(/[\\s,，、;；]+/)
+    .map(Number).filter((number) => Number.isFinite(number) && number >= 0 && number <= 2000))]
+    .sort((a, b) => b - a).slice(0, 40);
+  const updateCustomRange = (id: string, field: "segmentMax" | "segmentMin" | "segmentSize", value: string) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || value.trim() === "") return;
+    updateSegmentOptions({
+      customTotalRanges: {
+        ...options.customTotalRanges,
+        [id]: { ...options.customTotalRanges?.[id], [field]: Math.max(0, Math.min(2000, Math.round(parsed))) },
+      },
+    });
+  };
+  const updateCustomStandard = (id: string, key: GradeTotalScoreTargetKey, value: string) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({
+      customTotalGeneralThresholds: {
+        ...options.customTotalGeneralThresholds,
+        [id]: { ...options.customTotalGeneralThresholds?.[id], [key]: optionalNumber(value) },
+      },
+    });
+  };
+  const updateCustomVisibility = (id: string, key: GradeTotalScoreTargetKey, checked: boolean) => {
+    const options = effectiveTemplate.totalScoreSegmentOptions || {};
+    updateSegmentOptions({
+      customTotalGeneralVisibility: {
+        ...options.customTotalGeneralVisibility,
+        [id]: { ...options.customTotalGeneralVisibility?.[id], [key]: checked },
+      },
+    });
+    void autoSave();
+  };
+
   const trackThresholdValue = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey) => {
     const options = effectiveTemplate.totalScoreSegmentOptions || {};
     const legacy = {
@@ -326,12 +360,20 @@ export function GradeTotalScoreSegmentTable({
                   onChange={(event) => updateTemplate({ segmentSize: Number(event.target.value) })}
                 />
               </div>
+              <div className="w-44">
+                <Input label="特别分数线（逗号分隔）"
+                  defaultValue={(effectiveTemplate.totalScoreSegmentOptions?.specialThresholds || []).join("，")}
+                  onBlur={(event) => {
+                    updateSegmentOptions({ specialThresholds: parseScoreLines(event.target.value) });
+                    void autoSave();
+                  }} placeholder="例如 625，585" />
+              </div>
               <span className="mb-1 h-9 w-px bg-ink-200" aria-hidden="true" />
               {(["science", "arts"] as const).flatMap((track) => ([
                 ["highScore1", "高分1"],
                 ["highScore2", "高分2"],
                 ["firstTier", "一本"],
-                ["undergraduate", "二本"],
+                ["undergraduate", "本科"],
               ] as const).map(([targetKey, label]) => (
                 <div key={`${track}-${targetKey}`} className="flex items-end gap-2">
                   <label className="mb-3 flex items-center gap-1 text-[11px] text-ink-600">
@@ -450,13 +492,13 @@ export function GradeTotalScoreSegmentTable({
             <tbody>
               {report.rows.map((row) => (
                 <tr key={row.threshold} className="bg-paper">
-                  <th className="sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center font-semibold text-ink-800">
-                    {row.threshold}分以上
+                  <th className={`sticky left-0 z-[5] whitespace-nowrap border border-ink-300 bg-paper px-2 py-1.5 text-center text-ink-800 ${row.isSpecial ? "font-black" : "font-semibold"}`}>
+                    {row.threshold}分以上{row.isSpecial ? "（特别）" : ""}
                   </th>
                   {report.columns.map((column) => (
                     <td
                       key={column.key}
-                      className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"}`}
+                      className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900 ${column.kind === "class" ? "" : "bg-emerald-50/50"} ${row.isSpecial ? "font-black" : ""}`}
                     >
                       {row.counts[column.key] || ""}
                     </td>
@@ -557,6 +599,48 @@ export function GradeTotalScoreSegmentTable({
             <h3 className="font-serif text-lg font-semibold text-ink-900">{custom.title}</h3>
             <div className="text-xs text-ink-500">统计学科：{gradeCustomTotals(effectiveClassAverageTemplate, exam.subjects).find((total) => total.id === custom.customId)?.subjects.join("、")}</div>
           </div>
+          {adjusting && custom.customId && (
+            <div className="mb-3 flex flex-wrap items-end gap-3 rounded border border-ink-200 bg-ink-50/50 p-3">
+              {(["segmentMax", "segmentMin", "segmentSize"] as const).map((field) => (
+                <div key={field} className="w-28">
+                  <Input label={{ segmentMax: "最高分值", segmentMin: "最低分值", segmentSize: "分数间隔" }[field]}
+                    type="number" min={field === "segmentSize" ? 1 : 0} max={2000}
+                    value={effectiveTemplate.totalScoreSegmentOptions?.customTotalRanges?.[custom.customId!]?.[field]
+                      ?? custom[field]}
+                    onChange={(event) => updateCustomRange(custom.customId!, field, event.target.value)}
+                    onBlur={() => void autoSave()} />
+                </div>
+              ))}
+              <div className="w-48">
+                <Input label="特别分数线（逗号分隔）"
+                  defaultValue={(effectiveTemplate.totalScoreSegmentOptions?.customTotalSpecialThresholds?.[custom.customId] || []).join("，")}
+                  onBlur={(event) => {
+                    updateSegmentOptions({
+                      customTotalSpecialThresholds: {
+                        ...effectiveTemplate.totalScoreSegmentOptions?.customTotalSpecialThresholds,
+                        [custom.customId!]: parseScoreLines(event.target.value),
+                      },
+                    });
+                    void autoSave();
+                  }} />
+              </div>
+              {TOTAL_SCORE_STANDARD_LABELS.map(([key, label]) => (
+                <div key={key} className="flex items-end gap-2">
+                  <label className="mb-3 flex items-center gap-1 text-[11px]">
+                    <input type="checkbox" checked={custom.generalVisibility[key]}
+                      aria-label={`${custom.customName}显示通用${label}标准`}
+                      onChange={(event) => updateCustomVisibility(custom.customId!, key, event.target.checked)} />显示
+                  </label>
+                  <div className="w-28">
+                    <Input label={`${custom.customName}通用${label}标准`} type="number" min={0} max={2000}
+                      value={custom.generalStandards[key] ?? ""}
+                      onChange={(event) => updateCustomStandard(custom.customId!, key, event.target.value)}
+                      onBlur={() => void autoSave()} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <table className="w-max min-w-full table-auto border-collapse text-[11px]">
             <thead><tr className="bg-ink-50">
               <th className="border border-ink-300 px-2 py-1.5">分数段</th>
@@ -564,13 +648,15 @@ export function GradeTotalScoreSegmentTable({
             </tr></thead>
             <tbody>
               {custom.rows.map((row) => <tr key={row.threshold}>
-                <th className="border border-ink-300 px-2 py-1.5">{row.threshold}分以上</th>
-                {custom.columns.map((column) => <td key={column.key} className="border border-ink-300 px-2 py-1.5 text-center">{row.counts[column.key] || ""}</td>)}
+                <th className={`border border-ink-300 px-2 py-1.5 ${row.isSpecial ? "font-black" : ""}`}>
+                  {row.threshold}分以上{row.isSpecial ? "（特别）" : ""}
+                </th>
+                {custom.columns.map((column) => <td key={column.key} className={`border border-ink-300 px-2 py-1.5 text-center ${row.isSpecial ? "font-black" : ""}`}>{row.counts[column.key] || ""}</td>)}
               </tr>)}
-              <tr className="bg-ink-50">
-                <th className="border border-ink-300 px-2 py-1.5">实考人数</th>
-                {custom.columns.map((column) => <td key={column.key} className="border border-ink-300 px-2 py-1.5 text-center">{custom.validTotalCounts[column.key] || ""}</td>)}
-              </tr>
+              {custom.summaryRows.map((row) => <tr key={row.key} className="bg-ink-50">
+                <th className="border border-ink-300 px-2 py-1.5">{row.label}</th>
+                {custom.columns.map((column) => <td key={column.key} className="border border-ink-300 px-2 py-1.5 text-center">{row.values[column.key] ?? "—"}</td>)}
+              </tr>)}
             </tbody>
           </table>
         </section>

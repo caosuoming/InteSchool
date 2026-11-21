@@ -1157,6 +1157,14 @@ export interface GradeTotalScoreSegmentOptions {
   trackThresholds?: Partial<Record<GradeAcademicTrack, GradeTotalScoreTrackThresholds>>;
   /** 单独排名科目组合对应的达线标准；未设置项继续沿用文理科标准。 */
   separateRankThresholds?: Record<string, GradeTotalScoreTrackThresholds>;
+  /** 表二普通总分的额外分数线，插入区间并重点标记。 */
+  specialThresholds?: number[];
+  /** 表二每个个性化总分独立的区间和特别分数线。 */
+  customTotalRanges?: Record<string, { segmentMax?: number; segmentMin?: number; segmentSize?: number }>;
+  customTotalSpecialThresholds?: Record<string, number[]>;
+  /** 表二每个个性化总分独立的通用达线标准及显示开关。 */
+  customTotalGeneralThresholds?: Record<string, GradeTotalScoreTrackThresholds>;
+  customTotalGeneralVisibility?: Record<string, Partial<Record<GradeTotalScoreTargetKey, boolean>>>;
   /** 表三、表四各单科累计分数段，可按学科独立调整。 */
   subjectScoreSegmentThresholds?: Record<string, number[]>;
   /** 各班级随届保存的高分、一本和本科目标人数。 */
