@@ -448,7 +448,9 @@ function isProjectHeading(text: string, config: DocumentParseConfig): boolean {
   if (structuredFieldPattern?.test(text) || numberedSubQuestionAnalysisPattern?.test(text)) return false;
   if (config.subject?.trim() === "地理" && geographySummaryStartPattern.test(text)) return false;
 
-  const normalized = normalizeStructuralText(text).trim();
+  const normalized = normalizeStructuralText(text).trim()
+    .replace(/^<i\s+class=["']math-(?:variable|vector)["']>([A-Z])<\/i>(?=组)/i, "$1")
+    .replace(/^\$([A-Z])\$(?=组)/i, "$1");
   if (/^[【［[][^】］\]\n]{1,40}[】］\]](?:\s*[:：]?\s*)$/.test(normalized)) return true;
   const keywords = (config.projectTypeKeywords ?? defaultProjectTypeKeywords)
     .map((keyword) => normalizeStructuralText(keyword).trim())
@@ -1799,7 +1801,7 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
 function splitJoinedMathProjectHeadings(lines: string[], config: DocumentParseConfig): string[] {
   if (config.subject?.trim() !== "数学") return lines;
   return lines.flatMap((line, index) => {
-    const match = /[。！？；;]\s*([A-ZＡ-Ｚ]组(?:\s+|[:：、]\s*)[^。！？；;]{2,40})\s*$/i.exec(line);
+    const match = /[。！？；;]\s*((?:[A-ZＡ-Ｚ]|<i\s+class=["']math-(?:variable|vector)["']>[A-Z]<\/i>|\$[A-Z]\$)组(?:\s+|[:：、]\s*)[^。！？；;]{2,40})\s*$/i.exec(line);
     if (!match) return [line];
     const heading = match[1].trim();
     const next = lines.slice(index + 1).find((candidate) => candidate.trim())?.trim();

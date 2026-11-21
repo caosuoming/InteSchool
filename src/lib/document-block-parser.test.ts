@@ -3409,6 +3409,35 @@ describe("issue 1539: interleaved mathematics essay prompts", () => {
     expect(questions[1].content).toContain("12．已知抛物线");
   });
 
+  it("recognizes math-formatted B/C project headings from Word", () => {
+    const blocks = parseDocumentBlocks([
+      "12．已知数列，求最大项。",
+      "【解答】由递推关系得到最大项。",
+      '<i class="math-vector">B</i>组　滚动小练',
+      "13．已知等差数列，求公差。",
+      '<i class="math-variable">C</i>组',
+      "14．已知等比数列，求公比。",
+    ].join("\n"), math);
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(['<i class="math-vector">B</i>组　滚动小练', '<i class="math-variable">C</i>组']);
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(3);
+    expect(questions[0].analysis).not.toContain("滚动小练");
+    expect(questions[1].content).toContain("13．");
+  });
+
+  it("splits a solution sentence joined with a math-formatted project heading", () => {
+    const blocks = parseDocumentBlocks([
+      "12．已知数列，求最大项。",
+      '【解答】得到最大项。<i class="math-vector">B</i>组 滚动小练',
+      "13．已知等差数列，求公差。",
+    ].join("\n"), math);
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(['<i class="math-vector">B</i>组 滚动小练']);
+    expect(blocks.filter((block) => block.type === "question")[0].analysis)
+      .toBe("得到最大项。");
+  });
+
   it("does not promote a numbered proof step into an essay prompt", () => {
     const question = parseDocumentBlocks([
       "四、解答题",
