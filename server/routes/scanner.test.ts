@@ -200,7 +200,7 @@ describe("scanned page persistence and permissions", () => {
       { id: "essay-1", number: 3, kind: "essay", fullScore: 10 },
     ]);
     expect((await built.app.inject({ method: "GET", url: baseUrl + "/grading-questions" })).statusCode).toBe(401);
-    expect((await grade([{ questionId: "choice-1", observedMark: "B" }], { cookie } as any)).statusCode).toBe(403);
+    expect((await grade([{ questionId: "choice-1", observedMark: "B" }], { cookie } as any)).statusCode).toBe(400);
     expect((await grade([{ questionId: "unknown", observedMark: "B" }])).statusCode).toBe(400);
     expect((await grade([
       { questionId: "choice-1", observedMark: "B" },
