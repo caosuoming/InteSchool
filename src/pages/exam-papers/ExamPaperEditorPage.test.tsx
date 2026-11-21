@@ -351,6 +351,27 @@ describe("ExamPaperEditorPage preview", () => {
     mocks.batchSetDocumentQuestionStatus.mockResolvedValue({ created: 1, cleared: 0, excluded: 0 });
   });
 
+  it("已添加的外校使用班级能够打开导入窗口并显示对应学生", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, classIds: ["external-class"] });
+    mocks.listAudienceClasses.mockResolvedValue([{
+      id: "external-class", type: "school", schoolId: "another-school",
+      name: "外校高一班", grade: "高一", studentCount: 1,
+      createdBy: "outside-teacher", createdAt: timestamp,
+    }]);
+    mocks.listStudentsByClass.mockResolvedValue([{
+      id: "external-student", name: "李同学", studentNo: "OUT001",
+      schoolId: "another-school", classId: "external-class", status: "active", grade: "高一",
+    }]);
+    renderPage();
+    const upload = await screen.findByRole("button", { name: "上传使用数据" });
+    await waitFor(() => expect(mocks.listStudentsByClass).toHaveBeenCalledWith("external-class"));
+    fireEvent.click(upload);
+    expect(await screen.findByText("上传试卷使用数据")).toBeInTheDocument();
+    expect(screen.getByText("试卷使用班级学生（1 人）")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("试卷使用班级学生（1 人）"));
+    expect(screen.getByText(/李同学.*OUT001.*外校高一班/)).toBeInTheDocument();
+  });
+
   it("edits and persists decomposed exam-paper document metadata from preview", async () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");

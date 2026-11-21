@@ -431,6 +431,8 @@ export default function ExamPaperEditorPage() {
   const [questionProgress, setQuestionProgress] = useState<Record<string, QuestionProgress>>({});
   const [answerRecords, setAnswerRecords] = useState<AnswerRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [audienceStudentsLoading, setAudienceStudentsLoading] = useState(false);
+  const [audienceStudentsError, setAudienceStudentsError] = useState("");
 
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
   const audienceStudents = useMemo(
@@ -680,17 +682,27 @@ export default function ExamPaperEditorPage() {
   useEffect(() => {
     if (selectedClassIds.length === 0) {
       setStudents([]);
+      setAudienceStudentsLoading(false);
+      setAudienceStudentsError("");
       return;
     }
 
     let cancelled = false;
+    setAudienceStudentsLoading(true);
+    setAudienceStudentsError("");
     Promise.all(selectedClassIds.map((classId) => classSvc.listStudentsByClass(classId)))
       .then((studentGroups) => {
         if (cancelled) return;
         const studentMap = new Map<string, Student>();
         studentGroups.flat().forEach((student) => studentMap.set(student.id, student));
         setStudents(Array.from(studentMap.values()));
-      });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setStudents([]);
+        setAudienceStudentsError(error instanceof Error ? error.message : "请稍后重试");
+      })
+      .finally(() => { if (!cancelled) setAudienceStudentsLoading(false); });
     return () => {
       cancelled = true;
     };
@@ -1490,6 +1502,13 @@ export default function ExamPaperEditorPage() {
     }
   };
 
+  const closeAudiencePicker = () => {
+    // Discard unsaved selection rather than letting the import UI use an audience
+    // that was never persisted with the paper.
+    setSelectedClassIds([...(paper?.classIds || [])]);
+    setAudiencePickerOpen(false);
+  };
+
   // 撤回发布
   const handleRevoke = async (pubId: string) => {
     setRevoking(true);
@@ -1796,7 +1815,7 @@ export default function ExamPaperEditorPage() {
   const audienceModal = (
     <Modal
       open={audiencePickerOpen}
-      onClose={() => setAudiencePickerOpen(false)}
+      onClose={closeAudiencePicker}
       size="lg"
       title="添加使用对象"
       description="使用对象按班级设置；具体学生的答题情况可在预览中逐题调整。"
@@ -1806,7 +1825,7 @@ export default function ExamPaperEditorPage() {
             清空选择
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAudiencePickerOpen(false)}>
+            <Button variant="outline" size="sm" onClick={closeAudiencePicker}>
               取消
             </Button>
             <Button
@@ -1858,7 +1877,7 @@ export default function ExamPaperEditorPage() {
                 </Button>
               )}
               {!prepTaskId && paper?.teacherId === teacher?.id && (
-                <Button variant="outline" onClick={() => setUsageImportOpen(true)} disabled={selectedClassIds.length === 0}>
+                <Button variant="outline" onClick={() => setUsageImportOpen(true)} disabled={!paper.classIds?.length}>
                   <Upload className="w-4 h-4" />上传使用数据
                 </Button>
               )}
@@ -2230,6 +2249,9 @@ export default function ExamPaperEditorPage() {
           questions={usageQuestions}
           subject={geographySubject}
           students={audienceStudents}
+          audienceClasses={classes.filter((cls) => selectedClassIds.includes(cls.id))}
+          loadingStudents={audienceStudentsLoading}
+          studentLoadError={audienceStudentsError}
           onImport={handleImportUsage}
         />}
       </div>

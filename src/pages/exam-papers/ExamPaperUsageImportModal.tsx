@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ExamPaperQuestion, Student } from "@/types";
+import type { AnyClass, ExamPaperQuestion, Student } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { MathHtml } from "@/components/ui/MathHtml";
@@ -14,6 +14,9 @@ interface Props {
   questions: ExamPaperQuestion[];
   subject?: string;
   students: Student[];
+  audienceClasses?: AnyClass[];
+  loadingStudents?: boolean;
+  studentLoadError?: string;
   onImport: (items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[]) => Promise<void>;
 }
 
@@ -39,7 +42,7 @@ function changeRole(column: UsageColumn, part: "field" | "question" | "sub", val
   return `${kind}:${Number(question)}` as UsageColumnRole;
 }
 
-export function ExamPaperUsageImportModal({ open, onClose, questions, subject, students, onImport }: Props) {
+export function ExamPaperUsageImportModal({ open, onClose, questions, subject, students, audienceClasses = [], loadingStudents = false, studentLoadError, onImport }: Props) {
   const slots = useMemo(() => getUsageQuestionSlots(questions, subject), [questions, subject]);
   const [sheets, setSheets] = useState<UsageSheet[]>([]);
   const [selectedSheet, setSelectedSheet] = useState(0);
@@ -48,18 +51,37 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
   const [filename, setFilename] = useState("");
   const [working, setWorking] = useState(false);
   const [sources, setSources] = useState<Record<string, "paper" | "excel">>({});
+  const [manualStudentIds, setManualStudentIds] = useState<Record<number, string>>({});
+  const [reviewPage, setReviewPage] = useState(0);
   const [error, setError] = useState("");
   const sheet = sheets[selectedSheet];
   const preview = useMemo(() => sheet
-    ? prepareUsageImport(sheet, headerRow, columns, questions, students, sources, subject)
-    : null, [sheet, headerRow, columns, questions, students, sources, subject]);
+    ? prepareUsageImport(sheet, headerRow, columns, questions, students, sources, subject, manualStudentIds)
+    : null, [sheet, headerRow, columns, questions, students, sources, subject, manualStudentIds]);
   const conflictsResolved = preview?.conflicts?.every((conflict) => Boolean(sources[usageConflictKey(conflict)])) ?? true;
+  const canAdoptAllExcel = preview?.conflicts?.every((conflict) => canAdoptUsageExcelAnswer(questions, subject, conflict)) ?? false;
+  const reviewRows = preview?.unmatchedRows || [];
+  const reviewPageCount = Math.ceil(reviewRows.length / 50);
+
+  function chooseAllConflicts(source: "paper" | "excel") {
+    if (!preview?.conflicts?.length || (source === "excel" && !canAdoptAllExcel)) return;
+    setSources(Object.fromEntries(preview.conflicts.map((conflict) => [usageConflictKey(conflict), source])));
+  }
+
+  function studentLabel(student: Student) {
+    const classNames = audienceClasses.filter((cls) => cls.type === "personal"
+      ? cls.studentIds.includes(student.id)
+      : cls.id === student.classId && cls.schoolId === student.schoolId).map((cls) => cls.name);
+    return `${student.name}（${student.studentNo || "无学号"}）${classNames.length ? ` · ${classNames.join("、")}` : ""}`;
+  }
 
   function activateSheet(workbook: UsageSheet[], index: number, row?: number) {
     const chosen = workbook[index];
     if (!chosen) return;
     const detected = detectUsageHeader(chosen, slots.length);
     setSources({});
+    setManualStudentIds({});
+    setReviewPage(0);
     setSelectedSheet(index);
     setHeaderRow(row ?? detected.headerRow);
     setColumns(row === undefined ? detected.columns : (chosen.rows[row] || []).map((cell, i) => ({
@@ -71,6 +93,8 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
   async function loadFile(file: File) {
     setWorking(true);
     setSources({});
+    setManualStudentIds({});
+    setReviewPage(0);
     setError("");
     try {
       const workbook = await readUsageWorkbook(file);
@@ -120,7 +144,7 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
       onClose={() => { if (!working) onClose(); }}
       title="上传试卷使用数据"
       size="xl"
-      description="按学生学号或姓名匹配使用班级；地理选择题组按卷面每道小题逐题匹配，成绩汇总保存到所属题组。"
+      description="自动匹配试卷使用班级的学生，未匹配行可手动指定；地理选择题组按卷面每道小题逐题匹配。"
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={working}>取消</Button>
@@ -132,8 +156,10 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
       }
     >
       <div className="space-y-4 text-sm">
-        {students.length === 0 && <p className="rounded-md bg-amber-50 p-3 text-amber-800">
-          请先在试卷预览中添加使用班级，并确保班级下已有学生。
+        {loadingStudents && <p className="rounded-md bg-mist p-3 text-ink-700">正在加载使用班级学生…</p>}
+        {studentLoadError && <p role="alert" className="rounded-md bg-red-50 p-3 text-red-700">读取使用班级学生失败：{studentLoadError}</p>}
+        {!loadingStudents && !studentLoadError && students.length === 0 && <p className="rounded-md bg-amber-50 p-3 text-amber-800">
+          当前试卷使用班级没有可导入的在读学生，请检查使用对象和班级学生名单。
         </p>}
         <label className="block font-medium text-ink-700">
           Excel 文件（.xlsx / .xlsm，最大 20MB）
@@ -146,6 +172,12 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
               event.target.value = "";
             }} />
         </label>
+        {students.length > 0 && <details className="rounded-lg border border-ink-200 p-3 text-xs text-ink-700">
+          <summary className="cursor-pointer font-medium">试卷使用班级学生（{students.length} 人）</summary>
+          <div className="mt-2 max-h-36 overflow-y-auto space-y-1">
+            {students.map((student) => <div key={student.id}>{studentLabel(student)}</div>)}
+          </div>
+        </details>}
         {filename && sheet && <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label>工作表
@@ -176,6 +208,8 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
                     const currentSlot = kind === "subscore" ? undefined : slots[Number(parts[1]) - 1];
                     const update = (part: "field" | "question" | "sub", value: string) => {
                       setSources({});
+                      setManualStudentIds({});
+                      setReviewPage(0);
                       setColumns((current) => current.map((item) => item.index === column.index
                         ? { ...item, role: changeRole(item, part, value, slots) } : item));
                     };
@@ -215,6 +249,12 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
             {Boolean(preview.conflicts?.length) && <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">
               <p className="font-semibold">Excel 标注与试卷数据存在差异，请人工确认</p>
               <p className="mb-2 text-xs">请逐项选择采用的数据来源；选择 Excel 会同步修改试卷题目信息。</p>
+              <div className="mb-3 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => chooseAllConflicts("paper")}>全部采用试卷</Button>
+                <Button size="sm" variant="outline" onClick={() => chooseAllConflicts("excel")}
+                  disabled={!canAdoptAllExcel}>全部采用 Excel</Button>
+                {!canAdoptAllExcel && <span className="self-center text-xs">部分题组答案无法安全合并，请逐项核对</span>}
+              </div>
               {preview.conflicts?.map((conflict) => {
                 const question = questions.find((item) => item.id === conflict.paperQuestionId);
                 const key = usageConflictKey(conflict);
@@ -252,10 +292,28 @@ export function ExamPaperUsageImportModal({ open, onClose, questions, subject, s
               {preview.warnings.slice(0, 12).map((message, i) => <p key={i}>{message}</p>)}
               {preview.warnings.length > 12 && <p>另有 {preview.warnings.length - 12} 条提示</p>}
             </div>}
-            {preview.unmatchedStudents.length > 0 && <details className="text-xs text-ink-600">
-              <summary>查看未匹配的学生行</summary>
-              <div className="max-h-24 overflow-y-auto">{preview.unmatchedStudents.map((name, i) => <p key={i}>{name}</p>)}</div>
-            </details>}
+            {Boolean(preview.unmatchedRows?.length) && <div className="rounded-md border border-amber-200 p-3 text-xs text-ink-700">
+              <p className="mb-1 font-semibold">需核对的 Excel 学生行（{preview.unmatchedRows?.length} 行，尚未匹配 {preview.unmatchedStudents.length} 行）</p>
+              <p className="mb-2 text-ink-500">从试卷使用班级学生中选择正确的对应关系；未指定的行不会导入。同一学生不能重复导入。</p>
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {reviewRows.slice(reviewPage * 50, (reviewPage + 1) * 50).map((row) => <label key={row.rowNumber} className="flex flex-wrap items-center gap-2">
+                  <span className="min-w-44">第{row.rowNumber}行：{row.name || "未填写姓名"} {row.studentNo}（{row.reason}）</span>
+                  <select aria-label={`第${row.rowNumber}行匹配学生`} className="input-base min-w-40 flex-1"
+                    value={manualStudentIds[row.rowNumber] || ""}
+                    onChange={(event) => setManualStudentIds((current) => ({ ...current, [row.rowNumber]: event.target.value }))}>
+                    <option value="">不导入此行</option>
+                    {students.map((student) => <option key={student.id} value={student.id}>{studentLabel(student)}</option>)}
+                  </select>
+                </label>)}
+              </div>
+              {reviewPageCount > 1 && <div className="mt-2 flex items-center gap-3">
+                <Button size="sm" variant="outline" disabled={reviewPage === 0}
+                  onClick={() => setReviewPage((page) => Math.max(0, page - 1))}>上一页</Button>
+                <span>第 {reviewPage + 1} / {reviewPageCount} 页</span>
+                <Button size="sm" variant="outline" disabled={reviewPage >= reviewPageCount - 1}
+                  onClick={() => setReviewPage((page) => Math.min(reviewPageCount - 1, page + 1))}>下一页</Button>
+              </div>}
+            </div>}
             <div className="max-h-32 overflow-auto">
               <table className="w-full text-left text-xs">
                 <thead><tr><th>学生</th><th>题号</th><th>得分</th><th>作答</th><th>小题</th></tr></thead>

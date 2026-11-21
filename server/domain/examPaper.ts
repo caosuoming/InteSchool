@@ -187,12 +187,23 @@ export const examPaperService = {
     const linkedById = new Map((paper.contentBlocks || [])
       .filter((block) => block.type === "question" && block.examPaperQuestionId && block.questionId)
       .map((block) => [block.examPaperQuestionId!, block.questionId!]));
-    const studentIds = new Set((db.read("students") || []).filter((student) => {
-      if (student.schoolId !== paper.schoolId || student.status !== "active") return false;
-      if ((paper.studentIds || []).includes(student.id) || (paper.classIds || []).includes(student.classId)) return true;
-      return (db.read("personalClasses") || []).some((cls) =>
-        (paper.classIds || []).includes(cls.id) && cls.studentIds.includes(student.id));
-    }).map((student) => student.id));
+    const audienceClassIds = new Set(paper.classIds || []);
+    // School classes can be selected across schools, but the class itself must
+    // still exist, be active, and belong to the student's actual school.
+    const schoolClassKeys = new Set((db.read("schoolClasses") || [])
+      .filter((cls) => audienceClassIds.has(cls.id) && cls.status !== "deleted" && cls.status !== "graduated")
+      .map((cls) => `${cls.schoolId}:${cls.id}`));
+    // Personal classes remain private to the importing teacher.
+    const personalStudentIds = new Set((db.read("personalClasses") || [])
+      .filter((cls) => cls.teacherId === teacher.id && audienceClassIds.has(cls.id))
+      .flatMap((cls) => cls.studentIds));
+    const directStudentIds = new Set(paper.studentIds || []);
+    const studentIds = new Set((db.read("students") || []).filter((student) =>
+      student.status === "active" && (
+        schoolClassKeys.has(`${student.schoolId}:${student.classId}`)
+        || personalStudentIds.has(student.id)
+        || (student.schoolId === paper.schoolId && directStudentIds.has(student.id))
+      )).map((student) => student.id));
     if (!studentIds.size) throw new Error("请先添加试卷使用班级及在读学生");
     const now = new Date().toISOString();
     const existing = new Map<string, AnswerRecord>((db.read("answerRecords") as AnswerRecord[] || []).map((record) =>

@@ -24,6 +24,7 @@ function state(): AppState {
   return {
     teachers: [], currentTeacherId: null, examPapers: [{ ...paper }],
     students, questions: [], answerRecords: [], personalClasses: [],
+    schoolClasses: [{ id: "c1", schoolId: "school1", type: "school", status: "active" }],
   } as unknown as AppState;
 }
 
@@ -104,6 +105,40 @@ describe("试卷使用数据批量导入", () => {
       expect(dbState.answerRecords).toHaveLength(0);
     });
   });
+  it("允许已选择的外校班级和教师本人个人班级，拒绝私有班及无效班级", async () => {
+    const dbState = state();
+    (dbState.examPapers as ExamPaper[])[0] = {
+      ...paper, classIds: ["c1", "outside", "personal-owned", "personal-other", "deleted"],
+    };
+    (dbState.schoolClasses as Array<Record<string, unknown>>).push(
+      { id: "outside", schoolId: "school2", type: "school", status: "active" },
+      { id: "deleted", schoolId: "school2", type: "school", status: "deleted" },
+    );
+    (dbState.personalClasses as Array<Record<string, unknown>>).push(
+      { id: "personal-owned", teacherId: "t1", studentIds: ["external-personal"] },
+      { id: "personal-other", teacherId: "t2", studentIds: ["private-student"] },
+    );
+    (dbState.students as Student[]).push(
+      { id: "external-school", schoolId: "school2", classId: "outside", status: "active" } as Student,
+      { id: "external-personal", schoolId: "school2", classId: "foreign", status: "active" } as Student,
+      { id: "private-student", schoolId: "school2", classId: "private", status: "active" } as Student,
+      { id: "deleted-student", schoolId: "school2", classId: "deleted", status: "active" } as Student,
+    );
+    await runWithState(dbState, async () => {
+      const result = await examPaperService.importUsageData("paper1", [
+        { studentId: "external-school", paperQuestionId: "p1", earnedScore: 4 },
+        { studentId: "external-personal", paperQuestionId: "p1", earnedScore: 3 },
+      ], [], teacher);
+      expect(result.studentCount).toBe(2);
+      for (const studentId of ["private-student", "deleted-student", "s3"]) {
+        await expect(examPaperService.importUsageData("paper1", [
+          { studentId, paperQuestionId: "p1", earnedScore: 2 },
+        ], [], teacher)).rejects.toThrow("不属于试卷使用班级");
+      }
+      expect(dbState.answerRecords).toHaveLength(2);
+    });
+  });
+
   it("按核对结果同步更新试卷答案、分值和已有答题记录", async () => {
     const dbState = state();
     await runWithState(dbState, async () => {
