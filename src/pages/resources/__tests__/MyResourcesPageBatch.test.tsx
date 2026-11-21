@@ -564,6 +564,8 @@ describe("MyResourcesPage batch actions", () => {
     fireEvent.click(typeButton);
     expect(screen.getByRole("button", { name: "文本" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "视频" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "网页" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "PDF" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "图片" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "视频" }));

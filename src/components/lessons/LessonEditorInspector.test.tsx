@@ -141,6 +141,40 @@ describe("LessonEditorInspector", () => {
     expect(onUpdateElement).toHaveBeenCalledWith({ scheduledPlayAt: "09:35" });
   });
 
+  it("allows webpage backgrounds to follow the slide or use a custom color", async () => {
+    const user = userEvent.setup();
+    const webpage: LessonSlideElement = {
+      id: "web-1", kind: "webpage", src: "/api/files/animation", title: "函数动画",
+      displayMode: "embed", x: 10, y: 10, width: 70, height: 65,
+    };
+    const onUpdateElement = vi.fn();
+    renderInspector({
+      slide: { ...slide, backgroundColor: "#F1F7FF" },
+      elements: [webpage], selectedElement: webpage, onUpdateElement,
+    });
+    await user.click(screen.getByRole("button", { name: "属性" }));
+    const mode = screen.getByLabelText("网页素材背景模式");
+    expect(mode).toHaveValue("slide");
+    expect(screen.queryByLabelText("网页素材背景颜色")).not.toBeInTheDocument();
+    await user.selectOptions(mode, "custom");
+    expect(onUpdateElement).toHaveBeenLastCalledWith({ backgroundColor: "#F1F7FF" });
+  });
+
+  it("can revert a custom webpage background to the current slide", async () => {
+    const user = userEvent.setup();
+    const webpage: LessonSlideElement = {
+      id: "web-2", kind: "webpage", src: "/api/files/animation", title: "动画",
+      displayMode: "embed", x: 10, y: 10, width: 70, height: 65,
+      backgroundColor: "#FFCC00",
+    };
+    const onUpdateElement = vi.fn();
+    renderInspector({ elements: [webpage], selectedElement: webpage, onUpdateElement });
+    await user.click(screen.getByRole("button", { name: "属性" }));
+    expect(screen.getByLabelText("网页素材背景颜色")).toHaveValue("#ffcc00");
+    await user.selectOptions(screen.getByLabelText("网页素材背景模式"), "slide");
+    expect(onUpdateElement).toHaveBeenLastCalledWith({ backgroundColor: undefined });
+  });
+
   it("configures the current page background and class visibility", async () => {
     const user = userEvent.setup();
     const onUpdateSlide = vi.fn();

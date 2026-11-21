@@ -22,6 +22,8 @@ interface LessonSlideCanvasProps {
   children: ReactNode;
   referenceSize?: { width: number; height: number };
   editable?: boolean;
+  /** Allow webpage drag/resize handles during presentation, even outside selection mode. */
+  allowWebpageControls?: boolean;
   showAnimationOrder?: boolean;
   disableAnimations?: boolean;
   animationMode?: "default" | "step";
@@ -220,6 +222,7 @@ export function LessonSlideCanvas({
   children,
   referenceSize,
   editable = false,
+  allowWebpageControls = false,
   showAnimationOrder = true,
   disableAnimations = false,
   animationMode = "default",
@@ -283,7 +286,7 @@ export function LessonSlideCanvas({
     element: LessonSlideElement,
     mode: Interaction["mode"],
   ) => {
-    if (!editable) return;
+    if (!editable && !(allowWebpageControls && element.kind === "webpage")) return;
     event.preventDefault();
     event.stopPropagation();
     onSelectElement?.(element.id);
@@ -300,7 +303,7 @@ export function LessonSlideCanvas({
   const moveInteraction = (event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = interactionRef.current;
     const canvas = canvasRef.current;
-    if (!editable || !interaction || !canvas || !onElementsChange) return;
+    if ((!editable && !allowWebpageControls) || !interaction || !canvas || !onElementsChange) return;
 
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -372,6 +375,10 @@ export function LessonSlideCanvas({
       </div>
       {elements.map((element) => {
         const selected = editable && selectedElementId === element.id;
+        const showControls = selected || (allowWebpageControls && element.kind === "webpage");
+        const webpageBackground = element.kind === "webpage"
+          ? element.backgroundColor || (typeof canvasStyle?.backgroundColor === "string" ? canvasStyle.backgroundColor : "#FFFFFF")
+          : undefined;
         const dragFromObject = editable && (
           element.kind === "image" || (element.kind === "text" && !allowTextEditing)
         );
@@ -464,13 +471,13 @@ export function LessonSlideCanvas({
               />
             ) : element.kind === "webpage" ? (
               element.displayMode === "button" ? (
-                <div className="flex h-full w-full items-center justify-center rounded-md" style={{ backgroundColor: element.backgroundColor || "#FFFFFF" }}>
+                <div className="flex h-full w-full items-center justify-center rounded-md" style={{ backgroundColor: webpageBackground }}>
                   <a href={element.src} target="_blank" rel="noopener noreferrer" className="rounded-md bg-sky-700 px-4 py-2 text-center text-sm font-semibold text-white" onPointerDown={(event) => event.stopPropagation()}>
                     打开{element.title || "网页动画"}
                   </a>
                 </div>
               ) : (
-                <iframe src={element.src} title={element.title || "网页素材"} sandbox="allow-scripts" referrerPolicy="no-referrer" loading="lazy" className="h-full w-full rounded-md border-0" style={{ backgroundColor: element.backgroundColor || "#FFFFFF" }} onPointerDown={(event) => event.stopPropagation()} />
+                <iframe src={element.src} title={element.title || "网页素材"} sandbox="allow-scripts" referrerPolicy="no-referrer" loading="lazy" className="h-full w-full rounded-md border-0" style={{ backgroundColor: webpageBackground }} onPointerDown={(event) => event.stopPropagation()} />
               )
             ) : element.kind === "audio" || element.kind === "video" ? (
               <LessonMediaElement
@@ -537,11 +544,11 @@ export function LessonSlideCanvas({
                 </div>
               )
             )}
-            {selected && (
+            {showControls && (
               <>
                 {element.kind !== "image" && (
                   <div
-                    className="absolute -left-2 -top-2 flex h-5 w-5 cursor-move items-center justify-center rounded bg-ink-800 text-paper shadow"
+                    className="absolute -left-2 -top-2 z-20 flex h-5 w-5 cursor-move items-center justify-center rounded bg-ink-800 text-paper shadow"
                     title={element.kind === "text" ? "拖动移动文本" : "拖动移动素材"}
                     onPointerDown={(event) => startInteraction(event, element, "move")}
                     onPointerMove={moveInteraction}
@@ -552,7 +559,7 @@ export function LessonSlideCanvas({
                   </div>
                 )}
                 <div
-                  className="absolute -bottom-2 -right-2 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded bg-gold-400 text-ink-900 shadow"
+                  className="absolute -bottom-2 -right-2 z-20 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded bg-gold-400 text-ink-900 shadow"
                   title="拖动调整大小"
                   onPointerDown={(event) => startInteraction(event, element, "resize")}
                   onPointerMove={moveInteraction}

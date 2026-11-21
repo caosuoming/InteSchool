@@ -1899,7 +1899,7 @@ export interface Courseware {
 }
 
 /** 素材类型 */
-export type MaterialType = "text" | "image" | "audio" | "video" | "link" | "file" | "knowledgeBlock";
+export type MaterialType = "text" | "image" | "audio" | "video" | "webpage" | "pdf" | "link" | "file" | "knowledgeBlock";
 
 /** 素材 */
 export interface Material {

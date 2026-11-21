@@ -2756,6 +2756,7 @@ export function PresentationMode({
                   key={displayedSlide.id}
                   elements={regularVisibleSlideElements}
                   editable={tool === "select"}
+                  allowWebpageControls
                   showAnimationOrder={false}
                   animationMode="step"
                   inlineAnswerOrder={currentAnimationProgress > 0

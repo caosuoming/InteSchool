@@ -99,6 +99,8 @@ const materialTypeOptions = [
   { value: "image", label: "图片" },
   { value: "video", label: "视频" },
   { value: "audio", label: "音频" },
+  { value: "webpage", label: "网页" },
+  { value: "pdf", label: "PDF" },
   { value: "link", label: "链接" },
   { value: "file", label: "文件" },
 ];

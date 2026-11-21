@@ -70,6 +70,8 @@ const materialTypeLabel: Record<MaterialType, string> = {
   image: "图片",
   audio: "音频",
   video: "视频",
+  webpage: "网页",
+  pdf: "PDF",
   link: "链接",
   file: "文件",
   knowledgeBlock: "知识块",

@@ -256,7 +256,7 @@ const coursewareTypeLabel: Record<CoursewareType, string> = {
 };
 
 const materialTypeLabel: Record<MaterialType, string> = {
-  text: "文本", image: "图片", audio: "音频", video: "视频", link: "链接", file: "文件", knowledgeBlock: "知识块",
+  text: "文本", image: "图片", audio: "音频", video: "视频", webpage: "网页", pdf: "PDF", link: "链接", file: "文件", knowledgeBlock: "知识块",
 };
 
 const difficultyLabelText = ["", "简单", "较易", "中等", "较难", "困难"];

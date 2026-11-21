@@ -75,6 +75,53 @@ describe("LessonSlideCanvas", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });
 
+  it("keeps webpage move and resize controls available during presentation", () => {
+    const page: LessonSlideElement = {
+      id: "web-1", kind: "webpage", src: "/api/files/animation", title: "函数动画",
+      displayMode: "embed", x: 10, y: 10, width: 70, height: 65,
+    };
+    const onElementsChange = vi.fn();
+    const { rerender } = render(
+      <LessonSlideCanvas
+        elements={[page]}
+        allowWebpageControls
+        canvasStyle={{ backgroundColor: "#F1F7FF" }}
+        onElementsChange={onElementsChange}
+      ><div>课堂</div></LessonSlideCanvas>,
+    );
+
+    const canvas = document.querySelector<HTMLElement>("[data-lesson-slide-canvas]")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      width: 1000, height: 600,
+    } as DOMRect);
+    const frame = screen.getByTitle("函数动画");
+    expect(frame).toHaveStyle({ backgroundColor: "#F1F7FF" });
+    const move = screen.getByTitle("拖动移动素材");
+    const resize = screen.getByTitle("拖动调整大小");
+    fireEvent.pointerDown(move, { pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(move, { pointerId: 1, clientX: 200, clientY: 160 });
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "web-1", x: 20, y: 20 }),
+    ]);
+    fireEvent.pointerUp(move, { pointerId: 1 });
+
+    fireEvent.pointerDown(resize, { pointerId: 2, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(resize, { pointerId: 2, clientX: 200, clientY: 160 });
+    expect(onElementsChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "web-1", width: 80, height: 75 }),
+    ]);
+    fireEvent.pointerUp(resize, { pointerId: 2 });
+
+    rerender(
+      <LessonSlideCanvas
+        elements={[{ ...page, backgroundColor: "#FFCC00" }]}
+        allowWebpageControls
+        canvasStyle={{ backgroundColor: "#F1F7FF" }}
+      ><div>课堂</div></LessonSlideCanvas>,
+    );
+    expect(screen.getByTitle("函数动画")).toHaveStyle({ backgroundColor: "#FFCC00" });
+  });
+
   it("scales fixed-size slide content to match the fullscreen reference size", async () => {
     render(
       <LessonSlideCanvas
