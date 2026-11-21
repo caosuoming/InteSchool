@@ -1,3 +1,4 @@
+import { resolveSubjectSegmentRange } from "./grade-score-segment-range.js";
 import { participatingGradeRecords } from "./grade-statistics.js";
 import type {
   GradeBandRule,
@@ -29,6 +30,7 @@ export interface GradeElectiveScoreSegmentSubjectReport {
   title: string;
   gradeLabels: string[];
   thresholds: number[];
+  specialThresholds: number[];
   scoreMode: "raw" | "assigned";
   rows: GradeElectiveScoreSegmentRow[];
   totalCandidateCount: number;
@@ -51,13 +53,7 @@ export function resolveGradeElectiveScoreThresholds(
   template: GradeStatisticsTemplate,
   subject: string,
 ): number[] {
-  const configured = template.totalScoreSegmentOptions?.subjectScoreSegmentThresholds?.[subject];
-  return configured?.length
-    ? [...new Set(configured
-      .filter((value) => Number.isFinite(value))
-      .map((value) => Math.max(0, Math.min(1000, Math.round(value)))))]
-      .sort((left, right) => right - left)
-    : defaultGradeElectiveScoreThresholds();
+  return resolveSubjectSegmentRange(template, subject, defaultGradeElectiveScoreThresholds()).thresholds;
 }
 
 function assignmentRulesForSubject(
@@ -110,7 +106,9 @@ export function buildGradeElectiveScoreSegmentReport(
   const subjects = GRADE_ELECTIVE_SCORE_SEGMENT_SUBJECTS
     .filter((subject) => exam.subjects.includes(subject))
     .map((subject) => {
-      const thresholds = resolveGradeElectiveScoreThresholds(template, subject);
+      const { thresholds, specialThresholds } = resolveSubjectSegmentRange(
+        template, subject, defaultGradeElectiveScoreThresholds(),
+      );
       const hasImportedAssignedScores = participatingGradeRecords(exam.records).some(
         (record) => typeof record.sourceAssignedScores?.[subject] === "number",
       );
@@ -190,6 +188,7 @@ export function buildGradeElectiveScoreSegmentReport(
         title: `${exam.name}${subject}选修分数段统计表`,
         gradeLabels,
         thresholds,
+        specialThresholds,
         scoreMode,
         rows,
         totalCandidateCount,

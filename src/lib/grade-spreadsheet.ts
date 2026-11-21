@@ -800,7 +800,8 @@ function subjectScoreSegmentWorkbookSheets(
       "班级",
       subjectReport.subject,
       "实考人数",
-      ...subjectReport.thresholds.map((threshold) => `${threshold}分以上`),
+      ...subjectReport.thresholds.map((threshold) =>
+        `${threshold}分以上${subjectReport.specialThresholds.includes(threshold) ? "（特别）" : ""}`),
     ];
     const rows: CombinedWorkbookRow[] = [
       titleRow(subjectReport.title, headers.length, report.reportDate),
@@ -811,7 +812,7 @@ function subjectScoreSegmentWorkbookSheets(
         combinedWorkbookCell(row.candidateCount || null, { fontWeight: "bold" }),
         ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(
           row.counts[threshold] || null,
-          { fontWeight: "bold" },
+          { fontWeight: subjectReport.specialThresholds.includes(threshold) ? "bold" : "normal" },
         )),
       ]),
       [
@@ -864,7 +865,8 @@ function electiveScoreSegmentWorkbookSheets(
       "任课教师",
       "实际考试人数",
       ...subjectReport.gradeLabels,
-      ...subjectReport.thresholds.map((threshold) => `${threshold}分以上`),
+      ...subjectReport.thresholds.map((threshold) =>
+        `${threshold}分以上${subjectReport.specialThresholds.includes(threshold) ? "（特别）" : ""}`),
     ];
     const rows: CombinedWorkbookRow[] = [
       titleRow(subjectReport.title, headers.length, report.reportDate),
@@ -879,7 +881,7 @@ function electiveScoreSegmentWorkbookSheets(
         )),
         ...subjectReport.thresholds.map((threshold) => combinedWorkbookCell(
           row.scoreCounts[threshold] || null,
-          { fontWeight: "bold" },
+          { fontWeight: subjectReport.specialThresholds.includes(threshold) ? "bold" : "normal" },
         )),
       ]),
       [

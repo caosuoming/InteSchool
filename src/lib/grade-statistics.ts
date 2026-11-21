@@ -477,6 +477,16 @@ function normalizeTotalScoreSegmentOptions(
     trackThresholds: normalizeTrackThresholds(options.trackThresholds),
     separateRankThresholds,
     subjectScoreSegmentThresholds,
+    subjectScoreSegmentRanges: Object.fromEntries(Object.entries(options.subjectScoreSegmentRanges || {})
+      .filter(([subject]) => subjectSet.has(subject))
+      .map(([subject, range]) => [subject, {
+        max: normalizeThreshold(range?.max),
+        min: normalizeThreshold(range?.min),
+        step: Number.isFinite(range?.step) ? Math.max(1, Math.min(500, Math.round(Number(range.step)))) : undefined,
+      }])),
+    subjectScoreSegmentSpecialThresholds: Object.fromEntries(Object.entries(options.subjectScoreSegmentSpecialThresholds || {})
+      .filter(([subject]) => subjectSet.has(subject))
+      .map(([subject, values]) => [subject, normalizeSpecial(values)])),
     classTargets,
     totalScoreTopN: Number.isFinite(options.totalScoreTopN)
       ? Math.max(1, Math.min(1000, Math.round(Number(options.totalScoreTopN))))

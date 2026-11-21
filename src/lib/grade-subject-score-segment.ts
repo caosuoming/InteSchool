@@ -1,3 +1,4 @@
+import { resolveSubjectSegmentRange } from "./grade-score-segment-range.js";
 import { participatingGradeRecords } from "./grade-statistics.js";
 import type {
   GradeExam,
@@ -25,6 +26,7 @@ export interface GradeSubjectScoreSegmentSubjectReport {
   subject: GradeSubjectScoreSegmentSubject;
   title: string;
   thresholds: number[];
+  specialThresholds: number[];
   rows: GradeSubjectScoreSegmentRow[];
   totalCandidateCount: number;
   totalCounts: Record<number, number>;
@@ -46,13 +48,7 @@ export function resolveGradeSubjectScoreThresholds(
   template: GradeStatisticsTemplate,
   subject: string,
 ): number[] {
-  const configured = template.totalScoreSegmentOptions?.subjectScoreSegmentThresholds?.[subject];
-  return configured?.length
-    ? [...new Set(configured
-      .filter((value) => Number.isFinite(value))
-      .map((value) => Math.max(0, Math.min(1000, Math.round(value)))))]
-      .sort((left, right) => right - left)
-    : defaultGradeSubjectScoreThresholds(subject);
+  return resolveSubjectSegmentRange(template, subject, defaultGradeSubjectScoreThresholds(subject)).thresholds;
 }
 
 export function buildGradeSubjectScoreSegmentReport(
@@ -81,7 +77,9 @@ export function buildGradeSubjectScoreSegmentReport(
   const subjects = GRADE_SUBJECT_SCORE_SEGMENT_SUBJECTS
     .filter((subject) => exam.subjects.includes(subject))
     .map((subject) => {
-      const thresholds = resolveGradeSubjectScoreThresholds(template, subject);
+      const { thresholds, specialThresholds } = resolveSubjectSegmentRange(
+        template, subject, defaultGradeSubjectScoreThresholds(subject),
+      );
       const rows = (classOptions.classOrder || [])
         .filter((classId) => !hiddenClassIds.has(classId))
         .map((classId) => {
@@ -117,6 +115,7 @@ export function buildGradeSubjectScoreSegmentReport(
         subject,
         title: `${exam.name}${subject}成绩情况统计表`,
         thresholds,
+        specialThresholds,
         rows,
         totalCandidateCount,
         totalCounts,

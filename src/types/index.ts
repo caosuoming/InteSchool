@@ -1165,6 +1165,10 @@ export interface GradeTotalScoreSegmentOptions {
   /** 表二每个个性化总分独立的通用达线标准及显示开关。 */
   customTotalGeneralThresholds?: Record<string, GradeTotalScoreTrackThresholds>;
   customTotalGeneralVisibility?: Record<string, Partial<Record<GradeTotalScoreTargetKey, boolean>>>;
+  /** 表三、表四各学科独立的最高、最低与分数间隔。 */
+  subjectScoreSegmentRanges?: Record<string, { max?: number; min?: number; step?: number }>;
+  /** 各学科单独标黑的特别分数线。 */
+  subjectScoreSegmentSpecialThresholds?: Record<string, number[]>;
   /** 表三、表四各单科累计分数段，可按学科独立调整。 */
   subjectScoreSegmentThresholds?: Record<string, number[]>;
   /** 各班级随届保存的高分、一本和本科目标人数。 */
