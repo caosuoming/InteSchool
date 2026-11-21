@@ -259,7 +259,7 @@ describe("exam invigilation table", () => {
     expect(table.teacherStats.some((item) => item.teacherId === "leader")).toBe(false);
   });
 
-  it.each(["duration", "subject"] as const)("fills occupied rooms before optional outside duty with %s priority", (priority) => {
+  it.each(["duration", "subject"] as const)("reserves designated outside duty before room allocation with %s priority", (priority) => {
     const settings: ExamInvigilationConfig = {
       teachers: [
         { id: "room-teacher", name: "任课教师", subject: "物理" },
@@ -275,9 +275,8 @@ describe("exam invigilation table", () => {
     };
 
     const row = buildExamInvigilationTable(arrangement(), settings).rows[0];
-    expect(Object.values(row.roomTeacherIds).filter(Boolean)).toHaveLength(2);
-    expect(new Set(Object.values(row.roomTeacherIds).filter(Boolean)).size).toBe(2);
-    expect(row.outsideTeacherIds).toEqual([]);
+    expect(Object.values(row.roomTeacherIds).filter(Boolean)).toEqual(["room-teacher"]);
+    expect(row.outsideTeacherIds).toEqual(["prep-teacher"]);
     expect(row.duplicateTeacherIds).toEqual([]);
   });
 
@@ -298,9 +297,9 @@ describe("exam invigilation table", () => {
     const table = buildExamInvigilationTable(arrangement(), settings);
     expect(table.patrolTeacherIds).toEqual([]);
     expect(table.teacherStats.map((stat) => stat.teacherId)).toEqual(["prep"]);
-    expect(table.rows[0].roomTeacherIds["room-1"]).toBe("prep");
+    expect(table.rows[0].roomTeacherIds["room-1"]).toBeNull();
     expect(table.rows[0].roomTeacherIds["room-2"]).toBeNull();
-    expect(table.rows[0].outsideTeacherIds).toEqual([]);
+    expect(table.rows[0].outsideTeacherIds).toEqual(["prep"]);
     expect(table.rows[0].duplicateTeacherIds).toEqual([]);
   });
 
@@ -325,7 +324,7 @@ describe("exam invigilation table", () => {
     expect(table.teacherStats.find((item) => item.teacherId === "outside-b")?.minutes).toBe(90);
   });
 
-  it("falls back to an eligible teacher for outside duty and counts its duration", () => {
+  it("does not invent outside duty when no teacher is designated for that subject", () => {
     const input = arrangement();
     const settings: ExamInvigilationConfig = {
       teachers: [
@@ -340,9 +339,59 @@ describe("exam invigilation table", () => {
     const table = buildExamInvigilationTable(input, settings);
     const row = table.rows[0];
     expect(row.roomTeacherIds["room-1"]).toBeTruthy();
-    expect(row.outsideTeacherId).toBeTruthy();
-    expect(row.outsideTeacherId).not.toBe(row.roomTeacherIds["room-1"]);
-    expect(table.teacherStats.reduce((sum, stat) => sum + stat.minutes, 0)).toBe(180);
+    expect(row.outsideTeacherIds).toEqual([]);
+    expect(row.outsideTeacherId).toBeNull();
+    expect(table.teacherStats.reduce((sum, stat) => sum + stat.minutes, 0)).toBe(90);
+  });
+
+  it("matches outside teachers to their subjects across sessions and counts each one", () => {
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "room-physics", name: "物理任课", subject: "物理" },
+        { id: "room-history", name: "历史任课", subject: "历史" },
+        { id: "physics-a", name: "物理场外甲", subject: "物理", isPrepLeader: true },
+        { id: "physics-b", name: "物理场外乙", subject: "物理", isPrepLeader: true },
+        { id: "history-a", name: "历史场外", subject: "历史", isPrepLeader: true },
+      ],
+      subjectTimes: [
+        { subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
+        { subject: "历史", date: "2026-10-20", period: "afternoon", time: "14:00", durationMinutes: 120 },
+      ],
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const table = buildExamInvigilationTable(arrangement(), settings);
+    expect(table.rows.map((row) => [row.subjectLabel, row.outsideTeacherIds])).toEqual([
+      ["物理", ["physics-a", "physics-b"]],
+      ["历史", ["history-a"]],
+    ]);
+    expect(Object.fromEntries(table.teacherStats.map((stat) => [stat.teacherId, stat.minutes]))).toMatchObject({
+      "physics-a": 90, "physics-b": 90, "history-a": 120,
+    });
+  });
+
+  it("uses the matching subject duration for each outside teacher in simultaneous exams", () => {
+    const settings: ExamInvigilationConfig = {
+      teachers: [
+        { id: "room-physics", name: "物理任课", subject: "物理" },
+        { id: "room-history", name: "历史任课", subject: "历史" },
+        { id: "physics-out", name: "物理场外", subject: "物理", isPrepLeader: true },
+        { id: "history-out", name: "历史场外", subject: "历史", isPrepLeader: true },
+      ],
+      subjectTimes: [
+        { subject: "物理", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 90 },
+        { subject: "历史", date: "2026-10-20", period: "morning", time: "08:00", durationMinutes: 120 },
+      ],
+      patrolTeacherIds: [],
+      overrides: {},
+    };
+
+    const table = buildExamInvigilationTable(arrangement(), settings);
+    expect(table.rows[0].outsideTeacherIds).toEqual(["physics-out", "history-out"]);
+    expect(table.rows[0].duplicateTeacherIds).toEqual([]);
+    expect(table.teacherStats.find((stat) => stat.teacherId === "physics-out")).toMatchObject({ minutes: 90, sessions: 1 });
+    expect(table.teacherStats.find((stat) => stat.teacherId === "history-out")).toMatchObject({ minutes: 120, sessions: 1 });
   });
 
   it("honors same-day yes/no requirements before manual fine tuning", () => {
@@ -378,10 +427,10 @@ describe("exam invigilation table", () => {
 
     const table = buildExamInvigilationTable(input, settings);
     expect(table.rows[0].roomTeacherIds["room-1"]).toBe("prep");
-    expect(table.rows[0].outsideTeacherId).toBe("physics");
+    expect(table.rows[0].outsideTeacherId).toBeNull();
     expect(table.rows[0].roomTeacherIds["room-2"]).toBe("history");
     expect(table.teacherStats.find((item) => item.teacherId === "prep")).toMatchObject({ minutes: 90, sessions: 1 });
-    expect(table.teacherStats.find((item) => item.teacherId === "physics")).toMatchObject({ minutes: 90, sessions: 1 });
+    expect(table.teacherStats.find((item) => item.teacherId === "physics")).toMatchObject({ minutes: 0, sessions: 0 });
   });
 
   it("uses explicit blank overrides instead of refilling the cell", () => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeftRight, ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Plus, RotateCcw, Save, Trash2, Upload, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, ClipboardCheck, Copy, Download, Move, Plus, RotateCcw, Save, Trash2, Upload, X } from "lucide-react";
 import { Link } from "react-router";
 import { examArrangementService } from "@/services/examArrangement";
 import { quotaService } from "@/services/quota";
@@ -215,7 +215,8 @@ function freezeRenderedAssignments(
       if (!roomId) return;
       override.roomTeacherIds[roomId] = row.roomTeacherIds[roomId] || null;
     });
-    if (row.outsideTeacherIds.length <= 1) override.outsideTeacherId = row.outsideTeacherId;
+    // Do not turn automatic outside assignments into manual overrides. They
+    // must continue tracking each subject's designated teachers in Config 1.
   });
 }
 
@@ -248,10 +249,9 @@ export function InvigilationTableSection({
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [showLongest, setShowLongest] = useState(false);
   const [showShortest, setShowShortest] = useState(false);
-  const [roomColumnWidth, setRoomColumnWidth] = useState(52);
-  const [outsideColumnWidth, setOutsideColumnWidth] = useState(112);
+  const roomColumnWidth = 52;
+  const outsideColumnWidth = 112;
   const [roomBandWidth, setRoomBandWidth] = useState<number | null>(null);
-  const roomWidthDragRef = useRef<{ pointerId: number; startX: number; startWidth: number; sign: number } | null>(null);
   const firstRoomHeaderRef = useRef<HTMLTableCellElement>(null);
   const lastRoomHeaderRef = useRef<HTMLTableCellElement>(null);
   const [selectedCells, setSelectedCells] = useState<InvigilationCellTarget[]>([]);
@@ -419,8 +419,9 @@ export function InvigilationTableSection({
     )).length
   ), 0) || 0;
   const durationHighlightClass = (teacherId: string | null | undefined) => {
-    if (teacherId && showLongest && durationExtremes.longest[0]?.teacherId === teacherId) return "bg-amber-200";
-    if (teacherId && showShortest && durationExtremes.shortest[0]?.teacherId === teacherId) return "bg-sky-200";
+    if (!teacherId || teacherId !== selectedTeacherId) return "";
+    if (showLongest && durationExtremes.longest.some((stat) => stat.teacherId === teacherId)) return "bg-amber-200";
+    if (showShortest && durationExtremes.shortest.some((stat) => stat.teacherId === teacherId)) return "bg-sky-200";
     return "";
   };
   const hasRenderedInvigilationTable = Boolean(selectedArrangement && statistics?.rooms.length && config);
@@ -466,27 +467,9 @@ export function InvigilationTableSection({
       scrollContainer?.removeEventListener("scroll", measure);
       observer?.disconnect();
     };
-  }, [tableTwoVisible, roomColumnWidth, invigilation?.roomLocationGroups.length]);
+  }, [tableTwoVisible, invigilation?.roomLocationGroups.length]);
 
   const roomColumnStyle = { width: roomColumnWidth, minWidth: roomColumnWidth, maxWidth: roomColumnWidth };
-
-  const startRoomWidthDrag = (event: ReactPointerEvent<HTMLButtonElement>, sign: number) => {
-    if (event.button !== 0) return;
-    roomWidthDragRef.current = {
-      pointerId: event.pointerId, startX: event.clientX, startWidth: roomColumnWidth, sign,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const moveRoomWidthDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = roomWidthDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    setRoomColumnWidth(Math.max(44, Math.min(200, Math.round(drag.startWidth + drag.sign * (event.clientX - drag.startX)))));
-  };
-  const endRoomWidthDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (roomWidthDragRef.current?.pointerId !== event.pointerId) return;
-    roomWidthDragRef.current = null;
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
-  };
 
   const updateConfig = (mutate: (current: ExamInvigilationConfig) => void) => {
     setConfig((current) => {
@@ -1262,25 +1245,7 @@ export function InvigilationTableSection({
                       </th>
                     ))}
                     <th rowSpan={3} style={{ width: outsideColumnWidth, minWidth: outsideColumnWidth }} className="border-b border-r border-[#b6c7cf] px-1 py-1.5 text-center align-middle">
-                      <div className="flex flex-col items-center gap-1">
-                        <span>场外监考</span>
-                        <div className="flex items-center gap-1" aria-label="调整考场及场外列宽">
-                          <button type="button" aria-label="拖动左侧刻度调整考场列宽"
-                            className="touch-none cursor-ew-resize px-1" onPointerDown={(event) => startRoomWidthDrag(event, -1)}
-                            onPointerMove={moveRoomWidthDrag} onPointerUp={endRoomWidthDrag} onPointerCancel={endRoomWidthDrag}>
-                            <span className="block h-4 border-l-2 border-ink-700" />
-                          </button>
-                          <ArrowLeftRight aria-hidden="true" className="h-3 w-3" />
-                          <button type="button" aria-label="拖动右侧刻度调整考场列宽"
-                            className="touch-none cursor-ew-resize px-1" onPointerDown={(event) => startRoomWidthDrag(event, 1)}
-                            onPointerMove={moveRoomWidthDrag} onPointerUp={endRoomWidthDrag} onPointerCancel={endRoomWidthDrag}>
-                            <span className="block h-4 border-r-2 border-ink-700" />
-                          </button>
-                        </div>
-                        <input type="range" min={80} max={240} value={outsideColumnWidth}
-                          aria-label="单独调整场外监考列宽" onChange={(event) => setOutsideColumnWidth(Number(event.target.value))}
-                          className="w-20 accent-gold-500" />
-                      </div>
+                      场外监考
                     </th>
                     <th rowSpan={3} className="whitespace-nowrap border-b border-[#b6c7cf] px-1 py-1.5 text-center align-middle">巡考</th>
                   </tr>
@@ -1356,7 +1321,7 @@ export function InvigilationTableSection({
                                 !count && "bg-ink-50/60",
                                 count && "cursor-pointer hover:bg-gold-50/60",
                                 durationHighlightClass(assignedTeacherId),
-                                highlighted && "bg-[#fff86b]",
+                                highlighted && !durationHighlightClass(assignedTeacherId) && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 duplicate && "ring-2 ring-inset ring-red-400",
                               )}
@@ -1408,9 +1373,8 @@ export function InvigilationTableSection({
                               style={{ width: outsideColumnWidth, minWidth: outsideColumnWidth }}
                               className={cn(
                                 "cursor-pointer border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors hover:bg-gold-50/60",
-                                showLongest && row.outsideTeacherIds.includes(durationExtremes.longest[0]?.teacherId || "") && "bg-amber-200",
-                                showShortest && row.outsideTeacherIds.includes(durationExtremes.shortest[0]?.teacherId || "") && "bg-sky-200",
-                                highlighted && "bg-[#fff86b]",
+                                row.outsideTeacherIds.some((id) => Boolean(durationHighlightClass(id))) && durationHighlightClass(selectedTeacherId),
+                                highlighted && !durationHighlightClass(selectedTeacherId) && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 duplicate && "ring-2 ring-inset ring-red-400",
                               )}
@@ -1575,7 +1539,10 @@ export function InvigilationTableSection({
             <div className="flex min-w-0 items-center gap-1">
               <Button size="sm" variant={showLongest ? "gold" : "outline"}
                 aria-pressed={showLongest}
-                onClick={() => setShowLongest((current) => !current)}>最长</Button>
+                onClick={() => {
+                  setShowLongest((current) => !current);
+                  setSelectedTeacherId(showLongest ? null : durationExtremes.longest[0]?.teacherId || null);
+                }}>最长</Button>
               {showLongest && (
                 <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1" aria-label="最长监考老师名单">
                   {durationExtremes.longest.map((stat) => (
@@ -1591,7 +1558,10 @@ export function InvigilationTableSection({
             <div className="flex min-w-0 items-center gap-1">
               <Button size="sm" variant={showShortest ? "gold" : "outline"}
                 aria-pressed={showShortest}
-                onClick={() => setShowShortest((current) => !current)}>最短</Button>
+                onClick={() => {
+                  setShowShortest((current) => !current);
+                  setSelectedTeacherId(showShortest ? null : durationExtremes.shortest[0]?.teacherId || null);
+                }}>最短</Button>
               {showShortest && (
                 <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1" aria-label="最短监考老师名单">
                   {durationExtremes.shortest.map((stat) => (
@@ -1654,7 +1624,9 @@ export function InvigilationTableSection({
                         className={cn(
                           "text-left font-medium text-ink-800 hover:text-gold-700",
                           durationHighlightClass(stat.teacherId),
-                          selectedTeacherId === stat.teacherId && "rounded bg-[#fff86b] px-1",
+                          selectedTeacherId === stat.teacherId && (durationHighlightClass(stat.teacherId)
+                            ? "rounded px-1 ring-2 ring-ink-400"
+                            : "rounded bg-[#fff86b] px-1"),
                         )}
                         title={selectedCells.length === 1 && selectedCellUnavailableTeacherIds.has(stat.teacherId) ? "该老师已在本场考试中承担其他监考任务" : undefined}
                         onClick={() => assignSelectedTeacher(stat.teacherId)}

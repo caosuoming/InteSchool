@@ -394,19 +394,8 @@ describe("MyExamsPage", () => {
     expect(within(wrappedLocationHeader).getByText("教室")).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toBeInTheDocument();
     expect(invigilationTable.getByRole("columnheader", { name: "巡考" })).toHaveAttribute("rowspan", "3");
-    const rightRoomResize = invigilationTable.getByRole("button", { name: "拖动右侧刻度调整考场列宽" });
-    const leftRoomResize = invigilationTable.getByRole("button", { name: "拖动左侧刻度调整考场列宽" });
-    expect(leftRoomResize).toBeInTheDocument();
-    Object.defineProperties(rightRoomResize, {
-      setPointerCapture: { value: vi.fn(), configurable: true },
-      hasPointerCapture: { value: vi.fn(() => true), configurable: true },
-      releasePointerCapture: { value: vi.fn(), configurable: true },
-    });
-    fireEvent.pointerDown(rightRoomResize, { pointerId: 5, button: 0, clientX: 100 });
-    fireEvent.pointerMove(rightRoomResize, { pointerId: 5, clientX: 140 });
-    expect(wrappedLocationHeader).toHaveStyle({ width: "92px" });
-    expect(invigilationTable.getByRole("columnheader", { name: "1考场、2考场" })).toHaveStyle({ width: "92px" });
-    fireEvent.pointerUp(rightRoomResize, { pointerId: 5, clientX: 140 });
+    expect(invigilationTable.queryByRole("button", { name: /调整考场列宽/ })).not.toBeInTheDocument();
+    expect(wrappedLocationHeader).toHaveStyle({ width: "52px" });
     expect(invigilationTable.getByRole("cell", { name: "2026-10-20 星期二" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "晚上" })).toHaveAttribute("rowspan", "2");
     expect(invigilationTable.getByRole("cell", { name: "18:30–20:30" })).toBeInTheDocument();
@@ -414,7 +403,7 @@ describe("MyExamsPage", () => {
     expect(invigilationTable.getByRole("button", { name: "年级领导" })).toBeInTheDocument();
     const durationCard = screen.getByRole("region", { name: "监考时长面板" });
     expect(within(durationCard).queryByRole("button", { name: "选择监考教师 年级领导" })).not.toBeInTheDocument();
-    expect(invigilationTable.getByRole("slider", { name: "单独调整场外监考列宽" })).toBeInTheDocument();
+    expect(invigilationTable.queryByRole("slider", { name: "单独调整场外监考列宽" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存监考表" })).toBeInTheDocument();
     const teachersHeading = screen.getByRole("heading", { name: "配置一、监考老师名单" });
     const teacherConfigCard = teachersHeading.closest(".card-base");
@@ -578,7 +567,7 @@ describe("MyExamsPage", () => {
       examDate: "2026-09-20",
       invigilation: {
         teachers: [
-          { id: "teacher-math", name: "张老师", subject: "数学" },
+          { id: "teacher-math", name: "张老师", subject: "数学", isPrepLeader: true },
           { id: "teacher-math-2", name: "李老师", subject: "数学" },
         ],
         subjectTimes: [{ subject: "数学", date: "2026-09-20", period: "morning", time: "08:00", durationMinutes: 120 }],
@@ -725,6 +714,20 @@ describe("MyExamsPage", () => {
     // Both teachers have their own-subject slots before duration balancing.
     expect(roomOne.closest("td")).toHaveTextContent("张老师");
     expect(roomTwo.closest("td")).toHaveTextContent("李老师");
+
+    await user.click(screen.getByRole("button", { name: "最长" }));
+    const longestCandidates = within(screen.getByLabelText("最长监考老师名单"))
+      .getAllByRole("button", { name: /选择最长监考教师/ });
+    expect(longestCandidates).toHaveLength(2);
+    const cellForTeacher = (name: string) => [roomOne, roomTwo]
+      .find((checkbox) => checkbox.closest("td")?.textContent?.includes(name))?.closest("td");
+    const firstLongestCell = cellForTeacher(longestCandidates[0].textContent || "");
+    const secondLongestCell = cellForTeacher(longestCandidates[1].textContent || "");
+    expect(firstLongestCell).toHaveClass("bg-amber-200");
+    await user.click(longestCandidates[1]);
+    expect(firstLongestCell).not.toHaveClass("bg-amber-200");
+    expect(firstLongestCell).not.toHaveClass("bg-[#fff86b]");
+    expect(secondLongestCell).toHaveClass("bg-amber-200");
 
     await user.click(roomOne);
     await user.click(roomTwo);
