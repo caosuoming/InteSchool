@@ -723,11 +723,45 @@ describe("MyExamsPage", () => {
       .find((checkbox) => checkbox.closest("td")?.textContent?.includes(name))?.closest("td");
     const firstLongestCell = cellForTeacher(longestCandidates[0].textContent || "");
     const secondLongestCell = cellForTeacher(longestCandidates[1].textContent || "");
+    // Both teachers have the same duration, so they appear in both rankings.
+    // The two independent defaults select the first teacher in each group.
     expect(firstLongestCell).toHaveClass("bg-amber-200");
+    expect(longestCandidates[0]).toHaveClass("ring-2", "ring-amber-500");
+    await user.click(screen.getByRole("button", { name: "最短" }));
+    const shortestCandidates = within(screen.getByLabelText("最短监考老师名单"))
+      .getAllByRole("button", { name: /选择最短监考教师/ });
+    expect(shortestCandidates).toHaveLength(2);
+    expect(shortestCandidates[0]).toHaveClass("ring-2", "ring-sky-500");
+    expect(firstLongestCell).toHaveClass("bg-gradient-to-r", "from-amber-200", "to-sky-200");
+
+    // Changing the longest selection does not clear or move the shortest one.
     await user.click(longestCandidates[1]);
-    expect(firstLongestCell).not.toHaveClass("bg-amber-200");
+    expect(longestCandidates[0]).not.toHaveClass("ring-amber-500");
+    expect(longestCandidates[1]).toHaveClass("ring-amber-500");
+    expect(shortestCandidates[0]).toHaveClass("ring-sky-500");
+    expect(firstLongestCell).toHaveClass("bg-sky-200");
     expect(firstLongestCell).not.toHaveClass("bg-[#fff86b]");
     expect(secondLongestCell).toHaveClass("bg-amber-200");
+
+    // Changing the shortest selection does not clear or move the longest one.
+    await user.click(shortestCandidates[1]);
+    expect(shortestCandidates[0]).not.toHaveClass("ring-sky-500");
+    expect(shortestCandidates[1]).toHaveClass("ring-sky-500");
+    expect(longestCandidates[1]).toHaveClass("ring-amber-500");
+    expect(secondLongestCell).toHaveClass("bg-gradient-to-r", "from-amber-200", "to-sky-200");
+    expect(firstLongestCell).not.toHaveClass("bg-sky-200");
+
+    await user.click(shortestCandidates[0]);
+    expect(firstLongestCell).toHaveClass("bg-sky-200");
+    expect(secondLongestCell).toHaveClass("bg-amber-200");
+
+    await user.click(screen.getByRole("button", { name: "最长" }));
+    expect(firstLongestCell).toHaveClass("bg-sky-200");
+    expect(secondLongestCell).not.toHaveClass("bg-amber-200");
+    await user.click(screen.getByRole("button", { name: "最长" }));
+    expect(firstLongestCell).toHaveClass("bg-gradient-to-r", "from-amber-200", "to-sky-200");
+    expect(within(screen.getByLabelText("最长监考老师名单"))
+      .getAllByRole("button", { name: /选择最长监考教师/ })[0]).toHaveClass("ring-amber-500");
 
     await user.click(roomOne);
     await user.click(roomTwo);

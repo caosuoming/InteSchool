@@ -247,6 +247,8 @@ export function InvigilationTableSection({
   const [importingTeachers, setImportingTeachers] = useState(false);
   const [statsSort, setStatsSort] = useState<"minutes" | "subject" | "name">("minutes");
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
+  const [selectedLongestTeacherId, setSelectedLongestTeacherId] = useState<string | null>(null);
+  const [selectedShortestTeacherId, setSelectedShortestTeacherId] = useState<string | null>(null);
   const [showLongest, setShowLongest] = useState(false);
   const [showShortest, setShowShortest] = useState(false);
   const roomColumnWidth = 52;
@@ -418,12 +420,25 @@ export function InvigilationTableSection({
       && !group.roomIds.some((id) => Boolean(row.roomTeacherIds[id]))
     )).length
   ), 0) || 0;
-  const durationHighlightClass = (teacherId: string | null | undefined) => {
-    if (!teacherId || teacherId !== selectedTeacherId) return "";
-    if (showLongest && durationExtremes.longest.some((stat) => stat.teacherId === teacherId)) return "bg-amber-200";
-    if (showShortest && durationExtremes.shortest.some((stat) => stat.teacherId === teacherId)) return "bg-sky-200";
+  // Each ranking keeps an independent choice, with a fallback if the list changes.
+  const highlightedLongestId = showLongest
+    ? (durationExtremes.longest.some((stat) => stat.teacherId === selectedLongestTeacherId)
+      ? selectedLongestTeacherId : durationExtremes.longest[0]?.teacherId)
+    : null;
+  const highlightedShortestId = showShortest
+    ? (durationExtremes.shortest.some((stat) => stat.teacherId === selectedShortestTeacherId)
+      ? selectedShortestTeacherId : durationExtremes.shortest[0]?.teacherId)
+    : null;
+  const durationCellHighlightClass = (teacherIds: (string | null | undefined)[]) => {
+    const longest = Boolean(highlightedLongestId && teacherIds.includes(highlightedLongestId));
+    const shortest = Boolean(highlightedShortestId && teacherIds.includes(highlightedShortestId));
+    if (longest && shortest) return "bg-gradient-to-r from-amber-200 to-sky-200";
+    if (longest) return "bg-amber-200";
+    if (shortest) return "bg-sky-200";
     return "";
   };
+  const durationHighlightClass = (teacherId: string | null | undefined) =>
+    durationCellHighlightClass([teacherId]);
   const hasRenderedInvigilationTable = Boolean(selectedArrangement && statistics?.rooms.length && config);
 
   useEffect(() => {
@@ -1373,8 +1388,8 @@ export function InvigilationTableSection({
                               style={{ width: outsideColumnWidth, minWidth: outsideColumnWidth }}
                               className={cn(
                                 "cursor-pointer border-b border-r border-[#b6c7cf] px-1 py-0.5 text-center transition-colors hover:bg-gold-50/60",
-                                row.outsideTeacherIds.some((id) => Boolean(durationHighlightClass(id))) && durationHighlightClass(selectedTeacherId),
-                                highlighted && !durationHighlightClass(selectedTeacherId) && "bg-[#fff86b]",
+                                durationCellHighlightClass(row.outsideTeacherIds),
+                                highlighted && !durationCellHighlightClass(row.outsideTeacherIds) && "bg-[#fff86b]",
                                 selected && "bg-gold-50 ring-2 ring-inset ring-gold-400",
                                 duplicate && "ring-2 ring-inset ring-red-400",
                               )}
@@ -1541,7 +1556,8 @@ export function InvigilationTableSection({
                 aria-pressed={showLongest}
                 onClick={() => {
                   setShowLongest((current) => !current);
-                  setSelectedTeacherId(showLongest ? null : durationExtremes.longest[0]?.teacherId || null);
+                  setSelectedLongestTeacherId(null);
+                  setSelectedTeacherId(null);
                 }}>最长</Button>
               {showLongest && (
                 <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1" aria-label="最长监考老师名单">
@@ -1549,8 +1565,12 @@ export function InvigilationTableSection({
                     <button key={stat.teacherId} type="button"
                       aria-label={"选择最长监考教师 " + stat.name}
                       className={cn("shrink-0 rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-ink-900 hover:bg-amber-300",
-                        selectedTeacherId === stat.teacherId && "ring-2 ring-amber-500")}
-                      onClick={() => assignSelectedTeacher(stat.teacherId)}>{stat.name}</button>
+                        highlightedLongestId === stat.teacherId && "ring-2 ring-amber-500")}
+                      onClick={() => {
+                        setSelectedLongestTeacherId(stat.teacherId);
+                        assignSelectedTeacher(stat.teacherId);
+                        if (selectedCells.length !== 1) setSelectedTeacherId(null);
+                      }}>{stat.name}</button>
                   ))}
                 </div>
               )}
@@ -1560,7 +1580,8 @@ export function InvigilationTableSection({
                 aria-pressed={showShortest}
                 onClick={() => {
                   setShowShortest((current) => !current);
-                  setSelectedTeacherId(showShortest ? null : durationExtremes.shortest[0]?.teacherId || null);
+                  setSelectedShortestTeacherId(null);
+                  setSelectedTeacherId(null);
                 }}>最短</Button>
               {showShortest && (
                 <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1" aria-label="最短监考老师名单">
@@ -1568,8 +1589,12 @@ export function InvigilationTableSection({
                     <button key={stat.teacherId} type="button"
                       aria-label={"选择最短监考教师 " + stat.name}
                       className={cn("shrink-0 rounded bg-sky-200 px-1.5 py-0.5 text-xs font-medium text-ink-900 hover:bg-sky-300",
-                        selectedTeacherId === stat.teacherId && "ring-2 ring-sky-500")}
-                      onClick={() => assignSelectedTeacher(stat.teacherId)}>{stat.name}</button>
+                        highlightedShortestId === stat.teacherId && "ring-2 ring-sky-500")}
+                      onClick={() => {
+                        setSelectedShortestTeacherId(stat.teacherId);
+                        assignSelectedTeacher(stat.teacherId);
+                        if (selectedCells.length !== 1) setSelectedTeacherId(null);
+                      }}>{stat.name}</button>
                   ))}
                 </div>
               )}
