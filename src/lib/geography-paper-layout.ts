@@ -1,3 +1,4 @@
+import { isChemistryCompositeGroup, chemistrySubQuestionNumbers, renumberChemistryGroupStem, renumberChemistryGroupField } from "./chemistry-paper-layout.js";
 import { alignGeographyGroupAnswerNumbers, geographyAnswerLabelNumbers, rewriteGeographyAnswerLabels } from "./geography-answer-numbering.js";
 
 const lineStart = /^([ \t]*(?:<(?:p|div|li|span|strong)\b[^>]*>[ \t]*)*)([\d０-９]{1,4})[ \t]*[.．、][ \t]*(?=\S)/i;
@@ -107,6 +108,7 @@ export function alignGeographyQuestionAnswer(
 }
 
 export function geographyPaperQuestionCount(stem: string, type: string, subject?: string): number {
+  if (isChemistryCompositeGroup(stem, type, subject)) return chemistrySubQuestionNumbers(stem).length;
   return subject?.trim() === "地理" && type === "single"
     ? splitGeographyChoiceGroup(stem)?.questions.length ?? 1 : 1;
 }
@@ -115,6 +117,7 @@ export function geographyPaperQuestionCount(stem: string, type: string, subject?
 export function renumberGeographyPaperStem(
   stem: string, type: string, subject: string | undefined, startNumber: number,
 ): string {
+  if (isChemistryCompositeGroup(stem, type, subject)) return renumberChemistryGroupStem(stem, startNumber);
   if (subject?.trim() !== "地理" || type !== "single") return stem;
   const group = splitGeographyChoiceGroup(stem);
   // Standalone questions receive their number from the paper layout. Avoid
@@ -135,6 +138,7 @@ export function renumberGeographyPaperStem(
 export function renumberGeographyPaperAnswer(
   stem: string, field: string, type: string, subject: string | undefined, startNumber: number,
 ): string {
+  if (isChemistryCompositeGroup(stem, type, subject)) return renumberChemistryGroupField(stem, field, startNumber);
   if (subject?.trim() !== "地理" || type !== "single") return field;
   const group = splitGeographyChoiceGroup(stem);
   if (!group) {

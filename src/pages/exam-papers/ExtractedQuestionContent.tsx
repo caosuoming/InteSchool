@@ -1,3 +1,4 @@
+import { isChemistryCompositeGroup } from "@/lib/chemistry-paper-layout";
 import { alignGeographyQuestionAnswer, isGeographyChoiceGroup, renumberGeographyPaperStem, renumberGeographyPaperAnswer, geographyPaperQuestionCount } from "@/lib/geography-paper-layout";
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -32,7 +33,8 @@ export function ExtractedQuestionContent({
   expanded: controlledExpanded,
   onExpandedChange,
 }: ExtractedQuestionContentProps) {
-  const groupedChoice = isGeographyChoiceGroup(stem, questionType, geographySubject);
+  const groupedChoice = isGeographyChoiceGroup(stem, questionType, geographySubject)
+    || isChemistryCompositeGroup(stem, questionType, geographySubject);
   const displayStem = number === undefined ? stem
     : renumberGeographyPaperStem(stem, questionType, geographySubject, number);
   const displayAnswer = number === undefined ? alignGeographyQuestionAnswer(stem, answer, questionType, geographySubject)

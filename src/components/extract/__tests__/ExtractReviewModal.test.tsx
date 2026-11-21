@@ -1278,3 +1278,57 @@ describe("math numbering review", () => {
     expect(screen.getByText(/14. 求函数定义域/)).toBeInTheDocument();
   });
 });
+
+describe("Shanghai chemistry extraction review (#1532)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authState.teacher.subject = "化学";
+    mocks.extractConfig.questionKeywords = ["题目"];
+    mocks.findMathQuestionNumberGaps.mockReturnValue([]);
+    mocks.findSuspectedMathQuestionNumbers.mockReturnValue([]);
+    mocks.findSimilarQuestionsBatch.mockImplementation(async (stems: string[]) => stems.map(() => []));
+    mocks.confirmExtract.mockResolvedValue({
+      createdQuestions: [{ id: "new-q" }], mergedQuestions: [], createdMaterials: [],
+      questionIdByItemId: { "block-question": "new-q" }, materialIdByItemId: {},
+    });
+    mocks.createExamExtractCopy.mockResolvedValue({ id: "new-paper" });
+  });
+  it("hides category recognition and saves relative numbers for composite questions", async () => {
+    mocks.authState.teacher.subject = "化学";
+    const user = userEvent.setup();
+    render(
+      <ExtractReviewModal
+        open onClose={vi.fn()} resourceId="paper-1" resourceType="examPaper"
+        resourceTitle="上海化学试卷" chapterIds={[]} knowledgePointIds={[]}
+        grade="高三" schoolYear="2026-2027" semester="上学期"
+        initialBlocks={[
+          { id: "group", type: "groupTitle", content: "四、黄铜矿的浸出", order: 0, status: "new" },
+          { id: "block-question", type: "question", questionType: "essay",
+            content: "浸出流程如下。\n24. 选择反应条件。\nA. 酸 B. 碱 C. 盐 D. 水\n（1）分析作用。\n25. 写出方程式。\n①说明步骤。",
+            answer: "24. A\n25. D", analysis: "24. 酸性条件。\n25. 守恒条件。",
+            order: 1, status: "new" },
+        ]}
+      />,
+    );
+    expect(screen.queryByText("附加题类")).not.toBeInTheDocument();
+    expect(screen.queryByText(/自动识别题类/)).not.toBeInTheDocument();
+    const selector = screen.getByLabelText("题型选择");
+    expect(within(selector).queryByRole("option", { name: "综合题" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认入库" }));
+    await waitFor(() => expect(mocks.confirmExtract).toHaveBeenCalledOnce());
+    const payload = mocks.confirmExtract.mock.calls[0][2].questions[0];
+    expect(payload).toMatchObject({
+      type: "essay", categories: [], options: undefined,
+      answer: "1. A\n2. D",
+      analysis: "1. 酸性条件。\n2. 守恒条件。",
+    });
+    expect(payload.stem).toMatch(/^黄铜矿的浸出\n/);
+    expect(payload.stem).toContain("1. 选择反应条件");
+    expect(payload.stem).toContain("2. 写出方程式");
+    expect(payload.stem).toContain("（1）分析作用");
+    expect(payload.stem).toContain("①说明步骤");
+    expect(payload.stem).toContain("A. 酸 B. 碱");
+    expect(payload.stem).not.toContain("24.");
+    expect(mocks.confirmExtract.mock.calls[0][12][1].content).toContain("24. 选择反应条件");
+  });
+});

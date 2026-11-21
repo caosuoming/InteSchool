@@ -1,3 +1,4 @@
+import { isChemistryCompositeGroup } from "@/lib/chemistry-paper-layout";
 import { geographyPaperNumberMap, geographyPaperQuestionCount, isGeographyChoiceGroup, renumberGeographyPaperAnswer, renumberGeographyPaperStem } from "@/lib/geography-paper-layout";
 import { openPage } from "@/lib/navigation";
 import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
@@ -4342,7 +4343,8 @@ function PreviewQuestionItem({
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
-  const groupedChoice = isGeographyChoiceGroup(pq.stem, pq.type, geographySubject);
+  const groupedChoice = isGeographyChoiceGroup(pq.stem, pq.type, geographySubject)
+    || isChemistryCompositeGroup(pq.stem, pq.type, geographySubject);
   const displayStem = renumberGeographyPaperStem(pq.stem, pq.type, geographySubject, index + 1);
   const answer = renumberGeographyPaperAnswer(pq.stem, pq.answer, pq.type, geographySubject, index + 1);
   const analysis = renumberGeographyPaperAnswer(pq.stem, pq.analysis, pq.type, geographySubject, index + 1);
@@ -4463,7 +4465,8 @@ function EditQuestionRow({
   sidebar?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const groupedChoice = isGeographyChoiceGroup(pq.stem, pq.type, geographySubject);
+  const groupedChoice = isGeographyChoiceGroup(pq.stem, pq.type, geographySubject)
+    || isChemistryCompositeGroup(pq.stem, pq.type, geographySubject);
   const displayStem = renumberGeographyPaperStem(pq.stem, pq.type, geographySubject, displayNumber);
   const displayAnswer = renumberGeographyPaperAnswer(pq.stem, pq.answer, pq.type, geographySubject, displayNumber);
   const displayAnalysis = renumberGeographyPaperAnswer(pq.stem, pq.analysis, pq.type, geographySubject, displayNumber);

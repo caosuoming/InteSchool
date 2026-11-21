@@ -1,3 +1,4 @@
+import { isChemistryCompositeGroup } from "./chemistry-paper-layout";
 import {
   geographyPaperQuestionCount,
   isGeographyChoiceGroup,
@@ -1083,6 +1084,8 @@ async function appendExamQuestion(
         spacing: { before: 160, after: 120, line: 360 },
       }));
     }
+  } else if (isChemistryCompositeGroup(stem, question.type, subject)) {
+    children.push(await createRichParagraph(displayStem, { spacing: { line: 360 } }));
   } else {
     children.push(new Paragraph({
       children: [
