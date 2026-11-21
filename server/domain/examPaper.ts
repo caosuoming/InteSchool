@@ -147,7 +147,8 @@ export const examPaperService = {
     paperId: string, items: UsageImportItem[], metadataUpdates: UsageMetadataUpdate[], teacher: TeacherRecord,
   ): Promise<{ imported: number; studentCount: number; updatedPaper?: ExamPaper }> {
     const paper = (db.read("examPapers") as ExamPaper[]).find((candidate) => candidate.id === paperId);
-    if (!paper || paper.teacherId !== teacher.id || paper.schoolId !== teacher.schoolId) {
+    // Switching the active school does not change ownership of a teacher's paper.
+    if (!paper || paper.teacherId !== teacher.id) {
       throw new Error("无权导入此试卷的使用数据");
     }
     if (!Array.isArray(items) || !items.length || items.length > 20000) {

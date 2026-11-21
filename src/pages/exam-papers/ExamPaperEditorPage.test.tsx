@@ -372,6 +372,15 @@ describe("ExamPaperEditorPage preview", () => {
     expect(screen.getByText(/李同学.*OUT001.*外校高一班/)).toBeInTheDocument();
   });
 
+  it("同一教师切换学校后仍显示原学校试卷的上传使用数据入口", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, schoolId: "old-school", classIds: ["class-1"] });
+    renderPage();
+    const upload = await screen.findByRole("button", { name: "上传使用数据" });
+    expect(upload).toBeEnabled();
+    fireEvent.click(upload);
+    expect(await screen.findByText("上传试卷使用数据")).toBeInTheDocument();
+  });
+
   it("edits and persists decomposed exam-paper document metadata from preview", async () => {
     renderPage();
     await screen.findByTestId("exam-paper-preview");
@@ -942,6 +951,33 @@ describe("ExamPaperEditorPage preview", () => {
       expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "新备注");
       expect(within(answerStatus).getByText("新备注")).toBeInTheDocument();
     });
+  });
+
+  it("已上传使用数据后，预览仍允许单题、批量目录修改和添加题目备注", async () => {
+    mocks.getPaper.mockResolvedValue({ ...paper, answerSheetPublishedAt: timestamp });
+    renderPage();
+
+    const batchActions = await screen.findByTestId("document-question-batch-actions");
+    for (const name of ["修改章节课", "新增知识点", "新增思想方法"]) {
+      expect(within(batchActions).getByRole("button", { name })).toBeEnabled();
+    }
+    const details = screen.getByTestId("exam-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
+    expect(await screen.findByRole("heading", { name: "编辑第 1 题章节课和知识点" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    fireEvent.click(within(batchActions).getByRole("button", { name: "新增思想方法" }));
+    expect(await screen.findByRole("heading", { name: "新增统一思想方法" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    const answerStatus = screen.getByTestId("exam-question-answer-status-1");
+    fireEvent.click(within(answerStatus).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(answerStatus).getByLabelText("新增题目备注"), {
+      target: { value: "试卷使用后的备注" },
+    });
+    fireEvent.click(within(answerStatus).getByRole("button", { name: "添加" }));
+    await waitFor(() => expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "试卷使用后的备注"));
+    expect(within(screen.getByRole("toolbar", { name: "试卷预览操作" })).getByRole("button", { name: "编辑试卷" })).toBeDisabled();
   });
 
   it("loads external students from a selected personal class in preview", async () => {
