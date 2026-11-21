@@ -145,20 +145,6 @@ function groupSchedules(arrangement: ExamArrangement, config: ExamInvigilationCo
   return [...groups.values()];
 }
 
-function chooseTeacher(
-  candidates: ExamInvigilationTeacher[],
-  unavailable: Set<string>,
-  minutes: Map<string, number>,
-  allowed: (teacher: ExamInvigilationTeacher) => boolean = () => true,
-): ExamInvigilationTeacher | null {
-  return candidates
-    .filter((teacher) => !unavailable.has(teacher.id) && allowed(teacher))
-    .sort((left, right) => (
-      (minutes.get(left.id) || 0) - (minutes.get(right.id) || 0)
-      || left.name.localeCompare(right.name, "zh-CN")
-    ))[0] || null;
-}
-
 function chooseBalancedRoomTeacher(
   candidates: ExamInvigilationTeacher[],
   unavailable: Set<string>,
@@ -464,17 +450,24 @@ export function buildExamInvigilationTable(
         unavailable.add(item.overriddenTeacherId);
       }
     }
-    if (override.outsideTeacherId) unavailable.add(override.outsideTeacherId);
-
     const date = input.times[0].date;
     const requirement = (candidate: ExamInvigilationTeacher) => matchesTeacherRequirements(candidate);
     const outsideOverridden = Object.prototype.hasOwnProperty.call(override, "outsideTeacherId");
-    // Explicit outside overrides reserve their teacher. Automatic outside duty
-    // must wait until occupied rooms have a supervisor; otherwise a shortage of
-    // teachers creates empty classrooms while staff are assigned outside.
-    let outsideTeacherIds: string[] = outsideOverridden && override.outsideTeacherId
-      ? [override.outsideTeacherId]
-      : [];
+    // Outside duty is specified per subject in Config 1. Reserve those teachers
+    // before filling rooms, rather than borrowing them for another subject or
+    // filling outside vacancies with unrelated teachers.
+    const designatedOutsideIds = outsideOverridden
+      ? (override.outsideTeacherId ? [override.outsideTeacherId] : [])
+      : eligibleTeachers
+        .filter((teacher) => teacher.isPrepLeader && input.subjectSet.has(teacher.subject)
+          && !unavailable.has(teacher.id))
+        .map((teacher) => teacher.id);
+    // Keep explicit conflicts visible for the duplicate-assignment validator;
+    // only automatically designated teachers yield to a manual room assignment.
+    const outsideTeacherIds = outsideOverridden
+      ? designatedOutsideIds
+      : designatedOutsideIds.filter((teacherId) => !unavailable.has(teacherId));
+    outsideTeacherIds.forEach((teacherId) => unavailable.add(teacherId));
 
     const subjectPriorityRoomTeachers = plannedOwnSubject.get(rowIndex) || new Map<string, string>();
     subjectPriorityRoomTeachers.forEach((teacherId) => {
@@ -508,37 +501,14 @@ export function buildExamInvigilationTable(
       }
     }
 
-    if (!outsideOverridden) {
-      outsideTeacherIds = eligibleTeachers
-        .filter((teacher) => teacher.isPrepLeader && input.subjectSet.has(teacher.subject) && !unavailable.has(teacher.id) && requirement(teacher))
-        .sort((left, right) => (
-          (teacherPriorityMinutes.get(left.id) || 0) - (teacherPriorityMinutes.get(right.id) || 0)
-          || left.name.localeCompare(right.name, "zh-CN")
-        ))
-        .map((teacher) => teacher.id);
-      if (outsideTeacherIds.length === 0) {
-        const fallback = chooseTeacher(
-          eligibleTeachers.filter((teacher) => teacher.isPrepLeader && !teacher.isLeader),
-          unavailable,
-          teacherPriorityMinutes,
-          requirement,
-        ) || chooseTeacher(
-          eligibleTeachers.filter((teacher) => !teacher.isLeader),
-          unavailable,
-          teacherPriorityMinutes,
-          requirement,
-        );
-        if (fallback) outsideTeacherIds = [fallback.id];
-      }
-      outsideTeacherIds.forEach((teacherId) => {
-        unavailable.add(teacherId);
-      });
-    }
-
     const outsideTeacherId = outsideTeacherIds[0] || null;
 
     Object.values(roomTeacherIds).forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
-    outsideTeacherIds.forEach((teacherId) => markAssignment(teacherId, input.durationMinutes, date));
+    outsideTeacherIds.forEach((teacherId) => {
+      const subject = teachers.get(teacherId)?.subject;
+      const subjectTime = !outsideOverridden && input.times.find((time) => time.subject === subject);
+      markAssignment(teacherId, subjectTime?.durationMinutes || input.durationMinutes, date);
+    });
 
     const first = input.times[0];
     return {
