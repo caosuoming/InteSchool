@@ -6,6 +6,12 @@ import { questionService } from "@/services/question";
 import { useAuthStore } from "@/stores/auth";
 import type { Question, Teacher, TreeNode } from "@/types";
 
+vi.mock("@/components/ui/MathHtml", () => ({
+  MathHtml: ({ children, className }: { children: string; className?: string }) => (
+    <span className={className}>{children}</span>
+  ),
+}));
+
 vi.mock("@/services/knowledge", () => ({
   knowledgeService: {
     getChapterTree: vi.fn(),
