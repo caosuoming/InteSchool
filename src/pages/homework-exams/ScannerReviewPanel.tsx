@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { scannerService, type ScannerPageRecord } from "@/services/scanner";
 import type { Student } from "@/types";
+import { ScannerGradeDraftEditor } from "./ScannerGradeDraftEditor";
 
 interface ScannerReviewPanelProps {
   schoolId: string;
@@ -14,6 +15,7 @@ export function ScannerReviewPanel({ schoolId, students, sheetId, onRecordsChang
   const [records, setRecords] = useState<ScannerPageRecord[]>([]);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [exceptionsOnly, setExceptionsOnly] = useState(false);
+  const [gradingId, setGradingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -96,7 +98,9 @@ export function ScannerReviewPanel({ schoolId, students, sheetId, onRecordsChang
             <Button size="sm" onClick={() => void assign(record)} disabled={savingId !== null} loading={savingId === record.id}>保存匹配</Button>
             {(record.manualVerifiedAt || !(record.qrCurrent ?? record.verified)) && <Button size="sm" variant="outline" disabled={savingId !== null} onClick={() => void verify(record)}>{record.manualVerifiedAt ? "撤销人工核对" : "人工核对答题卡"}</Button>}
             <Button size="sm" variant="outline" disabled={savingId !== null || !(selections[record.id] ?? record.studentId)} onClick={() => void review(record)}>{record.reviewedAt ? "撤销复查" : "确认复查"}</Button>
+            {record.sheetType === "paper" && <Button size="sm" variant="outline" onClick={() => setGradingId((id) => id === record.id ? null : record.id)}>{gradingId === record.id ? "收起评分草稿" : `评分复核草稿${record.gradingEntries?.length ? `（${record.gradingEntries.length}题）` : ""}`}</Button>}
           </div>
+          {gradingId === record.id && <ScannerGradeDraftEditor record={record} onUpdated={apply} />}
         </div>
       ))}</div>}
     </section>

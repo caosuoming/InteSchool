@@ -165,4 +165,81 @@ describe("scanned page persistence and permissions", () => {
     expect((await upload(`intes://answer-sheet/v2/exam-paper/${sheetId}/revision-3`)).statusCode).toBe(200);
   });
 
+
+  it("saves per-question review drafts with answer-key comparisons, version locks, and no gradebook side effects", async () => {
+    const questions = [
+      { id: "choice-1", type: "single", score: 5, answer: "B" },
+      { id: "fill-1", type: "short", score: 4, answer: "42" },
+      { id: "essay-1", type: "essay", score: 10, answer: "" },
+    ];
+    await withSerializedState(built.store, (state) => {
+      const sheet = (state.examPapers as Array<Record<string, unknown>>).find((item) => item.id === sheetId)!;
+      sheet.questions = questions;
+      sheet.answerSheetRevisionId = "grading-rev-1";
+    });
+    const data = payload(png);
+    const scan = await built.app.inject({
+      method: "POST",
+      url: "/api/scanner/pages?" + new URLSearchParams({
+        schoolId, sheetId, sheetType: "paper",
+        qrPayload: `intes://answer-sheet/v2/exam-paper/${sheetId}/grading-rev-1`,
+      }),
+      headers: { cookie, "x-inteschool-csrf": csrf, "content-type": data.contentType },
+      payload: data.body,
+    });
+    expect(scan.statusCode).toBe(200);
+    const id = scan.json().id as string;
+    const baseUrl = `/api/scanner/pages/${id}`;
+    const grade = (entries: unknown, headers = { cookie, "x-inteschool-csrf": csrf }) =>
+      built.app.inject({ method: "PATCH", url: baseUrl + "/grading-draft", headers, payload: { entries } });
+    const rubric = await built.app.inject({ method: "GET", url: baseUrl + "/grading-questions", headers: { cookie } });
+    expect(rubric.statusCode).toBe(200);
+    expect(rubric.json()).toEqual([
+      { id: "choice-1", number: 1, kind: "choice", fullScore: 5 },
+      { id: "fill-1", number: 2, kind: "fill", fullScore: 4 },
+      { id: "essay-1", number: 3, kind: "essay", fullScore: 10 },
+    ]);
+    expect((await built.app.inject({ method: "GET", url: baseUrl + "/grading-questions" })).statusCode).toBe(401);
+    expect((await grade([{ questionId: "choice-1", observedMark: "B" }], { cookie } as any)).statusCode).toBe(400);
+    expect((await grade([{ questionId: "unknown", observedMark: "B" }])).statusCode).toBe(404);
+    expect((await grade([
+      { questionId: "choice-1", observedMark: "B" },
+      { questionId: "choice-1", observedMark: "A" },
+    ])).statusCode).toBe(400);
+    expect((await grade([{ questionId: "fill-1", observedMark: "×", confirmedScore: 5 }])).statusCode).toBe(400);
+    const beforeGrades = structuredClone(built.store.loadState().gradeRecords);
+    const saved = await grade([
+      { questionId: "choice-1", observedMark: "B" },
+      { questionId: "fill-1", observedMark: "×", confirmedScore: 0 },
+      { questionId: "essay-1", observedMark: "-2", observedBox: "6", confirmedScore: 6 },
+    ]);
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().gradingEntries).toMatchObject([
+      { questionId: "choice-1", suggestedScore: 5, confirmedScore: null },
+      { questionId: "fill-1", suggestedScore: 0, confirmedScore: 0 },
+      { questionId: "essay-1", suggestedScore: 6, confirmedScore: 6 },
+    ]);
+    expect(saved.json()).toMatchObject({ gradingRevisionId: "grading-rev-1", gradingUpdatedBy: "tch-1" });
+    expect(built.store.loadState().gradeRecords).toEqual(beforeGrades);
+    const schoolStudent = (built.store.loadState().students as Array<{ id: string; schoolId: string }>)
+      .find((student) => student.schoolId === schoolId)!;
+    const reassigned = await built.app.inject({
+      method: "PATCH", url: baseUrl, headers: { cookie, "x-inteschool-csrf": csrf },
+      payload: { studentId: schoolStudent.id },
+    });
+    expect(reassigned.statusCode).toBe(200);
+    expect(reassigned.json().gradingEntries).toMatchObject([
+      { questionId: "choice-1", confirmedScore: null },
+      { questionId: "fill-1", confirmedScore: null },
+      { questionId: "essay-1", confirmedScore: null },
+    ]);
+    const afterReload = await built.app.inject({ method: "GET", url: `/api/scanner/pages?schoolId=${schoolId}`, headers: { cookie } });
+    expect(afterReload.json().find((entry: { id: string }) => entry.id === id).gradingEntries).toHaveLength(3);
+    await withSerializedState(built.store, (state) => {
+      const sheet = (state.examPapers as Array<Record<string, unknown>>).find((item) => item.id === sheetId)!;
+      sheet.answerSheetRevisionId = "grading-rev-2";
+    });
+    expect((await grade([{ questionId: "choice-1", observedMark: "B" }])).statusCode).toBe(400);
+  });
+
 });
