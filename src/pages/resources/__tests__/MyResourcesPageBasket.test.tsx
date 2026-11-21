@@ -440,7 +440,8 @@ describe("MyResourcesPage resource basket", () => {
     expect(screen.getByRole("button", { name: "取消勾选原章节" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消勾选原章节" }));
     fireEvent.click(screen.getByRole("button", { name: "勾选新章节" }));
-    fireEvent.click(screen.getByRole("button", { name: "勾选归纳思想" }));
+    fireEvent.click(screen.getByRole("tab", { name: /思想方法/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "勾选归纳思想" }));
     fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
     await waitFor(() => {
       expect(questionService.updateQuestion).toHaveBeenCalledWith(basketQuestion.id, {
@@ -451,7 +452,8 @@ describe("MyResourcesPage resource basket", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "编辑素材属性" }));
     expect(await screen.findByRole("button", { name: "取消勾选原章节" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "勾选归纳思想" }));
+    fireEvent.click(screen.getByRole("tab", { name: /思想方法/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "勾选归纳思想" }));
     fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
     await waitFor(() => {
       expect(materialService.updateMaterial).toHaveBeenCalledWith(basketMaterial.id, {
