@@ -151,6 +151,28 @@ describe("UploadPage public attributes layout", () => {
     }
   });
 
+  it("offers webpage, PDF and video categories and infers them for uploaded materials", async () => {
+    const user = userEvent.setup();
+    const { container } = renderPage("material");
+    const defaultType = screen.getByLabelText("素材类型（默认）");
+    expect(within(defaultType).getByRole("option", { name: "网页" })).toBeInTheDocument();
+    expect(within(defaultType).getByRole("option", { name: "PDF" })).toBeInTheDocument();
+    expect(within(defaultType).getByRole("option", { name: "视频" })).toBeInTheDocument();
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    await user.upload(fileInput!, [
+      new File(["<p>动画</p>"], "animation.html", { type: "text/html" }),
+      new File(["pdf"], "reference.pdf", { type: "application/pdf" }),
+      new File(["video"], "recording.mp4", { type: "video/mp4" }),
+    ]);
+    const types = screen.getAllByLabelText("素材类型");
+    expect(types).toHaveLength(3);
+    expect(types[0]).toHaveValue("webpage");
+    expect(types[1]).toHaveValue("pdf");
+    expect(types[2]).toHaveValue("video");
+  });
+
   it("uploads documents for a personal identity using the personal resource scope", async () => {
     const user = userEvent.setup();
     useAuthStore.setState({

@@ -607,7 +607,25 @@ export function LessonEditorInspector({
                   <option value="button">点击按钮在新页面打开</option>
                 </select>
                 <label className="block text-xs font-medium text-ink-600">背景颜色</label>
-                <Input aria-label="网页素材背景颜色" type="color" value={selectedElement.backgroundColor || "#FFFFFF"} onChange={(event) => onUpdateElement({ backgroundColor: event.target.value })} />
+                <select
+                  aria-label="网页素材背景模式"
+                  className="input-base w-full"
+                  value={selectedElement.backgroundColor ? "custom" : "slide"}
+                  onChange={(event) => onUpdateElement({
+                    backgroundColor: event.target.value === "custom" ? (slide.backgroundColor || "#FFFFFF") : undefined,
+                  })}
+                >
+                  <option value="slide">与页面背景一致</option>
+                  <option value="custom">自定义</option>
+                </select>
+                {selectedElement.backgroundColor && (
+                  <Input
+                    aria-label="网页素材背景颜色"
+                    type="color"
+                    value={selectedElement.backgroundColor}
+                    onChange={(event) => onUpdateElement({ backgroundColor: event.target.value })}
+                  />
+                )}
                 <label className="block text-xs font-medium text-ink-600">标题</label>
                 <Input value={selectedElement.title} onChange={(event) => onUpdateElement({ title: event.target.value })} />
               </div>

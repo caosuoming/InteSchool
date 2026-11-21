@@ -23,7 +23,8 @@ export function inferMaterialTypeFromFile(
   if (mimeType.startsWith("video/") || VIDEO_FILE_PATTERN.test(file.name)) return "video";
   if (mimeType.startsWith("image/") || IMAGE_FILE_PATTERN.test(file.name)) return "image";
   if (mimeType.startsWith("audio/") || AUDIO_FILE_PATTERN.test(file.name)) return "audio";
-  if (/\.html?$/i.test(file.name) || mimeType === "text/html") return "file";
+  if (/\.html?$/i.test(file.name) || mimeType === "text/html") return "webpage";
+  if (/\.pdf$/i.test(file.name) || mimeType === "application/pdf") return "pdf";
   if (mimeType.startsWith("text/") || TEXT_FILE_PATTERN.test(file.name)) return "text";
   return "file";
 }

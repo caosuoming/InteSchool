@@ -94,6 +94,8 @@ const MATERIAL_TYPE_LABEL: Record<MaterialType, string> = {
   image: "图片",
   audio: "音频",
   video: "视频",
+  webpage: "网页",
+  pdf: "PDF",
   link: "链接",
   file: "文件",
   knowledgeBlock: "知识块",
@@ -878,11 +880,15 @@ export function LessonEditorPage() {
     if (!currentSlide || currentSlide.type === "courseware") return;
     let element: LessonSlideElement | null = null;
 
-    if (material.fileUrl && /\.html?(?:[?#]|$)/i.test(material.fileName || material.fileUrl)) {
+    if (material.type === "webpage" || (material.fileUrl && /\.html?(?:[?#]|$)/i.test(material.fileName || material.fileUrl))) {
+      if (!material.fileUrl) {
+        toast.error("网页素材缺少可用文件");
+        return;
+      }
       element = {
         id: genId("element"), kind: "webpage", src: material.fileUrl,
         title: material.title, materialId: material.id,
-        displayMode: "embed", backgroundColor: "#FFFFFF",
+        displayMode: "embed",
         x: 8, y: 8, width: 75, height: 72,
       };
     } else if (/\.ggb(?:[?#]|$)/i.test(material.fileName || "") && material.fileUrl) {
@@ -933,7 +939,7 @@ export function LessonEditorPage() {
     } else {
       const href = material.type === "link"
         ? (material.fileUrl || material.content)
-        : material.type === "file"
+        : material.type === "file" || material.type === "pdf"
           ? material.fileUrl
           : undefined;
       const content = material.type === "knowledgeBlock"
@@ -942,7 +948,7 @@ export function LessonEditorPage() {
       element = {
         id: genId("element"),
         kind: "text",
-        content: material.type === "file" ? material.title : content,
+        content: material.type === "file" || material.type === "pdf" ? material.title : content,
         ...(href ? { href } : undefined),
         x: 12,
         y: 8,
