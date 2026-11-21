@@ -1,5 +1,6 @@
 import { apiRequest, rpcCall, uploadFile } from "./api";
 import type { CardRegion, ThirdPartyCard } from "../types/scanner";
+import type { ScannerGradingEntry, ScannerGradingInput, ScannerGradingQuestion } from "../lib/scanner-grading";
 export type { CardRegion, CardRegionType, ThirdPartyCard } from "../types/scanner";
 
 export interface PublishedScannerSheet {
@@ -42,6 +43,11 @@ export interface ScannerPageRecord {
   manualVerifiedBy?: string | null;
   manualVerifiedRevisionId?: string | null;
   createdAt: string;
+  gradingEntries?: ScannerGradingEntry[];
+  gradingUpdatedAt?: string | null;
+  gradingUpdatedBy?: string | null;
+  gradingRevisionId?: string | null;
+  gradingRevisionCurrent?: boolean;
 }
 
 export const SCANNER_SCHOOL_KEY = "inteschool-scanner-school";
@@ -111,6 +117,16 @@ export const scannerService = {
   async updatePage(pageId: string, patch: { studentId?: string | null; reviewed?: boolean; manualVerified?: boolean }): Promise<ScannerPageRecord> {
     return apiRequest<ScannerPageRecord>(`/api/scanner/pages/${encodeURIComponent(pageId)}`, {
       method: "PATCH", body: JSON.stringify(patch),
+    }, true);
+  },
+
+  async gradingQuestions(pageId: string): Promise<ScannerGradingQuestion[]> {
+    return apiRequest<ScannerGradingQuestion[]>(`/api/scanner/pages/${encodeURIComponent(pageId)}/grading-questions`);
+  },
+
+  async saveGradingDraft(pageId: string, entries: ScannerGradingInput[]): Promise<ScannerPageRecord> {
+    return apiRequest<ScannerPageRecord>(`/api/scanner/pages/${encodeURIComponent(pageId)}/grading-draft`, {
+      method: "PATCH", body: JSON.stringify({ entries }),
     }, true);
   },
 

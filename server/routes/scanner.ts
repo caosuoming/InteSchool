@@ -11,6 +11,9 @@ import type { StoredFile } from "../types.js";
 import { requireCsrf, requireSession } from "./auth.js";
 import { withReadOnlyState, withSerializedState } from "../rpc.js";
 import { buildAnswerSheetQrPayload } from "../../src/lib/answer-sheet-qr.js";
+import { scoreScanMark } from "../../src/lib/scanner-grading.js";
+import type { ScannerGradingEntry, ScannerGradingQuestion } from "../../src/lib/scanner-grading.js";
+import type { ExamPaperQuestion } from "../../src/types/index.js";
 
 interface ScannerPageRecord {
   id: string;
@@ -32,6 +35,11 @@ interface ScannerPageRecord {
   manualVerifiedBy?: string | null;
   manualVerifiedRevisionId?: string | null;
   createdAt: string;
+  gradingEntries?: ScannerGradingEntry[];
+  gradingUpdatedAt?: string | null;
+  gradingUpdatedBy?: string | null;
+  gradingRevisionId?: string | null;
+  gradingRevisionCurrent?: boolean;
 }
 
 const querySchema = z.object({ schoolId: z.string().min(1).max(160) });
@@ -47,6 +55,14 @@ const assignmentSchema = z.object({
   manualVerified: z.boolean().optional(),
 }).refine((value) => value.studentId !== undefined || value.reviewed !== undefined || value.manualVerified !== undefined, {
   message: "至少需要修改一项扫描记录信息",
+});
+const gradingInputSchema = z.object({
+  entries: z.array(z.object({
+    questionId: z.string().min(1).max(160),
+    observedMark: z.string().max(100).default(""),
+    observedBox: z.string().max(100).default(""),
+    confirmedScore: z.number().finite().min(0).max(1000).multipleOf(0.01).nullable().default(null),
+  })).max(200),
 });
 const RECORD_MIME = new Map([["image/png", ".png"], ["image/jpeg", ".jpg"]]);
 
@@ -74,8 +90,29 @@ function withStudentClass(record: ScannerPageRecord, state: Record<string, unkno
   return {
     ...record,
     qrCurrent,
+    gradingRevisionCurrent: Boolean(record.gradingUpdatedAt
+      && record.gradingRevisionId === (sheet?.answerSheetRevisionId || null) && qrCurrent),
     studentClassId: schoolClass?.id || null,
     studentClassName: schoolClass ? [schoolClass.grade, schoolClass.name].filter(Boolean).join(" · ") : null,
+  };
+}
+
+function gradingQuestions(state: Record<string, unknown>, sheetId: string, schoolId: string) {
+  const paper = (state.examPapers as Array<{
+    id: string; schoolId: string; questions?: ExamPaperQuestion[];
+    answerSheetRevisionId?: string; answerSheetPublishedAt?: string;
+  }> || []).find((item) => item.id === sheetId && item.schoolId === schoolId && item.answerSheetPublishedAt);
+  if (!paper) throw new Error("已发布试卷不存在或无权访问");
+  return {
+    revisionId: paper.answerSheetRevisionId || null,
+    questions: (paper.questions || []).map((question, number) => ({
+      id: question.id,
+      number: number + 1,
+      kind: (question.type === "single" || question.type === "multiple") ? "choice"
+        : (question.type === "short" || question.type === "conceptFill") ? "fill" : "essay",
+      fullScore: question.score,
+      answer: question.answer,
+    })),
   };
 }
 
@@ -160,6 +197,70 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
     return withReadOnlyState(store, (state) => withStudentClass(record, state));
   });
 
+  app.get("/api/scanner/pages/:id/grading-questions", async (request) => {
+    const session = await requireSession(request, store);
+    const teacher = store.getTeacherById(session.teacherId);
+    if (!teacher?.schoolId) throw new Error("无权查看试卷评分信息");
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    return withReadOnlyState(store, (state) => {
+      const record = (state.scannerPages as ScannerPageRecord[]).find(
+        (item) => item.id === id && item.schoolId === teacher.schoolId,
+      );
+      if (!record) throw new Error("扫描记录不存在");
+      if (record.sheetType !== "paper") throw new Error("仅试卷扫描件支持逐题评分草稿");
+      const rubric = gradingQuestions(state, record.sheetId, teacher.schoolId!);
+      return rubric.questions.map(({ answer: _answer, ...question }) => question) as ScannerGradingQuestion[];
+    });
+  });
+
+  app.patch("/api/scanner/pages/:id/grading-draft", async (request) => {
+    const session = await requireSession(request, store);
+    requireCsrf(request, session);
+    const teacher = store.getTeacherById(session.teacherId);
+    if (!teacher?.schoolId) throw new Error("无权编辑扫描件评分草稿");
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { entries } = gradingInputSchema.parse(request.body);
+    if (new Set(entries.map((entry) => entry.questionId)).size !== entries.length) {
+      throw new Error("不能重复录入同一题目");
+    }
+    return withSerializedState(store, (state) => {
+      const record = (state.scannerPages as ScannerPageRecord[]).find(
+        (item) => item.id === id && item.schoolId === teacher.schoolId,
+      );
+      if (!record) throw new Error("扫描记录不存在");
+      if (record.sheetType !== "paper") throw new Error("仅试卷扫描件支持逐题评分草稿");
+      const sheet = sheetFor(state, record.sheetType, record.sheetId);
+      if (!sheet || sheet.schoolId !== teacher.schoolId
+        || !withStudentClass(record, state).qrCurrent) {
+        throw new Error("请先核对当前版本二维码，再编辑评分草稿");
+      }
+      const rubric = gradingQuestions(state, record.sheetId, teacher.schoolId!);
+      const questions = new Map(rubric.questions.map((question) => [question.id, question]));
+      const next: ScannerGradingEntry[] = entries.map((entry) => {
+        const question = questions.get(entry.questionId);
+        if (!question || !(question.fullScore > 0)) throw new Error("题目不存在或满分不合法");
+        if (entry.confirmedScore !== null && entry.confirmedScore > question.fullScore) {
+          throw new Error("人工复核分数不能超过题目满分");
+        }
+        const scored = scoreScanMark(question.kind as "choice" | "fill" | "essay",
+          entry.observedMark, entry.observedBox, question.fullScore, question.answer);
+        return {
+          questionId: entry.questionId,
+          observedMark: entry.observedMark,
+          observedBox: entry.observedBox,
+          confirmedScore: entry.confirmedScore,
+          ...scored,
+        };
+      });
+      // Purely an audit/review draft. The student gradebook is never modified here.
+      record.gradingEntries = next;
+      record.gradingRevisionId = rubric.revisionId;
+      record.gradingUpdatedBy = teacher.id;
+      record.gradingUpdatedAt = new Date().toISOString();
+      return withStudentClass(record, state);
+    });
+  });
+
   app.patch("/api/scanner/pages/:id", async (request) => {
     const session = await requireSession(request, store);
     requireCsrf(request, session);
@@ -177,6 +278,7 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
         if (record.studentId !== studentId) {
           record.reviewedAt = null;
           record.reviewedBy = null;
+          record.gradingEntries = record.gradingEntries?.map((entry) => ({ ...entry, confirmedScore: null }));
         }
         record.studentId = studentId;
         record.status = studentId ? "assigned" : "pending";
@@ -192,6 +294,7 @@ export async function registerScannerRoutes(app: FastifyInstance, store: Databas
         if (!manualVerified) {
           record.reviewedAt = null;
           record.reviewedBy = null;
+          record.gradingEntries = record.gradingEntries?.map((entry) => ({ ...entry, confirmedScore: null }));
         }
       }
       if (reviewed !== undefined) {
