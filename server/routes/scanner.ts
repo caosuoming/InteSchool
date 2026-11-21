@@ -111,6 +111,8 @@ function gradingQuestions(state: Record<string, unknown>, sheetId: string, schoo
       kind: (question.type === "single" || question.type === "multiple") ? "choice"
         : (question.type === "short" || question.type === "conceptFill") ? "fill" : "essay",
       fullScore: question.score,
+      ...((question.type === "single" || question.type === "multiple")
+        ? { optionCount: Math.min(8, Math.max(2, question.options?.length || 4)) } : {}),
       answer: question.answer,
     })),
   };

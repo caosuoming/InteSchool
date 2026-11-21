@@ -36,6 +36,10 @@ describe("ScannerGradeDraftEditor", () => {
     render(<ScannerGradeDraftEditor record={record} onUpdated={onUpdated} />);
     expect(await screen.findByText(/第 2 题 · 解答 · 满分 10/)).toBeInTheDocument();
     expect(screen.getByText(/不会写入正式成绩/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "从扫描图像辅助识别选项" }));
+    expect(screen.getByRole("region", { name: "选择题图像识别辅助" })).toBeInTheDocument();
+    expect(screen.getByAltText("用于标注选项范围的扫描原图")).toHaveAttribute("src", "/api/files/file-1");
+    await user.click(screen.getByRole("button", { name: "收起选项图像辅助" }));
     await user.type(screen.getByLabelText("第2题红笔或选项"), "-2");
     await user.type(screen.getByLabelText("第2题右下角分数"), "6");
     await user.type(screen.getByLabelText("第2题人工核定分数"), "6");

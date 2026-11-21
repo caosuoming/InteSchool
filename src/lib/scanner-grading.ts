@@ -10,6 +10,8 @@ export interface ScannerGradingQuestion {
   number: number;
   kind: ScanGradingKind;
   fullScore: number;
+  /** Number of printed option boxes, for teacher-aligned candidate OMR. */
+  optionCount?: number;
 }
 
 export interface ScannerGradingEntry {
