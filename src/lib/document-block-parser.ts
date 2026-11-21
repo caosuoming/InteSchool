@@ -1786,6 +1786,20 @@ function recoverSequentialMathQuestionLines(lines: string[], config: DocumentPar
   });
 }
 
+/** Word can join the last solution sentence and the next project's heading. */
+function splitJoinedMathProjectHeadings(lines: string[], config: DocumentParseConfig): string[] {
+  if (config.subject?.trim() !== "数学") return lines;
+  return lines.flatMap((line, index) => {
+    const match = /[。！？；;]\s*([A-ZＡ-Ｚ]组(?:\s+|[:：、]\s*)[^。！？；;]{2,40})\s*$/i.exec(line);
+    if (!match) return [line];
+    const heading = match[1].trim();
+    const next = lines.slice(index + 1).find((candidate) => candidate.trim())?.trim();
+    if (!isProjectHeading(heading, config) || !next || !isQuestionStart(next, config)) return [line];
+    const headingStart = match.index + match[0].indexOf(match[1]);
+    return [line.slice(0, headingStart).trimEnd(), heading];
+  });
+}
+
 function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): DocumentBlock[] {
   const knowledgeTipPattern = keywordPattern(["温馨提示", "友情提示", "小贴士", "注意事项"]);
 
@@ -1846,7 +1860,9 @@ function parseDocumentBlocksCore(content: string, config: DocumentParseConfig): 
     currentQuestionField = "content";
   };
 
-  const normalizedContent = recoverSequentialMathQuestionLines(content.replace(/\r\n?/g, "\n").split("\n"), config).join("\n");
+  const normalizedContent = recoverSequentialMathQuestionLines(
+    splitJoinedMathProjectHeadings(content.replace(/\r\n?/g, "\n").split("\n"), config), config,
+  ).join("\n");
   const lines = expandIndependentSubQuestionLines(normalizedContent, config);
   const structuredFieldAhead = new Array<boolean>(lines.length).fill(false);
   let hasSeenStructuredField = false;
@@ -2206,7 +2222,7 @@ function normalizeBlockFillBlankArea(block: DocumentBlock): void {
   block.content = content;
 }
 
-const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用|过|给定|根据|以).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
+const essayPromptAfterNumber = /^(?:求|证明|试证|计算|解答|判断|说明|写出|指出|确定|比较|作图|画出|探究|是否|验证|讨论|列出|(?:若|当|设|已知|在|将|利用|过|给定|根据|以).{0,700}(?:求|证明|试证|计算|判断|说明|写出|确定|[?？])|令.{0,700}(?:求(?!得)|证明|试证|计算|判断|说明|写出|确定|[?？]))/;
 
 /** Recover later prompts from interleaved math worked examples. */
 function normalizeInterleavedMathSubquestions(blocks: DocumentBlock[], subject?: string): DocumentBlock[] {

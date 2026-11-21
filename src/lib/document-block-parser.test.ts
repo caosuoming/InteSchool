@@ -3339,6 +3339,52 @@ describe("compact grouped mathematics answer keys", () => {
 describe("issue 1539: interleaved mathematics essay prompts", () => {
   const math = { ...config, subject: "数学" };
 
+  it("recovers the sequence question 12 second prompt beginning with 令 (screenshot reconstruction)", () => {
+    const blocks = parseDocumentBlocks([
+      "12．（2026·临沂期中节选）已知数列{a_n}中，a_1=1，a_n+a_{n+1}=6×5^n。",
+      "(1) 证明：数列{a_n-5^n}是等比数列；",
+      "解析：因为 a_1=1，a_{n+1}-5^{n+1}=-(a_n-5^n)，所以数列{a_n-5^n}是等比数列。",
+      "(2) 令 b_n=n^3/(a_n-4(-1)^n)，求数列{b_n}的最大项。",
+      "由(1)知 a_n=5^n+4(-1)^n，所以 b_n=n^3/5^n。",
+      "当 n=2 时，数列{b_n}的最大项为 b_2=8/25。",
+      "B组 滚动小练",
+      "13．已知等差数列，求其前 n 项和。",
+    ].join("\n"), math);
+
+    const questions = blocks.filter((block) => block.type === "question");
+    expect(questions).toHaveLength(2);
+    expect(questions[0].content).toContain("(1) 证明：数列");
+    expect(questions[0].content).toContain("(2) 令 b_n=");
+    expect(questions[0].analysis).toContain("（1）因为 a_1=1");
+    expect(questions[0].analysis).toContain("（2）由(1)知 a_n=");
+    expect(questions[0].analysis).not.toContain("(2) 令 b_n=");
+    expect(questions[0].analysis).not.toContain("B组");
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(["B组 滚动小练"]);
+  });
+
+  it("separates a Word-joined project heading from a preceding solution sentence", () => {
+    const blocks = parseDocumentBlocks([
+      "12．已知数列{a_n}，求其最大项。",
+      "解析：比较相邻两项得到 b_2=8/25。B组 滚动小练",
+      "13．已知等比数列，求其公比。",
+    ].join("\n"), math);
+    expect(blocks.filter((block) => block.type === "groupTitle").map((block) => block.content))
+      .toEqual(["B组 滚动小练"]);
+    expect(blocks.filter((block) => block.type === "question")[0].analysis)
+      .toBe("比较相邻两项得到 b_2=8/25。");
+  });
+
+  it("does not mistake a numbered computation introduced by 令 for a later prompt", () => {
+    const question = parseDocumentBlocks([
+      "12．已知数列{a_n}，(1) 证明其为等比数列。",
+      "解析：由递推关系得到公比为 2。",
+      "(2) 令 x=2 并求得 b=4，因此原命题成立。",
+    ].join("\n"), math).find((block) => block.type === "question")!;
+    expect(question.content).not.toContain("(2) 令 x=2");
+    expect(question.analysis).toContain("(2) 令 x=2");
+  });
+
   it("regroups a later proof prompt beginning with 过 and keeps solutions numbered", () => {
     const blocks = parseDocumentBlocks([
       "B组",
