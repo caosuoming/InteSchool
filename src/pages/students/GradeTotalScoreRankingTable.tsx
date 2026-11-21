@@ -198,7 +198,7 @@ export function GradeTotalScoreRankingTable({
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">学号</th>
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">姓名</th>
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">班级</th>
-                    {report.subjects.map((subject) => (
+                    {rankingTable.subjects.map((subject) => (
                       <th key={subject} className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
                     ))}
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{rankingTable.totalLabel || "总分"}（{rankingTable.scoreModeLabel || report.scoreModeLabel}）</th>
@@ -211,7 +211,7 @@ export function GradeTotalScoreRankingTable({
                       <td className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">{row.studentNo || "—"}</td>
                       <td className="border border-ink-300 px-3 py-1.5 text-center font-medium text-ink-800">{row.studentName}</td>
                       <td className="border border-ink-300 px-3 py-1.5 text-center">{row.classLabel}</td>
-                      {report.subjects.map((subject) => (
+                      {rankingTable.subjects.map((subject) => (
                         <td key={subject} className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">
                           {row.subjectScores[subject] ?? ""}
                         </td>

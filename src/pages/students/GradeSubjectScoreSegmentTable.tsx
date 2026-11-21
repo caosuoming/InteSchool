@@ -1,3 +1,4 @@
+import { resolveSubjectSegmentRange } from "@/lib/grade-score-segment-range";
 import { GradeReportNotes } from "./GradeReportNotes";
 import { buildGradeReportNotes } from "@/lib/grade-report-notes";
 import { useMemo, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import type {
 import {
   buildGradeSubjectScoreSegmentReport,
   GRADE_SUBJECT_SCORE_SEGMENT_SUBJECTS,
-  resolveGradeSubjectScoreThresholds,
+  defaultGradeSubjectScoreThresholds,
 } from "@/lib/grade-subject-score-segment";
 import { exportGradeSubjectScoreSegmentReport } from "@/lib/grade-spreadsheet";
 import { Card } from "@/components/ui/Card";
@@ -88,9 +89,35 @@ export function GradeSubjectScoreSegmentTable({
                 ...options.subjectScoreSegmentThresholds,
                 [subject]: thresholds,
               },
+              subjectScoreSegmentRanges: {
+                ...options.subjectScoreSegmentRanges,
+                [subject]: undefined,
+              },
             },
           }
         : item),
+    };
+    latestSettings.current = nextSettings;
+    onChange(nextSettings);
+  };
+
+  const updateSubjectOption = (subject: string, patch: { range?: {
+    max?: number; min?: number; step?: number;
+  }; special?: number[] }) => {
+    const current = effectiveTemplate.totalScoreSegmentOptions || {};
+    const next = {
+      ...current,
+      ...(patch.range && { subjectScoreSegmentRanges: {
+        ...current.subjectScoreSegmentRanges,
+        [subject]: { ...current.subjectScoreSegmentRanges?.[subject], ...patch.range },
+      } }),
+      ...(patch.special && { subjectScoreSegmentSpecialThresholds: {
+        ...current.subjectScoreSegmentSpecialThresholds, [subject]: patch.special,
+      } }),
+    };
+    const nextSettings: GradeExamSettings = { ...latestSettings.current,
+      templates: latestSettings.current.templates.map((item) => item.id === effectiveTemplate.id
+        ? { ...item, totalScoreSegmentOptions: next } : item),
     };
     latestSettings.current = nextSettings;
     onChange(nextSettings);
@@ -149,18 +176,40 @@ export function GradeSubjectScoreSegmentTable({
       {adjusting && (
         <div className="border-b border-ink-200 bg-ink-50/60 px-5 py-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {GRADE_SUBJECT_SCORE_SEGMENT_SUBJECTS.map((subject) => (
-              <Input
-                key={subject}
-                label={`${subject}分数段`}
-                defaultValue={resolveGradeSubjectScoreThresholds(effectiveTemplate, subject).join("，")}
-                onBlur={(event) => {
-                  updateThresholds(subject, event.target.value);
-                  void autoSave();
-                }}
-                placeholder="例如 140，130，120"
-              />
-            ))}
+            {GRADE_SUBJECT_SCORE_SEGMENT_SUBJECTS.map((subject) => {
+              const range = resolveSubjectSegmentRange(effectiveTemplate, subject, defaultGradeSubjectScoreThresholds(subject));
+              return (
+                <div key={subject} className="space-y-2 rounded border border-ink-200 p-2">
+                  <div className="text-xs font-semibold text-ink-700">{subject}</div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(["max", "min", "step"] as const).map((field) => (
+                      <Input key={field} type="number" min={field === "step" ? 1 : 0} max={1000}
+                        label={`${subject}${({ max: "最高值", min: "最低值", step: "间隔" })[field]}`}
+                        defaultValue={range[field]}
+                        onBlur={(event) => {
+                          const value = Number(event.target.value);
+                          if (event.target.value.trim() && Number.isFinite(value)) {
+                            updateSubjectOption(subject, { range: { [field]: Math.max(field === "step" ? 1 : 0, Math.min(1000, Math.round(value))) } });
+                            void autoSave();
+                          }
+                        }} />
+                    ))}
+                  </div>
+                  <Input label={`${subject}分数段`}
+                    defaultValue={range.thresholds.filter((value) => !range.specialThresholds.includes(value)).join("，")}
+                    onBlur={(event) => {
+                      updateThresholds(subject, event.target.value);
+                      void autoSave();
+                    }} />
+                  <Input label={`${subject}特别分数线`}
+                    defaultValue={range.specialThresholds.join("，")}
+                    onBlur={(event) => {
+                      updateSubjectOption(subject, { special: parseThresholds(event.target.value) });
+                      void autoSave();
+                    }} placeholder="例如 85，75" />
+                </div>
+              );
+            })}
           </div>
           <div className="mt-2 text-[11px] text-ink-400">
             以逗号或空格分隔多个阈值，系统按从高到低累计统计；{autoSaving ? "正在自动保存…" : "失焦后自动保存到当前届年级。"}
@@ -189,8 +238,8 @@ export function GradeSubjectScoreSegmentTable({
                     <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{subjectReport.subject}</th>
                     <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">实考人数</th>
                     {subjectReport.thresholds.map((threshold) => (
-                      <th key={threshold} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">
-                        {threshold}分以上
+                      <th key={threshold} className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center ${subjectReport.specialThresholds.includes(threshold) ? "font-black" : "font-semibold"}`}>
+                        {threshold}分以上{subjectReport.specialThresholds.includes(threshold) ? "（特别）" : ""}
                       </th>
                     ))}
                   </tr>
@@ -202,7 +251,7 @@ export function GradeSubjectScoreSegmentTable({
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-700">{row.teacherNames.join("、") || "—"}</td>
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.candidateCount || ""}</td>
                       {subjectReport.thresholds.map((threshold) => (
-                        <td key={threshold} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
+                        <td key={threshold} className={`whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums ${subjectReport.specialThresholds.includes(threshold) ? "font-black" : "font-normal"}`}>
                           {row.counts[threshold] || ""}
                         </td>
                       ))}

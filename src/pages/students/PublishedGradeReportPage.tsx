@@ -21,7 +21,7 @@ const TOTAL_SCORE_STANDARD_LABELS = [
   ["highScore1", "高分1"],
   ["highScore2", "高分2"],
   ["firstTier", "一本"],
-  ["undergraduate", "二本"],
+  ["undergraduate", "本科"],
 ] as const;
 
 function numberText(value: number | string | null | undefined): string {

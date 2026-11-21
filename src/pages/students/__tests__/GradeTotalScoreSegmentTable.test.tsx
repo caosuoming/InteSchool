@@ -144,10 +144,10 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(within(screen.getByRole("row", { name: /高分1达线数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /完成情况/ })).getAllByRole("cell", { name: "完成（+0）" })).toHaveLength(3);
     expect(screen.getByTestId("track-standard-summary")).toHaveTextContent(
-      "理科标准：高分1 90分|高分2 85分|一本 80分|二本 70分",
+      "理科标准：高分1 90分|高分2 85分|一本 80分|本科 70分",
     );
     expect(screen.getByTestId("track-standard-summary")).toHaveTextContent(
-      "文科标准：高分1 88分|高分2 83分|一本 78分|二本 68分",
+      "文科标准：高分1 88分|高分2 83分|一本 78分|本科 68分",
     );
     expect(screen.getByTestId("track-standard-summary").querySelector("td")).toHaveAttribute("colspan", "4");
 

@@ -15,7 +15,6 @@ import {
   ELECTIVE_GRADE_SUBJECTS,
   inferStatisticSubjectsFromSelections,
   participatingGradeRecords,
-  rankedClassSubjects,
   totalRankingGroupKey,
 } from "./grade-statistics.js";
 
@@ -40,6 +39,7 @@ export interface GradeTotalScoreSegmentColumn {
 export interface GradeTotalScoreSegmentRow {
   threshold: number;
   counts: Record<string, number>;
+  isSpecial?: boolean;
 }
 
 export type GradeTotalScoreSummaryRowKind = "count" | "target" | "status" | "rate";
@@ -60,6 +60,7 @@ export interface GradeTotalScoreSegmentReport {
   segmentMax: number;
   segmentMin: number;
   segmentSize: number;
+  specialThresholds: number[];
   generalStandards: Record<GradeTotalScoreTargetKey, number | null>;
   generalVisibility: Record<GradeTotalScoreTargetKey, boolean>;
   trackVisibility: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, boolean>>;
@@ -280,14 +281,23 @@ export function buildGradeTotalScoreSegmentReport(
   rankSettings: GradeExamSettings = exam.settings,
   customTotal?: GradeCustomTotalScore,
 ): GradeTotalScoreSegmentReport {
-  const range = resolveTotalScoreSegmentRange(template);
+  const options = template.totalScoreSegmentOptions || {};
+  const customRange = customTotal && options.customTotalRanges?.[customTotal.id];
+  const range = resolveTotalScoreSegmentRange(customRange
+    ? { ...template, ...customRange } : template);
   const segmentSize = range.segmentSize;
   const customValues = customTotal
     ? participatingGradeRecords(exam.records).map((record) => gradeCustomTotal(record, customTotal))
       .filter((value): value is number => value !== null) : [];
-  const segmentMin = customTotal ? 0 : range.segmentMin;
-  const segmentMax = customTotal
+  const segmentMin = customTotal && customRange?.segmentMin === undefined ? 0 : range.segmentMin;
+  const segmentMax = customTotal && customRange?.segmentMax === undefined
     ? Math.ceil(customValues.reduce((maximum, value) => Math.max(maximum, value), 0) / segmentSize) * segmentSize : range.segmentMax;
+  const configuredSpecial = customTotal
+    ? options.customTotalSpecialThresholds?.[customTotal.id]
+    : options.specialThresholds;
+  const specialThresholds = [...new Set(configuredSpecial || [])]
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= 2000)
+    .sort((left, right) => right - left);
   const classOptions = resolveClassAverageOptions(exam, context, classAverageTemplate?.classAverageOptions);
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const recordsByClass = new Map<string, GradeScoreRecord[]>();
@@ -297,9 +307,9 @@ export function buildGradeTotalScoreSegmentReport(
     recordsByClass.set(record.classId, current);
   });
   const classNames = new Map(context.classes.map((item) => [item.id, item.name]));
-  const effectiveTemplate = template.subjects.length > 0
-    ? template
-    : { ...template, subjects: [...exam.subjects] };
+  // Default total always counts every examined subject. Custom totals provide
+  // the only explicit subject subset for this report.
+  const effectiveTemplate = { ...template, subjects: [...exam.subjects] };
 
   const sourceClasses = (classOptions.classOrder || [])
     .filter((classId) => !hiddenClassIds.has(classId))
@@ -313,18 +323,30 @@ export function buildGradeTotalScoreSegmentReport(
         track: inferGradeClassAcademicTrack(classId, exam.records, context),
       } satisfies GradeTotalScoreSegmentClass;
     });
-  const classes = [
-    ...sourceClasses.filter((classItem) => classItem.track === "science"),
-    ...sourceClasses.filter((classItem) => classItem.track === "arts"),
-    ...sourceClasses.filter((classItem) => classItem.track === "unclassified"),
-  ];
+  const customThresholds = customTotal ? options.customTotalGeneralThresholds?.[customTotal.id] : undefined;
+  const customVisibility = customTotal ? options.customTotalGeneralVisibility?.[customTotal.id] : undefined;
   const generalVisibility = Object.fromEntries(TARGET_KEYS.map((key) => [
-    key, generalStandardVisible(template, key),
+    key, customTotal
+      ? (customVisibility?.[key] ?? typeof customThresholds?.[key] === "number")
+      : generalStandardVisible(template, key),
   ])) as GradeTotalScoreSegmentReport["generalVisibility"];
   const trackVisibility = Object.fromEntries((["science", "arts"] as const).map((track) => [
     track,
-    Object.fromEntries(TARGET_KEYS.map((key) => [key, trackStandardVisible(template, track, key)])),
+    Object.fromEntries(TARGET_KEYS.map((key) => [
+      key, customTotal ? false : trackStandardVisible(template, track, key),
+    ])),
   ])) as GradeTotalScoreSegmentReport["trackVisibility"];
+  const compareClass = (left: GradeTotalScoreSegmentClass, right: GradeTotalScoreSegmentClass) =>
+    left.className.localeCompare(right.className, "zh-CN", { numeric: true })
+      || left.classLabel.localeCompare(right.classLabel, "zh-CN", { numeric: true });
+  const ordered = [...sourceClasses].sort(compareClass);
+  const hasTrackStandards = (["science", "arts"] as const).some((track) =>
+    TARGET_KEYS.some((key) => trackVisibility[track][key]));
+  const classes = hasTrackStandards ? [
+    ...ordered.filter((item) => item.track === "science"),
+    ...ordered.filter((item) => item.track === "arts"),
+    ...ordered.filter((item) => item.track === "unclassified"),
+  ] : ordered;
   const columns = buildColumns(classes, trackVisibility);
 
   const studentSelections = new Map(context.students.map((student) => [student.id, student.subjectSelection || ""]));
@@ -336,7 +358,7 @@ export function buildGradeTotalScoreSegmentReport(
         const total = gradeCustomTotal(record, customTotal);
         return total === null ? [] : [total];
       }
-      const rankedSubjects = rankedClassSubjects(effectiveTemplate.subjects, rankSettings, record.classId);
+      const rankedSubjects = effectiveTemplate.subjects;
       const requiredCoreSubjects = rankedSubjects.filter((subject) => !electiveSubjects.has(subject));
       const availableElectives = rankedSubjects.filter((subject) => electiveSubjects.has(subject));
       const expectedSubjectCount = requiredCoreSubjects.length + Math.min(3, availableElectives.length);
@@ -374,13 +396,17 @@ export function buildGradeTotalScoreSegmentReport(
   ]));
 
   const rows: GradeTotalScoreSegmentRow[] = [];
-  for (let threshold = segmentMax; threshold >= segmentMin; threshold -= segmentSize) {
+  const thresholds: number[] = [];
+  for (let value = segmentMax; value >= segmentMin; value -= segmentSize) thresholds.push(value);
+  const specialSet = new Set(specialThresholds);
+  for (const threshold of [...new Set([...thresholds, ...specialThresholds])].sort((a, b) => b - a)) {
     const classCounts = Object.fromEntries(classes.map((classItem) => [
       classItem.classId,
       (totalsByClass.get(classItem.classId) || []).filter((total) => total >= threshold).length,
     ]));
     rows.push({
       threshold,
+      isSpecial: specialSet.has(threshold),
       counts: Object.fromEntries(columns.map((column) => [
         column.key,
         column.classIds.reduce((sum, classId) => sum + (classCounts[classId] || 0), 0),
@@ -406,7 +432,7 @@ export function buildGradeTotalScoreSegmentReport(
     ])) as Record<GradeTotalScoreTargetKey, number | null>,
   }));
   const generalStandards = Object.fromEntries(TARGET_KEYS.map((key) => [
-    key, segmentOptions.generalThresholds?.[key] ?? null,
+    key, (customTotal ? customThresholds?.[key] : segmentOptions.generalThresholds?.[key]) ?? null,
   ])) as GradeTotalScoreSegmentReport["generalStandards"];
   const trackStandards = Object.fromEntries((["science", "arts"] as const).map((track) => [
     track,
@@ -423,8 +449,10 @@ export function buildGradeTotalScoreSegmentReport(
     key,
     Object.fromEntries(classes.map((classItem) => {
       const groupKey = totalRankingGroupKey(rankSettings, classItem.classId);
-      const threshold = (groupKey === "[]" ? undefined : segmentOptions.separateRankThresholds?.[groupKey]?.[key])
-        ?? thresholdForTrack(template, classItem.track, key);
+      const threshold = customTotal
+        ? (generalVisibility[key] ? customThresholds?.[key] : undefined)
+        : ((groupKey === "[]" ? undefined : segmentOptions.separateRankThresholds?.[groupKey]?.[key])
+          ?? thresholdForTrack(template, classItem.track, key));
       return [
         classItem.classId,
         typeof threshold === "number"
@@ -537,6 +565,7 @@ export function buildGradeTotalScoreSegmentReport(
     segmentMax,
     segmentMin,
     segmentSize,
+    specialThresholds,
     generalStandards,
     generalVisibility,
     trackVisibility,
@@ -545,7 +574,9 @@ export function buildGradeTotalScoreSegmentReport(
     classes,
     columns,
     rows,
-    summaryRows: customTotal ? summaryRows.filter((row) => row.key === "attendedCount") : summaryRows.filter((row) => {
+    summaryRows: customTotal ? summaryRows.filter((row) => row.key === "attendedCount"
+      || TARGET_KEYS.some((key) => generalVisibility[key]
+        && (row.key === `${key}Count` || row.key === `${key}Rate`))) : summaryRows.filter((row) => {
       const key = TARGET_KEYS.find((candidate) => row.key.startsWith(candidate));
       return !key || generalVisibility[key]
         || (["science", "arts"] as const).some((track) => trackVisibility[track][key]);

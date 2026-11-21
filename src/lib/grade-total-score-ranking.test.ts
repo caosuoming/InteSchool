@@ -107,6 +107,29 @@ const context: GradeImportContext = {
 };
 
 describe("buildGradeTotalScoreRankingReport", () => {
+  it("includes all nine exam subjects by default and only selected subjects for a custom total", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const fullExam: GradeExam = {
+      ...exam,
+      subjects,
+      records: exam.records.map((record) => ({
+        ...record,
+        scores: Object.fromEntries(subjects.map((subject) => [subject, 50])),
+        assignedScores: Object.fromEntries(subjects.map((subject) => [subject, 50])),
+      })),
+    };
+    const base = buildGradeTotalScoreRankingReport(fullExam, template, context, classAverageTemplate);
+    expect(base.tables[0].rows[0].score).toBe(450);
+    expect(base.tables[0].subjects).toEqual(subjects);
+    const custom = buildGradeTotalScoreRankingReport(
+      fullExam, template, context, classAverageTemplate,
+      { id: "math", name: "数学总分", subjects: ["数学"], scoreMode: "raw" },
+    );
+    expect(custom.tables[0].rows[0].score).toBe(50);
+    expect(custom.tables[0].subjects).toEqual(["数学"]);
+    expect(Object.keys(custom.tables[0].rows[0].subjectScores)).toEqual(["数学"]);
+  });
+
   it("splits fully classified science/arts cohorts and ranks with table-two score mode", () => {
     const rawReport = buildGradeTotalScoreRankingReport(exam, template, context, classAverageTemplate);
 
@@ -134,7 +157,7 @@ describe("buildGradeTotalScoreRankingReport", () => {
     expect(assignedReport.tables[1].rows.map((row) => row.studentName)).toEqual(["丙"]);
   });
 
-  it("recalculates ranking tables when a class is excluded from the configured subject", () => {
+  it("ranks all examined subjects independently of per-class statistic subject toggles", () => {
     const changed: GradeExam = {
       ...exam,
       settings: {
@@ -146,7 +169,7 @@ describe("buildGradeTotalScoreRankingReport", () => {
       },
     };
     const report = buildGradeTotalScoreRankingReport(changed, template, context, classAverageTemplate);
-    expect(report.tables[0].rows).toEqual([]);
+    expect(report.tables[0].rows.map((row) => row.studentName)).toEqual(["甲"]);
     expect(report.tables[1].rows.map((row) => row.studentName)).toEqual(["丙"]);
   });
 

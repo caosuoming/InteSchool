@@ -1,7 +1,6 @@
 import type {
   GradeCustomTotalScore,
   GradeExam,
-  GradeExamSettings,
   GradeImportContext,
   GradeScoreMode,
   GradeScoreRecord,
@@ -15,7 +14,7 @@ import {
   type GradeAcademicTrackClassification,
 } from "./grade-total-score-segment.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
-import { participatingGradeRecords, rankedClassSubjects, totalRankingGroupKey } from "./grade-statistics.js";
+import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
 
 export const DEFAULT_TOTAL_SCORE_TOP_N = 50;
 
@@ -34,6 +33,7 @@ export interface GradeTotalScoreRankingTable {
   key: string;
   title: string;
   rows: GradeTotalScoreRankingRow[];
+  subjects: string[];
   totalLabel?: string;
   totalId?: string;
   scoreModeLabel?: string;
@@ -61,7 +61,6 @@ function rankedRows(
   subjects: string[],
   classLabels: Record<string, string>,
   topN: number,
-  settings: GradeExamSettings,
   customTotal?: GradeCustomTotalScore,
 ): GradeTotalScoreRankingRow[] {
   const sorted = records
@@ -70,10 +69,9 @@ function rankedRows(
         const score = gradeCustomTotal(record, customTotal);
         return score === null ? [] : [{ record, score }];
       }
-      const ranked = rankedClassSubjects(template.subjects, settings, record.classId);
-      return ranked.length ? [{
+      return template.subjects.length ? [{
         record,
-        score: gradeTemplateTotal(record, { ...template, subjects: ranked }),
+        score: gradeTemplateTotal(record, template),
       }] : [];
     })
     .sort((left, right) => (
@@ -115,9 +113,7 @@ export function buildGradeTotalScoreRankingReport(
 ): GradeTotalScoreRankingReport {
   const effectiveTemplate = customTotal
     ? { ...template, subjects: customTotal.subjects, scoreMode: customTotal.scoreMode }
-    : template.subjects.length > 0
-      ? template
-      : { ...template, subjects: [...exam.subjects] };
+    : { ...template, subjects: [...exam.subjects] };
   const classOptions = resolveClassAverageOptions(
     exam,
     context,
@@ -127,7 +123,7 @@ export function buildGradeTotalScoreRankingReport(
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classLabels = classOptions.classLabels || {};
   const records = participatingGradeRecords(exam.records).filter((record) => !hiddenClassIds.has(record.classId));
-  const subjects = [...exam.subjects];
+  const subjects = customTotal ? [...customTotal.subjects] : [...exam.subjects];
   const topN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreTopN);
   const separateTopN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreSeparateTopN ?? topN);
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
@@ -157,8 +153,9 @@ export function buildGradeTotalScoreRankingReport(
     title: `${exam.name}${customTotal ? customTotal.name : ""}${label}（${scoreModeLabel}）`,
     totalLabel: customTotal?.name,
     totalId: customTotal?.id,
+    subjects,
     scoreModeLabel,
-    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit, exam.settings, customTotal),
+    rows: rankedRows(source, effectiveTemplate, subjects, classLabels, limit, customTotal),
   });
 
   const rankedGroups = new Map<string, GradeScoreRecord[]>();
