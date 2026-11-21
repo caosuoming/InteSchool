@@ -107,6 +107,53 @@ const context: GradeImportContext = {
 };
 
 describe("buildGradeTotalScoreSegmentReport", () => {
+  it("uses universal standard alone without science and arts subtotals", () => {
+    const allDisabled = { highScore1: false, highScore2: false, firstTier: false, undergraduate: false };
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...template, totalScoreSegmentOptions: {
+        generalThresholds: { highScore1: 90, highScore2: 80, firstTier: 75, undergraduate: 70 },
+        generalStandardVisibility: { highScore1: true, highScore2: true, firstTier: true, undergraduate: true },
+        trackStandardVisibility: { science: allDisabled, arts: allDisabled },
+      },
+    }, {
+      ...context,
+      classProfiles: {
+        "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学"], hasImportedScores: true },
+        "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
+      },
+    }, classAverageTemplate);
+    expect(report.columns.map((column) => column.label)).toEqual(["一班", "二班", "总计"]);
+    expect(report.summaryRows.find((row) => row.key === "highScore1Count")?.values).toEqual({
+      "class-1": 1, "class-2": 1, __total__: 2,
+    });
+    expect(report.summaryRows.some((row) => row.key === "general-highScore1Count")).toBe(false);
+  });
+
+  it("keeps legacy unified lines for unclassified classes after the visibility config is normalized", () => {
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...template, totalScoreSegmentOptions: { highScore1Threshold: 90, generalStandardVisibility: {} },
+    }, context, classAverageTemplate);
+    expect(report.summaryRows.find((row) => row.key === "highScore1Count")?.values.__total__).toBe(2);
+  });
+
+  it("shows universal and science thresholds independently when both are enabled", () => {
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...template, totalScoreSegmentOptions: {
+        generalThresholds: { highScore1: 90 },
+        generalStandardVisibility: { highScore1: true },
+        trackThresholds: { science: { highScore1: 100 } },
+      },
+    }, {
+      ...context,
+      classProfiles: {
+        "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学"], hasImportedScores: true },
+        "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
+      },
+    }, classAverageTemplate);
+    expect(report.summaryRows.find((row) => row.key === "highScore1Count")?.values.__total__).toBe(1);
+    expect(report.summaryRows.find((row) => row.key === "general-highScore1Count")?.values.__total__).toBe(2);
+  });
+
   it("builds cumulative threshold rows with classes as columns", () => {
     const report = buildGradeTotalScoreSegmentReport(exam, template, context, classAverageTemplate);
 

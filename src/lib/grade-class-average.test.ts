@@ -156,6 +156,37 @@ const exam: GradeExam = {
 };
 
 describe("grade class average report", () => {
+  it("includes every subject with actual marks even when the template was created before import", () => {
+    const expandedExam = {
+      ...exam,
+      subjects: ["数学", "英语", "政治", "历史", "地理", "生物"],
+      records: exam.records.map((record, index) => ({
+        ...record,
+        scores: { ...record.scores, 政治: index === 0 ? 70 : null, 历史: index === 1 ? 80 : null,
+          地理: index === 2 ? 90 : null, 生物: index === 0 ? 60 : null },
+        assignedScores: { ...record.assignedScores, 政治: index === 0 ? 75 : null, 历史: index === 1 ? 80 : null,
+          地理: index === 2 ? 95 : null, 生物: index === 0 ? 65 : null },
+      })),
+    };
+    const report = buildGradeClassAverageReport(expandedExam, template, context);
+    expect(report.subjects).toEqual(["数学", "英语", "政治", "历史", "地理", "生物"]);
+    expect(report.groups[0].rows[0].subjectAverages.政治.raw).toBe(70);
+    expect(report.groups[0].rows[1].subjectAverages.地理.raw).toBe(90);
+  });
+
+  it("persists arbitrary custom total column placement alongside subject and base total columns", () => {
+    const reordered = {
+      ...template,
+      classAverageOptions: {
+        customTotals: [{ id: "custom-one", name: "自定义总分", subjects: ["数学"], scoreMode: "raw" as const }],
+        scoreColumnOrder: ["custom:custom-one", "subject:英语", "total", "subject:数学"],
+      },
+    };
+    const report = buildGradeClassAverageReport(exam, reordered, context);
+    expect(report.columns.map((column) => column.label)).toEqual(["自定义总分", "英语", "总分平均", "数学"]);
+    expect(report.groups[0].rows[0].customAverages["custom-one"]).toBe(90);
+  });
+
   it("compacts continuous numeric class ranges without the 班 suffix", () => {
     expect(formatGradeClassRangeLabel(["1班", "2班", "3班", "4班", "5班"]))
       .toBe("1-5");

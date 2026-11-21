@@ -174,6 +174,17 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("1人（100.0%）");
     expect(screen.getByLabelText("文科高分1达线统计")).toHaveTextContent("—人（—）");
     expect(settingsRow.querySelectorAll("output")).toHaveLength(8);
+    await user.click(screen.getByRole("checkbox", { name: "显示通用高分1标准" }));
+    const generalThreshold = screen.getByRole("spinbutton", { name: "通用高分1标准" });
+    await user.clear(generalThreshold);
+    await user.type(generalThreshold, "89");
+    await user.tab();
+    const updatedGeneral = onAutoSave.mock.lastCall?.[0].templates.find(
+      (item: GradeStatisticsTemplate) => item.id === template.id,
+    )?.totalScoreSegmentOptions;
+    expect(updatedGeneral.generalStandardVisibility.highScore1).toBe(true);
+    expect(updatedGeneral.generalThresholds.highScore1).toBe(89);
+
     const scienceThreshold = screen.getByRole("spinbutton", { name: "理科高分1标准" });
     await user.clear(scienceThreshold);
     await user.type(scienceThreshold, "95");

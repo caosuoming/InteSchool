@@ -129,6 +129,15 @@ export function GradeClassAverageTable({
     updateCustomTotals((resolvedOptions.customTotals || []).map((total) => total.id === id ? { ...total, ...patch } : total));
   };
 
+  const moveScoreColumn = (key: string, delta: -1 | 1) => {
+    const order = report.columns.map((column) => column.key);
+    const index = order.indexOf(key);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    updateOptions({ scoreColumnOrder: order });
+  };
+
   const moveClass = (classId: string, delta: -1 | 1) => {
     const order = [...(resolvedOptions.classOrder || [])];
     const index = order.indexOf(classId);
@@ -339,6 +348,21 @@ export function GradeClassAverageTable({
             ))}
           </div>
 
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-ink-700">平均分列顺序</div>
+            <div className="flex flex-wrap gap-2">
+              {report.columns.map((column, index) => (
+                <div key={column.key} className="inline-flex items-center gap-1 rounded border border-ink-200 bg-paper px-2 py-1 text-xs">
+                  <span>{column.label}</span>
+                  <button type="button" aria-label={`左移${column.label}`} disabled={index === 0}
+                    onClick={() => moveScoreColumn(column.key, -1)} className="disabled:opacity-30"><ChevronUp className="h-3 w-3 -rotate-90" /></button>
+                  <button type="button" aria-label={`右移${column.label}`} disabled={index === report.columns.length - 1}
+                    onClick={() => moveScoreColumn(column.key, 1)} className="disabled:opacity-30"><ChevronDown className="h-3 w-3 -rotate-90" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="overflow-x-auto rounded-lg border border-ink-200 bg-paper">
             <table className="min-w-[760px] w-full text-xs">
               <thead className="bg-ink-50 text-ink-500">
@@ -536,11 +560,9 @@ export function GradeClassAverageTable({
                 <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">类别</th>
                 <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">班级</th>
                 <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">班主任 / 人数</th>
-                {report.subjects.map((subject) => (
-                  <th key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{subject}</th>
+                {report.columns.map((column) => (
+                  <th key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{column.label}</th>
                 ))}
-                <th className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">总分平均</th>
-                {report.customTotals.map((total) => <th key={total.id} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold">{total.name}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -570,13 +592,11 @@ export function GradeClassAverageTable({
                         <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-600">
                           {row.homeroomTeachers.join("、") || "—"}
                         </td>
-                        {report.subjects.map((subject) => (
-                          <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-600">
-                            {row.subjectTeachers[subject]?.join("、") || "—"}
+                        {report.columns.map((column) => (
+                          <td key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-600">
+                            {column.kind === "subject" ? row.subjectTeachers[column.subject!]?.join("、") || "—" : ""}
                           </td>
                         ))}
-                        <td className="border border-ink-300 px-3 py-2" />
-                        {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-3 py-2" />)}
                       </tr>
                     ) : null;
                     const scoreRow = (
@@ -588,15 +608,15 @@ export function GradeClassAverageTable({
                           </td>
                         )}
                         <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center text-ink-500">{row.studentCount} 人</td>
-                        {report.subjects.map((subject) => (
-                          <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900">
-                            {displayScore(row.subjectAverages[subject], row.subjectScoreModes[subject])}
+                        {report.columns.map((column) => (
+                          <td key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums text-ink-900">
+                            {column.kind === "subject"
+                              ? displayScore(row.subjectAverages[column.subject!], row.subjectScoreModes[column.subject!])
+                              : column.kind === "total"
+                                ? displayScore(row.totalAverages, report.options.totalScoreMode || effectiveTemplate.scoreMode)
+                                : row.customAverages[column.customId!]?.toFixed(2) ?? "—"}
                           </td>
                         ))}
-                        <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
-                          {displayScore(row.totalAverages, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
-                        </td>
-                        {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">{row.customAverages[total.id]?.toFixed(2) ?? "—"}</td>)}
                       </tr>
                     );
                     return teacherRow ? [teacherRow, scoreRow] : [scoreRow];
@@ -605,15 +625,15 @@ export function GradeClassAverageTable({
                     <tr key={`${group.category}-difference`} className="bg-amber-50/40">
                       <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">分差</td>
                       <td className="border border-ink-300 px-3 py-2" />
-                      {report.subjects.map((subject) => (
-                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
-                          {displayScore(group.difference.subjectValues[subject], group.subjectScoreModes[subject])}
+                      {report.columns.map((column) => (
+                        <td key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+                          {column.kind === "subject"
+                            ? displayScore(group.difference.subjectValues[column.subject!], group.subjectScoreModes[column.subject!])
+                            : column.kind === "total"
+                              ? displayScore(group.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)
+                              : group.difference.customValues[column.customId!]?.toFixed(2) ?? "—"}
                         </td>
                       ))}
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
-                        {displayScore(group.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
-                      </td>
-                      {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{group.difference.customValues[total.id]?.toFixed(2) ?? "—"}</td>)}
                     </tr>
                   )] : []),
                   ...(group.rows.length > 1 && report.options.showGroupAverage ? [(
@@ -622,15 +642,15 @@ export function GradeClassAverageTable({
                         平均（{formatGradeClassRangeLabel(group.rows.map((row) => row.classLabel))}）
                       </td>
                       <td className="border border-ink-300 px-3 py-2" />
-                      {report.subjects.map((subject) => (
-                        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
-                          {displayScore(group.average.subjectValues[subject], group.subjectScoreModes[subject])}
+                      {report.columns.map((column) => (
+                        <td key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-semibold tabular-nums">
+                          {column.kind === "subject"
+                            ? displayScore(group.average.subjectValues[column.subject!], group.subjectScoreModes[column.subject!])
+                            : column.kind === "total"
+                              ? displayScore(group.average.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)
+                              : group.average.customValues[column.customId!]?.toFixed(2) ?? "—"}
                         </td>
                       ))}
-                      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums">
-                        {displayScore(group.average.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)}
-                      </td>
-                      {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{group.average.customValues[total.id]?.toFixed(2) ?? "—"}</td>)}
                     </tr>
                   )] : []),
                 ];
@@ -638,21 +658,15 @@ export function GradeClassAverageTable({
               {report.options.showOverallAverage && (
                 <tr className="bg-ink-100/70">
                   <td colSpan={3} className="border border-ink-300 px-2 py-1.5 text-center font-bold text-ink-900">{classAverageOverallLabel(report)}</td>
-                  {report.subjects.map((subject) => (
-                    <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
-                      {displayScore(
-                        report.overallAverage.subjectValues[subject],
-                        report.overallSubjectScoreModes[subject],
-                      )}
+                  {report.columns.map((column) => (
+                    <td key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
+                      {column.kind === "subject"
+                        ? displayScore(report.overallAverage.subjectValues[column.subject!], report.overallSubjectScoreModes[column.subject!])
+                        : column.kind === "total"
+                          ? displayScore(report.overallAverage.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)
+                          : report.overallAverage.customValues[column.customId!]?.toFixed(2) ?? "—"}
                     </td>
                   ))}
-                  <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-bold tabular-nums text-ink-900">
-                    {displayScore(
-                      report.overallAverage.totalValues,
-                      report.options.totalScoreMode || effectiveTemplate.scoreMode,
-                    )}
-                  </td>
-                  {report.customTotals.map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center font-bold">{report.overallAverage.customValues[total.id]?.toFixed(2) ?? "—"}</td>)}
                 </tr>
               )}
             </tbody>

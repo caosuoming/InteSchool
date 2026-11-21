@@ -122,7 +122,7 @@ const exam: GradeExam = {
 };
 
 describe("grade elective score segment report", () => {
-  it("reports A-E grades and cumulative raw-score thresholds by class", () => {
+  it("reports A-E grades and cumulative assigned-score thresholds when assignment exists", () => {
     const report = buildGradeElectiveScoreSegmentReport(exam, template, context);
     const chemistry = report.subjects.find((item) => item.subject === "化学");
 
@@ -134,19 +134,29 @@ describe("grade elective score segment report", () => {
       teacherNames: ["陈老师"],
       candidateCount: 2,
       gradeCounts: { A: 1, B: 1, C: 0, D: 0, E: 0 },
-      scoreCounts: { 90: 1, 80: 2, 70: 2 },
+      scoreCounts: { 90: 1, 80: 1, 70: 2 },
     });
     expect(chemistry?.rows[1]).toMatchObject({
       classLabel: "2班",
       teacherNames: ["林老师"],
       candidateCount: 1,
       gradeCounts: { A: 0, B: 0, C: 1, D: 0, E: 0 },
-      scoreCounts: { 90: 0, 80: 0, 70: 1 },
+      scoreCounts: { 90: 0, 80: 0, 70: 0 },
     });
     expect(chemistry?.totalGradeCounts).toEqual({ A: 1, B: 1, C: 1, D: 0, E: 0 });
-    expect(chemistry?.totalScoreCounts).toEqual({ 90: 1, 80: 2, 70: 3 });
+    expect(chemistry?.totalScoreCounts).toEqual({ 90: 1, 80: 1, 70: 2 });
     expect(chemistry?.totalGradeRates).toEqual({ A: "33.3%", B: "33.3%", C: "33.3%", D: "0.0%", E: "0.0%" });
-    expect(chemistry?.totalScoreRates).toEqual({ 90: "33.3%", 80: "66.7%", 70: "100.0%" });
+    expect(chemistry?.totalScoreRates).toEqual({ 90: "33.3%", 80: "33.3%", 70: "66.7%" });
+  });
+
+  it("uses raw scores for electives with no assigned grades", () => {
+    const rawExam = { ...exam, records: exam.records.map((record) => ({
+      ...record, assignedScores: { ...record.assignedScores, 化学: null },
+    })) };
+    const result = buildGradeElectiveScoreSegmentReport(rawExam, template, context);
+    const chemistry = result.subjects.find((subject) => subject.subject === "化学");
+    expect(chemistry?.scoreMode).toBe("raw");
+    expect(chemistry?.totalScoreCounts).toEqual({ 90: 1, 80: 2, 70: 3 });
   });
 
   it("defaults elective score thresholds to 90 through 40", () => {
