@@ -6,6 +6,7 @@ import { examPaperService } from "./examPaper.js";
 
 const teacher = { id: "t1", schoolId: "school1" } as TeacherRecord;
 const otherTeacher = { id: "t2", schoolId: "school1" } as TeacherRecord;
+const switchedSchoolTeacher = { ...teacher, schoolId: "school2" } as TeacherRecord;
 const paper = {
   id: "paper1", teacherId: "t1", schoolId: "school1", classIds: ["c1"], studentIds: [],
   questions: [
@@ -29,6 +30,21 @@ function state(): AppState {
 }
 
 describe("试卷使用数据批量导入", () => {
+  it("同一教师切换学校后仍可导入原学校试卷，其他教师仍无权限", async () => {
+    const dbState = state();
+    await runWithState(dbState, async () => {
+      const item = { studentId: "s1", paperQuestionId: "p1", earnedScore: 3 };
+      const result = await examPaperService.importUsageData("paper1", [item], [], switchedSchoolTeacher);
+      expect(result).toMatchObject({ imported: 1, studentCount: 1 });
+      expect((dbState.answerRecords as AnswerRecord[])[0]).toMatchObject({
+        lectureId: "paper1", studentId: "s1", earnedScore: 3,
+      });
+      await expect(examPaperService.importUsageData("paper1", [item], [], {
+        ...otherTeacher, schoolId: "school2",
+      })).rejects.toThrow("无权");
+    });
+  });
+
   it("保存精确得分、小题得分、作答并匹配原题库题目和本地题目", async () => {
     const dbState = state();
     await runWithState(dbState, async () => {

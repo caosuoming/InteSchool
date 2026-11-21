@@ -1940,7 +1940,6 @@ export default function ExamPaperEditorPage() {
             layout="horizontal"
             schoolId={schoolId}
             questionIds={paperQuestions.flatMap((item) => item.questionId ? [item.questionId] : [])}
-            disabled={isUsedDocument}
             onUpdated={(updated) => setQuestions((previous) => ({ ...previous, ...Object.fromEntries(updated.map((question) => [question.id, question])) }))}
             markAllButton={<>
               <DocumentQuestionCompletionBatch
