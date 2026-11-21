@@ -1,5 +1,5 @@
-import { isChemistryCompositeGroup, chemistrySubQuestionNumbers, renumberChemistryGroupStem, renumberChemistryGroupField } from "./chemistry-paper-layout";
-import { alignGeographyGroupAnswerNumbers, geographyAnswerLabelNumbers, rewriteGeographyAnswerLabels } from "./geography-answer-numbering";
+import { isChemistryCompositeGroup, chemistrySubQuestionNumbers, renumberChemistryGroupStem, renumberChemistryGroupField } from "./chemistry-paper-layout.js";
+import { alignGeographyGroupAnswerNumbers, geographyAnswerLabelNumbers, rewriteGeographyAnswerLabels } from "./geography-answer-numbering.js";
 
 const lineStart = /^([ \t]*(?:<(?:p|div|li|span|strong)\b[^>]*>[ \t]*)*)([\d０-９]{1,4})[ \t]*[.．、][ \t]*(?=\S)/i;
 

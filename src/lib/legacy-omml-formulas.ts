@@ -55,6 +55,10 @@ export function normalizeOmmlLatexStructures(latex: string): string {
     // Some Word formulas omit the delimiter after \left. A cases environment
     // already draws its own brace, so the invalid outer wrapper can be removed.
     .replace(LEGACY_MALFORMED_CASES_WRAPPER_PATTERN, "$1")
+    // Historical OMML set-builder imports sometimes omit the invisible
+    // delimiter before the outer closing brace: \\right \\right\\}.
+    // KaTeX requires an explicit dot after every \\right.
+    .replace(/\\right(?=\s+\\right\b)/g, String.raw`\right.`)
     // Old MathType imports sometimes serialize a negated implication as an
     // incomplete overset followed by an orphan closing brace.
     .replace(/\\overset\{\}\s*\\Rightarrow\s*\}/g, String.raw`\nRightarrow `);

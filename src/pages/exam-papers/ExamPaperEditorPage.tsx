@@ -2228,6 +2228,7 @@ export default function ExamPaperEditorPage() {
           open={usageImportOpen}
           onClose={() => setUsageImportOpen(false)}
           questions={usageQuestions}
+          subject={geographySubject}
           students={audienceStudents}
           onImport={handleImportUsage}
         />}

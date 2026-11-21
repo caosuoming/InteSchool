@@ -760,3 +760,42 @@ describe("Word underlined answers", () => {
     await expect(extractDocxStructuredText(data)).resolves.toBe("2. 函数的解是 <u>五</u>，并填写 ____");
   });
 });
+
+describe("DOCX automatic Word list numbering", () => {
+  it("uses numbering.xml start values to recover question numbers missing from w:t", async () => {
+    const zip = new JSZip();
+    zip.file("word/document.xml", `${documentPrefix}
+      <w:p><w:r><w:t>2. 已有题号</w:t></w:r></w:p>
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>第三题内容</w:t></w:r></w:p>
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>第四题内容</w:t></w:r></w:p>
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="8"/></w:numPr></w:pPr><w:r><w:t>第十二题内容</w:t></w:r></w:p>
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr></w:pPr><w:r><w:t>不启用自动编号</w:t></w:r></w:p>
+      ${documentSuffix}`);
+    zip.file("word/numbering.xml", `<?xml version="1.0" encoding="UTF-8"?>
+      <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>
+        <w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="0"><w:start w:val="12"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>
+        <w:num w:numId="7"><w:abstractNumId w:val="1"/></w:num>
+        <w:num w:numId="8"><w:abstractNumId w:val="2"/></w:num>
+      </w:numbering>`);
+    const content = await extractDocxStructuredText(await zip.generateAsync({ type: "nodebuffer" }));
+    expect(content).toBe("2. 已有题号\n3. 第三题内容\n4. 第四题内容\n12. 第十二题内容\n不启用自动编号");
+  });
+
+  it("respects numbering instance start overrides without numbering bullet paragraphs", async () => {
+    const zip = new JSZip();
+    zip.file("word/document.xml", `${documentPrefix}
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr><w:r><w:t>数字编号</w:t></w:r></w:p>
+      <w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="8"/></w:numPr></w:pPr><w:r><w:t>普通项目符号</w:t></w:r></w:p>
+      ${documentSuffix}`);
+    zip.file("word/numbering.xml", `<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>
+      <w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="●"/></w:lvl></w:abstractNum>
+      <w:num w:numId="7"><w:abstractNumId w:val="1"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="18"/></w:lvlOverride></w:num>
+      <w:num w:numId="8"><w:abstractNumId w:val="2"/></w:num>
+      </w:numbering>`);
+    expect(await extractDocxStructuredText(await zip.generateAsync({ type: "nodebuffer" }))).toBe(
+      "18. 数字编号\n普通项目符号",
+    );
+  });
+});
