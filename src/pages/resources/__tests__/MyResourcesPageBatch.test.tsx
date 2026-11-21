@@ -192,7 +192,7 @@ vi.mock("@/services/reflection", () => ({
   reflectionService: { listByTeacher: vi.fn().mockResolvedValue([]) },
 }));
 vi.mock("@/services/basket", () => ({
-  basketService: { listBaskets: vi.fn() },
+  basketService: { listBaskets: vi.fn(), getBasket: vi.fn() },
 }));
 vi.mock("@/services/class", () => ({
   classService: {
@@ -368,7 +368,7 @@ const knowledgeTree: TreeNode = {
   children: [],
 };
 
-function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" | "lecture" | "answerSheet" = "material") {
+function renderPage(initialTab: "question" | "material" | "courseware" | "examPaper" | "lecture" | "answerSheet" | "basket" = "material") {
   return render(
     <MemoryRouter>
       <MyResourcesPage initialTab={initialTab} />
@@ -435,10 +435,54 @@ describe("MyResourcesPage batch actions", () => {
       id: "root", name: "全部思想方法", type: "method", count: 0, children: [],
     });
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(null);
     vi.mocked(classService.listAllClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyClasses).mockResolvedValue([]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
     vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([]);
+  });
+
+  it("edits basket question properties beside a full preview with card-style directory tabs", async () => {
+    const basket = {
+      id: "basket-1565",
+      teacherId: "teacher-1",
+      name: "预览测试资源篮",
+      questionIds: ["question-1"],
+      materialIds: [],
+      createdAt: "2026-11-21T00:00:00.000Z",
+      updatedAt: "2026-11-21T00:00:00.000Z",
+    };
+    const basketQuestion = {
+      ...batchQuestion,
+      stem: "完整题干",
+      options: ["甲选项", "乙选项", "丙选项", "丁选项"],
+      answer: "B",
+      analysis: "解析保密内容",
+      thoughtMethodIds: ["method-existing"],
+    };
+    vi.mocked(basketService.listBaskets).mockResolvedValue([basket]);
+    vi.mocked(basketService.getBasket).mockResolvedValue(basket);
+    vi.mocked(questionService.listQuestions).mockResolvedValue([basketQuestion]);
+    vi.mocked(questionService.updateQuestion).mockResolvedValue(basketQuestion);
+
+    renderPage("basket");
+    fireEvent.click(await screen.findByText("预览测试资源篮"));
+    fireEvent.click(await screen.findByRole("button", { name: "编辑题目属性" }));
+    const preview = await screen.findByTestId("resource-property-question-preview");
+    expect(preview).toHaveTextContent("完整题干");
+    expect(preview).toHaveTextContent("丁选项");
+    expect(preview).not.toHaveTextContent("解析保密内容");
+    const tabs = screen.getByRole("tablist", { name: "资源属性目录" });
+    expect(within(tabs).getAllByRole("tab")).toHaveLength(3);
+    fireEvent.click(within(tabs).getByRole("tab", { name: /思想方法/ }));
+    expect(within(tabs).getByRole("tab", { name: /思想方法/ })).toHaveAttribute("aria-selected", "true");
+    await screen.findByRole("tabpanel", { name: "思想方法" });
+    fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
+    await waitFor(() => expect(questionService.updateQuestion).toHaveBeenCalledWith("question-1", {
+      chapterIds: ["chapter-existing"],
+      knowledgePointIds: ["knowledge-existing"],
+      thoughtMethodIds: ["method-existing"],
+    }));
   });
 
   it("starts loading a resource tab immediately instead of waiting for search debounce", () => {

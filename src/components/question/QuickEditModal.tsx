@@ -11,7 +11,7 @@ import { toast } from "@/stores/ui";
 import { Button } from "@/components/ui/Button";
 import { DraggableModalSurface } from "@/components/ui/DraggableModalSurface";
 import { Textarea } from "@/components/ui/Input";
-import { MathHtml } from "@/components/ui/MathHtml";
+import { ResourcePropertyPreview } from "@/components/resource/ResourcePropertyPreview";
 import { SearchableTree } from "@/components/tree/SearchableTree";
 import type { Question, TreeNode, QuestionRemark } from "@/types";
 import { cn } from "@/lib/utils";
@@ -155,7 +155,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-ink-950/40" onClick={onClose} />
-      <DraggableModalSurface className="relative bg-paper rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in">
+      <DraggableModalSurface className="relative bg-paper rounded-xl shadow-xl w-full max-w-7xl max-h-[90vh] flex flex-col animate-fade-in">
         <div
           data-modal-drag-handle
           className="flex items-center justify-between px-5 py-4 border-b border-ink-100 cursor-move touch-none select-none"
@@ -169,19 +169,17 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div className="p-3 rounded-lg bg-mist/50 border border-ink-100">
-            <div className="text-xs font-medium text-ink-500 mb-1">当前题目</div>
-            <MathHtml className="block text-sm text-ink-900 line-clamp-3 whitespace-pre-wrap">
-              {question.stem}
-            </MathHtml>
+        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:overflow-hidden">
+          <div className="min-h-0 lg:overflow-y-auto">
+            <ResourcePropertyPreview key={question.id} type="question" resource={question} />
           </div>
+          <div className="min-h-0 space-y-4 lg:overflow-y-auto lg:pr-1">
 
           {enabledKinds.length > 0 && <div className="overflow-hidden rounded-lg border border-ink-200">
             <div
               role="tablist"
               aria-label="题目目录"
-              className="flex flex-wrap border-b border-ink-200 bg-mist/30"
+              className="grid grid-cols-2 gap-2 border-b border-ink-200 bg-mist/30 p-3 sm:grid-cols-3"
             >
               {isEnabled("chapter") && <button
                 type="button"
@@ -189,7 +187,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 aria-selected={activeDirectoryTab === "chapter"}
                 onClick={() => setActiveDirectoryTab("chapter")}
                 className={cn(
-                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-ink-200 px-2 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "chapter"
                     ? "bg-gold-50 text-gold-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-gold-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -210,7 +208,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 aria-selected={activeDirectoryTab === "knowledge"}
                 onClick={() => setActiveDirectoryTab("knowledge")}
                 className={cn(
-                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 border-r border-ink-200 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-ink-200 px-2 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "knowledge"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -231,7 +229,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 aria-selected={activeDirectoryTab === "method"}
                 onClick={() => setActiveDirectoryTab("method")}
                 className={cn(
-                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors",
+                  "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-ink-200 px-2 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "method"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -252,7 +250,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 aria-selected={activeDirectoryTab === "error"}
                 onClick={() => setActiveDirectoryTab("error")}
                 className={cn(
-                  "flex flex-1 min-w-[140px] items-center justify-center gap-2 px-3 py-3 text-sm font-medium transition-colors",
+                  "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-ink-200 px-2 py-3 text-sm font-medium transition-colors",
                   activeDirectoryTab === "error"
                     ? "bg-teal-50 text-teal-800 shadow-[inset_0_-2px_0_0_var(--tw-shadow-color)] shadow-teal-500"
                     : "text-ink-500 hover:bg-paper hover:text-ink-800",
@@ -299,7 +297,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                   expandLevel={2}
                   searchPlaceholder={activeSearchPlaceholder}
                   showHeader={false}
-                  treeMaxHeightClassName="h-[330px] max-h-[330px]"
+                  treeMaxHeightClassName="h-[330px] max-h-[45vh]"
                 />
               ) : (
                 <div className="flex h-[330px] items-center justify-center text-xs text-ink-400">加载中...</div>
@@ -417,6 +415,7 @@ export function QuickEditModal({ open, onClose, question, onSaved }: QuickEditMo
                 </button>
               )}
             </div>
+          </div>
           </div>
         </div>
 

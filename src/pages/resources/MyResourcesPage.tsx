@@ -74,6 +74,7 @@ import {
   type DocumentMetadataValue,
 } from "@/components/resource/DocumentMetadataModal";
 import { MaterialImageThumbnail, MaterialPreviewModal } from "@/components/resource/MaterialPreviewModal";
+import { ResourcePropertyPreview } from "@/components/resource/ResourcePropertyPreview";
 import {
   ConfigurableResourceActions,
   type ConfigurableResourceAction,
@@ -856,6 +857,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [basketEditChapterIds, setBasketEditChapterIds] = useState<string[]>([]);
   const [basketEditKnowledgeIds, setBasketEditKnowledgeIds] = useState<string[]>([]);
   const [basketEditMethodIds, setBasketEditMethodIds] = useState<string[]>([]);
+  const [basketEditDirectoryTab, setBasketEditDirectoryTab] = useState<"chapter" | "knowledge" | "method">("chapter");
   const [basketEditLoading, setBasketEditLoading] = useState(false);
   const [basketEditSaving, setBasketEditSaving] = useState(false);
   const [basketMetadataRevision, setBasketMetadataRevision] = useState(0);
@@ -1411,6 +1413,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
 
   const openBasketResourceEditor = async (type: "question" | "material", resource: Question | Material) => {
     setBasketEditTarget({ type, id: resource.id });
+    setBasketEditDirectoryTab("chapter");
     setBasketEditChapterIds([...(resource.chapterIds || [])]);
     setBasketEditKnowledgeIds([...(resource.knowledgePointIds || [])]);
     setBasketEditMethodIds([...(resource.thoughtMethodIds || [])]);
@@ -5177,8 +5180,9 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         open={!!basketEditTarget}
         onClose={() => { if (!basketEditSaving) setBasketEditTarget(null); }}
         title="编辑资源属性"
-        description="修改资源关联的章节课、知识点和思想方法，保存后立即生效。"
-        size="xl"
+        description="查看完整资源内容，并修改关联的章节课、知识点和思想方法。"
+        size="full"
+        className="max-w-7xl"
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setBasketEditTarget(null)} disabled={basketEditSaving}>取消</Button>
@@ -5188,39 +5192,71 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           </div>
         }
       >
-        {basketEditLoading || !chapterTree || !knowledgeTree || !methodTree ? (
-          <div className="flex justify-center py-10"><Spinner size={24} /></div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-3 max-h-[60vh] overflow-y-auto">
-            <SearchableTree
-              data={chapterTree}
-              title="章节课"
-              checkable
-              cascadeCheck={false}
-              checkedIds={basketEditChapterIds}
-              onCheck={setBasketEditChapterIds}
-              searchPlaceholder="搜索章节课..."
-            />
-            <SearchableTree
-              data={knowledgeTree}
-              title="知识点"
-              accent="teal"
-              checkable
-              cascadeCheck={false}
-              checkedIds={basketEditKnowledgeIds}
-              onCheck={setBasketEditKnowledgeIds}
-              searchPlaceholder="搜索知识点..."
-            />
-            <SearchableTree
-              data={methodTree}
-              title="思想方法"
-              accent="teal"
-              checkable
-              cascadeCheck={false}
-              checkedIds={basketEditMethodIds}
-              onCheck={setBasketEditMethodIds}
-              searchPlaceholder="搜索思想方法..."
-            />
+        {basketEditTarget && (
+          <div className="grid max-h-[70vh] min-h-0 gap-5 overflow-y-auto lg:h-[70vh] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:overflow-hidden">
+            <div className="min-h-0 lg:overflow-y-auto lg:pr-1">
+              {basketEditTarget.type === "question" ? (
+                basketQuestions.find((item) => item.id === basketEditTarget.id) && (
+                  <ResourcePropertyPreview
+                    key={basketEditTarget.id}
+                    type="question"
+                    resource={basketQuestions.find((item) => item.id === basketEditTarget.id)!}
+                  />
+                )
+              ) : (
+                basketMaterials.find((item) => item.id === basketEditTarget.id) && (
+                  <ResourcePropertyPreview
+                    key={basketEditTarget.id}
+                    type="material"
+                    resource={basketMaterials.find((item) => item.id === basketEditTarget.id)!}
+                  />
+                )
+              )}
+            </div>
+            <div className="flex min-h-[380px] min-w-0 flex-col overflow-hidden rounded-lg border border-ink-200">
+              <div role="tablist" aria-label="资源属性目录" className="grid grid-cols-3 gap-2 border-b border-ink-100 bg-mist/30 p-3">
+                {([
+                  { kind: "chapter", label: "章节课", count: basketEditChapterIds.length },
+                  { kind: "knowledge", label: "知识点", count: basketEditKnowledgeIds.length },
+                  { kind: "method", label: "思想方法", count: basketEditMethodIds.length },
+                ] as const).map(({ kind, label, count }) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    role="tab"
+                    aria-selected={basketEditDirectoryTab === kind}
+                    onClick={() => setBasketEditDirectoryTab(kind)}
+                    className={cn(
+                      "min-w-0 rounded-lg border px-2 py-3 text-center text-sm transition-colors",
+                      basketEditDirectoryTab === kind
+                        ? "border-gold-400 bg-gold-50 font-semibold text-gold-800"
+                        : "border-ink-200 bg-paper text-ink-600 hover:border-gold-200 hover:bg-mist/60",
+                    )}
+                  >
+                    <span className="block">{label}</span>
+                    <span className="mt-1 block text-xs font-normal text-ink-500">已选 {count}</span>
+                  </button>
+                ))}
+              </div>
+              <div role="tabpanel" aria-label={basketEditDirectoryTab === "chapter" ? "章节课" : basketEditDirectoryTab === "knowledge" ? "知识点" : "思想方法"} className="min-h-0 flex-1 overflow-y-auto p-3">
+                {basketEditLoading || !chapterTree || !knowledgeTree || !methodTree ? (
+                  <div className="flex justify-center py-10"><Spinner size={24} /></div>
+                ) : (
+                  <SearchableTree
+                    key={basketEditDirectoryTab}
+                    data={basketEditDirectoryTab === "chapter" ? chapterTree : basketEditDirectoryTab === "knowledge" ? knowledgeTree : methodTree}
+                    title={basketEditDirectoryTab === "chapter" ? "章节课" : basketEditDirectoryTab === "knowledge" ? "知识点" : "思想方法"}
+                    accent={basketEditDirectoryTab === "chapter" ? "gold" : "teal"}
+                    checkable
+                    cascadeCheck={false}
+                    checkedIds={basketEditDirectoryTab === "chapter" ? basketEditChapterIds : basketEditDirectoryTab === "knowledge" ? basketEditKnowledgeIds : basketEditMethodIds}
+                    onCheck={basketEditDirectoryTab === "chapter" ? setBasketEditChapterIds : basketEditDirectoryTab === "knowledge" ? setBasketEditKnowledgeIds : setBasketEditMethodIds}
+                    searchPlaceholder={basketEditDirectoryTab === "chapter" ? "搜索章节课..." : basketEditDirectoryTab === "knowledge" ? "搜索知识点..." : "搜索思想方法..."}
+                    treeMaxHeightClassName="max-h-[45vh] overflow-y-auto"
+                  />
+                )}
+              </div>
+            </div>
           </div>
         )}
       </Modal>
