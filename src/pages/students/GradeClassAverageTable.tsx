@@ -15,6 +15,7 @@ import type {
   GradeClassAverageOptions,
   GradeClassAverageSubjectScoreMode,
   GradeCustomTotalScore,
+  GradeCustomClassDifference,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -129,6 +130,28 @@ export function GradeClassAverageTable({
     updateCustomTotals((resolvedOptions.customTotals || []).map((total) => total.id === id ? { ...total, ...patch } : total));
   };
 
+  const updateCustomDifferences = (items: GradeCustomClassDifference[]) =>
+    updateOptions({ customDifferences: items });
+
+  const addCustomDifference = () => {
+    const available = classRows.filter((row) => !(resolvedOptions.hiddenClassIds || []).includes(row.classId));
+    if (available.length < 2 || (resolvedOptions.customDifferences?.length || 0) >= 12) return;
+    updateCustomDifferences([
+      ...(resolvedOptions.customDifferences || []),
+      {
+        id: `difference-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        classIds: available.slice(0, 2).map((row) => row.classId),
+        afterClassId: available[1].classId,
+      },
+    ]);
+  };
+
+  const patchCustomDifference = (id: string, patch: Partial<GradeCustomClassDifference>) => {
+    updateCustomDifferences((resolvedOptions.customDifferences || []).map((item) =>
+      item.id === id ? { ...item, ...patch } : item
+    ));
+  };
+
   const moveScoreColumn = (key: string, delta: -1 | 1) => {
     const order = report.columns.map((column) => column.key);
     const index = order.indexOf(key);
@@ -228,6 +251,26 @@ export function GradeClassAverageTable({
     if (modes.length === 0) return "";
     return modes.every((mode) => mode === modes[0]) ? modes[0] : "";
   };
+
+  const renderCustomDifferenceRow = (
+    item: (typeof report.customDifferences)[number],
+    outsideGroup = false,
+  ) => (
+    <tr key={item.id} className="bg-amber-100/60" data-testid="custom-class-difference-row">
+      {outsideGroup && <td className="border border-ink-300 bg-amber-100/40" />}
+      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">{item.label}</td>
+      <td className="border border-ink-300 px-3 py-2" />
+      {report.columns.map((column) => (
+        <td key={column.key} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+          {column.kind === "subject"
+            ? displayScore(item.difference.subjectValues[column.subject!], item.subjectScoreModes[column.subject!])
+            : column.kind === "total"
+              ? displayScore(item.difference.totalValues, report.options.totalScoreMode || effectiveTemplate.scoreMode)
+              : item.difference.customValues[column.customId!]?.toFixed(2) ?? "—"}
+        </td>
+      ))}
+    </tr>
+  );
 
   return (
     <Card className="overflow-hidden p-0">
@@ -344,6 +387,58 @@ export function GradeClassAverageTable({
                     </label>
                   ))}
                 </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-ink-200 bg-paper p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-medium text-ink-800">个性化分差</div>
+                <p className="mt-1 text-xs text-ink-500">选择至少两个班级比较各科及总分平均分的最大差值，可跨类别并指定插入位置。</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={addCustomDifference}
+                disabled={(resolvedOptions.customDifferences?.length || 0) >= 12
+                  || classRows.filter((row) => !(resolvedOptions.hiddenClassIds || []).includes(row.classId)).length < 2}>
+                <Plus className="h-3.5 w-3.5" />新增分差
+              </Button>
+            </div>
+            {(resolvedOptions.customDifferences || []).map((item, index) => (
+              <div key={item.id} className="space-y-3 rounded border border-ink-100 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-ink-800">个性化分差 {index + 1}</span>
+                  <button type="button" aria-label={`删除个性化分差${index + 1}`}
+                    onClick={() => updateCustomDifferences((resolvedOptions.customDifferences || []).filter((entry) => entry.id !== item.id))}
+                    className="text-red-600"><Trash2 className="h-4 w-4" /></button>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                  {classRows.map((row) => (
+                    <label key={row.classId} className="inline-flex items-center gap-1.5">
+                      <input type="checkbox" aria-label={`个性化分差${index + 1}选择${row.className}`}
+                        checked={item.classIds.includes(row.classId)}
+                        disabled={item.classIds.includes(row.classId) && item.classIds.length <= 2}
+                        onChange={(event) => {
+                          const classIds = event.target.checked
+                            ? [...item.classIds, row.classId]
+                            : item.classIds.filter((classId) => classId !== row.classId);
+                          if (classIds.length >= 2) patchCustomDifference(item.id, { classIds });
+                        }} />
+                      {resolvedOptions.classLabels?.[row.classId] || row.className}
+                    </label>
+                  ))}
+                </div>
+                <label className="flex flex-wrap items-center gap-2 text-xs text-ink-600">
+                  显示位置
+                  <select aria-label={`个性化分差${index + 1}显示位置`}
+                    value={item.afterClassId || ""}
+                    onChange={(event) => patchCustomDifference(item.id, { afterClassId: event.target.value || null })}
+                    className="rounded border border-ink-200 bg-paper px-2 py-1.5 text-xs">
+                    <option value="">表格末尾</option>
+                    {classRows.map((row) => (
+                      <option key={row.classId} value={row.classId}>{row.className}之后</option>
+                    ))}
+                  </select>
+                </label>
               </div>
             ))}
           </div>
@@ -570,7 +665,10 @@ export function GradeClassAverageTable({
                 const summaryRows = group.rows.length > 1
                   ? Number(report.options.showGroupDifference) + Number(report.options.showGroupAverage)
                   : 0;
-                const rowSpan = group.rows.length * (report.options.showTeacherRows ? 2 : 1) + summaryRows;
+                const customRows = report.customDifferences.filter((item) =>
+                  group.rows.some((row) => row.classId === item.afterClassId)
+                ).length;
+                const rowSpan = group.rows.length * (report.options.showTeacherRows ? 2 : 1) + summaryRows + customRows;
                 let categoryRendered = false;
                 return [
                   ...group.rows.flatMap((row) => {
@@ -619,7 +717,10 @@ export function GradeClassAverageTable({
                         ))}
                       </tr>
                     );
-                    return teacherRow ? [teacherRow, scoreRow] : [scoreRow];
+                    const inserted = report.customDifferences
+                      .filter((item) => item.afterClassId === row.classId)
+                      .map((item) => renderCustomDifferenceRow(item));
+                    return teacherRow ? [teacherRow, scoreRow, ...inserted] : [scoreRow, ...inserted];
                   }),
                   ...(group.rows.length > 1 && report.options.showGroupDifference ? [(
                     <tr key={`${group.category}-difference`} className="bg-amber-50/40">
@@ -669,6 +770,8 @@ export function GradeClassAverageTable({
                   ))}
                 </tr>
               )}
+              {report.customDifferences.filter((item) => !item.afterClassId)
+                .map((item) => renderCustomDifferenceRow(item, true))}
             </tbody>
           </table>
           <div className="mt-2 text-xs text-ink-400">

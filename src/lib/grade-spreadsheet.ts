@@ -628,11 +628,24 @@ function classAverageWorkbookSheet(
     return classAverageScoreWorkbookCell(value, { fontWeight: "bold", ...(backgroundColor ? { backgroundColor } : {}) });
   });
 
+  const customDifferenceRow = (
+    item: GradeClassAverageReport["customDifferences"][number],
+    outsideGroup = false,
+  ): CombinedWorkbookRow => [
+    outsideGroup ? combinedWorkbookCell(null, { backgroundColor: "#FEF3C7" }) : null,
+    combinedWorkbookCell(item.label, { fontWeight: "bold", backgroundColor: "#FEF3C7", wrap: true }),
+    combinedWorkbookCell(null, { backgroundColor: "#FEF3C7" }),
+    ...scoreCells(item.difference, item.subjectScoreModes, "#FEF3C7"),
+  ];
+
   report.groups.forEach((group) => {
     const summaryRows = group.rows.length > 1
       ? Number(report.options.showGroupDifference) + Number(report.options.showGroupAverage)
       : 0;
-    const categoryRowSpan = group.rows.length * (report.options.showTeacherRows ? 2 : 1) + summaryRows;
+    const customRows = report.customDifferences.filter((item) =>
+      group.rows.some((row) => row.classId === item.afterClassId)
+    ).length;
+    const categoryRowSpan = group.rows.length * (report.options.showTeacherRows ? 2 : 1) + summaryRows + customRows;
     let categoryRendered = false;
 
     group.rows.forEach((row) => {
@@ -667,6 +680,8 @@ function classAverageWorkbookSheet(
           ...scoreCells(summary, row.subjectScoreModes),
         ]);
       }
+      report.customDifferences.filter((item) => item.afterClassId === row.classId)
+        .forEach((item) => rows.push(customDifferenceRow(item)));
     });
     if (group.rows.length > 1 && report.options.showGroupDifference) {
       rows.push([
@@ -699,12 +714,14 @@ function classAverageWorkbookSheet(
       ...scoreCells(report.overallAverage, report.overallSubjectScoreModes, "#F3F4F6"),
     ]);
   }
+  report.customDifferences.filter((item) => !item.afterClassId)
+    .forEach((item) => rows.push(customDifferenceRow(item, true)));
   return {
     sheet: uniqueWorkbookSheetName(sheetName, usedNames),
     data: rows,
     stickyRowsCount: 2,
     columns: [
-      { width: 14 }, { width: 14 }, { width: 18 },
+      { width: 14 }, { width: 24 }, { width: 18 },
       ...report.columns.map((column) => ({ width: column.kind === "custom" ? 18 : 14 })),
     ],
   };

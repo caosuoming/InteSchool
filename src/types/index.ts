@@ -1094,9 +1094,19 @@ export interface GradeCustomTotalScore {
   scoreMode: GradeScoreMode;
 }
 
+/** 自定义分差：可跨类别选择班级，插入指定班级后或表格末尾。 */
+export interface GradeCustomClassDifference {
+  id: string;
+  classIds: string[];
+  /** null 表示放在表格末尾；未知或隐藏的锚点也回退到末尾。 */
+  afterClassId: string | null;
+}
+
 export interface GradeClassAverageOptions {
   /** Additional totals configured in 表一 and reused by 表二、表五、表六. */
   customTotals?: GradeCustomTotalScore[];
+  /** 表一可独立配置多条、跨班级类别的分差行。 */
+  customDifferences?: GradeCustomClassDifference[];
   /** 表一的学科、总分及个性化总分列排序；新增列会自动追加。 */
   scoreColumnOrder?: string[];
   /** 报表标题；为空时根据考试名称自动生成。 */
