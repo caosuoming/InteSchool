@@ -600,6 +600,7 @@ describe("ExamPaperEditorPage preview", () => {
 
     const chapterRow = screen.getByTitle("函数与方程").parentElement as HTMLElement;
     fireEvent.click(within(chapterRow).getByRole("button"));
+    fireEvent.click(screen.getByRole("tab", { name: /知识点/ }));
     const knowledgeRow = screen.getByTitle("函数定义域").parentElement as HTMLElement;
     fireEvent.click(within(knowledgeRow).getByRole("button"));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -951,6 +952,49 @@ describe("ExamPaperEditorPage preview", () => {
       expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "新备注");
       expect(within(answerStatus).getByText("新备注")).toBeInTheDocument();
     });
+  });
+
+  it("edits all four question catalog categories from preview beside the complete question", async () => {
+    renderPage();
+    const details = await screen.findByTestId("exam-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
+
+    const editor = screen.getByTestId("question-catalog-editor");
+    const questionPreview = within(editor).getByRole("region", { name: "完整题目" });
+    expect(questionPreview).toHaveTextContent("函数的定义域是？");
+    expect(questionPreview).toHaveTextContent("实数集");
+    expect(questionPreview).toHaveTextContent("正实数集");
+    expect(within(questionPreview).queryByText("根据定义判断。")).not.toBeInTheDocument();
+    fireEvent.click(within(questionPreview).getByRole("button", { name: /点击展开答案和解析/ }));
+    expect(within(questionPreview).getByText("根据定义判断。")).toBeInTheDocument();
+
+    const tabs = within(editor).getByRole("tablist", { name: "题目属性分类" });
+    expect(within(tabs).getAllByRole("tab")).toHaveLength(4);
+    for (const name of ["知识点", "思想方法", "错因", "章节课"]) {
+      const tab = within(tabs).getByRole("tab", { name: new RegExp(name) });
+      fireEvent.click(tab);
+      expect(tab).toHaveAttribute("aria-selected", "true");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(mocks.updateQuestion).toHaveBeenCalledWith(question.id, {
+      chapterIds: [],
+      knowledgePointIds: ["knowledge-1"],
+      thoughtMethodIds: [],
+      errorReasonIds: [],
+    }));
+    await waitFor(() => expect(screen.queryByTestId("question-catalog-editor")).not.toBeInTheDocument());
+  });
+
+  it("opens the general question-attributes editor in preview", async () => {
+    renderPage();
+    const details = await screen.findByTestId("exam-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑题目属性" }));
+    expect(screen.getByRole("heading", { name: "编辑题目属性" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存属性" }));
+    await waitFor(() => expect(mocks.updateQuestion).toHaveBeenCalledWith(question.id, expect.objectContaining({
+      type: "single",
+      difficulty: 2,
+    })));
   });
 
   it("已上传使用数据后，预览仍允许单题、批量目录修改和添加题目备注", async () => {
@@ -1415,6 +1459,16 @@ describe("ExamPaperEditorPage preview", () => {
         expect.objectContaining({ questionId: secondQuestion.id }),
       ],
     })));
+  });
+
+  it("shares the complete-question, tabbed catalog editor with edit mode", async () => {
+    renderEditorPage();
+    const details = await screen.findByTestId("exam-editor-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
+    const editor = screen.getByTestId("question-catalog-editor");
+    expect(within(editor).getByRole("region", { name: "完整题目" })).toHaveTextContent("正实数集");
+    expect(within(editor).getByRole("tab", { name: /思想方法/ })).toBeInTheDocument();
+    expect(within(editor).getByRole("tab", { name: /错因/ })).toBeInTheDocument();
   });
 
   it("supports grouped score changes and aligned catalog-related controls in the editor", async () => {

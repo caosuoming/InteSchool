@@ -64,6 +64,7 @@ import {
   type DocumentMetadataValue,
 } from "@/components/resource/DocumentMetadataModal";
 import { ExtractedQuestionContent } from "@/pages/exam-papers/ExtractedQuestionContent";
+import { QuestionCatalogEditorModal } from "./QuestionCatalogEditorModal";
 import { ExamPaperUsageImportModal } from "./ExamPaperUsageImportModal";
 import type { UsageImportItem, UsageMetadataUpdate } from "@/lib/exam-usage-spreadsheet";
 import {
@@ -2242,6 +2243,7 @@ export default function ExamPaperEditorPage() {
           />
         )}
         {audienceModal}
+        {questionAttributesModal}
         {paper && <ExamPaperUsageImportModal
           open={usageImportOpen}
           onClose={() => setUsageImportOpen(false)}
@@ -3778,26 +3780,6 @@ function EditQuestionCatalogPanel({
   readOnly?: boolean;
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
-  const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
-  const [draftMethodIds, setDraftMethodIds] = useState<string[]>([]);
-  const [draftErrorIds, setDraftErrorIds] = useState<string[]>([]);
-  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
-  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
-  const [savingCatalogs, setSavingCatalogs] = useState(false);
-
-  const questionOwnerId = question?.teacherId;
-  useEffect(() => {
-    if (!catalogOpen || !questionOwnerId) return;
-    let cancelled = false;
-    Promise.all([
-      knowledgeService.getMethodTree(questionOwnerId),
-      knowledgeService.getErrorReasonTree(questionOwnerId),
-    ]).then(([methods, errors]) => {
-      if (!cancelled) { setMethodTree(methods); setErrorTree(errors); }
-    }).catch((error) => toast.error("加载题目目录失败", error instanceof Error ? error.message : undefined));
-    return () => { cancelled = true; };
-  }, [catalogOpen, questionOwnerId]);
   const [mode, setMode] = useState<"properties" | "related">("properties");
 
   const chapterNames = (question?.chapterIds || [])
@@ -3810,23 +3792,7 @@ function EditQuestionCatalogPanel({
   const replacementDisabled = structureLocked || readOnly;
 
   const openCatalogEditor = () => {
-    if (!question || readOnly) return;
-    setDraftChapterIds(question.chapterIds);
-    setDraftKnowledgePointIds(question.knowledgePointIds);
-    setDraftMethodIds(question.thoughtMethodIds || []);
-    setDraftErrorIds(question.errorReasonIds || []);
-    setCatalogOpen(true);
-  };
-
-  const saveCatalogs = async () => {
-    if (!question || readOnly) return;
-    setSavingCatalogs(true);
-    try {
-      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds, draftMethodIds, draftErrorIds);
-      setCatalogOpen(false);
-    } finally {
-      setSavingCatalogs(false);
-    }
+    if (question && !readOnly) setCatalogOpen(true);
   };
 
   return (
@@ -3919,87 +3885,20 @@ function EditQuestionCatalogPanel({
         )}
       </div>
 
-      <Modal
-        open={catalogOpen}
-        onClose={() => setCatalogOpen(false)}
-        title={`编辑第 ${index + 1} 题章节课和知识点`}
-        description="修改会同步保存到题库中的原题。"
-        size="lg"
-        footer={(
-          <>
-            <Button variant="ghost" onClick={() => setCatalogOpen(false)}>取消</Button>
-            <Button variant="gold" onClick={saveCatalogs} loading={savingCatalogs} disabled={readOnly}>保存</Button>
-          </>
-        )}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-gold-100 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
-              <BookOpen className="h-4 w-4 text-gold-600" />
-              章节课目录
-            </div>
-            {chapterTree ? (
-              <SearchableTree
-                editable={!readOnly}
-                data={chapterTree}
-                onDataChange={onChapterTreeChange}
-                title="章节课目录"
-                checkable
-                checkedIds={draftChapterIds}
-                onCheck={setDraftChapterIds}
-                expandLevel={2}
-                searchPlaceholder="搜索章节课..."
-                showHeader={false}
-                treeMaxHeightClassName="max-h-[320px]"
-              />
-            ) : (
-              <div className="py-8 text-center text-xs text-ink-400">章节课目录加载中...</div>
-            )}
-          </div>
-          <div className="rounded-lg border border-teal-100 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
-              <Lightbulb className="h-4 w-4 text-teal-600" />
-              知识点目录
-            </div>
-            {knowledgeTree ? (
-              <SearchableTree
-                editable={!readOnly}
-                data={knowledgeTree}
-                onDataChange={onKnowledgeTreeChange}
-                title="知识点目录"
-                accent="teal"
-                checkable
-                checkedIds={draftKnowledgePointIds}
-                onCheck={setDraftKnowledgePointIds}
-                expandLevel={2}
-                searchPlaceholder="搜索知识点..."
-                showHeader={false}
-                treeMaxHeightClassName="max-h-[320px]"
-              />
-            ) : (
-              <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
-            )}
-          </div>
-          <div className="rounded-lg border border-teal-100 p-3">
-            <div className="mb-2 text-sm font-medium text-ink-800">思想方法</div>
-            {methodTree ? (
-              <SearchableTree editable data={methodTree} onDataChange={setMethodTree}
-                title="思想方法" accent="teal" checkable checkedIds={draftMethodIds}
-                onCheck={setDraftMethodIds} expandLevel={2} searchPlaceholder="搜索思想方法..."
-                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
-            ) : <div className="py-8 text-center text-xs text-ink-400">思想方法加载中...</div>}
-          </div>
-          <div className="rounded-lg border border-teal-100 p-3">
-            <div className="mb-2 text-sm font-medium text-ink-800">可能错因</div>
-            {errorTree ? (
-              <SearchableTree editable data={errorTree} onDataChange={setErrorTree}
-                title="可能错因" accent="teal" checkable checkedIds={draftErrorIds}
-                onCheck={setDraftErrorIds} expandLevel={2} searchPlaceholder="搜索错因..."
-                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
-            ) : <div className="py-8 text-center text-xs text-ink-400">错因字典加载中...</div>}
-          </div>
-        </div>
-      </Modal>
+      {catalogOpen && question && (
+        <QuestionCatalogEditorModal
+          key={question.id}
+          index={index}
+          paperQuestion={pq}
+          question={question}
+          chapterTree={chapterTree}
+          knowledgeTree={knowledgeTree}
+          onChapterTreeChange={onChapterTreeChange}
+          onKnowledgeTreeChange={onKnowledgeTreeChange}
+          onUpdateCatalogs={onUpdateCatalogs}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -4050,26 +3949,6 @@ function PreviewQuestionDetails({
   onUpdateScore: (pqId: string, score: number) => Promise<void>;
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const [draftChapterIds, setDraftChapterIds] = useState<string[]>([]);
-  const [draftKnowledgePointIds, setDraftKnowledgePointIds] = useState<string[]>([]);
-  const [draftMethodIds, setDraftMethodIds] = useState<string[]>([]);
-  const [draftErrorIds, setDraftErrorIds] = useState<string[]>([]);
-  const [methodTree, setMethodTree] = useState<TreeNode | null>(null);
-  const [errorTree, setErrorTree] = useState<TreeNode | null>(null);
-  const [savingCatalogs, setSavingCatalogs] = useState(false);
-
-  const questionOwnerId = question?.teacherId;
-  useEffect(() => {
-    if (!catalogOpen || !questionOwnerId) return;
-    let cancelled = false;
-    Promise.all([
-      knowledgeService.getMethodTree(questionOwnerId),
-      knowledgeService.getErrorReasonTree(questionOwnerId),
-    ]).then(([methods, errors]) => {
-      if (!cancelled) { setMethodTree(methods); setErrorTree(errors); }
-    }).catch((error) => toast.error("加载题目目录失败", error instanceof Error ? error.message : undefined));
-    return () => { cancelled = true; };
-  }, [catalogOpen, questionOwnerId]);
   const [scoreEditing, setScoreEditing] = useState(false);
   const [scoreDraft, setScoreDraft] = useState(String(pq.score));
   const [savingScore, setSavingScore] = useState(false);
@@ -4085,23 +3964,7 @@ function PreviewQuestionDetails({
   }, [pq.score, scoreEditing]);
 
   const openCatalogEditor = () => {
-    if (!question) return;
-    setDraftChapterIds(question.chapterIds);
-    setDraftKnowledgePointIds(question.knowledgePointIds);
-    setDraftMethodIds(question.thoughtMethodIds || []);
-    setDraftErrorIds(question.errorReasonIds || []);
-    setCatalogOpen(true);
-  };
-
-  const saveCatalogs = async () => {
-    if (!question) return;
-    setSavingCatalogs(true);
-    try {
-      await onUpdateCatalogs(question.id, draftChapterIds, draftKnowledgePointIds, draftMethodIds, draftErrorIds);
-      setCatalogOpen(false);
-    } finally {
-      setSavingCatalogs(false);
-    }
+    if (question && canEditScore) setCatalogOpen(true);
   };
 
   const saveScore = async () => {
@@ -4193,10 +4056,10 @@ function PreviewQuestionDetails({
                   <button
                     type="button"
                     onClick={openCatalogEditor}
-                    disabled={!question}
+                    disabled={!question || !canEditScore}
                     className="no-print inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-gold-600 transition-colors hover:bg-gold-50 hover:text-gold-700 disabled:cursor-not-allowed disabled:text-ink-300"
                     aria-label={`编辑第 ${index + 1} 题章节课和知识点`}
-                    title={question ? "编辑章节课和知识点" : "该题未关联题库，无法编辑"}
+                    title={!question ? "该题未关联题库，无法编辑" : canEditScore ? "编辑章节课和知识点" : "仅试卷所属教师可编辑"}
                   >
                     <Edit3 className="h-3 w-3" />
                     编辑
@@ -4268,87 +4131,20 @@ function PreviewQuestionDetails({
         </div>
       )}
 
-      <Modal
-        open={catalogOpen}
-        onClose={() => setCatalogOpen(false)}
-        title={`编辑第 ${index + 1} 题章节课和知识点`}
-        description="修改会同步保存到题库中的原题。"
-        size="lg"
-        footer={(
-          <>
-            <Button variant="ghost" onClick={() => setCatalogOpen(false)}>取消</Button>
-            <Button variant="gold" onClick={saveCatalogs} loading={savingCatalogs}>保存</Button>
-          </>
-        )}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-gold-100 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
-              <BookOpen className="h-4 w-4 text-gold-600" />
-              章节课目录
-            </div>
-            {chapterTree ? (
-              <SearchableTree
-                editable
-                data={chapterTree}
-                onDataChange={onChapterTreeChange}
-                title="章节课目录"
-                checkable
-                checkedIds={draftChapterIds}
-                onCheck={setDraftChapterIds}
-                expandLevel={2}
-                searchPlaceholder="搜索章节课..."
-                showHeader={false}
-                treeMaxHeightClassName="max-h-[320px]"
-              />
-            ) : (
-              <div className="py-8 text-center text-xs text-ink-400">章节课目录加载中...</div>
-            )}
-          </div>
-          <div className="rounded-lg border border-teal-100 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-800">
-              <Lightbulb className="h-4 w-4 text-teal-600" />
-              知识点目录
-            </div>
-            {knowledgeTree ? (
-              <SearchableTree
-                editable
-                data={knowledgeTree}
-                onDataChange={onKnowledgeTreeChange}
-                title="知识点目录"
-                accent="teal"
-                checkable
-                checkedIds={draftKnowledgePointIds}
-                onCheck={setDraftKnowledgePointIds}
-                expandLevel={2}
-                searchPlaceholder="搜索知识点..."
-                showHeader={false}
-                treeMaxHeightClassName="max-h-[320px]"
-              />
-            ) : (
-              <div className="py-8 text-center text-xs text-ink-400">知识点目录加载中...</div>
-            )}
-          </div>
-          <div className="rounded-lg border border-teal-100 p-3">
-            <div className="mb-2 text-sm font-medium text-ink-800">思想方法</div>
-            {methodTree ? (
-              <SearchableTree editable data={methodTree} onDataChange={setMethodTree}
-                title="思想方法" accent="teal" checkable checkedIds={draftMethodIds}
-                onCheck={setDraftMethodIds} expandLevel={2} searchPlaceholder="搜索思想方法..."
-                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
-            ) : <div className="py-8 text-center text-xs text-ink-400">思想方法加载中...</div>}
-          </div>
-          <div className="rounded-lg border border-teal-100 p-3">
-            <div className="mb-2 text-sm font-medium text-ink-800">可能错因</div>
-            {errorTree ? (
-              <SearchableTree editable data={errorTree} onDataChange={setErrorTree}
-                title="可能错因" accent="teal" checkable checkedIds={draftErrorIds}
-                onCheck={setDraftErrorIds} expandLevel={2} searchPlaceholder="搜索错因..."
-                showHeader={false} treeMaxHeightClassName="max-h-[320px]" />
-            ) : <div className="py-8 text-center text-xs text-ink-400">错因字典加载中...</div>}
-          </div>
-        </div>
-      </Modal>
+      {catalogOpen && question && (
+        <QuestionCatalogEditorModal
+          key={question.id}
+          index={index}
+          paperQuestion={pq}
+          question={question}
+          chapterTree={chapterTree}
+          knowledgeTree={knowledgeTree}
+          onChapterTreeChange={onChapterTreeChange}
+          onKnowledgeTreeChange={onKnowledgeTreeChange}
+          onUpdateCatalogs={onUpdateCatalogs}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
     </>
   );
 }
