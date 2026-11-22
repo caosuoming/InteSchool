@@ -1,6 +1,6 @@
 import type {
   SchoolClass, PersonalClass, PersonalClassStudentCandidate, Student, AnyClass, ClassroomChoice, Teacher,
-  ClassTypeCategory, StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
+  ClassTypeCategory, ResourceStudentChoice, StudentArchiveOverview, StudentArchiveRecord, StudentArchiveStatus,
   StudentArchiveStatusInput, StudentContactInfo, StudentType,
 } from "../../src/types/index.js";
 import { db } from "../runtime-db.js";
@@ -436,6 +436,43 @@ export const classService = {
   async listStudentsBySchool(schoolId: string): Promise<Student[]> {
     await delay(200);
     return db.read("students").filter((s) => s.schoolId === schoolId && s.status !== "deleted");
+  },
+
+  /**
+   * Minimal roster for the My Resources audience picker. Default scope includes
+   * the current school and the teacher's personal classes. Other schools are
+   * queried one at a time; their student numbers and private profiles stay hidden.
+   */
+  async listResourceStudentChoices(
+    targetSchoolId: string | null,
+    teacher: Teacher,
+  ): Promise<ResourceStudentChoice[]> {
+    const schoolId = targetSchoolId || teacher.schoolId;
+    if (targetSchoolId && !db.read("schools").some((school) => school.id === targetSchoolId)) {
+      throw new Error("学校不存在");
+    }
+    const activeClassIds = new Set(db.read("schoolClasses")
+      .filter((item) => item.schoolId === schoolId
+        && item.status !== "graduated" && item.status !== "deleted")
+      .map((item) => item.id));
+    const includePersonal = !targetSchoolId || targetSchoolId === teacher.schoolId;
+    const personalIds = includePersonal
+      ? new Set(db.read("personalClasses")
+        .filter((item) => item.teacherId === teacher.id)
+        .flatMap((item) => item.studentIds))
+      : new Set<string>();
+    return db.read("students")
+      .filter((student) => student.status === "active"
+        && (activeClassIds.has(student.classId) || personalIds.has(student.id)))
+      .map((student) => ({
+        id: student.id,
+        name: student.name,
+        classId: student.classId,
+        schoolId: student.schoolId,
+        grade: student.grade,
+        ...((!targetSchoolId || targetSchoolId === teacher.schoolId
+          || personalIds.has(student.id)) ? { studentNo: student.studentNo } : {}),
+      }));
   },
 
   /** 获取已毕业或已转校学生档案。 */
