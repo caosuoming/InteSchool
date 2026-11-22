@@ -225,6 +225,35 @@ describe("combined grade exports", () => {
     expect(toFile).toHaveBeenCalledWith("期末考试表一至表五.xlsx");
   });
 
+  it("exports custom difference rows at class anchors and table end with correct merged spans", async () => {
+    const configured = {
+      ...classAverageTemplate,
+      classAverageOptions: {
+        ...classAverageTemplate.classAverageOptions,
+        customDifferences: [
+          { id: "anchored", classIds: ["class-1", "class-2"], afterClassId: "class-1" },
+          { id: "bottom", classIds: ["class-1", "class-2"], afterClassId: null },
+        ],
+      },
+    };
+    await exportGradeTablesOneToFive({
+      exam, settings, context,
+      classAverageTemplate: configured, totalScoreSegmentTemplate,
+    });
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{
+      sheet: string;
+      data: Array<Array<null | { value?: string | number; rowSpan?: number }>>;
+    }>;
+    const rows = sheets.find((sheet) => sheet.sheet.startsWith("表一"))!.data;
+    const found = rows.filter((row) => row[1]?.value === "分差（1-2班）");
+    expect(found).toHaveLength(2);
+    expect(found[0][0]).toBeNull();
+    expect(found[0].slice(3).map((cell) => cell?.value)).toEqual([10, 5, 15]);
+    expect(rows[2][0]?.rowSpan).toBe(7);
+    expect(rows.indexOf(found[0])).toBe(4);
+    expect(rows.indexOf(found[1])).toBeGreaterThan(rows.findIndex((row) => row[0]?.value === "全校平均"));
+  });
+
   it("uses valid merged cells that mirror the on-screen tables", async () => {
     await exportGradeTablesOneToFive({
       exam,

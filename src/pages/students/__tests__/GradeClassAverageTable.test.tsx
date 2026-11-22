@@ -126,6 +126,34 @@ const context: GradeImportContext = {
 };
 
 describe("GradeClassAverageTable", () => {
+  it("adds, positions, updates and removes multiple configurable class differences", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [settings, setSettings] = useState(exam.settings);
+      return <GradeClassAverageTable exam={exam} settings={settings}
+        template={template} context={context} onChange={setSettings} />;
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "调整表格" }));
+    await user.click(screen.getByRole("button", { name: "新增分差" }));
+    expect(screen.getByRole("checkbox", { name: "个性化分差1选择高三(1)班" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "个性化分差1选择高三(2)班" })).toBeChecked();
+    const first = screen.getAllByTestId("custom-class-difference-row")[0];
+    expect(first).toHaveTextContent("分差（1-2班）");
+    expect(first).toHaveTextContent("10.00");
+    expect(first).toHaveTextContent("20.00");
+    expect(first.previousElementSibling?.previousElementSibling).toHaveTextContent("2班");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "个性化分差1显示位置" }), "");
+    expect(screen.getByTestId("custom-class-difference-row").previousElementSibling).toHaveTextContent("全校平均");
+    await user.click(screen.getByRole("button", { name: "新增分差" }));
+    expect(screen.getAllByTestId("custom-class-difference-row")).toHaveLength(2);
+    await user.click(screen.getByRole("checkbox", { name: "个性化分差2选择高三(1)班" }));
+    expect(screen.getByRole("checkbox", { name: "个性化分差2选择高三(1)班" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "删除个性化分差1" }));
+    expect(screen.getAllByTestId("custom-class-difference-row")).toHaveLength(1);
+  });
+
   it("shows the separately ranked class note beside the school-wide mean", () => {
     const settings = {
       ...exam.settings,
