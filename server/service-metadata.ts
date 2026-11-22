@@ -653,6 +653,7 @@ export const serviceParameters = {
       "schoolId",
       "teacherId"
     ],
+    "listResourceStudentChoices": ["targetSchoolId", "teacher"],
     "listMyStudentArchives": [
       "schoolId",
       "teacherId"

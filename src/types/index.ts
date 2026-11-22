@@ -694,6 +694,12 @@ export interface Student {
  * 个人教学班按姓名查找校外学生时返回的最小候选信息。
  * 不包含学号、联系方式等跨校不应暴露的学生档案字段。
  */
+/** Resource audience selection only: never includes contacts, status or archive details. */
+export type ResourceStudentChoice = Pick<Student, "id" | "name" | "classId" | "schoolId" | "grade"> & {
+  /** Available only for students at the teacher's own school or in personal classes. */
+  studentNo?: string;
+};
+
 export interface PersonalClassStudentCandidate {
   id: string;
   name: string;

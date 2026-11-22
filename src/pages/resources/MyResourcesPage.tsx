@@ -48,7 +48,7 @@ import type {
   Lecture, ExamPaper, Courseware, Material, Question,
   TreeNode, FilterLogic, ShareScope,
   CoursewareType, MaterialType, ShareableResourceType,
-  Reflection, Basket, AnyClass, Student, AnswerRecord,
+  Reflection, Basket, AnyClass, Student, ResourceStudentChoice, AnswerRecord,
   DonationCheckResult, DonationDecision, DonationItem, PlatformDonation, ResourceSemester,
   ResourceFolder, ResourceFolderType, PersonalClass,
   UserQuotaSnapshot,
@@ -59,7 +59,7 @@ import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
 import { questionContentSimilarity } from "@/lib/question-similarity";
 import { subjectAwareDefaultQuestionScore } from "@/lib/question-default-score";
-import { StudentPickerModal } from "@/components/student/StudentPickerModal";
+import { ResourceStudentPickerModal } from "@/components/student/ResourceStudentPickerModal";
 import { documentStudentProgressLabel, type PendingQuestionAssignment } from "@/lib/document-student-progress";
 import {
   QuestionDuplicateReviewModal,
@@ -818,8 +818,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
   const [newBasketStudentIds, setNewBasketStudentIds] = useState<string[]>([]);
   const [audienceClasses, setAudienceClasses] = useState<AnyClass[]>([]);
   const [audienceStudents, setAudienceStudents] = useState<Student[]>([]);
-  const [resourceStudents, setResourceStudents] = useState<Student[]>([]);
-  const [resourceStudentClasses, setResourceStudentClasses] = useState<AnyClass[]>([]);
+  const [resourceStudents, setResourceStudents] = useState<ResourceStudentChoice[]>([]);
   const [selectedResourceStudentIds, setSelectedResourceStudentIds] = useState<string[]>([]);
   const [resourceStudentPickerOpen, setResourceStudentPickerOpen] = useState(false);
   const [resourceStudentQuery, setResourceStudentQuery] = useState<{
@@ -1239,26 +1238,13 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
     return () => window.removeEventListener("extract-task-confirmed", handleExtractConfirmed);
   }, [loadAll]);
 
-  useEffect(() => {
-    // The embedded question bank loads its own student data. Fetch it here
-    // only when the shared picker opens, avoiding duplicate startup requests.
-    if (!teacher || (activeTab === "question" && !resourceStudentPickerOpen)) return;
-    let cancelled = false;
-    Promise.all([
-      classService.listMyClasses(teacher.schoolId || null, teacher.id),
-      classService.listMyStudents(teacher.schoolId || null, teacher.id),
-    ]).then(([classes, students]) => {
-      if (cancelled) return;
-      setResourceStudentClasses(classes);
-      setResourceStudents(students);
-    }).catch(() => {
-      if (!cancelled) {
-        setResourceStudentClasses([]);
-        setResourceStudents([]);
-      }
+  const handleResourceStudentsLoaded = useCallback((incoming: ResourceStudentChoice[]) => {
+    setResourceStudents((current) => {
+      const merged = new Map(current.map((student) => [student.id, student]));
+      incoming.forEach((student) => merged.set(student.id, student));
+      return [...merged.values()];
     });
-    return () => { cancelled = true; };
-  }, [teacher, activeTab, resourceStudentPickerOpen]);
+  }, []);
 
   useEffect(() => {
     if (!selectedResourceStudentIds.length || (activeTab !== "examPaper" && activeTab !== "lecture")) {
@@ -3145,14 +3131,16 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         icon={<Library className="w-5 h-5" />}
       />
 
-      <StudentPickerModal
+      <ResourceStudentPickerModal
         open={resourceStudentPickerOpen}
         onClose={() => setResourceStudentPickerOpen(false)}
         selectedStudentIds={selectedResourceStudentIds}
         onChange={setSelectedResourceStudentIds}
-        students={resourceStudents}
-        classes={resourceStudentClasses}
-        description="选择学生后，题库显示训练关联，试卷库与讲义库显示每份文档的做过、待做、未做题目数量"
+        teacherId={teacher?.id || ""}
+        schoolId={teacher?.schoolId || null}
+        teachingGrades={teacher?.affiliations?.find((item) => item.id === teacher.currentAffiliationId)?.teachingGrades
+          || teacher?.teachingGrades || []}
+        onStudentsLoaded={handleResourceStudentsLoaded}
       />
 
       {/* Tab 切换 */}

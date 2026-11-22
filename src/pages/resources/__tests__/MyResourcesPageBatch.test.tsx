@@ -197,10 +197,13 @@ vi.mock("@/services/basket", () => ({
 vi.mock("@/services/class", () => ({
   classService: {
     listAllClasses: vi.fn().mockResolvedValue([]),
+    listAudienceClasses: vi.fn(),
     listMyClasses: vi.fn(),
     listMyStudents: vi.fn(),
+    listResourceStudentChoices: vi.fn(),
   },
 }));
+vi.mock("@/services/school", () => ({ schoolService: { listSchools: vi.fn().mockResolvedValue([]) } }));
 vi.mock("@/services/analytics", () => ({
   analyticsService: {
     listUsedDocumentIds: vi.fn().mockResolvedValue([]),
@@ -376,6 +379,11 @@ function renderPage(initialTab: "question" | "material" | "courseware" | "examPa
   );
 }
 
+const resourcePickerClass = {
+  id: "class-1", name: "高一（1）班", type: "school" as const, schoolId: "school-1",
+  grade: "高一", studentCount: 49, createdBy: "teacher-1", createdAt: "2026-08-01",
+};
+
 describe("MyResourcesPage batch actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -437,8 +445,10 @@ describe("MyResourcesPage batch actions", () => {
     vi.mocked(basketService.listBaskets).mockResolvedValue([]);
     vi.mocked(basketService.getBasket).mockResolvedValue(null);
     vi.mocked(classService.listAllClasses).mockResolvedValue([]);
-    vi.mocked(classService.listMyClasses).mockResolvedValue([]);
+    vi.mocked(classService.listAudienceClasses).mockResolvedValue([resourcePickerClass]);
+    vi.mocked(classService.listMyClasses).mockResolvedValue([resourcePickerClass]);
     vi.mocked(classService.listMyStudents).mockResolvedValue([]);
+    vi.mocked(classService.listResourceStudentChoices).mockResolvedValue([]);
     vi.mocked(analyticsService.listUsedDocumentIds).mockResolvedValue([]);
   });
 
@@ -659,7 +669,8 @@ describe("MyResourcesPage batch actions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
     await waitFor(() => expect(classService.listMyClasses).toHaveBeenCalledWith("school-1", "teacher-1"));
-    expect(classService.listMyStudents).toHaveBeenCalledWith("school-1", "teacher-1");
+    expect(classService.listAudienceClasses).toHaveBeenCalledWith("school-1");
+    expect(classService.listResourceStudentChoices).toHaveBeenCalledWith();
   });
 
   it("lazy-loads the knowledge tree and appends a shared knowledge point to selected questions", async () => {
@@ -781,9 +792,9 @@ describe("MyResourcesPage batch actions", () => {
       };
       vi.mocked(examPaperService.listPapers).mockResolvedValue(tab === "examPaper" ? [paper] : []);
       vi.mocked(lectureService.listLectures).mockResolvedValue(tab === "lecture" ? [lecture] : []);
-      vi.mocked(classService.listMyStudents).mockResolvedValue([{
+      vi.mocked(classService.listResourceStudentChoices).mockResolvedValue([{
         id: "student-1", name: "测试学生甲", studentNo: "001", classId: "class-1",
-        schoolId: "school-1", grade: "高一", status: "active",
+        schoolId: "school-1", grade: "高一",
       }]);
       vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([{
         id: "record-1", studentId: "student-1", questionId: "q-1", lectureId: "unrelated-document",
@@ -798,7 +809,8 @@ describe("MyResourcesPage batch actions", () => {
       expect(await screen.findByText(tab === "examPaper" ? paper.title : lecture.title)).toBeInTheDocument();
       expect(screen.queryByTestId("resource-card-student-progress")).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
-      fireEvent.click(await screen.findByText("测试学生甲"));
+      fireEvent.click(await screen.findAllByRole("button", { name: "展开班级 高一（1）班" }).then((items) => items[0]));
+      fireEvent.click(await screen.findAllByText("测试学生甲").then((items) => items[0]));
       fireEvent.click(screen.getByRole("button", { name: "确定（1 人）" }));
 
       await waitFor(() => {
@@ -827,7 +839,7 @@ describe("MyResourcesPage batch actions", () => {
       classId: "class-1", schoolId: "school-1", grade: "高一", status: "active" as const,
     }));
     vi.mocked(examPaperService.listPapers).mockResolvedValue([paper]);
-    vi.mocked(classService.listMyStudents).mockResolvedValue(students);
+    vi.mocked(classService.listResourceStudentChoices).mockResolvedValue(students);
     vi.mocked(analyticsService.listAnswerRecordsByStudents).mockResolvedValue([{
       id: "record-1", studentId: "student-0", questionId: "q-1", lectureId: "other-document",
       isCorrect: true, answeredAt: "2026-10-01T00:00:00.000Z",
@@ -843,7 +855,7 @@ describe("MyResourcesPage batch actions", () => {
     renderPage("examPaper");
     expect(await screen.findByText(paper.title)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "选择学生" }));
-    fireEvent.click(await screen.findByRole("button", { name: "全选" }));
+    fireEvent.click(await screen.findAllByRole("checkbox", { name: "选择班级 高一（1）班" }).then((items) => items[0]));
     fireEvent.click(screen.getByRole("button", { name: "确定（49 人）" }));
 
     await waitFor(() => {

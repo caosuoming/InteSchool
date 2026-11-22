@@ -6,6 +6,7 @@ import type {
   PersonalClass,
   PersonalClassStudentCandidate,
   Student,
+  ResourceStudentChoice,
   StudentType,
   AnyClass,
   ClassroomChoice,
@@ -150,6 +151,10 @@ export const classService = {
 
   async listMyStudents(schoolId: string | null, teacherId: string): Promise<Student[]> {
     return rpcCall("class", "listMyStudents", [schoolId, teacherId]) as any;
+  },
+
+  async listResourceStudentChoices(targetSchoolId: string | null = null): Promise<ResourceStudentChoice[]> {
+    return rpcCall("class", "listResourceStudentChoices", [targetSchoolId, undefined]) as Promise<ResourceStudentChoice[]>;
   },
 
   async listMyStudentArchives(schoolId: string | null, teacherId: string): Promise<StudentArchiveOverview> {
