@@ -1051,7 +1051,7 @@ export function ExtractReviewModal({
       }
 
       const candidateGroups = await questionService.findSimilarQuestionsBatch(
-        extractedQuestions.map((item) => item.stem), teacher.schoolId!,
+        extractedQuestions.map((item) => ({ stem: item.stem, options: item.options })), teacher.schoolId!,
       );
       const duplicateResults = extractedQuestions.map((item, index) => ({
         item,

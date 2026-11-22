@@ -23,7 +23,8 @@ import { assertResourceCapacity } from "./quota.js";
 import { linkSameQuestions } from "./sameQuestion.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
-  questionStemSimilarity,
+  questionContentSimilarity,
+  type QuestionSimilarityContent,
   normalizeQuestionStem,
 } from "../../src/lib/question-similarity.js";
 
@@ -112,11 +113,11 @@ export function recordQuestionUsage(questionIds: readonly string[]): void {
 
 /** Build the candidate index once per batch rather than normalizing and comparing
  * the entire school question bank for every uploaded question. A pair of stems
- * with >= 0.8 bigram similarity must share at least one bigram, so the inverted
- * index cannot omit a high-similarity match. Exact normalized matches of length
+ * with >= 0.8 overall similarity must still share stem bigrams because choices
+ * contribute at most 0.4; the inverted index therefore preserves matches. Exact normalized matches of length
  * one are handled separately. */
 function batchSimilarQuestionCandidates(
-  stems: readonly string[],
+  inputs: readonly (string | QuestionSimilarityContent)[],
   schoolId: string,
   excludedIds: readonly string[] = [],
 ): SimilarQuestionCandidate[][] {
@@ -142,8 +143,9 @@ function batchSimilarQuestionCandidates(
     }
   });
 
-  return stems.map((stem) => {
-    const value = normalizeQuestionStem(stem);
+  return inputs.map((input) => {
+    const source = typeof input === "string" ? { stem: input } : input;
+    const value = normalizeQuestionStem(source.stem);
     if (!value) return [];
     const candidates = new Set<number>(exact.get(value) || []);
     for (let i = 0; i < value.length - 1; i += 1) {
@@ -154,7 +156,7 @@ function batchSimilarQuestionCandidates(
         / Math.max(value.length, normalized[index].length) >= HIGH_SIMILARITY_THRESHOLD)
       .map((index) => ({
         question: questions[index],
-        similarity: questionStemSimilarity(stem, questions[index].stem),
+        similarity: questionContentSimilarity(source, questions[index]),
         index,
       }))
       .filter(({ similarity }) => similarity >= HIGH_SIMILARITY_THRESHOLD)
@@ -165,11 +167,11 @@ function batchSimilarQuestionCandidates(
 }
 
 function similarQuestionCandidates(
-  stem: string,
+  input: string | QuestionSimilarityContent,
   schoolId: string,
   excludeQuestionIds: readonly string[] = [],
 ): SimilarQuestionCandidate[] {
-  return batchSimilarQuestionCandidates([stem], schoolId, excludeQuestionIds)[0];
+  return batchSimilarQuestionCandidates([input], schoolId, excludeQuestionIds)[0];
 }
 
 export function createDuplicateConfirmationError(candidate: SimilarQuestionCandidate): Error {
@@ -451,20 +453,21 @@ export const questionService = {
   },
 
   async findSimilarQuestionsBatch(
-    stems: string[],
+    inputs: Array<string | QuestionSimilarityContent>,
     schoolId: string,
   ): Promise<SimilarQuestionCandidate[][]> {
-    return batchSimilarQuestionCandidates(stems, schoolId);
+    return batchSimilarQuestionCandidates(inputs, schoolId);
   },
 
   async findSimilarQuestions(
     stem: string,
     schoolId: string,
     excludeQuestionId?: string,
+    options?: string[],
   ): Promise<SimilarQuestionCandidate[]> {
     await delay(100);
     return similarQuestionCandidates(
-      stem,
+      { stem, options },
       schoolId,
       excludeQuestionId ? [excludeQuestionId] : [],
     );
@@ -480,7 +483,7 @@ export const questionService = {
     maybeThrowError();
     assertResourceCapacity(teacherId, "question");
     const similar = similarQuestionCandidates(
-      input.stem,
+      input,
       schoolId,
       excludeDuplicateQuestionIds,
     );
@@ -552,8 +555,9 @@ export const questionService = {
     maybeThrowError();
     const existing = db.read("questions").find((question) => question.id === id);
     if (!existing) throw new Error("题目不存在");
-    if (patch.stem !== undefined && patch.stem !== existing.stem) {
-      const similar = similarQuestionCandidates(patch.stem, existing.schoolId, [id]);
+    if ((patch.stem !== undefined && patch.stem !== existing.stem)
+      || (patch.options !== undefined && JSON.stringify(patch.options) !== JSON.stringify(existing.options))) {
+      const similar = similarQuestionCandidates({ stem: patch.stem ?? existing.stem, options: patch.options ?? existing.options }, existing.schoolId, [id]);
       if (similar.length > 0 && duplicateDecision !== "add") {
         throw createDuplicateConfirmationError(similar[0]);
       }
@@ -601,7 +605,7 @@ export const questionService = {
     const other = all.find((q) => q.id === otherQuestionId &&
       (q.schoolId === owned.schoolId || q.isShared));
     if (!other || other.id === owned.id) throw new Error("要关联的题目不存在或无权访问");
-    if (questionStemSimilarity(owned.stem, other.stem) < HIGH_SIMILARITY_THRESHOLD) {
+    if (questionContentSimilarity(owned, other) < HIGH_SIMILARITY_THRESHOLD) {
       throw new Error("仅高度相似的题目可以标记为同一题");
     }
     linkSameQuestions(owned, other);
@@ -729,17 +733,17 @@ export const questionService = {
     await delay(800);
     maybeThrowError();
     assertResourceCapacity(teacherId, "question", questions.length);
-    const acceptedStems: string[] = [];
+    const acceptedQuestions: QuestionInput[] = [];
     for (const input of questions) {
-      const existingSimilar = similarQuestionCandidates(input.stem, schoolId)[0];
-      const batchSimilarStem = acceptedStems.find(
-        (stem) => questionStemSimilarity(input.stem, stem) >= HIGH_SIMILARITY_THRESHOLD,
+      const existingSimilar = similarQuestionCandidates(input, schoolId)[0];
+      const batchSimilar = acceptedQuestions.find(
+        (accepted) => questionContentSimilarity(input, accepted) >= HIGH_SIMILARITY_THRESHOLD,
       );
-      if ((existingSimilar || batchSimilarStem) && input.duplicateDecision !== "add") {
+      if ((existingSimilar || batchSimilar) && input.duplicateDecision !== "add") {
         if (existingSimilar) throw createDuplicateConfirmationError(existingSimilar);
         throw new Error("本次导入中存在高度相似题目，请先确认是否仍然新增");
       }
-      acceptedStems.push(input.stem);
+      acceptedQuestions.push(input);
     }
     const now = new Date().toISOString();
     const created: Question[] = questions.map((input) => ({

@@ -1,5 +1,5 @@
 import type { AnswerRecord, Question, ExamPaper, Lecture, DocumentRecord, DuplicateQuestionMergeFields, Student, PersonalClass } from "../../src/types/index.js";
-import { HIGH_SIMILARITY_THRESHOLD, normalizeQuestionStem, questionStemSimilarity } from "../../src/lib/question-similarity.js";
+import { HIGH_SIMILARITY_THRESHOLD, normalizeQuestionStem, questionContentSimilarity } from "../../src/lib/question-similarity.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { genId } from "../domain-shared.js";
 import { linkSameQuestions } from "./sameQuestion.js";
@@ -184,7 +184,7 @@ function scan(schedule: DuplicateSchedule): number {
       if (left.sameQuestionGroupId && left.sameQuestionGroupId === right.sameQuestionGroupId) continue;
       const id = pairId(schedule.kind, left.id, right.id);
       if (prior.has(id) || found.has(id)) continue;
-      const similarity = questionStemSimilarity(left.stem, right.stem);
+      const similarity = questionContentSimilarity(left, right);
       if (similarity < HIGH_SIMILARITY_THRESHOLD) continue;
       additions.push({ id: genId("duplicate"), teacherId: teacher.id, scheduleId: schedule.id, kind: schedule.kind,
         leftQuestionId: left.id, rightQuestionId: right.id, similarity, status: "pending",
