@@ -173,6 +173,70 @@ describe("scheduled duplicate scan", () => {
     });
   });
 
+  it("keeps confirmed pairs but rediscovers cancelled pairs on the next scan", async () => {
+    const data = state([
+      question("a", "第一道题：一元二次方程的求根公式是什么？"),
+      question("b", "第一道题：一元二次方程的求根公式是什么？"),
+      question("c", "第二道题：计算三个数的算术平均值是多少？"),
+      question("d", "第二道题：计算三个数的算术平均值是多少？"),
+    ]);
+    await runWithState(data, async () => {
+      const task = await makeTask("library");
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(2);
+      const initial = await scheduledDuplicateService.listCandidates("teacher");
+      expect(initial).toHaveLength(2);
+      await scheduledDuplicateService.resolveCandidate("teacher", initial[0].id, "keep");
+      expect(await scheduledDuplicateService.cancelPendingCandidates("teacher")).toBe(1);
+      expect(await scheduledDuplicateService.cancelPendingCandidates("teacher")).toBe(0);
+      expect(await scheduledDuplicateService.listCandidates("teacher")).toHaveLength(0);
+      expect((data.duplicateCheckedPairs as unknown[])).toHaveLength(1);
+      expect((data.duplicateCandidates as Array<{ status: string }>).map((item) => item.status))
+        .toEqual(expect.arrayContaining(["keep", "cancelled"]));
+      await expect(scheduledDuplicateService.resolveCandidate("teacher", initial[1].id, "keep"))
+        .rejects.toThrow("待处理题目不存在");
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
+      const [rediscovered] = await scheduledDuplicateService.listCandidates("teacher");
+      expect(rediscovered.id).not.toBe(initial[1].id);
+      expect([rediscovered.leftQuestionId, rediscovered.rightQuestionId].sort())
+        .toEqual([initial[1].leftQuestionId, initial[1].rightQuestionId].sort());
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(0);
+      await scheduledDuplicateService.resolveCandidate("teacher", rediscovered.id, "keep");
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(0);
+    });
+  });
+
+  it("sorts pending duplicates by descending similarity without mixing teachers", async () => {
+    const data = state([question("a", "题目 A"), question("b", "题目 B")]);
+    const makeCandidate = (id: string, similarity: number, teacherId = "teacher") => ({
+      id, teacherId, scheduleId: "schedule", kind: "library" as const,
+      leftQuestionId: "a", rightQuestionId: "b", similarity, status: "pending" as const,
+      createdAt: "2026-11-18T00:00:00.000Z",
+    });
+    data.duplicateCandidates = [
+      makeCandidate("low", 0.83), makeCandidate("other", 0.99, "other"),
+      makeCandidate("top", 0.99), makeCandidate("medium", 0.92),
+    ];
+    await runWithState(data, async () => {
+      expect((await scheduledDuplicateService.listCandidates("teacher")).map((item) => item.id))
+        .toEqual(["top", "medium", "low"]);
+      expect(await scheduledDuplicateService.cancelPendingCandidates("teacher")).toBe(3);
+      expect((data.duplicateCandidates as Array<{ id: string; status: string }>).find((item) => item.id === "other")?.status)
+        .toBe("pending");
+    });
+  });
+
+  it("allows student duplicate candidates to be rediscovered after cancellation", async () => {
+    const data = state([question("mine", "求解一元二次方程的根是多少？"), question("external", "求解一元二次方程的根是多少？", "other")]);
+    data.answerRecords = [record("r", "external")];
+    await runWithState(data, async () => {
+      const task = await makeTask("student");
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
+      expect(await scheduledDuplicateService.cancelPendingCandidates("teacher")).toBe(1);
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
+      const [candidate] = await scheduledDuplicateService.listCandidates("teacher");
+      expect(candidate.rightQuestionId).toBe("external");
+    });
+  });
   it("executes one-time schedules when due and respects UTC weekend cadence", async () => {
     const data = state();
     await runWithState(data, async () => {

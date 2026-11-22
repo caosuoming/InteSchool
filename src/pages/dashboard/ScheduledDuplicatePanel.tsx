@@ -66,6 +66,7 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
   const [busy, setBusy] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [mergeCandidate, setMergeCandidate] = useState<Candidate | null>(null);
+  const sortedCandidates = [...candidates].sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id));
   const refresh = useCallback(async () => {
     const [nextTasks, nextCandidates] = await Promise.all([
       rpcCall<Schedule[]>("scheduledDuplicate", "listSchedules", [teacherId]),
@@ -131,9 +132,15 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
             </div>)}
           </div>
           <div className="space-y-3">
-            <h4 className="font-medium">待确认重题（{candidates.length}）</h4>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-medium">待确认重题（{candidates.length}，按相似度降序）</h4>
+              {candidates.length > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => {
+                if (!window.confirm(`取消剩余 ${candidates.length} 组题目的确认？已确认的结果将保留，未确认的题目对会在下次查重时重新出现。`)) return;
+                void execute(() => rpcCall("scheduledDuplicate", "cancelPendingCandidates", [teacherId]), "已取消剩余确认，下次查重仍可发现这些题目");
+              }}>取消剩余确认</Button>}
+            </div>
             {candidates.length === 0 && <p className="text-sm text-ink-500">暂无待确认题目</p>}
-            {candidates.map((item) => <div key={item.id} className="border rounded-lg p-3 space-y-2 text-sm">
+            {sortedCandidates.map((item) => <div key={item.id} className="border rounded-lg p-3 space-y-2 text-sm">
               <div className="font-medium">{kindLabel[item.kind]} · 相似度 {(item.similarity * 100).toFixed(0)}% {item.studentCount ? `· 涉及 ${item.studentCount} 条作答` : ""}</div>
               <div className="grid sm:grid-cols-2 gap-2">
                 <div className="bg-mist p-3 rounded-md"><div className="text-ink-500 mb-1">我的题库</div><CandidateQuestionPreview question={item.leftQuestion} /></div>
