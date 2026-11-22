@@ -8,6 +8,7 @@ import type {
 import { delay, genId, maybeThrowError } from "../domain-shared.js";
 import { db } from "../runtime-db.js";
 import { classroomHomeworkAnswers } from "./classroomHomeworkAnswers.js";
+import { homeworkPlainText, validateHomeworkContent } from "../../src/lib/homework-rich-text.js";
 
 export interface ClassroomHomeworkInput {
   managementCategory?: "homework" | "exam";
@@ -123,8 +124,10 @@ function validateInput(input: ClassroomHomeworkInput, paperIds: string[]): Class
     throw new Error("作业分类不正确");
   }
   const attachments = normalizeAttachments(input.attachments);
-  if (!input.content.trim() && attachments.length === 0 && paperIds.length === 0) throw new Error("请输入作业内容、添加附件或选择试卷");
-  if (input.content.trim().length > 4000) throw new Error("作业内容不能超过 4000 字");
+  const safeContent = validateHomeworkContent(input.content);
+  if (!homeworkPlainText(safeContent).trim() && attachments.length === 0 && paperIds.length === 0) {
+    throw new Error("请输入作业内容、添加附件或选择试卷");
+  }
   if (input.classIds.length === 0) throw new Error("请选择至少一个发布班级");
   if (!DATE_PATTERN.test(input.assignedDate)) throw new Error("作业日期格式不正确");
   const endDate = input.assignedEndDate || input.assignedDate;
@@ -211,7 +214,7 @@ export const classroomHomeworkService = {
       subject: affiliation?.subject || teacher.subject || "其他学科",
       managementCategory: input.managementCategory || "homework",
       title: input.title?.trim() || undefined,
-      content: input.content.trim(),
+      content: validateHomeworkContent(input.content),
       attachments,
       examPaperIds: paperIds,
       classIds: uniqueClassIds,
@@ -273,7 +276,7 @@ export const classroomHomeworkService = {
       subject: affiliation?.subject || teacher.subject || "其他学科",
       managementCategory: input.managementCategory || existing.managementCategory || "homework",
       title: input.title?.trim() || undefined,
-      content: input.content.trim(),
+      content: validateHomeworkContent(input.content),
       attachments,
       examPaperIds: paperIds,
       classIds: uniqueClassIds,

@@ -31,6 +31,7 @@ import {
 import { BrandMark } from "@/components/brand/BrandMark";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
+import { HomeworkContent } from "@/components/homework/HomeworkContent";
 import { Spinner } from "@/components/ui/Spinner";
 import { SUBJECT_OPTIONS } from "@/lib/education";
 import { cn } from "@/lib/utils";
@@ -171,12 +172,9 @@ function HomeworkRow({
           {group.items.map((homework, index) => (
             <div key={homework.id} className={cn(index > 0 && "border-t border-neutral-800 pt-5")}>
               {homework.content && (
-                <div
-                  className="whitespace-pre-wrap font-medium leading-relaxed tracking-wide text-neutral-50"
-                  style={{ fontSize: `${fontSize}px` }}
-                >
-                  {homework.content}
-                </div>
+                <HomeworkContent content={homework.content}
+                  className="font-medium leading-relaxed tracking-wide text-neutral-50"
+                  style={{ fontSize: `${fontSize}px` }} />
               )}
               <HomeworkAttachments
                 attachments={homework.attachments}
@@ -184,7 +182,7 @@ function HomeworkRow({
                 fullscreenImages
                 className={cn(homework.content && "mt-4")}
               />
-              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" className="mt-3" />
+              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" classroomPreview className="mt-3" />
             </div>
           ))}
         </div>
@@ -1233,7 +1231,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
                             </div>
                             <div className="min-w-0 px-4 py-4">
                               {homework.content && (
-                                <div className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-200">{homework.content}</div>
+                                <HomeworkContent content={homework.content} className="text-sm leading-relaxed text-neutral-200" />
                               )}
                               <HomeworkAttachments
                                 attachments={homework.attachments}
@@ -1241,7 +1239,7 @@ export default function ClassroomPage({ deviceMode = false }: { deviceMode?: boo
                                 fullscreenImages
                                 className={cn(homework.content && "mt-3")}
                               />
-                              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" className="mt-2" />
+                              <HomeworkPaperLinks papers={homework.linkedPapers} theme="dark" classroomPreview className="mt-2" />
                               <div className="mt-2 text-[10px] text-neutral-600">{homework.teacherName}</div>
                             </div>
                           </div>
