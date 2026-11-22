@@ -38,6 +38,9 @@ import { Badge } from "@/components/ui/Badge";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { HomeworkAttachments } from "@/components/homework/HomeworkAttachments";
 import { HomeworkPaperLinks } from "@/components/homework/HomeworkPaperLinks";
+import { HomeworkContent } from "@/components/homework/HomeworkContent";
+import { HomeworkContentEditor } from "@/components/homework/HomeworkContentEditor";
+import { homeworkPlainText } from "@/lib/homework-rich-text";
 import { TeacherTimetable } from "@/components/lessons/TeacherTimetable";
 import { TeachingPlanPanel } from "@/components/lessons/TeachingPlanPanel";
 import { openCoursewareInWps } from "@/lib/wps";
@@ -601,7 +604,7 @@ export function MyLessonsPage() {
       toast.warning("附件仍在上传，请稍候");
       return;
     }
-    if (!homeworkContent.trim() && homeworkAttachments.length === 0 && selectedPaperIds.length === 0) {
+    if (!homeworkPlainText(homeworkContent).trim() && homeworkAttachments.length === 0 && selectedPaperIds.length === 0) {
       toast.warning("请输入作业内容、添加附件或选择试卷");
       return;
     }
@@ -660,7 +663,7 @@ export function MyLessonsPage() {
     }
   };
 
-  const handleHomeworkFiles = (files: FileList | null) => {
+  const handleHomeworkFiles = (files: FileList | File[] | null) => {
     if (!files) return;
     const existingKeys = new Set([
       ...homeworkAttachments.map((item) => `${item.name}:${item.size}`),
@@ -714,6 +717,16 @@ export function MyLessonsPage() {
           setHomeworkUploads((current) => current.filter((upload) => upload.key !== item.key));
         });
     }
+  };
+
+  const handlePasteHomeworkImage = (file: File) => {
+    if (!/^(image\/(png|jpeg|gif|webp))$/.test(file.type)) {
+      toast.warning("仅支持粘贴 PNG、JPEG、GIF 或 WebP 图片");
+      return;
+    }
+    const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
+    const namedFile = new File([file], `粘贴图片-${Date.now()}.${extension}`, { type: file.type });
+    handleHomeworkFiles([namedFile]);
   };
 
   const handleDeleteHomework = async (id: string) => {
@@ -974,11 +987,10 @@ export function MyLessonsPage() {
             <div className="mt-4 flex-1 space-y-3">
               {currentHomeworks.map((homework) => (
                 <div key={homework.id} className="rounded-lg border border-ink-100 bg-mist/40 p-3">
-                  <div className="whitespace-pre-wrap text-sm leading-6 text-ink-800">
-                    {homework.content || (homework.examPaperIds?.length
-                      ? `包含 ${homework.examPaperIds.length} 份试卷`
-                      : `包含 ${homework.attachments?.length || 0} 个附件`)}
-                  </div>
+                  <HomeworkContent content={homework.content || (homework.examPaperIds?.length
+                    ? `包含 ${homework.examPaperIds.length} 份试卷`
+                    : `包含 ${homework.attachments?.length || 0} 个附件`)}
+                    className="text-sm leading-6 text-ink-800" />
                   <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-ink-100 pt-3">
                     <div className="text-xs text-ink-500">
                       <div>{homework.classIds.map((id) => classNames.get(id) || id).join("、")}</div>
@@ -1216,16 +1228,16 @@ export function MyLessonsPage() {
           maxLength={120}
           className="mb-3"
         />
-        <Textarea
-          label="作业内容"
+        <HomeworkContentEditor
           value={homeworkContent}
-          onChange={(event) => setHomeworkContent(event.target.value)}
-          placeholder="例如：完成课本第 42 页第 1—6 题，订正今日课堂练习。"
-          maxLength={4000}
-          className="min-h-28"
+          onChange={setHomeworkContent}
+          onPasteImage={handlePasteHomeworkImage}
         />
 
-        <div className="mt-3 rounded-lg border border-dashed border-ink-200 bg-mist/40 p-3">
+        <div className="mt-3 rounded-lg border border-dashed border-ink-200 bg-mist/40 p-3" onPaste={(event) => {
+          const image = Array.from(event.clipboardData.files).find((file) => file.type.startsWith("image/"));
+          if (image) { event.preventDefault(); handlePasteHomeworkImage(image); }
+        }}>
           <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-ink-200 bg-paper px-3 py-2 text-sm text-ink-700 hover:border-gold-400 hover:text-ink-900">
               <Paperclip className="h-4 w-4" />
@@ -1282,7 +1294,7 @@ export function MyLessonsPage() {
                 </div>
               </div>
             </details>
-            <span className="text-xs text-ink-400">附件最多 8 个；试卷可多选，发布后自动将所选班级加入试卷使用对象</span>
+            <span className="text-xs text-ink-400">附件最多 8 个；可在作业内容或本区域按 Ctrl+V 粘贴图片；试卷可多选，发布后自动将所选班级加入试卷使用对象</span>
           </div>
           {homeworkUploads.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3" role="status" aria-label="作业附件上传中">
@@ -1417,7 +1429,7 @@ export function MyLessonsPage() {
                         <span>{new Date(homework.publishAt).toLocaleString("zh-CN", { hour12: false })}</span>
                       </div>
                       {homework.content && (
-                        <div className="mt-2 whitespace-pre-wrap text-sm text-ink-800">{homework.content}</div>
+                        <HomeworkContent content={homework.content} className="mt-2 text-sm text-ink-800" />
                       )}
                       <HomeworkAttachments attachments={homework.attachments} className="mt-3" />
                       <HomeworkPaperLinks papers={homework.linkedPapers} className="mt-2" />
@@ -1469,7 +1481,7 @@ export function MyLessonsPage() {
                           <span>{new Date(homework.publishAt).toLocaleString("zh-CN", { hour12: false })}</span>
                         </div>
                         {homework.content && (
-                          <div className="text-sm text-ink-800 whitespace-pre-wrap mt-2">{homework.content}</div>
+                          <HomeworkContent content={homework.content} className="mt-2 text-sm text-ink-800" />
                         )}
                         <HomeworkAttachments attachments={homework.attachments} className="mt-3" />
                         <HomeworkPaperLinks papers={homework.linkedPapers} className="mt-2" />

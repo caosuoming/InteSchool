@@ -417,7 +417,7 @@ describe("MyLessonsPage classroom publishing", () => {
         "teacher-1",
         "school-1",
         expect.objectContaining({
-          content: "完成课本第 42 页第 1—6 题",
+          content: expect.stringContaining("完成课本第 42 页第 1—6 题"),
           classIds: ["class-1"],
           publishAt: expect.any(String),
         }),
@@ -446,7 +446,7 @@ describe("MyLessonsPage classroom publishing", () => {
         expect.objectContaining({
           assignedDate: futureDate,
           assignedEndDate: futureDate,
-          content: "完成三天后的预习作业",
+          content: expect.stringContaining("完成三天后的预习作业"),
         }),
       );
     });
@@ -485,7 +485,7 @@ describe("MyLessonsPage classroom publishing", () => {
         expect.objectContaining({
           assignedDate: localDateValue(),
           assignedEndDate: endDate,
-          content: "连续三天完成阅读记录",
+          content: expect.stringContaining("连续三天完成阅读记录"),
         }),
       );
     });
@@ -517,7 +517,7 @@ describe("MyLessonsPage classroom publishing", () => {
     await user.click(screen.getByRole("button", { name: `编辑作业 ${futureDate}` }));
     expect(screen.getByLabelText("开始日期")).toHaveValue(futureDate);
     expect(screen.getByLabelText("结束日期")).toHaveValue(futureDate);
-    expect(screen.getByLabelText("作业内容")).toHaveValue(futureHomework.content);
+    expect(screen.getByLabelText("作业内容")).toHaveTextContent(futureHomework.content);
     await user.clear(screen.getByLabelText("作业内容"));
     await user.type(screen.getByLabelText("作业内容"), "完成后天的函数预习和例题");
     await user.click(screen.getByRole("button", { name: "保存作业修改" }));
@@ -529,7 +529,7 @@ describe("MyLessonsPage classroom publishing", () => {
         "school-1",
         expect.objectContaining({
           assignedDate: futureDate,
-          content: "完成后天的函数预习和例题",
+          content: expect.stringContaining("完成后天的函数预习和例题"),
         }),
       );
     });
@@ -545,7 +545,7 @@ describe("MyLessonsPage classroom publishing", () => {
     );
     expect(await screen.findByRole("button", { name: "保存作业修改" })).toBeInTheDocument();
     expect(screen.getByLabelText("作业名称")).toHaveValue("函数专项练习");
-    expect(screen.getByLabelText("作业内容")).toHaveValue(titled.content);
+    expect(screen.getByLabelText("作业内容")).toHaveTextContent(titled.content);
   });
 
   it("publishes a timed notice and previews the current class display", async () => {
@@ -635,7 +635,7 @@ describe("MyLessonsPage classroom publishing", () => {
         "teacher-1",
         "school-1",
         expect.objectContaining({
-          content: "阅读附件并完成练习",
+          content: expect.stringContaining("阅读附件并完成练习"),
           attachments: [{
             id: "file-1",
             name: "函数图像.pdf",
@@ -646,6 +646,31 @@ describe("MyLessonsPage classroom publishing", () => {
         }),
       );
     });
+  });
+
+  it("uploads an image pasted into the homework editor and publishes its attachment", async () => {
+    const user = userEvent.setup();
+    vi.mocked(uploadFile).mockResolvedValue({
+      id: "pasted-image", ownerId: "teacher-1", schoolId: "school-1",
+      originalName: "粘贴图片-123.png", mimeType: "image/png", size: 7,
+      createdAt: "2026-08-02T00:00:00.000Z", url: "/api/files/pasted-image",
+    });
+    render(<MemoryRouter><MyLessonsPage /></MemoryRouter>);
+    await user.click(await screen.findByRole("tab", { name: "我的作业" }));
+    const pastedImage = new File(["picture"], "clipboard.png", { type: "image/png" });
+    fireEvent.paste(screen.getByRole("textbox", { name: "作业内容" }), {
+      clipboardData: { files: [pastedImage] },
+    });
+    await waitFor(() => expect(uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "image/png", name: expect.stringMatching(/^粘贴图片-.*\.png$/) }),
+    ));
+    expect(await screen.findByText("粘贴图片-123.png")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "发布作业" }));
+    await waitFor(() => expect(classroomHomeworkService.createHomework).toHaveBeenCalledWith(
+      "teacher-1", "school-1", expect.objectContaining({
+        attachments: [expect.objectContaining({ id: "pasted-image", mimeType: "image/png" })],
+      }),
+    ));
   });
 
   it("edits the current notice instead of creating a duplicate", async () => {
@@ -700,7 +725,7 @@ describe("MyLessonsPage classroom publishing", () => {
 
     await user.click(await screen.findByRole("button", { name: "编辑作业" }));
     expect(screen.getByRole("tab", { name: "我的作业" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByLabelText("作业内容")).toHaveValue(createdHomework.content);
+    expect(screen.getByLabelText("作业内容")).toHaveTextContent(createdHomework.content);
     expect(screen.getAllByText("原作业.pdf").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "保存作业修改" }));
 

@@ -86,7 +86,7 @@ function FullscreenImagePreview({
       role="dialog"
       aria-modal="true"
       aria-label={"全屏预览 " + attachment.name}
-      className="fixed inset-0 z-[100] bg-black"
+      className="fixed inset-0 z-[100] bg-black/75"
     >
       <div className="absolute inset-0 overflow-auto">
         <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-8">

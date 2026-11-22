@@ -1,3 +1,4 @@
+import { homeworkPlainText } from "../../src/lib/homework-rich-text.js";
 import type {
   ClassroomHomework,
   ClassroomHomeworkAnswer,
@@ -65,7 +66,7 @@ export function classroomHomeworkAnswers(schoolId: string, classId: string): Cla
         date: homework.assignedDate,
         teacherId: homework.teacherId,
         published: new Date(homework.publishAt).getTime() <= Date.now(),
-        homeworkTitle: homework.title?.trim() || homework.content.trim().split("\n")[0]?.slice(0, 80) || "",
+        homeworkTitle: homework.title?.trim() || homeworkPlainText(homework.content).trim().split("\n")[0]?.slice(0, 80) || "",
       });
       linkedAssignments.set(paperId, assignments);
     }

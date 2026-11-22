@@ -1,3 +1,4 @@
+import { HomeworkContent } from "@/components/homework/HomeworkContent";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { CalendarRange, ChevronDown, ChevronUp, History, Plus, Save, Trash2 } from "lucide-react";
 import type {
@@ -101,9 +102,7 @@ function HomeworkCell({ items }: { items: ClassroomHomework[] }) {
   return (
     <div className="space-y-2">
       {items.map((homework) => (
-        <div key={homework.id} className="whitespace-pre-wrap break-words text-ink-700">
-          {homework.content}
-        </div>
+        <HomeworkContent key={homework.id} content={homework.content} className="text-ink-700" />
       ))}
     </div>
   );
