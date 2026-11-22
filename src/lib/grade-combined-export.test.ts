@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import JSZip from "jszip";
 import type { GradeExam, GradeImportContext } from "@/types";
 import { buildDefaultGradeSettings } from "./grade-statistics";
 import { buildGradeClassAverageReport } from "./grade-class-average";
@@ -9,6 +10,7 @@ import {
   exportGradeExam,
   exportGradeClassAverageReport,
   exportGradeClassStatisticsReport,
+  exportGradeClassStatisticsByClassZip,
   exportGradeElectiveScoreSegmentReport,
   exportGradeSubjectScoreSegmentReport,
   exportGradeTotalScoreRankingReport,
@@ -18,12 +20,15 @@ import {
 import { buildGradeClassStatisticsReport, DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS, sortGradeClassStatisticsReport } from "./grade-class-statistics";
 import { buildGradeTotalScoreRankingReport } from "./grade-total-score-ranking";
 
-const { writeXlsxFile, toFile } = vi.hoisted(() => ({
+const { writeXlsxFile, toFile, toBlob, saveAs } = vi.hoisted(() => ({
   writeXlsxFile: vi.fn(),
   toFile: vi.fn(),
+  toBlob: vi.fn(),
+  saveAs: vi.fn(),
 }));
 
 vi.mock("write-excel-file/browser", () => ({ default: writeXlsxFile }));
+vi.mock("file-saver", () => ({ saveAs }));
 
 const settings = buildDefaultGradeSettings(["语文", "化学"], ["class-1", "class-2"]);
 const classAverageTemplate = settings.templates.find((item) => item.kind === "classAverage")!;
@@ -137,8 +142,9 @@ function expectCenteredMergedTitle(row: ExportRow, title: string) {
 describe("combined grade exports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    writeXlsxFile.mockReturnValue({ toFile });
+    writeXlsxFile.mockReturnValue({ toFile, toBlob });
     toFile.mockResolvedValue(undefined);
+    toBlob.mockImplementation(async () => new Blob(["xlsx content"]));
   });
 
   it("appends per-exam remarks and automatic ranking notes to every exported sheet", async () => {
@@ -169,7 +175,7 @@ describe("combined grade exports", () => {
       expect(sheet.data.at(-1)?.slice(1).every((cell) => cell === null)).toBe(true);
     });
     vi.clearAllMocks();
-    writeXlsxFile.mockReturnValue({ toFile });
+    writeXlsxFile.mockReturnValue({ toFile, toBlob });
     const classReport = buildGradeClassStatisticsReport(annotated, [], {
       showSubjectClassRanks: false, showSubjectGradeRanks: false,
       showRawSubjectScores: false, showAssignedSubjectScores: false,
@@ -177,7 +183,7 @@ describe("combined grade exports", () => {
     });
     await exportGradeClassStatisticsReport(classReport, annotated.name, annotated);
     const classSheets = writeXlsxFile.mock.calls[0][0] as Array<{ data: ExportRow[] }>;
-    expect(classSheets).toHaveLength(2);
+    expect(classSheets).toHaveLength(5);
     expect(classSheets[0].data.slice(-2).map((row) => row[0]?.value)).toEqual([
       "考试备注：二班使用 B 卷",
       "高三（1）班：化学实行单独排名，不计入全年级统一排名。",
@@ -455,7 +461,7 @@ describe("combined grade exports", () => {
       "期末考试各单科分数段.xlsx",
       "期末考试选修分数段.xlsx",
       "期末考试总分前50名.xlsx",
-      "期末考试各班成绩统计.xlsx",
+      "期末考试各班成绩（一张表）.xlsx",
     ]);
 
     for (const [index, [workbook]] of writeXlsxFile.mock.calls.entries()) {
@@ -509,12 +515,50 @@ describe("combined grade exports", () => {
 
     expect(writeXlsxFile).toHaveBeenCalledTimes(1);
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string; data: ExportRow[]; stickyRowsCount: number }>;
-    expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班"]);
+    expect(sheets.map((sheet) => sheet.sheet)).toEqual(["高三（1）班", "高三（2）班", "年级汇总表", "参加统一排名班级汇总表", "未参加统一排名班级汇总表"]);
     for (const sheet of sheets) {
       expectCenteredMergedTitle(sheet.data[0], sheet.sheet);
       expect(sheet.stickyRowsCount).toBe(2);
     }
-    expect(toFile).toHaveBeenCalledWith("期末考试各班成绩统计.xlsx");
+    expect(toFile).toHaveBeenCalledWith("期末考试各班成绩（一张表）.xlsx");
+  });
+
+  it("splits grade summaries by total-score ranking participation", async () => {
+    const separate: GradeExam = {
+      ...exam,
+      settings: { ...settings, classSubjects: [
+        { classId: "class-1", examSubjects: ["语文", "化学"], statisticSubjects: ["语文"], separateRankSubjects: ["化学"] },
+        { classId: "class-2", examSubjects: ["语文", "化学"], statisticSubjects: ["语文", "化学"] },
+      ] },
+    };
+    await exportGradeClassStatisticsReport(buildGradeClassStatisticsReport(separate, [], DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS), separate.name, separate);
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string; data: ExportRow[] }>;
+    const names = (sheet: typeof sheets[number]) => sheet.data.slice(2)
+      .map((row) => row[1]?.value).filter((value) => typeof value === "string" && !value.includes("："));
+    expect(names(sheets[2])).toEqual(["张三", "李四"]);
+    expect(names(sheets[3])).toEqual(["李四"]);
+    expect(names(sheets[4])).toEqual(["张三"]);
+  });
+
+  it("downloads individual class workbooks as a ZIP without duplicating the grade summaries", async () => {
+    const report = buildGradeClassStatisticsReport(exam, [], DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS);
+    await exportGradeClassStatisticsByClassZip(report, exam.name, exam);
+    expect(writeXlsxFile).toHaveBeenCalledTimes(2);
+    expect((writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string }>).map((sheet) => sheet.sheet))
+      .toEqual(["高三（1）班"]);
+    expect((writeXlsxFile.mock.calls[1][0] as Array<{ sheet: string }>).map((sheet) => sheet.sheet))
+      .toEqual(["高三（2）班"]);
+    expect(saveAs).toHaveBeenCalledTimes(1);
+    expect(saveAs.mock.calls[0][1]).toBe("期末考试各班成绩（一班一表）.zip");
+    const blob = saveAs.mock.calls[0][0] as Blob;
+    const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(blob);
+    });
+    const archive = await JSZip.loadAsync(bytes);
+    expect(Object.keys(archive.files).sort()).toEqual(["高三（1）班.xlsx", "高三（2）班.xlsx"]);
   });
 
   it("exports separate raw and assigned elective values into the table-six workbook", async () => {
@@ -552,7 +596,7 @@ describe("combined grade exports", () => {
     const sorted = sortGradeClassStatisticsReport(report, { columnKey: "exam-1:subject:语文", direction: "desc" });
     await exportGradeClassStatisticsReport(sorted, exam.name);
     const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ data: Array<Array<{ value?: string | number }>> }>;
-    expect(sheets.map((sheet) => sheet.data.slice(2).map((row) => row[1].value)))
+    expect(sheets.slice(0, 2).map((sheet) => sheet.data.slice(2).map((row) => row[1].value)))
       .toEqual([["张三", "赵六"], ["钱七", "李四"]]);
     expect(report.classes[1].rows.map((row) => row.studentId)).toEqual(["s2", "s4"]);
   });

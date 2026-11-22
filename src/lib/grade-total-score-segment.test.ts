@@ -373,12 +373,12 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     expect(highScore?.values).toMatchObject({
       "class-1": 1,
       "class-2": 1,
-      __science_subtotal__: 1,
-      __arts_subtotal__: 1,
-      __total__: 2,
+      __science_subtotal__: null,
+      __arts_subtotal__: null,
+      __total__: null,
     });
     const firstTier = report.summaryRows.find((row) => row.key === "firstTierCount");
-    expect(firstTier?.values).toMatchObject({ "class-1": 1, "class-2": 1, __total__: 2 });
+    expect(firstTier?.values).toMatchObject({ "class-1": 1, "class-2": 1, __total__: null });
 
     const withoutOverrides = buildGradeTotalScoreSegmentReport(
       separateExam,
@@ -387,8 +387,38 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       classAverageTemplate,
     );
     expect(withoutOverrides.summaryRows.find((row) => row.key === "highScore1Count")?.values)
-      .toMatchObject({ "class-1": 1, "class-2": 1, __total__: 2 });
+      .toMatchObject({ "class-1": 1, "class-2": 1, __total__: null });
     expect(withoutOverrides.separateStandards[0].thresholds.highScore1).toBeNull();
+  });
+
+  it("excludes separate-ranking classes from general and track standard counts and denominators", () => {
+    const rankSettings = { ...exam.settings, classSubjects: [
+      { classId: "class-1", examSubjects: ["数学"], statisticSubjects: [], separateRankSubjects: ["数学"] },
+      { classId: "class-2", examSubjects: ["数学"], statisticSubjects: ["数学"], separateRankSubjects: [] },
+    ] };
+    const report = buildGradeTotalScoreSegmentReport(exam, {
+      ...template, totalScoreSegmentOptions: {
+        generalThresholds: { highScore1: 80 },
+        generalStandardVisibility: { highScore1: true },
+        trackThresholds: { science: { highScore1: 80 }, arts: { highScore1: 80 } },
+        separateRankThresholds: { '["数学"]': { highScore1: 90 } },
+      },
+    }, { ...context, classProfiles: {
+      "class-1": { subjectSelections: ["物化生"], scoreSubjects: ["数学"], hasImportedScores: true },
+      "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
+    } }, classAverageTemplate, rankSettings);
+    const main = report.summaryRows.find((row) => row.key === "highScore1Count")!;
+    const general = report.summaryRows.find((row) => row.key === "general-highScore1Count")!;
+    expect(main.values["class-1"]).toBe(1); // separate threshold 90: 95 passes, 85 fails
+    expect(main.values.__science_subtotal__).toBeNull();
+    expect(main.values.__arts_subtotal__).toBe(1);
+    expect(main.values.__total__).toBe(1);
+    expect(general.values["class-1"]).toBeNull();
+    expect(general.values.__total__).toBe(1);
+    expect(report.validTotalCounts.__total__).toBe(4);
+    expect(report.unifiedValidTotalCounts.__total__).toBe(2);
+    expect(report.unifiedValidTotalCounts.__science_subtotal__).toBe(0);
+    expect(report.unifiedValidTotalCounts.__arts_subtotal__).toBe(2);
   });
 
   it("leaves ordinary classes on track standards when a separate group has custom standards", () => {

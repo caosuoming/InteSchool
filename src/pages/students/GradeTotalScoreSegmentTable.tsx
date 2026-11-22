@@ -84,7 +84,7 @@ export function GradeTotalScoreSegmentTable({
     const column = report.columns.find((item) => item.kind === "subtotal" && item.track === track);
     if (!column) return "—人（—）";
     const count = report.summaryRows.find((row) => row.key === `${targetKey}Count`)?.values[column.key];
-    const candidates = report.validTotalCounts[column.key];
+    const candidates = report.unifiedValidTotalCounts[column.key];
     if (typeof count !== "number") return "—人（—）";
     return `${count}人（${typeof candidates === "number" && candidates > 0
       ? `${((count / candidates) * 100).toFixed(1)}%`
@@ -94,7 +94,7 @@ export function GradeTotalScoreSegmentTable({
     const row = report.summaryRows.find((item) => item.key === `general-${targetKey}Count`)
       || report.summaryRows.find((item) => item.key === `${targetKey}Count`);
     const count = row?.values.__total__;
-    const total = report.validTotalCounts.__total__;
+    const total = report.unifiedValidTotalCounts.__total__;
     return typeof count === "number" ? `${count}人（${total > 0 ? `${((count / total) * 100).toFixed(1)}%` : "—"}）` : "—人（—）";
   };
   const separateStandardStats = (classIds: string[], targetKey: GradeTotalScoreTargetKey) => {
@@ -294,7 +294,7 @@ export function GradeTotalScoreSegmentTable({
           <div>
             <div className="font-medium text-ink-900">表二、总分分数段汇总表（{scoreModeLabel}）</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              按选定的通用、理科和文科标准统计达线人数；仅启用通用标准时隐藏文理科小计。
+              按选定的通用、理科和文科标准统计统一排名班级达线人数；单独排名班级按各自标准单列统计。仅启用通用标准时按班号排序并隐藏文理科小计。
             </div>
           </div>
         </div>

@@ -22,7 +22,7 @@ interface GradeClassStatisticsTableProps {
   comparisonExams: GradeExam[];
   options: GradeClassStatisticsOptions;
   onOptionsChange: (options: GradeClassStatisticsOptions) => void;
-  onDownload?: (sort: GradeClassStatisticsSort | null) => Promise<void>;
+  onDownload?: (sort: GradeClassStatisticsSort | null, mode?: "workbook" | "zip") => Promise<void>;
 }
 
 function displayValue(value: string | number | null | undefined): string {
@@ -47,7 +47,7 @@ export function GradeClassStatisticsTable({
   );
   const [selectedClassId, setSelectedClassId] = useState(report.classes[0]?.classId || "");
   const [sort, setSort] = useState<GradeClassStatisticsSort | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"workbook" | "zip" | null>(null);
   const activeSort = sort && report.columns.some((column) => column.key === sort.columnKey) ? sort : null;
   const sortedReport = useMemo(() => sortGradeClassStatisticsReport(report, activeSort), [report, activeSort]);
 
@@ -67,16 +67,16 @@ export function GradeClassStatisticsTable({
       ? { columnKey, direction: "asc" }
       : current.direction === "asc" ? { columnKey, direction: "desc" } : null);
   };
-  const download = async () => {
+  const download = async (mode: "workbook" | "zip") => {
     if (!onDownload || downloading) return;
-    setDownloading(true);
+    setDownloading(mode);
     try {
-      await onDownload(activeSort);
-      toast.success("各班成绩统计已下载");
+      await onDownload(activeSort, mode);
+      toast.success("各班成绩已下载");
     } catch (error) {
       toast.error("下载失败", error instanceof Error ? error.message : undefined);
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   };
   const patchOptions = (patch: Partial<GradeClassStatisticsOptions>) => {
@@ -115,9 +115,14 @@ export function GradeClassStatisticsTable({
               />
             </div>
             {onDownload && (
-              <Button variant="outline" onClick={() => void download()} loading={downloading} disabled={downloading}>
-                <Download className="h-4 w-4" />下载各班成绩统计
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => void download("workbook")} loading={downloading === "workbook"} disabled={downloading !== null}>
+                  <Download className="h-4 w-4" />下载各班成绩（一张表）
+                </Button>
+                <Button variant="outline" onClick={() => void download("zip")} loading={downloading === "zip"} disabled={downloading !== null}>
+                  <Download className="h-4 w-4" />下载各班成绩（一班一表）
+                </Button>
+              </>
             )}
           </div>
         )}

@@ -100,8 +100,10 @@ describe("GradeClassStatisticsTable", () => {
     expect(names()).toEqual(["李四", "张三", "王五"]);
     await user.click(screen.getByRole("button", { name: "按语文降序排序" }));
     expect(names()).toEqual(["王五", "张三", "李四"]);
-    await user.click(screen.getByRole("button", { name: "下载各班成绩统计" }));
-    expect(onDownload).toHaveBeenCalledWith({ columnKey: "current:subject:语文", direction: "desc" });
+    await user.click(screen.getByRole("button", { name: "下载各班成绩（一张表）" }));
+    expect(onDownload).toHaveBeenCalledWith({ columnKey: "current:subject:语文", direction: "desc" }, "workbook");
+    await user.click(screen.getByRole("button", { name: "下载各班成绩（一班一表）" }));
+    expect(onDownload).toHaveBeenCalledWith({ columnKey: "current:subject:语文", direction: "desc" }, "zip");
     await user.click(screen.getByRole("button", { name: "按语文默认顺序排序" }));
     expect(names()).toEqual(["张三", "李四", "王五"]);
     await user.click(screen.getByRole("button", { name: "按姓名升序排序" }));

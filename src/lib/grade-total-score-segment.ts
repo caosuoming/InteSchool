@@ -77,6 +77,8 @@ export interface GradeTotalScoreSegmentReport {
   rows: GradeTotalScoreSegmentRow[];
   summaryRows: GradeTotalScoreSummaryRow[];
   validTotalCounts: Record<string, number>;
+  /** Denominators for the unified track and general standards; separate groups are excluded. */
+  unifiedValidTotalCounts: Record<string, number>;
 }
 
 export const DEFAULT_TOTAL_SCORE_SEGMENT_MAX = 700;
@@ -188,6 +190,18 @@ function buildColumns(
   classes: GradeTotalScoreSegmentClass[],
   trackVisibility: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, boolean>>,
 ): GradeTotalScoreSegmentColumn[] {
+  // When only the general standards are displayed, the class columns must
+  // remain in numeric class order rather than being grouped by academic track.
+  if (!(["science", "arts"] as const).some((track) =>
+    TARGET_KEYS.some((key) => trackVisibility[track][key]))) {
+    return [
+      ...classes.map((item) => ({
+        key: item.classId, label: item.classLabel, kind: "class" as const,
+        classId: item.classId, classIds: [item.classId],
+      })),
+      { key: TOTAL_KEY, label: "总计", kind: "total", classIds: classes.map((item) => item.classId) },
+    ];
+  }
   const columns: GradeTotalScoreSegmentColumn[] = [];
   const appendTrack = (track: GradeAcademicTrack, label: string) => {
     const trackClasses = classes.filter((classItem) => classItem.track === track);
@@ -390,9 +404,17 @@ export function buildGradeTotalScoreSegmentReport(
         ? [gradeTemplateTotal(record, totalTemplate)] : [];
     }),
   ]));
+  const unifiedClassIds = new Set(classes
+    .filter((item) => totalRankingGroupKey(rankSettings, item.classId) === "[]")
+    .map((item) => item.classId));
   const validTotalCounts = Object.fromEntries(columns.map((column) => [
     column.key,
     column.classIds.reduce((sum, classId) => sum + (totalsByClass.get(classId)?.length || 0), 0),
+  ]));
+  const unifiedValidTotalCounts = Object.fromEntries(columns.map((column) => [
+    column.key,
+    column.classIds.filter((id) => unifiedClassIds.has(id))
+      .reduce((sum, classId) => sum + (totalsByClass.get(classId)?.length || 0), 0),
   ]));
 
   const rows: GradeTotalScoreSegmentRow[] = [];
@@ -462,6 +484,10 @@ export function buildGradeTotalScoreSegmentReport(
     })),
   ])) as Record<GradeTotalScoreTargetKey, Record<string, number | null>>;
 
+  // Only unified-ranking classes contribute to shared standard aggregates.
+  // Separate-ranking classes retain their own per-class figures, evaluated
+  // against their own thresholds, and are shown under their group standard.
+  const unifiedIds = (classIds: string[]) => classIds.filter((id) => unifiedClassIds.has(id));
   const valuesByColumns = (
     classValues: Record<string, number | string | null>,
     aggregate: (classIds: string[]) => number | string | null,
@@ -469,7 +495,7 @@ export function buildGradeTotalScoreSegmentReport(
     column.key,
     column.kind === "class" && column.classId
       ? classValues[column.classId] ?? null
-      : aggregate(column.classIds),
+      : aggregate(unifiedIds(column.classIds)),
   ]));
 
   const targetValues = (key: GradeTotalScoreTargetKey) => {
@@ -519,7 +545,7 @@ export function buildGradeTotalScoreSegmentReport(
     const threshold = generalStandards[key];
     const perClass = Object.fromEntries(classes.map((classItem) => [
       classItem.classId,
-      threshold === null ? null : (totalsByClass.get(classItem.classId) || [])
+      threshold === null || !unifiedClassIds.has(classItem.classId) ? null : (totalsByClass.get(classItem.classId) || [])
         .filter((total) => total >= threshold).length,
     ]));
     return valuesByColumns(perClass, (classIds) => sumNumbers(classIds.map((classId) => perClass[classId])));
@@ -582,5 +608,6 @@ export function buildGradeTotalScoreSegmentReport(
         || (["science", "arts"] as const).some((track) => trackVisibility[track][key]);
     }),
     validTotalCounts,
+    unifiedValidTotalCounts,
   };
 }

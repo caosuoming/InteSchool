@@ -58,6 +58,7 @@ import { InvigilationTableSection } from "@/pages/exams/InvigilationTableSection
 import { TeachingScheduleSection } from "@/pages/exams/TeachingScheduleSection";
 import {
   exportGradeClassStatisticsReport,
+  exportGradeClassStatisticsByClassZip,
   exportGradeTablesOneToFive,
   GRADE_SUBJECT_OPTIONS,
 } from "@/lib/grade-spreadsheet";
@@ -546,7 +547,7 @@ function GradePreprocessing({
     }
   }, []);
 
-  const downloadClassStatistics = useCallback(async (sort: GradeClassStatisticsSort | null) => {
+  const downloadClassStatistics = useCallback(async (sort: GradeClassStatisticsSort | null, mode: "workbook" | "zip" = "workbook") => {
     if (!selectedExam) throw new Error("请选择需要导出的考试");
     const report = buildGradeClassStatisticsReport(
       previewExam!,
@@ -554,7 +555,12 @@ function GradePreprocessing({
       classStatisticsOptions,
     );
     await quotaService.consumeExamUsage(teacherId, "gradeStatistics");
-    await exportGradeClassStatisticsReport(sortGradeClassStatisticsReport(report, sort), selectedExam.name, previewExam!);
+    const sorted = sortGradeClassStatisticsReport(report, sort);
+    if (mode === "zip") {
+      await exportGradeClassStatisticsByClassZip(sorted, selectedExam.name, previewExam!);
+    } else {
+      await exportGradeClassStatisticsReport(sorted, selectedExam.name, previewExam!);
+    }
   }, [classStatisticsOptions, previousExams, previewExam, selectedExam, teacherId]);
 
   const copy = async () => {
