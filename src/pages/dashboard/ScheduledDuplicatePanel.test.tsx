@@ -29,6 +29,44 @@ describe("ScheduledDuplicatePanel", () => {
     });
   });
 
+  it("can cancel only the remaining review after confirming a higher-ranked duplicate", async () => {
+    const user = userEvent.setup();
+    let pending = [
+      { ...candidate, id: "lower", similarity: 0.85 },
+      { ...candidate, id: "higher", similarity: 0.98 },
+    ];
+    vi.mocked(rpcCall).mockImplementation(async (_service, method, args) => {
+      if (method === "listSchedules") return [];
+      if (method === "listCandidates") return [...pending];
+      if (method === "resolveCandidate") {
+        pending = pending.filter((item) => item.id !== args?.[1]);
+        return undefined;
+      }
+      if (method === "cancelPendingCandidates") {
+        const count = pending.length;
+        pending = [];
+        return count;
+      }
+      return undefined;
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      render(<ScheduledDuplicatePanel teacherId="teacher" />);
+      await user.click(await screen.findByRole("button", { name: /管理任务/ }));
+      await screen.findByText(/相似度 98%/);
+      expect(screen.getAllByText(/本库重题搜索 · 相似度/).map((el) => el.textContent))
+        .toEqual(["本库重题搜索 · 相似度 98% ", "本库重题搜索 · 相似度 85% "]);
+      await user.click(screen.getAllByRole("button", { name: "保留" })[0]);
+      await waitFor(() => expect(screen.getAllByText(/本库重题搜索 · 相似度/)).toHaveLength(1));
+      await user.click(screen.getByRole("button", { name: "取消剩余确认" }));
+      expect(confirm).toHaveBeenCalledOnce();
+      await waitFor(() => expect(screen.getByText("暂无待确认题目")).toBeInTheDocument());
+      expect(rpcCall).toHaveBeenCalledWith("scheduledDuplicate", "resolveCandidate", ["teacher", "higher", "keep"]);
+      expect(rpcCall).toHaveBeenCalledWith("scheduledDuplicate", "cancelPendingCandidates", ["teacher"]);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
   it("renders formulas and choice options, reveals both sources, and submits field-specific merge choices", async () => {
     const user = userEvent.setup();
     render(<ScheduledDuplicatePanel teacherId="teacher" />);

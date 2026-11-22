@@ -3,6 +3,7 @@ export const serviceParameters = {
     "listSchedules": ["teacherId"], "listCandidates": ["teacherId"],
     "createSchedule": ["teacherId", "kind", "repeat", "nextRunAt", "timezoneOffsetMinutes"],
     "cancelSchedule": ["teacherId", "scheduleId"], "runSchedule": ["teacherId", "scheduleId"],
+    "cancelPendingCandidates": ["teacherId"],
     "resolveCandidate": ["teacherId", "candidateId", "decision", "fields"]
   },
   "board": {

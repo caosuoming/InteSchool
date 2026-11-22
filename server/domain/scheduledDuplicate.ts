@@ -17,7 +17,7 @@ export interface DuplicateSchedule {
 export interface DuplicateCandidate {
   id: string; teacherId: string; scheduleId: string; kind: DuplicateTaskKind;
   leftQuestionId: string; rightQuestionId: string; similarity: number;
-  status: "pending" | "keep" | "merged" | "same" | "added";
+  status: "pending" | "cancelled" | "keep" | "merged" | "same" | "added";
   studentCount?: number; createdAt: string; resolvedAt?: string;
 }
 
@@ -156,7 +156,9 @@ function scan(schedule: DuplicateSchedule): number {
     if (studentIds.has(a.studentId)) counts.set(a.questionId, (counts.get(a.questionId) || 0) + 1);
   }
   const prior = new Set(checked().filter((c) => c.teacherId === teacher.id && c.kind === schedule.kind).map((c) => c.id));
-  const found = new Set(candidates().filter((c) => c.teacherId === teacher.id && c.kind === schedule.kind).map((c) => pairId(c.kind, c.leftQuestionId, c.rightQuestionId)));
+  // Cancelled reviews are deliberately not checked: a later scan may rediscover them.
+  const found = new Set(candidates().filter((c) => c.teacherId === teacher.id && c.kind === schedule.kind && c.status === "pending")
+    .map((c) => pairId(c.kind, c.leftQuestionId, c.rightQuestionId)));
   const index = new Map<string, Set<Question>>();
   for (const q of source) {
     if (schedule.kind === "student" && (ownIds.has(q.id) || (q.teacherId === teacher.id && !q.id.startsWith("exam-item:")) || !counts.has(q.id))) continue;
@@ -218,7 +220,8 @@ export const scheduledDuplicateService = {
     return schedules().filter((item) => item.teacherId === teacherId);
   },
   async listCandidates(teacherId: string) {
-    const pending = candidates().filter((item) => item.teacherId === teacherId && item.status === "pending");
+    const pending = candidates().filter((item) => item.teacherId === teacherId && item.status === "pending")
+      .sort((a, b) => b.similarity - a.similarity || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
     if (!pending.length) return [];
     const libraryQuestions = (db.read("questions") || []) as Question[];
     const questions = new Map([...libraryQuestions, ...paperQuestionSources()].map((q) => [q.id, q]));
@@ -269,6 +272,16 @@ export const scheduledDuplicateService = {
     const count = scan(task);
     db.update("duplicateSchedules", (items: DuplicateSchedule[]) => items.map((s) => s.id === scheduleId ? { ...s, lastRunAt: new Date().toISOString() } : s));
     return count;
+  },
+  async cancelPendingCandidates(teacherId: string): Promise<number> {
+    let cancelled = 0;
+    const now = new Date().toISOString();
+    db.update("duplicateCandidates", (items: DuplicateCandidate[] = []) => items.map((item) => {
+      if (item.teacherId !== teacherId || item.status !== "pending") return item;
+      cancelled++;
+      return { ...item, status: "cancelled" as const, resolvedAt: now };
+    }));
+    return cancelled;
   },
   async resolveCandidate(teacherId: string, candidateId: string, decision: "keep" | "merge" | "same" | "add", fields?: DuplicateQuestionMergeFields): Promise<void> {
     const candidate = candidates().find((c) => c.id === candidateId && c.teacherId === teacherId && c.status === "pending");
