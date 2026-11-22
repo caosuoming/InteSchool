@@ -89,6 +89,7 @@ describe("ResourceStudentPickerModal", () => {
     expect(classService.listResourceStudentChoices).toHaveBeenCalledWith();
     expect(classService.listResourceStudentChoices).not.toHaveBeenCalledWith("school-external");
     fireEvent.click(screen.getByRole("button", { name: "平台所有学校的班级和学生" }));
+    expect(screen.getByRole("option", { name: "本校" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "选择平台学校" }), { target: { value: "school-external" } });
     await waitFor(() => expect(classService.listResourceStudentChoices).toHaveBeenCalledWith("school-external"));
     const outside = await screen.findByRole("checkbox", { name: "选择班级 外校班" });

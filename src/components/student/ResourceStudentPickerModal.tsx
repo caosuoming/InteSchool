@@ -83,7 +83,7 @@ export function ResourceStudentPickerModal({
     grade: classes.filter((item) => item.type === "school" && item.schoolId === schoolId
       && grades.has(item.grade)),
     school: classes.filter((item) => item.type === "school" && item.schoolId === schoolId),
-    platform: classes.filter((item) => item.type === "school" && item.schoolId !== schoolId),
+    platform: classes.filter((item) => item.type === "school"),
   }), [classes, schoolId, myIds, grades]);
 
   const selectSchool = async (id: string) => {
