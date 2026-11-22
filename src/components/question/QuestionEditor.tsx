@@ -245,13 +245,15 @@ export function QuestionEditor({ question, onSaved, onCancel }: QuestionEditorPr
       toast.error("题干不能为空");
       return;
     }
-    if (teacher?.schoolId && form.stem !== question.stem) {
+    if (teacher?.schoolId && (form.stem !== question.stem
+      || JSON.stringify(form.options) !== JSON.stringify(question.options || []))) {
       setSaving(true);
       try {
         const [candidate] = await questionService.findSimilarQuestions(
           form.stem,
           teacher.schoolId,
           question.id,
+          form.options,
         );
         if (candidate) {
           setDuplicateConflict(candidate);

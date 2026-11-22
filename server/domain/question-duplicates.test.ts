@@ -138,3 +138,39 @@ describe("batch similar-question lookup", () => {
     });
   });
 });
+
+
+describe("choice question duplicate handling", () => {
+  const stem = "下面哪个数是素数？";
+  const original = existingQuestion({ id: "choice-original", type: "single", stem, options: ["1", "2", "3", "4"] });
+  const changedOptions = ["5", "6", "7", "8"];
+
+  it("uses options in single and batched duplicate lookups", async () => {
+    await runWithState(state([original]), async () => {
+      const identical = await questionService.findSimilarQuestions(stem, "school-1", undefined, ["4", "3", "2", "1"]);
+      expect(identical[0].similarity).toBe(1);
+      expect(await questionService.findSimilarQuestions(stem, "school-1", undefined, changedOptions)).toEqual([]);
+      const [matches] = await questionService.findSimilarQuestionsBatch([{ stem, options: changedOptions }], "school-1");
+      expect(matches).toEqual([]);
+    });
+  });
+
+  it("allows a different choice set but flags the same choice content on create", async () => {
+    await runWithState(state([original]), async () => {
+      await expect(questionService.createQuestion("teacher-1", "school-1", {
+        ...input, type: "single", stem, options: ["1", "2", "3", "4"],
+      })).rejects.toThrow(/发现高度相似题目/);
+      const created = await questionService.createQuestion("teacher-1", "school-1", {
+        ...input, type: "single", stem, options: changedOptions,
+      });
+      expect(created.options).toEqual(changedOptions);
+    });
+  });
+
+  it("checks option-only edits against existing questions", async () => {
+    await runWithState(state([original, existingQuestion({ id: "choice-edit", type: "single", stem, options: changedOptions })]), async () => {
+      await expect(questionService.updateQuestion("choice-edit", { options: ["1", "2", "3", "4"] }))
+        .rejects.toThrow(/发现高度相似题目/);
+    });
+  });
+});

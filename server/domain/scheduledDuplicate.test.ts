@@ -262,3 +262,22 @@ describe("scheduled duplicate scan", () => {
     expect(nextExecution(new Date("2026-11-20T12:00:00.000Z"), "weekend")).toBe("2026-11-21T12:00:00.000Z");
   });
 });
+
+
+describe("scheduled choice duplicate scoring", () => {
+  it("uses options for the displayed similarity percentage and filters unrelated choices", async () => {
+    const stem = "观察下列数据，选择正确的结论";
+    const data = state([
+      { ...question("a", stem), options: ["甲", "乙", "丙", "丁"] },
+      { ...question("b", stem), options: ["丁", "丙", "乙", "甲"] },
+      { ...question("c", stem), options: ["戊", "己", "庚", "辛"] },
+    ]);
+    await runWithState(data, async () => {
+      const task = await makeTask("library");
+      expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(1);
+      const [candidate] = await scheduledDuplicateService.listCandidates("teacher");
+      expect(candidate.rightQuestionId).toBe("b");
+      expect(candidate.similarity).toBe(1);
+    });
+  });
+});

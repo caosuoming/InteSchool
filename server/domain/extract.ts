@@ -21,7 +21,7 @@ import { examPaperService } from "./examPaper.js";
 import { db } from "../runtime-db.js";
 import {
   HIGH_SIMILARITY_THRESHOLD,
-  questionStemSimilarity,
+  questionContentSimilarity,
 } from "../../src/lib/question-similarity.js";
 
 const OMITTED_CONTENT = "略";
@@ -138,7 +138,7 @@ export const extractService = {
       }
     }
     const candidates = await questionService.findSimilarQuestionsBatch(
-      unresolved.map((item) => item.stem), schoolId,
+      unresolved.map((item) => ({ stem: item.stem, options: item.options })), schoolId,
     );
     for (const matches of candidates) {
       if (matches[0]) throw createDuplicateConfirmationError(matches[0]);
@@ -163,7 +163,7 @@ export const extractService = {
         if (target.teacherId !== teacherId || target.schoolId !== schoolId) {
           throw new Error("只能将上传题合并到自己的题目");
         }
-        if (questionStemSimilarity(item.stem, target.stem) < HIGH_SIMILARITY_THRESHOLD) {
+        if (questionContentSimilarity(item, target) < HIGH_SIMILARITY_THRESHOLD) {
           throw new Error("题目相似度不足，不能执行合并");
         }
         const fields = validateMergeFields(item.duplicateFields);

@@ -1,3 +1,4 @@
+import { questionContentSimilarity } from "../../src/lib/question-similarity.js";
 import { db } from "../runtime-db.js";
 import { appendCopySuffix, genId, delay } from "../domain-shared.js";
 import { schoolBackupService } from "./schoolBackup.js";
@@ -237,28 +238,8 @@ function normalizeForSimilarity(value: string): string {
     .toLowerCase();
 }
 
-function levenshteinSimilarity(left: string, right: string): number {
-  const a = normalizeForSimilarity(left);
-  const b = normalizeForSimilarity(right);
-  if (a === b) return 1;
-  if (!a.length || !b.length) return 0;
-  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
-  const current = new Array<number>(b.length + 1);
-  for (let i = 1; i <= a.length; i += 1) {
-    current[0] = i;
-    for (let j = 1; j <= b.length; j += 1) {
-      const substitution = previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
-      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, substitution);
-    }
-    for (let j = 0; j <= b.length; j += 1) previous[j] = current[j];
-  }
-  return 1 - previous[b.length] / Math.max(a.length, b.length);
-}
-
 function questionSimilarity(source: Question, existing: Question): number {
-  const sourceText = [source.stem, ...(source.options || []), source.answer].join("\n");
-  const existingText = [existing.stem, ...(existing.options || []), existing.answer].join("\n");
-  return levenshteinSimilarity(sourceText, existingText);
+  return questionContentSimilarity(source, existing);
 }
 
 function lectureSectionQuestionIds(sections: LectureSection[]): string[] {

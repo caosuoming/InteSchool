@@ -940,11 +940,13 @@ export default function QuestionBankPage({
     setReplaceSaving(true);
     try {
       let duplicateDecision: "add" | undefined;
-      if (replaceForm.stem !== replaceQuestion.stem) {
+      if (replaceForm.stem !== replaceQuestion.stem
+        || JSON.stringify(replaceForm.options) !== JSON.stringify(replaceQuestion.options || [])) {
         const [candidate] = await questionService.findSimilarQuestions(
           replaceForm.stem,
           teacher.schoolId,
           replaceQuestion.id,
+          replaceForm.options,
         );
         if (candidate) {
           const accepted = confirm(

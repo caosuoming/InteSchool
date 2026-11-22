@@ -1,3 +1,4 @@
+import type { QuestionSimilarityContent } from "@/lib/question-similarity";
 import { normalizeLegacyQuestionMeanNotation } from "@/lib/legacy-question-math";
 import { rpcCall } from "./api";
 import { clearResourceCache } from "@/lib/resource-cache";
@@ -87,9 +88,9 @@ export const questionService = {
     return questions.map(normalizeLegacyQuestionMeanNotation);
   },
 
-  async findSimilarQuestionsBatch(stems: string[], schoolId: string): Promise<SimilarQuestionCandidate[][]> {
+  async findSimilarQuestionsBatch(inputs: Array<string | QuestionSimilarityContent>, schoolId: string): Promise<SimilarQuestionCandidate[][]> {
     const results = await rpcCall<SimilarQuestionCandidate[][]>(
-      "question", "findSimilarQuestionsBatch", [stems, schoolId],
+      "question", "findSimilarQuestionsBatch", [inputs, schoolId],
     );
     return results.map((candidates) => candidates.map((candidate) => ({
       ...candidate,
@@ -101,11 +102,12 @@ export const questionService = {
     stem: string,
     schoolId: string,
     excludeQuestionId?: string,
+    options?: string[],
   ): Promise<SimilarQuestionCandidate[]> {
     const candidates = await rpcCall(
       "question",
       "findSimilarQuestions",
-      [stem, schoolId, excludeQuestionId],
+      [stem, schoolId, excludeQuestionId, options],
     ) as SimilarQuestionCandidate[];
     return candidates.map((candidate) => ({
       ...candidate,

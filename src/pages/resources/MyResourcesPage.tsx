@@ -57,7 +57,7 @@ import { timeAgo } from "@/lib/service-utils";
 import { genId } from "@/lib/service-utils";
 import { cn } from "@/lib/utils";
 import { getQuestionOptionGridColumns } from "@/lib/question-option-layout";
-import { questionStemSimilarity } from "@/lib/question-similarity";
+import { questionContentSimilarity } from "@/lib/question-similarity";
 import { subjectAwareDefaultQuestionScore } from "@/lib/question-default-score";
 import { StudentPickerModal } from "@/components/student/StudentPickerModal";
 import { documentStudentProgressLabel, type PendingQuestionAssignment } from "@/lib/document-student-progress";
@@ -4706,7 +4706,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
           mode="merge"
           items={[{
             id: batchMergeQuestions.source.id,
-            similarity: questionStemSimilarity(batchMergeQuestions.target.stem, batchMergeQuestions.source.stem),
+            similarity: questionContentSimilarity(batchMergeQuestions.target, batchMergeQuestions.source),
             existing: batchMergeQuestions.target,
             incoming: batchMergeQuestions.source,
             canMerge: true,

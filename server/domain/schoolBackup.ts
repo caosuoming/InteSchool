@@ -14,7 +14,7 @@ import { appendCopySuffix, delay, genId, maybeThrowError } from "../domain-share
 import { assertResourceCapacity } from "./quota.js";
 import { isPlatformAdminAccount } from "../../src/lib/platform-admin.js";
 import { linkSameQuestions } from "./sameQuestion.js";
-import { questionStemSimilarity, HIGH_SIMILARITY_THRESHOLD } from "../../src/lib/question-similarity.js";
+import { questionContentSimilarity, HIGH_SIMILARITY_THRESHOLD } from "../../src/lib/question-similarity.js";
 import {
   getSchoolResourceChapterTree,
   getSchoolResourceKnowledgeTree,
@@ -586,7 +586,7 @@ export const schoolBackupService = {
       .filter((q) => q.teacherId === teacher.id && q.schoolId === teacher.schoolId)
       .filter((q) => !q.schoolSourceBackupIds?.includes(backup.id))
       .map((q) => ({ targetResourceId: q.id, targetQuestion: q, sourceQuestion: source,
-        similarity: questionStemSimilarity(stripCopySuffix(source.stem) as string, stripCopySuffix(q.stem) as string) }))
+        similarity: questionContentSimilarity({ ...source, stem: stripCopySuffix(source.stem) as string }, { ...q, stem: stripCopySuffix(q.stem) as string }) }))
       .filter((candidate) => candidate.similarity >= HIGH_SIMILARITY_THRESHOLD)
       .sort((a, b) => b.similarity - a.similarity).slice(0, 5);
   },
