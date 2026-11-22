@@ -30,8 +30,9 @@ import {
   buildGradeElectiveScoreSegmentReport,
   type GradeElectiveScoreSegmentReport,
 } from "./grade-elective-score-segment.js";
-import type { GradeClassStatisticsReport } from "./grade-class-statistics.js";
+import type { GradeClassStatisticsReport, GradeClassStatisticsRow } from "./grade-class-statistics.js";
 import { buildGradeReportTable } from "./grade-reports.js";
+import { totalRankingGroupKey } from "./grade-statistics.js";
 import {
   ASSIGNABLE_GRADE_SUBJECTS,
   isAssignableGradeSubject,
@@ -1030,29 +1031,84 @@ export async function exportGradeTablesOneToFive(params: {
   await writeXlsxFile(sheets).toFile(gradeReportFileName(exam.name, "表一至表五", `${exam.name}表一至表五`));
 }
 
+function classStatisticsWorkbookSheet(
+  report: GradeClassStatisticsReport,
+  name: string,
+  rows: GradeClassStatisticsRow[],
+  usedNames: Set<string>,
+): CombinedWorkbookSheet {
+  return {
+    sheet: uniqueWorkbookSheetName(name, usedNames),
+    data: [
+      titleRow(`${report.title} - ${name}`, report.columns.length),
+      headingRow(report.columns.map((column) => column.label)),
+      ...rows.map((row) => report.columns.map((column) => combinedWorkbookCell(row.values[column.key]))),
+    ],
+    stickyRowsCount: 2,
+    columns: report.columns.map((column) => ({ width: column.width })),
+  };
+}
+
+function classStatisticsWorkbookSheets(
+  report: GradeClassStatisticsReport,
+  exam?: GradeExam,
+): CombinedWorkbookSheet[] {
+  const usedNames = new Set<string>();
+  const sheets = report.classes.map((classTable) => appendGradeNotes(
+    classStatisticsWorkbookSheet(report, classTable.className, classTable.rows, usedNames),
+    exam ? buildGradeReportNotes(exam, exam.settings, classTable.classId) : [],
+  ));
+  const allRows = report.classes.flatMap((classTable) => classTable.rows);
+  const unified = new Set(report.classes.filter((classTable) =>
+    !exam || totalRankingGroupKey(exam.settings, classTable.classId) === "[]"
+  ).map((classTable) => classTable.classId));
+  const summaryGroups: Array<[string, GradeClassStatisticsRow[]]> = [
+    ["年级汇总表", allRows],
+    ["参加统一排名班级汇总表", allRows.filter((row) => unified.has(row.classId))],
+    ["未参加统一排名班级汇总表", allRows.filter((row) => !unified.has(row.classId))],
+  ];
+  sheets.push(...summaryGroups.map(([name, rows]) => appendGradeNotes(
+    classStatisticsWorkbookSheet(report, name, rows, usedNames),
+    exam ? buildGradeReportNotes(exam, exam.settings) : [],
+  )));
+  return sheets;
+}
+
+/** One workbook containing all class sheets and three grade-wide summaries. */
 export async function exportGradeClassStatisticsReport(
   report: GradeClassStatisticsReport,
   examName?: string,
   exam?: GradeExam,
 ): Promise<void> {
   if (report.classes.length === 0) throw new Error("当前考试没有可导出的班级成绩");
-  const usedNames = new Set<string>();
-  const sheets: CombinedWorkbookSheet[] = report.classes.map((classTable) => ({
-    sheet: uniqueWorkbookSheetName(classTable.className, usedNames),
-    data: [
-      titleRow(`${report.title} - ${classTable.className}`, report.columns.length),
-      headingRow(report.columns.map((column) => column.label)),
-      ...classTable.rows.map((row) => report.columns.map((column) => combinedWorkbookCell(row.values[column.key]))),
-    ],
-    stickyRowsCount: 2,
-    columns: report.columns.map((column) => ({ width: column.width })),
-  }));
-  if (exam) {
-    sheets.forEach((sheet, index) => appendGradeNotes(
-      sheet,
-      buildGradeReportNotes(exam, exam.settings, report.classes[index].classId),
-    ));
-  }
+  const sheets = classStatisticsWorkbookSheets(report, exam);
   const { default: writeXlsxFile } = await import("write-excel-file/browser");
-  await writeXlsxFile(sheets).toFile(gradeReportFileName(examName, "各班成绩统计", report.title));
+  await writeXlsxFile(sheets).toFile(gradeReportFileName(examName, "各班成绩（一张表）", report.title));
+}
+
+/** One workbook per class, collected in a single ZIP for downloading. */
+export async function exportGradeClassStatisticsByClassZip(
+  report: GradeClassStatisticsReport,
+  examName?: string,
+  exam?: GradeExam,
+): Promise<void> {
+  if (report.classes.length === 0) throw new Error("当前考试没有可导出的班级成绩");
+  const [{ default: writeXlsxFile }, { default: JSZip }, { saveAs }] = await Promise.all([
+    import("write-excel-file/browser"), import("jszip"), import("file-saver"),
+  ]);
+  const zip = new JSZip();
+  const usedFiles = new Set<string>();
+  for (const [index, classTable] of report.classes.entries()) {
+    const sheet = appendGradeNotes(
+      classStatisticsWorkbookSheet(report, classTable.className, classTable.rows, new Set<string>()),
+      exam ? buildGradeReportNotes(exam, exam.settings, classTable.classId) : [],
+    );
+    const fileBase = safeExcelFileNamePart(classTable.className, `班级${index + 1}`);
+    let fileName = `${fileBase}.xlsx`;
+    for (let suffix = 2; usedFiles.has(fileName); suffix++) fileName = `${fileBase}-${suffix}.xlsx`;
+    usedFiles.add(fileName);
+    zip.file(fileName, await writeXlsxFile([sheet]).toBlob());
+  }
+  const archiveName = `${safeExcelFileNamePart(examName || report.title, "各班成绩")}各班成绩（一班一表）.zip`;
+  saveAs(await zip.generateAsync({ type: "blob", compression: "STORE" }), archiveName);
 }
