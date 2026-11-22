@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AppState } from "../types.js";
+import type { AppState, SessionUser } from "../types.js";
+import type { DatabaseStore } from "../database.js";
+import { invokeRpc } from "../rpc.js";
 import type { AnswerRecord, Question, ExamPaper, Lecture } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { nextExecution, runDueDuplicateSchedules, scheduledDuplicateService } from "./scheduledDuplicate.js";
@@ -203,6 +205,17 @@ describe("scheduled duplicate scan", () => {
       await scheduledDuplicateService.resolveCandidate("teacher", rediscovered.id, "keep");
       expect(await scheduledDuplicateService.runSchedule("teacher", task.id)).toBe(0);
     });
+  });
+
+  it("rejects cancelling another teacher's pending reviews via RPC", async () => {
+    const data = state();
+    const store = { loadState: () => data, saveState: () => undefined } as unknown as DatabaseStore;
+    const session: SessionUser = {
+      userId: "user", teacherId: "teacher", email: "teacher@example.com",
+      csrfToken: "token", expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+    await expect(invokeRpc(store, session, "scheduledDuplicate", "cancelPendingCandidates", ["other"]))
+      .rejects.toThrow("无权以其他教师身份执行操作");
   });
 
   it("sorts pending duplicates by descending similarity without mixing teachers", async () => {
