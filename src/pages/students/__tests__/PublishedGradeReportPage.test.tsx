@@ -207,6 +207,31 @@ describe("PublishedGradeReportPage", () => {
     expect(await screen.findByText("全校平均（部分）")).toBeInTheDocument();
   });
 
+  it("renders configured custom differences in the published table at their chosen positions", async () => {
+    const published = structuredClone(bundle);
+    if (!published.classAverage) throw new Error("missing class average");
+    const group = published.classAverage.groups[0];
+    published.classAverage.customDifferences = [
+      {
+        id: "anchored", classIds: ["class-1", "class-2"], afterClassId: "class-1",
+        label: "分差（1-2班）", difference: group.difference,
+        subjectScoreModes: group.subjectScoreModes,
+      },
+      {
+        id: "bottom", classIds: ["class-1", "class-2"], afterClassId: null,
+        label: "分差（1-2班）", difference: group.difference,
+        subjectScoreModes: group.subjectScoreModes,
+      },
+    ];
+    vi.spyOn(gradeService, "getPublishedReportByToken").mockResolvedValue(published);
+    renderPage();
+    expect(await screen.findAllByTestId("published-custom-class-difference-row")).toHaveLength(2);
+    const rows = screen.getAllByTestId("published-custom-class-difference-row");
+    expect(rows[0]).toHaveTextContent("分差（1-2班）");
+    expect(rows[0]).toHaveTextContent("32.00");
+    expect(rows[1].previousElementSibling).toHaveTextContent("全校平均");
+  });
+
   it("matches the platform tables for teachers, standards, zero counts, and summary rows", async () => {
     vi.spyOn(gradeService, "getPublishedReportByToken").mockResolvedValue(bundle);
     renderPage();

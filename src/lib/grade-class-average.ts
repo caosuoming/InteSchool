@@ -2,6 +2,7 @@ import type {
   GradeClassAverageOptions,
   GradeClassAverageSubjectScoreMode,
   GradeCustomTotalScore,
+  GradeCustomClassDifference,
   GradeExam,
   GradeExamSettings,
   GradeImportContext,
@@ -47,6 +48,12 @@ export interface GradeClassAverageGroup {
   subjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
 }
 
+export interface GradeClassAverageCustomDifference extends GradeCustomClassDifference {
+  label: string;
+  difference: GradeClassAverageSummary;
+  subjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
+}
+
 export interface GradeClassAverageColumn {
   key: string;
   label: string;
@@ -83,6 +90,7 @@ export interface GradeClassAverageReport {
     | "showOverallAverage"
   >> & GradeClassAverageOptions;
   groups: GradeClassAverageGroup[];
+  customDifferences: GradeClassAverageCustomDifference[];
   overallAverage: GradeClassAverageSummary;
   overallExcludedClasses: { subjects: Record<string, string[]>; total: string[] };
   overallSubjectScoreModes: Record<string, GradeClassAverageSubjectScoreMode>;
@@ -136,6 +144,14 @@ export function formatGradeClassRangeLabel(labels: string[]): string {
   return ranges.join(",");
 }
 
+/** 表头与自定义分差共用同一班级范围缩写规则。 */
+export function formatGradeCustomDifferenceLabel(labels: string[]): string {
+  const range = formatGradeClassRangeLabel(labels);
+  return `分差（${range.split(",").map((part) =>
+    /^\d+(?:-\d+)?$/.test(part) ? `${part}班` : part
+  ).join("、")}）`;
+}
+
 function fallbackReportDate(exam: GradeExam): string {
   return exam.examDate || exam.createdAt.slice(0, 10);
 }
@@ -187,6 +203,7 @@ export function buildDefaultClassAverageOptions(
     ])),
     totalScoreMode: scoreMode,
     customTotals: [],
+    customDifferences: [],
     showTeacherRows: true,
     showGroupDifference: true,
     showGroupAverage: true,
@@ -235,6 +252,15 @@ export function resolveClassAverageOptions(
     ])),
     totalScoreMode: options?.totalScoreMode || scoreMode,
     customTotals: (options?.customTotals || []).filter((total) => total.subjects.length > 0 && total.subjects.every((subject) => exam.subjects.includes(subject))),
+    customDifferences: (options?.customDifferences || []).slice(0, 12)
+      .filter((item) => item && typeof item.id === "string" && item.id.length > 0 && Array.isArray(item.classIds))
+      .filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index)
+      .map((item) => ({
+        id: item.id,
+        classIds: unique(item.classIds).filter((classId) => defaultOrder.includes(classId)),
+        afterClassId: item.afterClassId && defaultOrder.includes(item.afterClassId) ? item.afterClassId : null,
+      }))
+      .filter((item) => item.classIds.length >= 2),
     showTeacherRows: options?.showTeacherRows ?? true,
     showGroupDifference: options?.showGroupDifference ?? true,
     showGroupAverage: options?.showGroupAverage ?? true,
@@ -415,8 +441,7 @@ export function buildGradeClassAverageReport(
   });
   const contextClassNames = new Map(context.classes.map((item) => [item.id, item.name]));
 
-  const classRows = (options.classOrder || [])
-    .filter((classId) => !hiddenClassIds.has(classId))
+  const allClassRows = (options.classOrder || [])
     .map((classId) => {
       const records = recordsByClass.get(classId) || [];
       const className = contextClassNames.get(classId) || records[0]?.className || "未知班级";
@@ -446,6 +471,7 @@ export function buildGradeClassAverageReport(
       } satisfies GradeClassAverageRow;
     });
 
+  const classRows = allClassRows.filter((row) => !hiddenClassIds.has(row.classId));
   const categoryOrder = unique(classRows.map((row) => row.category));
   const groups = categoryOrder.map((category) => {
     const rows = classRows.filter((row) => row.category === category);
@@ -457,6 +483,21 @@ export function buildGradeClassAverageReport(
       average: summaryForRecords(groupRecords, effectiveSubjects, exam.subjects, expectedCount, customTotals, totalSubjects),
       subjectScoreModes: combinedSubjectScoreModes(rows, effectiveSubjects, template.scoreMode),
     } satisfies GradeClassAverageGroup;
+  });
+  const visibleRows = new Map(classRows.map((row) => [row.classId, row]));
+  const selectableRows = new Map(allClassRows.map((row) => [row.classId, row]));
+  const customDifferences = (options.customDifferences || []).map((item) => {
+    const rows = item.classIds.flatMap((classId) => {
+      const row = selectableRows.get(classId);
+      return row ? [row] : [];
+    });
+    return {
+      ...item,
+      afterClassId: item.afterClassId && visibleRows.has(item.afterClassId) ? item.afterClassId : null,
+      label: formatGradeCustomDifferenceLabel(rows.map((row) => row.classLabel)),
+      difference: differenceForRows(rows, effectiveSubjects, customTotals),
+      subjectScoreModes: combinedSubjectScoreModes(rows, effectiveSubjects, template.scoreMode),
+    };
   });
   const reportRecords = classRows.flatMap((row) => recordsByClass.get(row.classId) || []);
   const classSettings = new Map(settings.classSubjects.map((item) => [item.classId, item]));
@@ -502,6 +543,7 @@ export function buildGradeClassAverageReport(
     customTotals,
     options,
     groups,
+    customDifferences,
     overallAverage,
     overallExcludedClasses,
     overallSubjectScoreModes: Object.fromEntries(effectiveSubjects.map((subject) => [

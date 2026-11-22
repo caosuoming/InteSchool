@@ -9,6 +9,7 @@ import {
   buildGradeClassAverageReport,
   classAverageOverallLabel,
   formatGradeClassRangeLabel,
+  formatGradeCustomDifferenceLabel,
 } from "./grade-class-average.js";
 
 const context: GradeImportContext = {
@@ -156,6 +157,36 @@ const exam: GradeExam = {
 };
 
 describe("grade class average report", () => {
+  it("formats custom difference labels with compressed consecutive class numbers", () => {
+    expect(formatGradeCustomDifferenceLabel(["3班", "1班", "5班", "2班"])).toBe("分差（1-3班、5班）");
+    expect(formatGradeCustomDifferenceLabel(["实验甲", "实验乙"])).toBe("分差（实验甲、实验乙）");
+  });
+
+  it("calculates multiple cross-category differences, preserves order and validates class IDs", () => {
+    const customTemplate = {
+      ...template,
+      classAverageOptions: {
+        classCategories: { "class-2": "普通班", "class-10": "实验班" },
+        hiddenClassIds: ["class-10"],
+        customDifferences: [
+          { id: "first", classIds: ["class-2", "class-10", "unknown", "class-2"], afterClassId: "class-2" },
+          { id: "second", classIds: ["class-10", "class-2"], afterClassId: "class-10" },
+          { id: "invalid", classIds: ["class-2", "missing"], afterClassId: null },
+        ],
+      },
+    };
+    const report = buildGradeClassAverageReport(exam, customTemplate, context);
+    expect(report.customDifferences).toHaveLength(2);
+    expect(report.customDifferences.map((item) => item.label))
+      .toEqual(["分差（2班、10班）", "分差（2班、10班）"]);
+    expect(report.customDifferences.map((item) => item.afterClassId)).toEqual(["class-2", null]);
+    expect(report.customDifferences[0].difference.subjectValues.数学.raw).toBe(20);
+    expect(report.customDifferences[0].difference.subjectValues.英语.raw).toBe(20);
+    expect(report.customDifferences[0].difference.totalValues.raw).toBe(0);
+    expect(report.groups).toHaveLength(1);
+    expect(report.groups[0].rows).toHaveLength(1);
+  });
+
   it("includes every subject with actual marks even when the template was created before import", () => {
     const expandedExam = {
       ...exam,

@@ -51,6 +51,30 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
   const report = bundle.classAverage;
   if (!report) return null;
 
+  const renderCustomDifferenceRow = (
+    item: (typeof report.customDifferences)[number],
+    outsideGroup = false,
+  ) => (
+    <tr key={item.id} className="bg-amber-100/60" data-testid="published-custom-class-difference-row">
+      {outsideGroup && <td className="border border-ink-300 bg-amber-100/40" />}
+      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center font-medium">{item.label}</td>
+      <td className="border border-ink-300 px-3 py-2" />
+      {report.subjects.map((subject) => (
+        <td key={subject} className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+          {scoreText(item.difference.subjectValues[subject], item.subjectScoreModes[subject])}
+        </td>
+      ))}
+      <td className="whitespace-nowrap border border-ink-300 px-2 py-1.5 text-center tabular-nums">
+        {scoreText(item.difference.totalValues, report.options.totalScoreMode || "assigned")}
+      </td>
+      {(report.customTotals || []).map((total) => (
+        <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">
+          {item.difference.customValues?.[total.id]?.toFixed(2) ?? "—"}
+        </td>
+      ))}
+    </tr>
+  );
+
   return (
     <Card className="overflow-hidden p-5">
       <ReportHeading title={report.title} date={report.reportDate} />
@@ -73,7 +97,10 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
               const summaryRows = group.rows.length > 1
                 ? Number(report.options.showGroupDifference) + Number(report.options.showGroupAverage)
                 : 0;
-              const rowSpan = group.rows.length * (report.options.showTeacherRows ? 2 : 1) + summaryRows;
+              const customRows = report.customDifferences.filter((item) =>
+                group.rows.some((row) => row.classId === item.afterClassId)
+              ).length;
+              const rowSpan = group.rows.length * (report.options.showTeacherRows ? 2 : 1) + summaryRows + customRows;
               let categoryRendered = false;
               return [
                 ...group.rows.flatMap((row) => {
@@ -124,7 +151,10 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                       {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{row.customAverages?.[total.id]?.toFixed(2) ?? "—"}</td>)}
                     </tr>
                   );
-                  return teacherRow ? [teacherRow, scoreRow] : [scoreRow];
+                  const inserted = report.customDifferences
+                    .filter((item) => item.afterClassId === row.classId)
+                    .map((item) => renderCustomDifferenceRow(item));
+                  return teacherRow ? [teacherRow, scoreRow, ...inserted] : [scoreRow, ...inserted];
                 }),
                 ...(group.rows.length > 1 && report.options.showGroupDifference ? [(
                   <tr key={`${group.category}-difference`} className="bg-amber-50/40">
@@ -174,6 +204,8 @@ function ClassAverageTable({ bundle }: { bundle: GradePublishedReportBundle }) {
                 {(report.customTotals || []).map((total) => <td key={total.id} className="border border-ink-300 px-2 py-1.5 text-center">{report.overallAverage.customValues?.[total.id]?.toFixed(2) ?? "—"}</td>)}
               </tr>
             )}
+            {report.customDifferences.filter((item) => !item.afterClassId)
+              .map((item) => renderCustomDifferenceRow(item, true))}
           </tbody>
         </table>
         <div className="mt-2 text-xs text-ink-400">
