@@ -485,7 +485,8 @@ describe("ClassroomPage", () => {
     await user.click(await screen.findByRole("button", { name: /函数图像\.png/ }));
 
     const viewer = screen.getByRole("dialog", { name: "全屏预览 函数图像.png" });
-    expect(viewer).toHaveClass("fixed", "inset-0", "bg-black");
+    expect(viewer).toHaveClass("fixed", "inset-0", "bg-black/75");
+    expect(viewer.className).not.toContain("backdrop-blur");
     expect(screen.getByRole("img", { name: "函数图像.png" })).toHaveAttribute("src", "/api/files/image-1");
     expect(screen.getByText("100%")).toBeInTheDocument();
 
