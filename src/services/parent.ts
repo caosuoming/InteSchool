@@ -41,8 +41,8 @@ export interface ParentGradeResult {
     className: string;
     scores: Record<string, number | null>;
     assignedScores: Record<string, number | null>;
-    rawTotal: number;
-    assignedTotal: number;
+    rawTotal: number | null;
+    assignedTotal: number | null;
     classRank: number;
     gradeRank: number;
   };

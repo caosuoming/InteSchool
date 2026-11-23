@@ -1,5 +1,5 @@
 import type { GradeCustomTotalScore, GradeExam, GradeScoreRecord, GradeStatisticsTemplate } from "../types/index.js";
-import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
+import { gradeAttendance, participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
 import { inferGradeAcademicTrackFromSelection } from "./grade-total-score-segment.js";
 
 /** Same name/subject selection is used by every statistics table. */
@@ -12,7 +12,8 @@ export function gradeCustomTotals(template: GradeStatisticsTemplate | undefined,
 
 /** A missing required subject is a missing total, never an implicit zero. */
 export function gradeCustomTotal(record: GradeScoreRecord, total: GradeCustomTotalScore): number | null {
-  if (record.includeInStatistics === false || total.subjects.length === 0) return null;
+  if (record.includeInStatistics === false || record.rawTotal === null || (total.scoreMode === "assigned" && record.assignedTotal === null)
+    || total.subjects.length === 0) return null;
   const scores = total.scoreMode === "raw" ? record.scores : record.assignedScores;
   const values = total.subjects.map((subject) => {
     const raw = record.scores[subject];
@@ -32,7 +33,8 @@ export interface GradeCustomRanks {
 
 /** Competition ranking (1,1,3), respecting separate ranking groups and mixed tracks. */
 export function gradeCustomRanks(exam: GradeExam, total: GradeCustomTotalScore): GradeCustomRanks {
-  const records = participatingGradeRecords(exam.records);
+  const records = participatingGradeRecords(exam.records)
+    .filter((record) => gradeAttendance(record, exam.subjects, exam.settings).complete);
   const scored = records.flatMap((record) => {
     const score = gradeCustomTotal(record, total);
     return score === null ? [] : [{ record, score }];

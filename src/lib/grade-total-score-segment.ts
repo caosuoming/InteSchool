@@ -13,6 +13,7 @@ import { resolveClassAverageOptions } from "./grade-class-average.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
 import {
   ELECTIVE_GRADE_SUBJECTS,
+  gradeAttendance,
   inferStatisticSubjectsFromSelections,
   participatingGradeRecords,
   totalRankingGroupKey,
@@ -301,7 +302,9 @@ export function buildGradeTotalScoreSegmentReport(
     ? { ...template, ...customRange } : template);
   const segmentSize = range.segmentSize;
   const customValues = customTotal
-    ? participatingGradeRecords(exam.records).map((record) => gradeCustomTotal(record, customTotal))
+    ? participatingGradeRecords(exam.records)
+      .filter((record) => gradeAttendance(record, exam.subjects, rankSettings).complete)
+      .map((record) => gradeCustomTotal(record, customTotal))
       .filter((value): value is number => value !== null) : [];
   const segmentMin = customTotal && customRange?.segmentMin === undefined ? 0 : range.segmentMin;
   const segmentMax = customTotal && customRange?.segmentMax === undefined
@@ -369,6 +372,7 @@ export function buildGradeTotalScoreSegmentReport(
     classItem.classId,
     (recordsByClass.get(classItem.classId) || []).flatMap((record) => {
       if (customTotal) {
+        if (!gradeAttendance(record, exam.subjects, rankSettings).complete) return [];
         const total = gradeCustomTotal(record, customTotal);
         return total === null ? [] : [total];
       }

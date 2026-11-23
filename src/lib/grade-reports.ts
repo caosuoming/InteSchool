@@ -1,4 +1,4 @@
-import { participatingGradeRecords } from "./grade-statistics.js";
+import { gradeAttendance, participatingGradeRecords } from "./grade-statistics.js";
 import type {
   GradeBandRule,
   GradeExam,
@@ -100,7 +100,8 @@ function recordSubjectValue(
 export function gradeTemplateTotal(
   record: GradeScoreRecord,
   template: GradeStatisticsTemplate,
-): number {
+): number | null {
+  if (record.rawTotal === null || (template.scoreMode === "assigned" && record.assignedTotal === null)) return null;
   const values = template.subjects
     .map((subject) => recordSubjectValue(record, subject, template.scoreMode))
     .filter((value): value is number => typeof value === "number");
@@ -197,10 +198,8 @@ export function buildGradeReportTable(
       const subjectAverages = template.subjects.map((subject) => averageGradeValues(records.map((record) =>
         recordSubjectValue(record, subject, template.scoreMode),
       )));
-      const totals = records.map((record) => template.subjects.reduce((sum, subject) => {
-        const value = recordSubjectValue(record, subject, template.scoreMode);
-        return sum + (typeof value === "number" ? value : 0);
-      }, 0));
+      const totals = records.map((record) => gradeAttendance(record, exam.subjects, exam.settings).complete
+        ? gradeTemplateTotal(record, template) : null);
       return [
         records[0]?.className || "未知班级",
         records.length,
@@ -231,7 +230,10 @@ export function buildGradeReportTable(
     };
   }
 
-  const values = participatingGradeRecords(exam.records).map((record) => gradeTemplateTotal(record, template));
+  const values = participatingGradeRecords(exam.records)
+    .map((record) => gradeAttendance(record, exam.subjects, exam.settings).complete
+      ? gradeTemplateTotal(record, template) : null)
+    .filter((value): value is number => value !== null);
   const segments = buildGradeScoreSegments(values, template.segmentSize || 10);
   return {
     headers: ["分数段", "人数", "比例"],

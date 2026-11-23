@@ -14,7 +14,7 @@ import {
   type GradeAcademicTrackClassification,
 } from "./grade-total-score-segment.js";
 import { gradeTemplateTotal } from "./grade-reports.js";
-import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
+import { gradeAttendance, participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
 
 export const DEFAULT_TOTAL_SCORE_TOP_N = 50;
 
@@ -69,10 +69,8 @@ function rankedRows(
         const score = gradeCustomTotal(record, customTotal);
         return score === null ? [] : [{ record, score }];
       }
-      return template.subjects.length ? [{
-        record,
-        score: gradeTemplateTotal(record, template),
-      }] : [];
+      const score = template.subjects.length ? gradeTemplateTotal(record, template) : null;
+      return score === null ? [] : [{ record, score }];
     })
     .sort((left, right) => (
       right.score - left.score
@@ -122,7 +120,8 @@ export function buildGradeTotalScoreRankingReport(
   );
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classLabels = classOptions.classLabels || {};
-  const records = participatingGradeRecords(exam.records).filter((record) => !hiddenClassIds.has(record.classId));
+  const records = participatingGradeRecords(exam.records).filter((record) =>
+    !hiddenClassIds.has(record.classId) && gradeAttendance(record, exam.subjects, exam.settings).complete);
   const subjects = customTotal ? [...customTotal.subjects] : [...exam.subjects];
   const topN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreTopN);
   const separateTopN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreSeparateTopN ?? topN);

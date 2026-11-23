@@ -4,6 +4,7 @@ import type { ServerConfig } from "../config.js";
 import type { DatabaseStore } from "../database.js";
 import type { AppState, ParentSessionUser } from "../types.js";
 import type { GradeExam, GradeScoreRecord, Question, Student } from "../../src/types/index.js";
+import { ensureExamAttendance } from "../../src/lib/grade-statistics.js";
 
 export const PARENT_SESSION_COOKIE = "inteschool_parent_session";
 
@@ -255,6 +256,7 @@ export async function registerParentRoutes(
     const student = authorizedStudent(state, session.phone, studentId);
     const exams = ((state.gradeExams || []) as GradeExam[])
       .filter((exam) => exam.schoolId === student.schoolId && exam.publication?.publishToParents)
+      .map(ensureExamAttendance)
       .flatMap((exam) => {
         const record = exam.records.find((item) => item.studentId === student.id);
         if (!record) return [];
