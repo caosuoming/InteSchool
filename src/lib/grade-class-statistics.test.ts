@@ -285,8 +285,8 @@ describe("grade class statistics", () => {
       settings: {
         ...current.settings,
         classSubjects: [
-          { classId: "c1", examSubjects: ["语文", "数学", "英语", "物理", "生物"], statisticSubjects: ["语文", "数学", "英语"], separateRankSubjects: ["生物"] },
-          { classId: "c2", examSubjects: ["语文", "数学", "英语", "物理", "化学", "地理"], statisticSubjects: ["语文", "数学", "英语"] },
+          { classId: "c1", examSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"], statisticSubjects: ["语文", "数学", "英语", "物理", "化学"], separateRankSubjects: ["生物"] },
+          { classId: "c2", examSubjects: ["语文", "数学", "英语", "物理", "化学", "地理"], statisticSubjects: ["语文", "数学", "英语", "物理", "化学", "地理"] },
         ],
       },
     };
@@ -368,7 +368,7 @@ describe("grade class statistics", () => {
     expect(values["previous:assignedTotal"]).toBe(272);
   });
 
-  it("counts different elective combinations without subject selections, preserving zeros and absence", () => {
+  it("counts each class's configured elective exams without selections, preserving zeros and absence", () => {
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
     const makeScores = (electives: string[], missing?: string) => Object.fromEntries(subjects.map((subject) => [
       subject,
@@ -382,18 +382,23 @@ describe("grade class statistics", () => {
       ...current,
       subjects,
       records: [first, second, third, zero].map((scores, index) => ({
-        ...record(String(index), "c1", "一班", String(index), String(index), 0, 0, 0, 0, 0),
+        ...record(String(index), index === 1 ? "c2" : "c1", index === 1 ? "二班" : "一班",
+          String(index), String(index), 0, 0, 0, 0, 0),
         scores,
         assignedScores: index === 0 ? { ...scores, 化学: 92 } : scores,
       })),
-      settings: { ...current.settings, classSubjects: [{ classId: "c1", examSubjects: subjects, statisticSubjects: subjects }] },
+      settings: { ...current.settings, classSubjects: [
+        { classId: "c1", examSubjects: subjects, statisticSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"] },
+        { classId: "c2", examSubjects: subjects, statisticSubjects: ["语文", "数学", "英语", "政治", "历史", "地理"] },
+      ] },
     };
     const options = { ...DEFAULT_GRADE_CLASS_STATISTICS_OPTIONS, showRawTotal: true, showAssignedTotal: true };
-    const rows = buildGradeClassStatisticsReport(reportExam, [], options).classes[0].rows;
-    expect(rows[0].values).toMatchObject({ "current:rawTotal": 480, "current:assignedTotal": 492, "current:rawTotalClassRank": 1 });
-    expect(rows[1].values).toMatchObject({ "current:rawTotal": 480, "current:assignedTotal": 480 });
-    expect(rows[2].values).toMatchObject({ "current:rawTotal": null, "current:assignedTotal": null, "current:rawTotalGradeRank": null });
-    expect(rows[3].values).toMatchObject({ "current:rawTotal": 400, "current:assignedTotal": 400 });
+    const rows = new Map(buildGradeClassStatisticsReport(reportExam, [], options).classes
+      .flatMap((table) => table.rows).map((row) => [row.studentId, row.values]));
+    expect(rows.get("0")).toMatchObject({ "current:rawTotal": 480, "current:assignedTotal": 492, "current:rawTotalClassRank": 1 });
+    expect(rows.get("1")).toMatchObject({ "current:rawTotal": 480, "current:assignedTotal": 480 });
+    expect(rows.get("2")).toMatchObject({ "current:rawTotal": null, "current:assignedTotal": null, "current:rawTotalGradeRank": null });
+    expect(rows.get("3")).toMatchObject({ "current:rawTotal": 400, "current:assignedTotal": 400 });
 
     const allAbsent = {
       ...reportExam,

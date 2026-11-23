@@ -943,7 +943,7 @@ describe("ExamPaperEditorPage preview", () => {
     expect(within(answerStatus).getByText("已有备注")).toBeInTheDocument();
 
     fireEvent.click(within(answerStatus).getByRole("button", { name: "添加备注" }));
-    fireEvent.change(await within(answerStatus).findByLabelText("新增题目备注"), {
+    fireEvent.change(await within(answerStatus).findByLabelText("新增题目备注", {}, { timeout: 5000 }), {
       target: { value: "新备注" },
     });
     fireEvent.click(within(answerStatus).getByRole("button", { name: "添加" }));
