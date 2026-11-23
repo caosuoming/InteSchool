@@ -39,6 +39,49 @@ function fixture(): { state: AppState; store: DatabaseStore } {
 }
 
 describe("subject scoped RPC", () => {
+  it("never mixes same-school chemistry resources into the mathematics library", async () => {
+    const { state, store } = fixture();
+    const common = { teacherId: teacher.id, schoolId: "school-1", chapterIds: [], knowledgePointIds: [],
+      grade: "高一", schoolYear: "2026-2027", createdAt: "2026-11-01", updatedAt: "2026-11-01" };
+    const fromOtherTeacher = { ...common, teacherId: "teacher-chemistry" };
+    const records = [
+      { ...common, id: "math", title: "数学资料", subject: "数学" },
+      { ...common, id: "chemistry", title: "化学资料", subject: "化学" },
+      { ...fromOtherTeacher, id: "other-chemistry", title: "其他教师的化学资料", subject: "化学" },
+    ];
+    state.materials = records.map((record) => ({ ...record, type: "text", content: "", tags: [] }));
+    state.coursewares = records.map((record) => ({ ...record, type: "ppt", content: "", tags: [] }));
+    state.lectures = records.map((record) => ({ ...record, sections: [], classIds: [], studentIds: [], status: "draft", version: 1 }));
+    state.examPapers = records.map((record) => ({ ...record, questions: [], status: "draft", duration: 90, totalScore: 100 }));
+    state.teachers[0].subject = "数学";
+    state.teachers[0].affiliations[0].subject = "数学";
+
+    for (const [service, method] of [
+      ["material", "listMaterials"], ["courseware", "listCoursewares"],
+      ["lecture", "listLectures"], ["examPaper", "listPapers"],
+    ] as const) {
+      const result = await invokeRpc(store, session, service, method, [{ schoolId: "school-1" }]) as Array<{ id: string }>;
+      expect(result.map((resource) => resource.id), `${service} should only show mathematics`).toEqual(["math"]);
+    }
+  });
+
+  it("retains chemistry uploads after switching to mathematics and back", async () => {
+    const { state, store } = fixture();
+    state.teachers[0].subject = "化学";
+    state.teachers[0].affiliations[0].subject = "化学";
+    const created = await invokeRpc(store, session, "material", "createMaterial", [teacher.id, "school-1", {
+      title: "化学讲义附件", chapterIds: [], knowledgePointIds: [], grade: "高一", schoolYear: "2026-2027",
+      type: "text", content: "化学", tags: [],
+    }]) as { id: string; subject: string };
+    expect(created.subject).toBe("化学");
+    state.teachers[0].subject = "数学";
+    state.teachers[0].affiliations[0].subject = "数学";
+    expect(await invokeRpc(store, session, "material", "listMaterials", [{ teacherId: teacher.id }])).toEqual([]);
+    state.teachers[0].subject = "化学";
+    state.teachers[0].affiliations[0].subject = "化学";
+    const restored = await invokeRpc(store, session, "material", "listMaterials", [{ teacherId: teacher.id }]) as Array<{ id: string }>;
+    expect(restored.map((resource) => resource.id)).toEqual([created.id]);
+  });
   it("scopes personal question lists and pagination on the server", async () => {
     const { state, store } = fixture();
     expect((await invokeRpc(store, session, "question", "listQuestions", [{}]) as Array<{ id: string }>).map((q) => q.id))

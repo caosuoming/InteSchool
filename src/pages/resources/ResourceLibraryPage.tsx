@@ -156,7 +156,7 @@ export default function ResourceLibraryPage() {
   useEffect(() => {
     const timer = setTimeout(() => loadAll(), 300);
     return () => clearTimeout(timer);
-  }, [loadAll]);
+  }, [loadAll, teacher?.subject]);
 
   // 排序
   const sortedData = useMemo(() => {
