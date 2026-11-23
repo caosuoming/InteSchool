@@ -273,4 +273,37 @@ describe("PublishedGradeReportPage", () => {
     const classTwoRow = within(chemistryTable as HTMLElement).getByRole("row", { name: /2班 林老师 1/ });
     expect(within(classTwoRow).queryByText("0")).not.toBeInTheDocument();
   });
+
+  it("publishes subject ranks and worst-rank shading without exposing internal student identifiers", async () => {
+    const rankedExam = {
+      ...exam,
+      records: exam.records.map((record, index) => ({
+        ...record,
+        subjectRanks: index === 0 ? { 语文: 1, 化学: 5 } : { 语文: 2, 化学: 2 },
+      })),
+      settings: {
+        ...exam.settings,
+        templates: [classAverageTemplate, {
+          ...totalScoreTemplate,
+          totalScoreSegmentOptions: {
+            ...totalScoreTemplate.totalScoreSegmentOptions,
+            totalScoreTopN: 2,
+            showSubjectRanks: true,
+            highlightLowestRankSubject: true,
+          },
+        }],
+      },
+    };
+    const published = buildGradePublishedReportBundle(rankedExam, context, "2026-06-21T08:00:00.000Z");
+    vi.spyOn(gradeService, "getPublishedReportByToken").mockResolvedValue(published);
+    renderPage();
+    expect(await screen.findByRole("columnheader", { name: "语文排名" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "化学排名" })).toBeInTheDocument();
+    const studentRow = screen.getByRole("row", { name: /甲/ });
+    expect(within(studentRow).getByRole("cell", { name: "92" })).toHaveClass("bg-amber-100/60");
+    expect(within(studentRow).getByRole("cell", { name: "120" })).not.toHaveClass("bg-amber-100/60");
+    expect(published.totalScoreRanking?.tables[0].rows[0]).not.toHaveProperty("studentId");
+    expect(published.totalScoreRanking?.tables[0].rows[0]).not.toHaveProperty("classId");
+  });
+
 });

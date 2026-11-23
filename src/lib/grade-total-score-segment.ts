@@ -191,54 +191,34 @@ function buildColumns(
   classes: GradeTotalScoreSegmentClass[],
   trackVisibility: Record<GradeAcademicTrack, Record<GradeTotalScoreTargetKey, boolean>>,
 ): GradeTotalScoreSegmentColumn[] {
-  // When only the general standards are displayed, the class columns must
-  // remain in numeric class order rather than being grouped by academic track.
-  if (!(["science", "arts"] as const).some((track) =>
-    TARGET_KEYS.some((key) => trackVisibility[track][key]))) {
-    return [
-      ...classes.map((item) => ({
-        key: item.classId, label: item.classLabel, kind: "class" as const,
-        classId: item.classId, classIds: [item.classId],
-      })),
-      { key: TOTAL_KEY, label: "总计", kind: "total", classIds: classes.map((item) => item.classId) },
-    ];
-  }
   const columns: GradeTotalScoreSegmentColumn[] = [];
-  const appendTrack = (track: GradeAcademicTrack, label: string) => {
-    const trackClasses = classes.filter((classItem) => classItem.track === track);
-    trackClasses.forEach((classItem) => columns.push({
-      key: classItem.classId,
-      label: classItem.classLabel,
+  // Preserve the shared class order, including interleaved science/arts classes.
+  // Place each track subtotal immediately after its last class in that order.
+  classes.forEach((item, index) => {
+    columns.push({
+      key: item.classId,
+      label: item.classLabel,
       kind: "class",
-      classId: classItem.classId,
+      classId: item.classId,
+      track: item.track === "unclassified" ? undefined : item.track,
+      classIds: [item.classId],
+    });
+    const track = item.track;
+    if (track === "unclassified" || classes.slice(index + 1).some((next) => next.track === track)) return;
+    if (!TARGET_KEYS.some((key) => trackVisibility[track][key])) return;
+    columns.push({
+      key: SUBTOTAL_KEYS[track],
+      label: track === "science" ? "理科小计" : "文科小计",
+      kind: "subtotal",
       track,
-      classIds: [classItem.classId],
-    }));
-    if (trackClasses.length > 0 && TARGET_KEYS.some((key) => trackVisibility[track][key])) {
-      columns.push({
-        key: SUBTOTAL_KEYS[track],
-        label,
-        kind: "subtotal",
-        track,
-        classIds: trackClasses.map((classItem) => classItem.classId),
-      });
-    }
-  };
-
-  appendTrack("science", "理科小计");
-  appendTrack("arts", "文科小计");
-  classes.filter((classItem) => classItem.track === "unclassified").forEach((classItem) => columns.push({
-    key: classItem.classId,
-    label: classItem.classLabel,
-    kind: "class",
-    classId: classItem.classId,
-    classIds: [classItem.classId],
-  }));
+      classIds: classes.filter((entry) => entry.track === track).map((entry) => entry.classId),
+    });
+  });
   columns.push({
     key: TOTAL_KEY,
     label: "总计",
     kind: "total",
-    classIds: classes.map((classItem) => classItem.classId),
+    classIds: classes.map((item) => item.classId),
   });
   return columns;
 }
@@ -353,17 +333,7 @@ export function buildGradeTotalScoreSegmentReport(
       key, customTotal ? false : trackStandardVisible(template, track, key),
     ])),
   ])) as GradeTotalScoreSegmentReport["trackVisibility"];
-  const compareClass = (left: GradeTotalScoreSegmentClass, right: GradeTotalScoreSegmentClass) =>
-    left.className.localeCompare(right.className, "zh-CN", { numeric: true })
-      || left.classLabel.localeCompare(right.classLabel, "zh-CN", { numeric: true });
-  const ordered = [...sourceClasses].sort(compareClass);
-  const hasTrackStandards = (["science", "arts"] as const).some((track) =>
-    TARGET_KEYS.some((key) => trackVisibility[track][key]));
-  const classes = hasTrackStandards ? [
-    ...ordered.filter((item) => item.track === "science"),
-    ...ordered.filter((item) => item.track === "arts"),
-    ...ordered.filter((item) => item.track === "unclassified"),
-  ] : ordered;
+  const classes = sourceClasses;
   const columns = buildColumns(classes, trackVisibility);
 
   const studentSelections = new Map(context.students.map((student) => [student.id, student.subjectSelection || ""]));
@@ -449,7 +419,7 @@ export function buildGradeTotalScoreSegmentReport(
   });
   const separateStandards = [...separateGroups].map(([key, groupClasses]) => ({
     key,
-    label: `单独排名（${(JSON.parse(key) as string[]).join("、")}）`,
+    label: `单独排名（${groupClasses.map((item) => item.classLabel).join("、")}）`,
     classIds: groupClasses.map((classItem) => classItem.classId),
     classLabels: groupClasses.map((classItem) => classItem.classLabel),
     thresholds: Object.fromEntries(TARGET_KEYS.map((targetKey) => [

@@ -158,7 +158,7 @@ const exam: GradeExam = {
 
 describe("grade class average report", () => {
   it("formats custom difference labels with compressed consecutive class numbers", () => {
-    expect(formatGradeCustomDifferenceLabel(["3班", "1班", "5班", "2班"])).toBe("分差（1-3班、5班）");
+    expect(formatGradeCustomDifferenceLabel(["3班", "1班", "5班", "2班"])).toBe("分差（1-3、5）");
     expect(formatGradeCustomDifferenceLabel(["实验甲", "实验乙"])).toBe("分差（实验甲、实验乙）");
   });
 
@@ -178,7 +178,7 @@ describe("grade class average report", () => {
     const report = buildGradeClassAverageReport(exam, customTemplate, context);
     expect(report.customDifferences).toHaveLength(2);
     expect(report.customDifferences.map((item) => item.label))
-      .toEqual(["分差（2班、10班）", "分差（2班、10班）"]);
+      .toEqual(["分差（2、10）", "分差（2、10）"]);
     expect(report.customDifferences.map((item) => item.afterClassId)).toEqual(["class-2", null]);
     expect(report.customDifferences[0].difference.subjectValues.数学.raw).toBe(20);
     expect(report.customDifferences[0].difference.subjectValues.英语.raw).toBe(20);

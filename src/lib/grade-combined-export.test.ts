@@ -251,7 +251,7 @@ describe("combined grade exports", () => {
       data: Array<Array<null | { value?: string | number; rowSpan?: number }>>;
     }>;
     const rows = sheets.find((sheet) => sheet.sheet.startsWith("表一"))!.data;
-    const found = rows.filter((row) => row[1]?.value === "分差（1-2班）");
+    const found = rows.filter((row) => row[1]?.value === "分差（1-2）");
     expect(found).toHaveLength(2);
     expect(found[0][0]).toBeNull();
     expect(found[0].slice(3).map((cell) => cell?.value)).toEqual([10, 5, 15]);
@@ -401,7 +401,7 @@ describe("combined grade exports", () => {
     }, context, classAverageTemplate, separateSettings);
     await exportGradeTotalScoreSegmentReport(report);
     const rows = writeXlsxFile.mock.calls[0][0] as Array<Array<null | { value?: string | number; columnSpan?: number }>>;
-    const groupRow = rows.find((row) => String(row[0]?.value).includes("单独排名（化学）"))!;
+    const groupRow = rows.find((row) => String(row[0]?.value).includes("单独排名（1班）"))!;
     expect(groupRow[0]?.value).toContain("高分1 215分");
     expect(groupRow[0]?.columnSpan).toBe(groupRow.length);
     expect(groupRow.slice(1).every((cell) => cell === null)).toBe(true);
@@ -494,7 +494,7 @@ describe("combined grade exports", () => {
       data: Array<Array<{ value?: string | number }>>;
     }>;
     expect(sheets.map((sheet) => sheet.data[0][0].value)).toEqual([
-      "期末考试单独排名（化学）总分前2名（赋分）（2026.07.01）",
+      "期末考试单独排名（1班）总分前2名（赋分）（2026.07.01）",
       "期末考试统一排名总分前1名（赋分）（2026.07.01）",
     ]);
     expect(toFile).toHaveBeenCalledWith("期末考试总分排名.xlsx");
@@ -643,4 +643,49 @@ describe("combined grade exports", () => {
     ]);
     expect(sheets[0].data[2].map((cell) => cell.value)).toEqual([1, "001", "张三", "1班", 120, 90, 210]);
   });
+
+  it("exports table five rank columns and pale highlighting in standalone and combined Excel", async () => {
+    const rankedExam: GradeExam = {
+      ...exam,
+      records: exam.records.map((record, index) => ({
+        ...record,
+        subjectRanks: index === 0 ? { 语文: 1, 化学: 3 } : { 语文: 2, 化学: 2 },
+      })),
+    };
+    const rankedTemplate = {
+      ...totalScoreSegmentTemplate,
+      totalScoreSegmentOptions: {
+        ...totalScoreSegmentTemplate.totalScoreSegmentOptions,
+        totalScoreTopN: 2,
+        showSubjectRanks: true,
+        highlightLowestRankSubject: true,
+      },
+    };
+    const report = buildGradeTotalScoreRankingReport(rankedExam, rankedTemplate, context, classAverageTemplate);
+    await exportGradeTotalScoreRankingReport(report);
+    type Cell = { value?: string | number; backgroundColor?: string } | null;
+    const sheets = writeXlsxFile.mock.calls[0][0] as Array<{ data: Cell[][] }>;
+    const sheet = sheets[0].data;
+    expect(sheet[1].map((cell) => cell?.value)).toEqual([
+      "名次", "学号", "姓名", "班级", "语文", "语文排名", "化学", "化学排名", "总分（赋分）",
+    ]);
+    const first = sheet.find((row) => row[2]?.value === "张三")!;
+    expect(first[4]?.value).toBe(120);
+    expect(first[5]?.value).toBe(1);
+    expect(first[6]).toMatchObject({ value: 90, backgroundColor: "#FEF3C7" });
+    expect(first[7]?.value).toBe(3);
+    const second = sheet.find((row) => row[2]?.value === "李四")!;
+    expect(second[4]?.backgroundColor).toBe("#FEF3C7");
+    expect(second[6]?.backgroundColor).toBe("#FEF3C7");
+    writeXlsxFile.mockClear();
+    await exportGradeTablesOneToFive({
+      exam: rankedExam, settings, context,
+      classAverageTemplate, totalScoreSegmentTemplate: rankedTemplate,
+    });
+    const combinedSheets = writeXlsxFile.mock.calls[0][0] as Array<{ sheet: string; data: Cell[][] }>;
+    const tableFive = combinedSheets.find((sheet) => sheet.sheet.startsWith("表五"))!;
+    expect(tableFive.data[1].map((cell) => cell?.value)).toContain("语文排名");
+    expect(tableFive.data.find((row) => row[2]?.value === "张三")?.[6]?.backgroundColor).toBe("#FEF3C7");
+  });
+
 });

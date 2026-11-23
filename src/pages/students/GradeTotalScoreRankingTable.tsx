@@ -1,6 +1,6 @@
 import { GradeReportNotes } from "./GradeReportNotes";
 import { buildGradeReportNotes } from "@/lib/grade-report-notes";
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { Download, Trophy } from "lucide-react";
 import type {
   GradeExam,
@@ -93,6 +93,19 @@ export function GradeTotalScoreRankingTable({
     onChange(nextSettings);
   };
 
+  const updateDisplayOption = (field: "showSubjectRanks" | "highlightLowestRankSubject", checked: boolean) => {
+    const currentSettings = latestSettings.current;
+    const nextSettings: GradeExamSettings = {
+      ...currentSettings,
+      templates: currentSettings.templates.map((item) => item.id === effectiveTemplate.id
+        ? { ...item, totalScoreSegmentOptions: { ...item.totalScoreSegmentOptions, [field]: checked } }
+        : item),
+    };
+    latestSettings.current = nextSettings;
+    onChange(nextSettings);
+    void autoSave();
+  };
+
   const autoSave = async () => {
     if (!onAutoSave) return;
     setAutoSaving(true);
@@ -177,6 +190,17 @@ export function GradeTotalScoreRankingTable({
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-x-6 gap-y-2 border-b border-ink-100 px-5 py-3 text-xs text-ink-700">
+        <label className="inline-flex items-center gap-2">
+          <input type="checkbox" aria-label="表五显示单科排名" checked={report.showSubjectRanks}
+            onChange={(event) => updateDisplayOption("showSubjectRanks", event.target.checked)} />显示单科排名
+        </label>
+        <label className="inline-flex items-center gap-2">
+          <input type="checkbox" aria-label="表五标记排名最低学科" checked={report.highlightLowestRankSubject}
+            onChange={(event) => updateDisplayOption("highlightLowestRankSubject", event.target.checked)} />淡色标记每名学生排名最低的学科（并列同时标记）
+        </label>
+      </div>
+
       {!hasRows ? (
         <EmptyState
           icon={<Trophy className="h-8 w-8" />}
@@ -199,7 +223,10 @@ export function GradeTotalScoreRankingTable({
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">姓名</th>
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">班级</th>
                     {rankingTable.subjects.map((subject) => (
-                      <th key={subject} className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
+                      <Fragment key={subject}>
+                        <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}</th>
+                        {report.showSubjectRanks && <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{subject}排名</th>}
+                      </Fragment>
                     ))}
                     <th className="whitespace-nowrap border border-ink-300 px-3 py-1.5 text-center font-semibold">{rankingTable.totalLabel || "总分"}（{rankingTable.scoreModeLabel || report.scoreModeLabel}）</th>
                   </tr>
@@ -212,9 +239,18 @@ export function GradeTotalScoreRankingTable({
                       <td className="border border-ink-300 px-3 py-1.5 text-center font-medium text-ink-800">{row.studentName}</td>
                       <td className="border border-ink-300 px-3 py-1.5 text-center">{row.classLabel}</td>
                       {rankingTable.subjects.map((subject) => (
-                        <td key={subject} className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">
-                          {row.subjectScores[subject] ?? ""}
-                        </td>
+                        <Fragment key={subject}>
+                          <td className={`border border-ink-300 px-3 py-1.5 text-center tabular-nums ${
+                            report.highlightLowestRankSubject && row.lowestRankSubjects.includes(subject) ? "bg-amber-100/60" : ""
+                          }`}>
+                            {row.subjectScores[subject] ?? ""}
+                          </td>
+                          {report.showSubjectRanks && (
+                            <td className="border border-ink-300 px-3 py-1.5 text-center tabular-nums">
+                              {row.subjectRanks[subject] ?? ""}
+                            </td>
+                          )}
+                        </Fragment>
                       ))}
                       <td className="border border-ink-300 px-3 py-1.5 text-center font-semibold tabular-nums">{row.score}</td>
                     </tr>

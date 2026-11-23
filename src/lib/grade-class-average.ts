@@ -147,9 +147,7 @@ export function formatGradeClassRangeLabel(labels: string[]): string {
 /** 表头与自定义分差共用同一班级范围缩写规则。 */
 export function formatGradeCustomDifferenceLabel(labels: string[]): string {
   const range = formatGradeClassRangeLabel(labels);
-  return `分差（${range.split(",").map((part) =>
-    /^\d+(?:-\d+)?$/.test(part) ? `${part}班` : part
-  ).join("、")}）`;
+  return `分差（${range.replace(/,/g, "、")}）`;
 }
 
 function fallbackReportDate(exam: GradeExam): string {

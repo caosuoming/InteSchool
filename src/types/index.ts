@@ -1193,6 +1193,10 @@ export interface GradeTotalScoreSegmentOptions {
   totalScoreTopN?: number;
   /** 表五单独排名组展示的前 N 名人数；旧数据沿用统一排名人数。 */
   totalScoreSeparateTopN?: number;
+  /** 表五在各学科成绩旁展示该学生的单科排名。 */
+  showSubjectRanks?: boolean;
+  /** 表五为每个学生排名最末的学科成绩加淡色背景；并列时均标记。 */
+  highlightLowestRankSubject?: boolean;
 }
 
 export interface GradeStatisticsTemplate {

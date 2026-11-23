@@ -271,7 +271,7 @@ describe("buildGradeTotalScoreRankingReport", () => {
     }, { ...context, classProfiles: {} });
     expect(report).toMatchObject({ topN: 1, separateTopN: 2, hasSeparateGroups: true });
     expect(report.tables.map((item) => item.title)).toEqual([
-      "期末考试单独排名（数学）总分前2名（原始分）",
+      "期末考试单独排名（1班、2班）总分前2名（原始分）",
       "期末考试统一排名总分前1名（原始分）",
     ]);
     expect(report.tables.map((item) => item.rows.map((row) => row.studentName)))

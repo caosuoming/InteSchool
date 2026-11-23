@@ -116,6 +116,8 @@ export function buildGradePublishedReportBundle(
           studentName: row.studentName,
           classLabel: row.classLabel,
           subjectScores: row.subjectScores,
+          subjectRanks: row.subjectRanks,
+          lowestRankSubjects: row.lowestRankSubjects,
           score: row.score,
         })),
       })),

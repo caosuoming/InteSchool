@@ -961,7 +961,11 @@ function totalScoreRankingWorkbookSheets(
   sheetPrefix = "表五-",
 ): CombinedWorkbookSheet[] {
   return report.tables.map((table) => {
-    const headers = ["名次", "学号", "姓名", "班级", ...table.subjects, `${table.totalLabel || "总分"}（${table.scoreModeLabel || report.scoreModeLabel}）`];
+    const headers = [
+      "名次", "学号", "姓名", "班级",
+      ...table.subjects.flatMap((subject) => report.showSubjectRanks ? [subject, `${subject}排名`] : [subject]),
+      `${table.totalLabel || "总分"}（${table.scoreModeLabel || report.scoreModeLabel}）`,
+    ];
     const sheetLabel = table.totalLabel
       ? `${table.totalLabel}-${table.key}`
       : table.key === "science" ? "理科" : table.key === "arts" ? "文科"
@@ -976,7 +980,13 @@ function totalScoreRankingWorkbookSheets(
           combinedWorkbookCell(row.studentNo || "—"),
           combinedWorkbookCell(row.studentName, { fontWeight: "bold" }),
           combinedWorkbookCell(row.classLabel),
-          ...table.subjects.map((subject) => combinedWorkbookCell(row.subjectScores[subject])),
+          ...table.subjects.flatMap((subject) => [
+            combinedWorkbookCell(row.subjectScores[subject], {
+              ...(report.highlightLowestRankSubject && row.lowestRankSubjects.includes(subject)
+                ? { backgroundColor: "#FEF3C7" } : {}),
+            }),
+            ...(report.showSubjectRanks ? [combinedWorkbookCell(row.subjectRanks[subject])] : []),
+          ]),
           combinedWorkbookCell(row.score, { fontWeight: "bold" }),
         ]),
       ],
@@ -986,7 +996,8 @@ function totalScoreRankingWorkbookSheets(
         { width: 16 },
         { width: 14 },
         { width: 14 },
-        ...table.subjects.map(() => ({ width: 12 })),
+        ...table.subjects.flatMap(() => report.showSubjectRanks
+          ? [{ width: 12 }, { width: 12 }] : [{ width: 12 }]),
         { width: 14 },
       ],
     };
