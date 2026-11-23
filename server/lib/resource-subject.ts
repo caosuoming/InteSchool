@@ -57,7 +57,8 @@ export function filterPersonalResources<T extends Record<string, unknown>>(
   const subject = selectedSubject(teacher);
   if (!subject) return resources;
   return resources.filter((resource) =>
-    resource.teacherId !== teacher.id
-    || (typeof resource.schoolId === "string" && resource.schoolId !== teacher.schoolId)
+    // Same-school listings may include resources supplied by other teachers.
+    // Their documents must respect the selected subject just like our own.
+    (typeof resource.schoolId === "string" && resource.schoolId !== teacher.schoolId)
     || resourceSubject(state, resource) === subject);
 }

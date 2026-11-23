@@ -122,6 +122,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!current || !current.schoolId) return false;
     try {
       const teacher = await authService.switchSubject(current.id, subject);
+      clearResourceCache();
       set({ teacher, error: null });
       return true;
     } catch (error) {
