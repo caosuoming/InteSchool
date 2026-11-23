@@ -545,7 +545,7 @@ describe("MyLessonsPage classroom publishing", () => {
     );
     expect(await screen.findByRole("button", { name: "保存作业修改" })).toBeInTheDocument();
     expect(screen.getByLabelText("作业名称")).toHaveValue("函数专项练习");
-    expect(screen.getByLabelText("作业内容")).toHaveTextContent(titled.content);
+    await waitFor(() => expect(screen.getByLabelText("作业内容")).toHaveTextContent(titled.content));
   });
 
   it("publishes a timed notice and previews the current class display", async () => {

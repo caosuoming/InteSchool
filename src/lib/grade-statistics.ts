@@ -660,6 +660,21 @@ export function gradeAttendance(
   settings?: Pick<GradeExamSettings, "classSubjects">,
 ): { missingSubjects: string[]; missingElectiveCount: number; complete: boolean } {
   const examSubjects = unique(subjects);
+  // The class's unified and separately ranked subjects define the actual
+  // examination. Missing a required subject cannot be offset by a score in
+  // an unrelated elective subject.
+  const classSetting = settings?.classSubjects.find((item) => item.classId === record.classId);
+  const rankedSubjects = unique([
+    ...(classSetting?.statisticSubjects || []),
+    ...(classSetting?.separateRankSubjects || []),
+  ]).filter((subject) => examSubjects.includes(subject));
+  if (rankedSubjects.length > 0) {
+    const missingSubjects = rankedSubjects.filter((subject) =>
+      typeof record.scores[subject] !== "number" || !Number.isFinite(record.scores[subject]));
+    return { missingSubjects, missingElectiveCount: 0, complete: missingSubjects.length === 0 };
+  }
+  // Legacy exams without a ranking configuration retain the selection-based
+  // inference until their required subjects can be configured explicitly.
   const electives = examSubjects.filter((subject) =>
     ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]));
   const core = examSubjects.filter((subject) => !electives.includes(subject));
