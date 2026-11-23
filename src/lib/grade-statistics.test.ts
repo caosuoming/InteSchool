@@ -46,6 +46,12 @@ describe("grade statistics", () => {
   it("detects missing required subjects without calling non-selected electives absent", () => {
     const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
     const settings = buildDefaultGradeSettings(subjects, ["class-1"]);
+    settings.classSubjects[0] = {
+      classId: "class-1",
+      examSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
+      statisticSubjects: ["语文", "数学", "英语", "物理", "化学", "生物"],
+      separateRankSubjects: [],
+    };
     const examined = { classId: "class-1", subjectSelection: "物化生", scores: {
       语文: 100, 数学: 0, 英语: 90, 物理: 85, 化学: null, 生物: 76,
       政治: null, 历史: null, 地理: null,
@@ -60,7 +66,31 @@ describe("grade statistics", () => {
     } }, subjects, settings).complete).toBe(true);
     expect(gradeAttendance({ ...examined, subjectSelection: "", scores: {
       语文: 100, 数学: 100, 英语: 100, 物理: 88,
-    } }, subjects, settings)).toMatchObject({ missingSubjects: [], missingElectiveCount: 2, complete: false });
+    } }, subjects, settings)).toEqual({
+      missingSubjects: ["化学", "生物"], missingElectiveCount: 0, complete: false,
+    });
+    expect(gradeAttendance({ ...examined, subjectSelection: "", scores: {
+      语文: 100, 数学: 100, 英语: 100, 物理: 88,
+    } }, subjects)).toMatchObject({ missingSubjects: [], missingElectiveCount: 2, complete: false });
+  });
+
+  it("counts missing exams from the union of unified and separate ranking subjects", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "地理"];
+    const settings = buildDefaultGradeSettings(subjects, ["class-1"]);
+    settings.classSubjects[0] = {
+      classId: "class-1",
+      examSubjects: subjects,
+      statisticSubjects: ["语文", "数学", "英语", "物理"],
+      separateRankSubjects: ["地理"],
+    };
+    const record = { classId: "class-1", subjectSelection: "物化地", scores: {
+      语文: 90, 数学: 0, 英语: 85, 物理: 88, 化学: 90, 地理: null,
+    } };
+    expect(gradeAttendance(record, subjects, settings)).toEqual({
+      missingSubjects: ["地理"], missingElectiveCount: 0, complete: false,
+    });
+    expect(gradeAttendance({ ...record, scores: { ...record.scores, 地理: 0 } }, subjects, settings))
+      .toEqual({ missingSubjects: [], missingElectiveCount: 0, complete: true });
   });
 
   it("recomputes legacy partial totals only for incomplete students", () => {
