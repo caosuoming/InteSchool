@@ -25,6 +25,7 @@ import type {
 import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
+  ensureExamAttendance,
   inferClassSubjectAvailability,
   normalizeGradeSettings,
 } from "../../src/lib/grade-statistics.js";
@@ -114,9 +115,10 @@ function checkExamAccess(exam: GradeExam, actor?: Teacher, token?: string): bool
 function examForViewer(exam: GradeExam, actor?: Teacher, token?: string): GradeExam {
   const access = examAccess(exam.id);
   const accessible = checkExamAccess(exam, actor, token);
+  const current = accessible ? ensureExamAttendance(exam) : exam;
   return {
-    ...exam,
-    records: accessible ? exam.records : [],
+    ...current,
+    records: accessible ? current.records : [],
     subjects: accessible ? exam.subjects : [],
     sourceFileName: accessible ? exam.sourceFileName : "",
     sourceSheetName: accessible ? exam.sourceSheetName : "",
@@ -602,6 +604,7 @@ function buildQueryData(teacher: Teacher): GradeQueryData {
   const targetCohorts = new Set(targetClassIds.map((id) => classMap.get(id)).filter(Boolean).map((item) => cohortKeyForClass(item!)));
   const schoolExams = readList<GradeExam>("gradeExams")
     .filter((exam) => exam.schoolId === schoolId && !exam.deletedAt && checkExamAccess(exam, teacher))
+    .map(ensureExamAttendance)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   const queryableExams = scope === "school" || scope === "grade"
     ? schoolExams
@@ -1432,6 +1435,12 @@ export const gradeService = {
     if (access?.passwordHash) {
       if (!password || (!verifyCredential(password, access.passwordSalt, access.passwordHash)
         && !consumeOneTimeCode(access, password))) throw new Error("成绩统计需要访问密码或密码错误");
+    }
+    const upToDate = ensureExamAttendance(exam);
+    if (upToDate !== exam) {
+      return buildGradePublishedReportBundle(
+        upToDate, requireContext(exam.schoolId, exam.cohortKey), publication.publishedAt,
+      );
     }
     return structuredClone(publication.report);
   },

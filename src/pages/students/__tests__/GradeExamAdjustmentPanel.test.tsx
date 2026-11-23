@@ -75,6 +75,21 @@ describe("GradeExamAdjustmentPanel", () => {
     vi.clearAllMocks();
   });
 
+  it("lists absent students and their missing subjects above score adjustments", async () => {
+    const exam = buildExam();
+    exam.records[1].scores.数学 = null;
+    exam.records[1].assignedScores.数学 = null;
+    exam.records[1].rawTotal = null;
+    exam.records[1].assignedTotal = null;
+    render(<Harness initial={exam} />);
+    const section = screen.getByLabelText("缺考学生与学科");
+    expect(within(section).getByText("缺考学生与学科")).toBeInTheDocument();
+    expect(within(section).getByText("李同学")).toBeInTheDocument();
+    expect(within(section).getByText("数学")).toBeInTheDocument();
+    await userEvent.click(within(section).getByRole("button", { name: "李同学" }));
+    expect(screen.getByLabelText("选择学生")).toHaveValue("student-2");
+  });
+
   it("leaves student selection blank until a student is chosen", () => {
     render(<Harness initial={buildExam()} />);
 

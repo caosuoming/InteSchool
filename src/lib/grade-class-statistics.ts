@@ -1,6 +1,6 @@
 import type { GradeExam, GradeScoreRecord } from "../types/index.js";
 import { gradeCustomRanks, gradeCustomTotals } from "./grade-custom-totals.js";
-import { expectedGradeSubjectCount, totalRankingGroupKey } from "./grade-statistics.js";
+import { gradeAttendance, totalRankingGroupKey } from "./grade-statistics.js";
 import { inferGradeAcademicTrackFromSelection } from "./grade-total-score-segment.js";
 import { isAssignableGradeSubject } from "./grade-subjects.js";
 
@@ -135,10 +135,9 @@ function finalSubjectScore(record: GradeScoreRecord, subject: string): number | 
   return finite(record.assignedScores[subject]) ?? finite(record.scores[subject]);
 }
 
-function completeTotal(record: GradeScoreRecord, subjects: string[], expectedCount: number, mode: "raw" | "assigned"): number | null {
-  if (expectedCount === 0) return null;
+function completeTotal(record: GradeScoreRecord, subjects: string[], settings: GradeExam["settings"], mode: "raw" | "assigned"): number | null {
+  if (!gradeAttendance(record, subjects, settings).complete) return null;
   const attended = subjects.filter((subject) => finite(record.scores[subject]) !== null);
-  if (attended.length < expectedCount) return null;
   const scores = mode === "raw" ? record.scores : record.assignedScores;
   const values = attended.map((subject) => finite(scores[subject]));
   if (values.some((value) => value === null)) return null;
@@ -202,7 +201,6 @@ function rankedRecords(exam: GradeExam, subjects: string[], visibleCustomIds: st
   const customTotals = gradeCustomTotals(exam.settings.templates.find((template) => template.kind === "classAverage"), exam.subjects)
     .filter((total) => visible.has(total.id));
   const customRanks = Object.fromEntries(customTotals.map((total) => [total.id, gradeCustomRanks(exam, total)]));
-  const expectedCount = expectedGradeSubjectCount(exam.subjects, exam.records);
   const classSettings = new Map(exam.settings.classSubjects.map((item) => [item.classId, item]));
   const rankedSubjects = (record: GradeScoreRecord) => {
     const setting = classSettings.get(record.classId);
@@ -214,8 +212,8 @@ function rankedRecords(exam: GradeExam, subjects: string[], visibleCustomIds: st
   const takesSubjectRank = (record: GradeScoreRecord, subject: string) =>
     rankedSubjects(record).includes(subject);
   const totals = new Map(exam.records.map((record) => [record.studentId, {
-    raw: completeTotal(record, exam.subjects, expectedCount, "raw"),
-    assigned: completeTotal(record, exam.subjects, expectedCount, "assigned"),
+    raw: completeTotal(record, exam.subjects, exam.settings, "raw"),
+    assigned: completeTotal(record, exam.subjects, exam.settings, "assigned"),
   }] as const));
   const separateByClass = new Map(exam.settings.classSubjects.map((item) => [
     item.classId, new Set(item.separateRankSubjects || []),

@@ -1273,8 +1273,8 @@ export interface GradeScoreRecord {
   /** 成绩表直接提供的赋分；重算设置时继续保留，不由规则覆盖。 */
   sourceAssignedScores?: Record<string, number | null>;
   assignedScores: Record<string, number | null>;
-  rawTotal: number;
-  assignedTotal: number;
+  rawTotal: number | null;
+  assignedTotal: number | null;
   gradeRank: number;
   classRank: number;
   /** 每个科目的名次；统一排名班级与单独排名班级分别形成排名组。 */

@@ -2,6 +2,7 @@ import type {
   GradeBandRule,
   GradeClassAverageOptions,
   GradeClassSubjectSetting,
+  GradeExam,
   GradeExamSettings,
   GradeScoreRecord,
   GradeStatisticsTemplate,
@@ -650,6 +651,44 @@ export function normalizeGradeSettings(
   };
 }
 
+/** Resolve the subjects a student actually sat. Non-selected electives are not absences. */
+export function gradeAttendance(
+  record: Pick<GradeScoreRecord, "classId" | "subjectSelection" | "scores">,
+  subjects: string[],
+  settings?: Pick<GradeExamSettings, "classSubjects">,
+): { missingSubjects: string[]; missingElectiveCount: number; complete: boolean } {
+  const examSubjects = unique(subjects);
+  const electives = examSubjects.filter((subject) =>
+    ELECTIVE_GRADE_SUBJECTS.includes(subject as (typeof ELECTIVE_GRADE_SUBJECTS)[number]));
+  const core = examSubjects.filter((subject) => !electives.includes(subject));
+  const studentSelection = inferStatisticSubjectsFromSelections(examSubjects, [record.subjectSelection || ""]);
+  const selectedElectives = (studentSelection || []).filter((subject) => electives.includes(subject));
+  const classSubjects = settings?.classSubjects.find((item) => item.classId === record.classId)?.examSubjects
+    .filter((subject) => examSubjects.includes(subject));
+  const classElectives = (classSubjects || []).filter((subject) => electives.includes(subject));
+  const electiveTarget = Math.min(3, electives.length);
+  // Prefer an explicit individual choice; use a fixed class choice only when
+  // it does not encompass several alternative elective combinations.
+  const individualComplete = selectedElectives.length >= electiveTarget;
+  const fixedClassChoice = !individualComplete && classSubjects?.length
+    && classElectives.length <= electiveTarget;
+  const required = individualComplete
+    ? unique([...core, ...selectedElectives])
+    : fixedClassChoice ? unique([...core, ...classSubjects]) : core;
+  const expectedCount = Math.max(required.length, core.length + electiveTarget);
+  const attended = examSubjects.filter((subject) =>
+    typeof record.scores[subject] === "number" && Number.isFinite(record.scores[subject]));
+  const missingSubjects = required.filter((subject) => !attended.includes(subject));
+  const attendedElectives = attended.filter((subject) => electives.includes(subject)).length;
+  const missingElectiveCount = Math.max(0, electiveTarget - attendedElectives - missingSubjects.filter((subject) => electives.includes(subject)).length);
+  return {
+    missingSubjects,
+    missingElectiveCount,
+    complete: examSubjects.length > 0 && missingSubjects.length === 0
+      && missingElectiveCount === 0 && attended.length >= expectedCount,
+  };
+}
+
 export function participatingGradeRecords<T extends { includeInStatistics?: boolean }>(records: T[]): T[] {
   return records.filter((record) => record.includeInStatistics !== false);
 }
@@ -773,6 +812,7 @@ export function calculateGradeRecords(
   });
 
   const participating = participatingGradeRecords(records);
+  const attendance = new Map(records.map((record) => [record, gradeAttendance(record, normalizedSubjects, settings)]));
 
   for (const [subject, rules] of Object.entries(settings.assignmentRules)) {
     if (!normalizedSubjects.includes(subject)) continue;
@@ -825,32 +865,33 @@ export function calculateGradeRecords(
       ...(classSetting?.separateRankSubjects || []),
     ];
     const statisticSubjects = unique(configured).filter((subject) => normalizedSubjects.includes(subject));
-    record.rawTotal = statisticSubjects.reduce((total, subject) => {
-      const value = record.scores[subject];
-      return total + (typeof value === "number" ? value : 0);
-    }, 0);
-    record.assignedTotal = statisticSubjects.reduce((total, subject) => {
-      const value = record.assignedScores[subject];
-      return total + (typeof value === "number" ? value : 0);
-    }, 0);
-    record.rawTotal = Math.round(record.rawTotal * 100) / 100;
-    record.assignedTotal = Math.round(record.assignedTotal * 100) / 100;
+    const complete = attendance.get(record)?.complete === true;
+    const total = (mode: "raw" | "assigned"): number | null => {
+      if (!complete) return null;
+      const scores = mode === "raw" ? record.scores : record.assignedScores;
+      const values = statisticSubjects.map((subject) => scores[subject]);
+      // Missing an assigned score cannot silently become zero.
+      if (values.some((value) => typeof value !== "number" || !Number.isFinite(value))) return null;
+      return Math.round(values.reduce<number>((sum, value) => sum + (value ?? 0), 0) * 100) / 100;
+    };
+    record.rawTotal = total("raw");
+    record.assignedTotal = total("assigned");
   });
 
   const gradeRanks = new Map<GradeScoreRecord, number>();
   const totalRankingGroups = new Map<string, GradeScoreRecord[]>();
-  participating.forEach((record) => {
+  participating.filter((record) => record.assignedTotal !== null).forEach((record) => {
     const key = totalRankingGroupKey(settings, record.classId);
     const group = totalRankingGroups.get(key) || [];
     group.push(record);
     totalRankingGroups.set(key, group);
   });
   totalRankingGroups.forEach((group) => {
-    competitionRanks(group, (record) => record.assignedTotal, (record) => record.studentNo)
+    competitionRanks(group, (record) => record.assignedTotal!, (record) => record.studentNo)
       .forEach((rank, record) => gradeRanks.set(record, rank));
   });
   const classGroups = new Map<string, GradeScoreRecord[]>();
-  participating.forEach((record) => {
+  participating.filter((record) => record.assignedTotal !== null).forEach((record) => {
     const current = classGroups.get(record.classId) || [];
     current.push(record);
     classGroups.set(record.classId, current);
@@ -866,4 +907,27 @@ export function calculateGradeRecords(
     record.classRank = classRanks.get(record) || 0;
   });
   return records.sort((left, right) => (left.gradeRank || Infinity) - (right.gradeRank || Infinity) || left.studentNo.localeCompare(right.studentNo));
+}
+
+/** Old persisted exams may contain partial totals. Recalculate only when needed. */
+export function ensureExamAttendance(exam: GradeExam): GradeExam {
+  const hasLegacyAbsence = exam.records.some((record) =>
+    !gradeAttendance(record, exam.subjects, exam.settings).complete
+    && (record.rawTotal !== null || record.assignedTotal !== null
+      || record.gradeRank !== 0 || record.classRank !== 0));
+  if (!hasLegacyAbsence) return exam;
+  const base = exam.records.map((record) => ({
+    id: record.id,
+    studentId: record.studentId,
+    studentName: record.studentName,
+    studentNo: record.studentNo,
+    classId: record.classId,
+    className: record.className,
+    subjectSelection: record.subjectSelection,
+    classType: record.classType,
+    includeInStatistics: record.includeInStatistics,
+    scores: record.scores,
+    sourceAssignedScores: record.sourceAssignedScores,
+  }));
+  return { ...exam, records: calculateGradeRecords(base, exam.subjects, exam.settings) };
 }

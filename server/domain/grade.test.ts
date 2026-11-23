@@ -496,8 +496,8 @@ describe("grade service", () => {
         scores: { 化学: 72, 生物: null },
         sourceAssignedScores: { 化学: 88, 生物: 91 },
         assignedScores: { 化学: 88, 生物: 91 },
-        rawTotal: 72,
-        assignedTotal: 179,
+        rawTotal: null,
+        assignedTotal: null,
       });
 
       settings.assignmentRules.化学 = [{

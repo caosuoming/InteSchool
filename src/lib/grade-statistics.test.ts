@@ -4,6 +4,8 @@ import {
   buildDefaultGradeSettings,
   calculateGradeRecords,
   defaultClassRankingSubjects,
+  ensureExamAttendance,
+  gradeAttendance,
   inferClassSubjectAvailability,
   inferStatisticSubjectsFromSelections,
   normalizeGradeSettings,
@@ -41,6 +43,70 @@ const baseRecords = [
 ];
 
 describe("grade statistics", () => {
+  it("detects missing required subjects without calling non-selected electives absent", () => {
+    const subjects = ["语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+    const settings = buildDefaultGradeSettings(subjects, ["class-1"]);
+    const examined = { classId: "class-1", subjectSelection: "物化生", scores: {
+      语文: 100, 数学: 0, 英语: 90, 物理: 85, 化学: null, 生物: 76,
+      政治: null, 历史: null, 地理: null,
+    } };
+    expect(gradeAttendance(examined, subjects, settings)).toEqual({
+      missingSubjects: ["化学"], missingElectiveCount: 0, complete: false,
+    });
+    expect(gradeAttendance({ ...examined, scores: { ...examined.scores, 化学: 0 } }, subjects, settings))
+      .toEqual({ missingSubjects: [], missingElectiveCount: 0, complete: true });
+    expect(gradeAttendance({ ...examined, subjectSelection: "", scores: {
+      ...examined.scores, 化学: 80,
+    } }, subjects, settings).complete).toBe(true);
+    expect(gradeAttendance({ ...examined, subjectSelection: "", scores: {
+      语文: 100, 数学: 100, 英语: 100, 物理: 88,
+    } }, subjects, settings)).toMatchObject({ missingSubjects: [], missingElectiveCount: 2, complete: false });
+  });
+
+  it("recomputes legacy partial totals only for incomplete students", () => {
+    const subjects = ["数学", "化学"];
+    const settings = buildDefaultGradeSettings(subjects, ["class-1"]);
+    settings.assignmentRules = {};
+    const records = calculateGradeRecords([
+      { ...baseRecords[0], scores: { 数学: 80, 化学: 90 } },
+      { ...baseRecords[1], scores: { 数学: 100, 化学: null } },
+    ], subjects, settings);
+    const imported = records.map((record) => record.studentId === "student-2"
+      ? { ...record, rawTotal: 100, assignedTotal: 100, gradeRank: 2, classRank: 2 }
+      : record);
+    const exam = {
+      id: "legacy", schoolId: "s", teacherId: "t", cohortKey: "c", cohortLabel: "届",
+      name: "期末", subjects, sourceFileName: "scores", sourceSheetName: "Sheet1",
+      records: imported, settings, createdAt: "2026-01-01", updatedAt: "2026-01-01",
+    };
+    const refreshed = ensureExamAttendance(exam);
+    expect(refreshed).not.toBe(exam);
+    const absent = refreshed.records.find((record) => record.studentId === "student-2")!;
+    expect(absent.rawTotal).toBeNull();
+    expect(absent.gradeRank).toBe(0);
+    expect(ensureExamAttendance(refreshed)).toBe(refreshed);
+  });
+
+  it("removes absentees from every total and total rank but preserves their subject scores", () => {
+    const subjects = ["语文", "数学", "英语", "化学"];
+    const settings = buildDefaultGradeSettings(subjects, ["class-1"]);
+    settings.assignmentRules = {};
+    const records = calculateGradeRecords([
+      { ...baseRecords[0], scores: { 语文: 85, 数学: 95, 英语: 80, 化学: 90 } },
+      { ...baseRecords[1], scores: { 语文: 100, 数学: 0, 英语: null, 化学: 100 } },
+    ], subjects, settings);
+    const attended = records.find((record) => record.studentId === "student-1")!;
+    const absent = records.find((record) => record.studentId === "student-2")!;
+    expect(attended.rawTotal).toBe(350);
+    expect(attended.gradeRank).toBe(1);
+    expect(absent.rawTotal).toBeNull();
+    expect(absent.assignedTotal).toBeNull();
+    expect(absent.gradeRank).toBe(0);
+    expect(absent.classRank).toBe(0);
+    expect(absent.scores.数学).toBe(0);
+    expect(absent.subjectRanks?.语文).toBe(1);
+  });
+
   it("keeps excluded students' scores without using them in ranks or grade conversion", () => {
     const settings = buildDefaultGradeSettings(["数学", "化学"], ["class-1", "class-2"]);
     const scores = calculateGradeRecords([
@@ -473,8 +539,8 @@ describe("grade statistics", () => {
       scores: { 化学: 72, 生物: null },
       sourceAssignedScores: { 化学: 88, 生物: 91 },
       assignedScores: { 化学: 88, 生物: 91 },
-      rawTotal: 72,
-      assignedTotal: 179,
+      rawTotal: null,
+      assignedTotal: null,
     });
   });
 

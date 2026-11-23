@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { isAssignableGradeSubject } from "@/lib/grade-subjects";
+import { gradeAttendance } from "@/lib/grade-statistics";
 import { gradeService } from "@/services/grade";
 import { toast } from "@/stores/ui";
 import type {
@@ -200,6 +201,16 @@ export function GradeExamAdjustmentPanel({
       || left.studentNo.localeCompare(right.studentNo, "zh-CN")),
     [exam.records],
   );
+  const absentStudents = useMemo(() => records.flatMap((record) => {
+    if (record.includeInStatistics === false) return [];
+    const attendance = gradeAttendance(record, exam.subjects, exam.settings);
+    if (attendance.complete) return [];
+    const subjects = [...attendance.missingSubjects];
+    if (attendance.missingElectiveCount > 0) {
+      subjects.push(`选考科目待确认（${attendance.missingElectiveCount} 科）`);
+    }
+    return [{ record, subjects }];
+  }), [records, exam.subjects, exam.settings]);
   const selectedRecord = records.find((record) => record.studentId === selectedStudentId) || null;
   const searchResults = useMemo(() => {
     const keyword = studentSearch.trim().toLowerCase();
@@ -527,6 +538,41 @@ export function GradeExamAdjustmentPanel({
             <Button variant="outline" onClick={() => void copyShareUrl()}>
               <Copy className="h-4 w-4" />复制链接
             </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="border-b border-ink-100 p-5" aria-label="缺考学生与学科">
+        <div className="flex items-center justify-between gap-3">
+          <div className="font-medium text-ink-900">缺考学生与学科</div>
+          <span className="text-xs text-ink-500">{absentStudents.length} 人</span>
+        </div>
+        <p className="mt-1 text-xs text-ink-500">
+          未选考的选修科目不算缺考；零分视为已参考。缺考学生不参与总分、总分排名和班级总分平均。
+        </p>
+        {absentStudents.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-500">未发现缺考学生</p>
+        ) : (
+          <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-ink-100">
+            <table className="w-full min-w-[460px] text-sm">
+              <thead className="sticky top-0 bg-ink-50 text-xs text-ink-600">
+                <tr><th className="px-3 py-2 text-left font-medium">学生</th><th className="px-3 py-2 text-left font-medium">缺考学科</th></tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100">
+                {absentStudents.map(({ record, subjects }) => (
+                  <tr key={record.studentId}>
+                    <td className="px-3 py-2">
+                      <button type="button" className="text-left font-medium text-ink-800 hover:underline"
+                        onClick={() => setSelectedStudentId(record.studentId)}>
+                        {record.studentName}
+                      </button>
+                      <div className="text-xs text-ink-500">{record.className} · {record.studentNo || "无学号"}</div>
+                    </td>
+                    <td className="px-3 py-2 text-ink-700">{subjects.join("、")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
