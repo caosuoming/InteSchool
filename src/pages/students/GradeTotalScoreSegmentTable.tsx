@@ -17,6 +17,7 @@ import {
   DEFAULT_TOTAL_SCORE_SEGMENT_SIZE,
 } from "@/lib/grade-total-score-segment";
 import { gradeCustomTotals } from "@/lib/grade-custom-totals";
+import { resolveClassAverageOptions } from "@/lib/grade-class-average";
 import { exportGradeTotalScoreSegmentReport } from "@/lib/grade-spreadsheet";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -79,6 +80,35 @@ export function GradeTotalScoreSegmentTable({
   const customReports = useMemo(() => gradeCustomTotals(effectiveClassAverageTemplate, exam.subjects).map((total) =>
     buildGradeTotalScoreSegmentReport(exam, effectiveTemplate, context, effectiveClassAverageTemplate, settings, total),
   ), [effectiveClassAverageTemplate, exam, effectiveTemplate, context, settings]);
+  const classOrder = useMemo(() => resolveClassAverageOptions(
+    exam, context, effectiveClassAverageTemplate?.classAverageOptions,
+    effectiveClassAverageTemplate?.scoreMode || "assigned",
+  ).classOrder || [], [exam, context, effectiveClassAverageTemplate]);
+  const classLabels = new Map(context.classes.map((item) => [item.id, item.name]));
+  const visibleClassIds = classOrder.filter((id) =>
+    report.classes.some((item) => item.classId === id));
+  const moveClassTo = (classId: string, position: number) => {
+    if (!effectiveClassAverageTemplate) return;
+    const currentSettings = latestSettings.current;
+    const nextOrder = [...classOrder];
+    const sourceIndex = nextOrder.indexOf(classId);
+    if (sourceIndex < 0 || !Number.isInteger(position) || position < 0 || position >= nextOrder.length) return;
+    nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(position, 0, classId);
+    const nextSettings = {
+      ...currentSettings,
+      templates: currentSettings.templates.map((item) => item.id === effectiveClassAverageTemplate.id
+        ? { ...item, classAverageOptions: { ...item.classAverageOptions, classOrder: nextOrder } }
+        : item),
+    };
+    latestSettings.current = nextSettings;
+    onChange(nextSettings);
+    void (async () => {
+      if (!onAutoSave) return;
+      setAutoSaving(true);
+      try { await onAutoSave(nextSettings); } finally { setAutoSaving(false); }
+    })();
+  };
   const scoreModeLabel = effectiveTemplate.scoreMode === "raw" ? "原始分" : "赋分";
   const standardStats = (track: GradeAcademicTrack, targetKey: GradeTotalScoreTargetKey) => {
     const column = report.columns.find((item) => item.kind === "subtotal" && item.track === track);
@@ -294,7 +324,7 @@ export function GradeTotalScoreSegmentTable({
           <div>
             <div className="font-medium text-ink-900">表二、总分分数段汇总表（{scoreModeLabel}）</div>
             <div className="mt-0.5 text-xs text-ink-500">
-              按选定的通用、理科和文科标准统计统一排名班级达线人数；单独排名班级按各自标准单列统计。仅启用通用标准时按班号排序并隐藏文理科小计。
+              按选定的通用、理科和文科标准统计统一排名班级达线人数；单独排名班级按各自标准单列统计。班级位置可在调整面板统一设置，文理科小计显示在对应班级之后。
             </div>
           </div>
         </div>
@@ -405,6 +435,29 @@ export function GradeTotalScoreSegmentTable({
               </Button>
             </div>
           </div>
+          {effectiveClassAverageTemplate && visibleClassIds.length > 1 && (
+            <div className="mt-3 border-t border-ink-200 pt-3" data-testid="shared-class-order-settings">
+              <div className="mb-2 text-xs font-semibold text-ink-800">班级位置</div>
+              <p className="mb-2 text-xs text-ink-500">调整班级的排列位置，统一应用到表一至表四以及相应 Excel 汇总表。</p>
+              <div className="flex flex-wrap gap-2">
+                {visibleClassIds.map((classId) => (
+                  <label key={classId} className="flex items-center gap-2 rounded border border-ink-200 bg-paper px-2 py-1 text-xs text-ink-800">
+                    {report.classes.find((item) => item.classId === classId)?.classLabel || classLabels.get(classId) || classId}
+                    <select
+                      aria-label={`${classLabels.get(classId) || classId}班级位置`}
+                      value={classOrder.indexOf(classId)}
+                      onChange={(event) => moveClassTo(classId, Number(event.target.value))}
+                      className="rounded border border-ink-200 bg-paper px-1.5 py-1 text-xs"
+                    >
+                      {classOrder.map((id, index) => (
+                        <option key={id} value={index}>第 {index + 1} 列</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-ink-200 pt-3" data-testid="general-standard-settings">
             <span className="mb-2 text-xs font-semibold text-ink-800">通用总分标准</span>
             {TOTAL_SCORE_STANDARD_LABELS.map(([targetKey, label]) => (

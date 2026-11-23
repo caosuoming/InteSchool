@@ -139,7 +139,7 @@ describe("GradeClassAverageTable", () => {
     expect(screen.getByRole("checkbox", { name: "个性化分差1选择高三(1)班" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "个性化分差1选择高三(2)班" })).toBeChecked();
     const first = screen.getAllByTestId("custom-class-difference-row")[0];
-    expect(first).toHaveTextContent("分差（1-2班）");
+    expect(first).toHaveTextContent("分差（1-2）");
     expect(first).toHaveTextContent("10.00");
     expect(first).toHaveTextContent("20.00");
     expect(first.previousElementSibling?.previousElementSibling).toHaveTextContent("2班");

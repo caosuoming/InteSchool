@@ -107,7 +107,7 @@ const context: GradeImportContext = {
 };
 
 describe("buildGradeTotalScoreSegmentReport", () => {
-  it("sorts class numbers naturally across tracks when only general standards are visible", () => {
+  it("respects shared class order across tracks when only general standards are visible", () => {
     const thirdClass = {
       ...context.classes[0], id: "class-10", name: "高三(10)班",
     };
@@ -134,7 +134,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
       } },
     );
     expect(report.columns.map((column) => column.label))
-      .toEqual(["一班", "二班", "10班", "总计"]);
+      .toEqual(["10班", "二班", "一班", "总计"]);
     expect(report.columns.some((column) => column.kind === "subtotal")).toBe(false);
   });
 
@@ -173,7 +173,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
         "class-2": { subjectSelections: ["史政地"], scoreSubjects: ["数学"], hasImportedScores: true },
       },
     }, classAverageTemplate);
-    expect(report.columns.map((column) => column.label)).toEqual(["一班", "二班", "总计"]);
+    expect(report.columns.map((column) => column.label)).toEqual(["二班", "一班", "总计"]);
     expect(report.summaryRows.find((row) => row.key === "highScore1Count")?.values).toEqual({
       "class-1": 1, "class-2": 1, __total__: 2,
     });
@@ -208,7 +208,7 @@ describe("buildGradeTotalScoreSegmentReport", () => {
   it("builds cumulative threshold rows with classes as columns", () => {
     const report = buildGradeTotalScoreSegmentReport(exam, template, context, classAverageTemplate);
 
-    expect(report.classes.map((item) => item.classLabel)).toEqual(["一班", "二班"]);
+    expect(report.classes.map((item) => item.classLabel)).toEqual(["二班", "一班"]);
     expect(report.rows.map((row) => row.threshold)).toEqual([100, 90, 80]);
     expect(report.rows.map((row) => [row.counts["class-2"], row.counts["class-1"]])).toEqual([
       [1, 0],
@@ -304,14 +304,14 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     );
 
     expect(report.classes.map((item) => [item.classLabel, item.track])).toEqual([
-      ["一班", "science"],
       ["二班", "arts"],
+      ["一班", "science"],
     ]);
     expect(report.columns.map((column) => column.label)).toEqual([
-      "一班",
-      "理科小计",
       "二班",
       "文科小计",
+      "一班",
+      "理科小计",
       "总计",
     ]);
     expect(report.trackStandards.science.highScore1).toBe(90);
@@ -364,9 +364,9 @@ describe("buildGradeTotalScoreSegmentReport", () => {
     );
     expect(report.separateStandards).toEqual([{
       key: '["化学","生物"]',
-      label: "单独排名（化学、生物）",
-      classIds: ["class-1", "class-2"],
-      classLabels: ["一班", "二班"],
+      label: "单独排名（二班、一班）",
+      classIds: ["class-2", "class-1"],
+      classLabels: ["二班", "一班"],
       thresholds: { highScore1: 95, highScore2: null, firstTier: null, undergraduate: null },
     }]);
     const highScore = report.summaryRows.find((row) => row.key === "highScore1Count");

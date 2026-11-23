@@ -494,6 +494,8 @@ function normalizeTotalScoreSegmentOptions(
     totalScoreSeparateTopN: Number.isFinite(options.totalScoreSeparateTopN)
       ? Math.max(1, Math.min(1000, Math.round(Number(options.totalScoreSeparateTopN))))
       : undefined,
+    showSubjectRanks: options.showSubjectRanks === true,
+    highlightLowestRankSubject: options.highlightLowestRankSubject === true,
   };
 }
 

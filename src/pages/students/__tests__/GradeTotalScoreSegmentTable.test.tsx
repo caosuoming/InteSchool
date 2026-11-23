@@ -272,20 +272,20 @@ describe("GradeTotalScoreSegmentTable", () => {
 
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: "调整分数段" }));
-    expect(screen.getByTestId("separate-standard-groups")).toHaveTextContent("单独排名（数学）");
-    const input = screen.getByRole("spinbutton", { name: "单独排名（数学）高分1标准" });
+    expect(screen.getByTestId("separate-standard-groups")).toHaveTextContent("单独排名（1班）");
+    const input = screen.getByRole("spinbutton", { name: "单独排名（1班）高分1标准" });
     expect(input).toHaveValue(null);
-    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(screen.getByLabelText("单独排名（1班）高分1达线统计")).toHaveTextContent("1人（100.0%）");
     await user.type(input, "95");
     await user.tab();
-    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("0人（0.0%）");
+    expect(screen.getByLabelText("单独排名（1班）高分1达线统计")).toHaveTextContent("0人（0.0%）");
     expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
       ?.totalScoreSegmentOptions?.separateRankThresholds?.['["数学"]']?.highScore1).toBe(95);
-    expect(screen.getByTestId("track-standard-summary")).toHaveTextContent("单独排名（数学）：高分1 95分");
+    expect(screen.getByTestId("track-standard-summary")).toHaveTextContent("单独排名（1班）：高分1 95分");
 
     await user.clear(input);
     await user.tab();
-    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(screen.getByLabelText("单独排名（1班）高分1达线统计")).toHaveTextContent("1人（100.0%）");
     expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
       ?.totalScoreSegmentOptions?.separateRankThresholds?.['["数学"]']?.highScore1).toBeUndefined();
   });
@@ -317,7 +317,7 @@ describe("GradeTotalScoreSegmentTable", () => {
     );
     expect(within(screen.getByRole("row", { name: /实考人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     await userEvent.setup().click(screen.getByRole("button", { name: "调整分数段" }));
-    expect(screen.getByLabelText("单独排名（数学）高分1达线统计")).toHaveTextContent("1人（100.0%）");
+    expect(screen.getByLabelText("单独排名（1班）高分1达线统计")).toHaveTextContent("1人（100.0%）");
   });
 
   it("shows standards as a proportion of students with complete totals", async () => {
@@ -354,6 +354,34 @@ describe("GradeTotalScoreSegmentTable", () => {
     expect(screen.getByLabelText("理科高分1达线统计")).toHaveTextContent("1人（100.0%）");
     expect(within(screen.getByRole("row", { name: /实考人数/ })).getAllByRole("cell", { name: "1" })).toHaveLength(3);
     expect(within(screen.getByRole("row", { name: /一本率/ })).getAllByRole("cell", { name: "100.0%" })).toHaveLength(3);
+  });
+
+
+  it("moves a class from table two through the shared order and auto-saves", async () => {
+    const user = userEvent.setup();
+    const onAutoSave = vi.fn();
+    const secondClass = {
+      ...context.classes[0], id: "class-2", name: "高三(2)班",
+    };
+    const secondRecord = {
+      ...exam.records[0], id: "record-2", studentId: "student-2", studentNo: "002",
+      classId: "class-2", className: "高三(2)班",
+    };
+    const twoClassExam = { ...exam, records: [exam.records[0], secondRecord] };
+    const twoClassContext = { ...context, classes: [...context.classes, secondClass] };
+    function Harness() {
+      const [settings, setSettings] = useState(exam.settings);
+      return <GradeTotalScoreSegmentTable exam={twoClassExam} settings={settings}
+        template={template} classAverageTemplate={classAverageTemplate}
+        context={twoClassContext} onChange={setSettings} onAutoSave={onAutoSave} />;
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "调整分数段" }));
+    const order = screen.getByRole("combobox", { name: "高三(2)班班级位置" });
+    await user.selectOptions(order, "0");
+    expect(order).toHaveValue("0");
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === classAverageTemplate.id)
+      ?.classAverageOptions?.classOrder).toEqual(["class-2", "class-1"]);
   });
 
 });

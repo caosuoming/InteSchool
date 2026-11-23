@@ -26,6 +26,9 @@ export interface GradeTotalScoreRankingRow {
   classId: string;
   classLabel: string;
   subjectScores: Record<string, number | null>;
+  subjectRanks: Record<string, number | null>;
+  /** Tied worst ranks are all highlighted. */
+  lowestRankSubjects: string[];
   score: number;
 }
 
@@ -47,6 +50,8 @@ export interface GradeTotalScoreRankingReport {
   topN: number;
   separateTopN: number;
   hasSeparateGroups: boolean;
+  showSubjectRanks: boolean;
+  highlightLowestRankSubject: boolean;
   tables: GradeTotalScoreRankingTable[];
 }
 
@@ -87,6 +92,15 @@ function rankedRows(
       const rank = previousScore === score ? previousRank : index + 1;
       previousScore = score;
       previousRank = rank;
+      const subjectRanks = Object.fromEntries(subjects.map((subject) => [
+        subject,
+        typeof record.subjectRanks?.[subject] === "number"
+          && Number.isFinite(record.subjectRanks[subject]) && record.subjectRanks[subject] > 0
+          && typeof record.assignedScores[subject] === "number"
+          ? record.subjectRanks[subject] : null,
+      ]));
+      const validRanks = Object.values(subjectRanks).filter((value): value is number => value !== null);
+      const lowestRank = validRanks.length ? Math.max(...validRanks) : null;
       return {
         rank,
         studentId: record.studentId,
@@ -98,6 +112,8 @@ function rankedRows(
           subject,
           template.scoreMode === "raw" ? record.scores[subject] : record.assignedScores[subject],
         ])),
+        subjectRanks,
+        lowestRankSubjects: lowestRank === null ? [] : subjects.filter((subject) => subjectRanks[subject] === lowestRank),
         score,
       } satisfies GradeTotalScoreRankingRow;
     })
@@ -170,8 +186,12 @@ export function buildGradeTotalScoreRankingReport(
   rankedGroups.forEach((groupRecords, groupKey) => {
     const separateSubjects = JSON.parse(groupKey) as string[];
     const groupTopN = separateSubjects.length ? separateTopN : topN;
+    const groupClassIds = new Set(groupRecords.map((record) => record.classId));
+    const groupClassLabels = (classOptions.classOrder || [])
+      .filter((classId) => groupClassIds.has(classId))
+      .map((classId) => classLabels[classId] || groupRecords.find((record) => record.classId === classId)?.className || classId);
     const groupLabel = !hasSeparateGroups ? ""
-      : separateSubjects.length ? `单独排名（${separateSubjects.join("、")}）` : "统一排名";
+      : separateSubjects.length ? `单独排名（${groupClassLabels.join("、")}）` : "统一排名";
     const keySuffix = separateSubjects.length ? `separate-${separateSubjects.join("-")}` : "all";
     const classifiedRecords = groupRecords.map((record) => ({ record, track: trackForRecord(record) }));
     const hasScience = classifiedRecords.some((item) => item.track === "science");
@@ -196,6 +216,8 @@ export function buildGradeTotalScoreRankingReport(
     topN,
     separateTopN,
     hasSeparateGroups,
+    showSubjectRanks: template.totalScoreSegmentOptions?.showSubjectRanks === true,
+    highlightLowestRankSubject: template.totalScoreSegmentOptions?.highlightLowestRankSubject === true,
     tables,
   };
 }

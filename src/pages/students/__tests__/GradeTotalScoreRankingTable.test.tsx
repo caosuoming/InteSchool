@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { GradeTotalScoreRankingTable } from "@/pages/students/GradeTotalScoreRankingTable";
@@ -136,7 +136,7 @@ describe("GradeTotalScoreRankingTable", () => {
     await user.type(separateInput, "2");
     await user.tab();
 
-    expect(screen.getByText("期末考试单独排名（数学）总分前2名（赋分）")).toBeInTheDocument();
+    expect(screen.getByText("期末考试单独排名（1班）总分前2名（赋分）")).toBeInTheDocument();
     expect(screen.getByText("期末考试统一排名总分前1名（赋分）")).toBeInTheDocument();
     expect(screen.getByText("乙")).toBeInTheDocument();
     expect(screen.queryByText("丁")).not.toBeInTheDocument();
@@ -152,4 +152,44 @@ describe("GradeTotalScoreRankingTable", () => {
     expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
       ?.totalScoreSegmentOptions).toMatchObject({ totalScoreTopN: 2, totalScoreSeparateTopN: 2 });
   });
+
+  it("toggles subject ranks, shades every tied lowest-ranked subject and persists the options", async () => {
+    const user = userEvent.setup();
+    const onAutoSave = vi.fn();
+    const rankedExam: GradeExam = {
+      ...exam,
+      subjects: ["数学", "化学"],
+      records: exam.records.map((record, index) => ({
+        ...record,
+        scores: { ...record.scores, 化学: index === 0 ? 70 : 80 },
+        assignedScores: { ...record.assignedScores, 化学: index === 0 ? 75 : 85 },
+        subjectRanks: index === 0 ? { 数学: 2, 化学: 8 } : { 数学: 5, 化学: 5 },
+      })),
+    };
+    const twoRowTemplate = {
+      ...template, totalScoreSegmentOptions: { ...template.totalScoreSegmentOptions, totalScoreTopN: 2 },
+    };
+    function Harness() {
+      const [settings, setSettings] = useState({
+        ...rankedExam.settings,
+        templates: [classAverageTemplate, twoRowTemplate],
+      });
+      return <GradeTotalScoreRankingTable exam={rankedExam} settings={settings}
+        template={twoRowTemplate} classAverageTemplate={classAverageTemplate}
+        context={context} onChange={setSettings} onAutoSave={onAutoSave} />;
+    }
+    render(<Harness />);
+    expect(screen.queryByRole("columnheader", { name: "数学排名" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "表五显示单科排名" }));
+    await user.click(screen.getByRole("checkbox", { name: "表五标记排名最低学科" }));
+    expect(screen.getByRole("columnheader", { name: "数学排名" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "化学排名" })).toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /甲/ });
+    expect(within(row).getByRole("cell", { name: "8" })).toBeInTheDocument();
+    expect(within(row).getByRole("cell", { name: "75" })).toHaveClass("bg-amber-100/60");
+    expect(within(row).getByRole("cell", { name: "95" })).not.toHaveClass("bg-amber-100/60");
+    expect(onAutoSave.mock.lastCall?.[0].templates.find((item: GradeStatisticsTemplate) => item.id === template.id)
+      ?.totalScoreSegmentOptions).toMatchObject({ showSubjectRanks: true, highlightLowestRankSubject: true });
+  });
+
 });
