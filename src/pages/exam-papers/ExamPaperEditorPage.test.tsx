@@ -985,6 +985,49 @@ describe("ExamPaperEditorPage preview", () => {
     await waitFor(() => expect(screen.queryByTestId("question-catalog-editor")).not.toBeInTheDocument());
   });
 
+  it("adds a remark at the top of the preview catalog modal and synchronizes the sidebar", async () => {
+    const updated = {
+      ...question,
+      remark: "新备注",
+      remarks: [{ id: "remark-added", content: "新备注", createdAt: timestamp, updatedAt: timestamp }],
+    };
+    mocks.getQuestion.mockResolvedValue(updated);
+
+    renderPage();
+    const details = await screen.findByTestId("exam-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
+    const editor = screen.getByTestId("question-catalog-editor");
+    expect(editor.firstElementChild).toHaveTextContent("题目备注");
+    fireEvent.click(within(editor).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(editor).getByRole("textbox", { name: "新增题目备注" }), {
+      target: { value: "  新备注  " },
+    });
+    fireEvent.click(within(editor).getByRole("button", { name: "添加" }));
+
+    await waitFor(() => expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "新备注"));
+    await waitFor(() => expect(within(editor).getByText("新备注")).toBeInTheDocument());
+    expect(within(details).getByText("新备注")).toBeInTheDocument();
+  });
+
+  it("can add a question remark from the same modal in edit mode", async () => {
+    mocks.getQuestion.mockResolvedValue({
+      ...question,
+      remark: "新备注",
+      remarks: [{ id: "remark-added", content: "新备注", createdAt: timestamp, updatedAt: timestamp }],
+    });
+    renderEditorPage();
+    const details = await screen.findByTestId("exam-editor-question-details-1");
+    fireEvent.click(within(details).getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
+    const editor = screen.getByTestId("question-catalog-editor");
+    fireEvent.click(within(editor).getByRole("button", { name: "添加备注" }));
+    fireEvent.change(within(editor).getByRole("textbox", { name: "新增题目备注" }), {
+      target: { value: "新备注" },
+    });
+    fireEvent.click(within(editor).getByRole("button", { name: "添加" }));
+    await waitFor(() => expect(within(editor).getByText("新备注")).toBeInTheDocument());
+    expect(mocks.addRemark).toHaveBeenCalledWith(question.id, "新备注");
+  });
+
   it("opens the general question-attributes editor in preview", async () => {
     renderPage();
     const details = await screen.findByTestId("exam-question-details-1");

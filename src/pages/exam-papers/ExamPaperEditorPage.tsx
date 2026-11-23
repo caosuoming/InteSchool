@@ -2765,6 +2765,7 @@ export default function ExamPaperEditorPage() {
                             chapterNameMap={chapterNameMap}
                             knowledgeNameMap={knowledgeNameMap}
                             onEditAttributes={setAttributeQuestion}
+                            onQuestionUpdated={handlePreviewQuestionUpdated}
                             onUpdateCatalogs={handleUpdateQuestionCatalogs}
                             onReplace={(replacement) => replacePaperQuestionAt(paperQuestionIndex, replacement)}
                             onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
@@ -2911,6 +2912,7 @@ export default function ExamPaperEditorPage() {
                                   chapterNameMap={chapterNameMap}
                                   knowledgeNameMap={knowledgeNameMap}
                                   onEditAttributes={setAttributeQuestion}
+                                  onQuestionUpdated={handlePreviewQuestionUpdated}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
                                   onReplace={(replacement) => replacePaperQuestionAt(item.index, replacement)}
                                   onUpdateScore={(score) => handleUpdateScore(item.pq.id, score)}
@@ -3042,6 +3044,7 @@ export default function ExamPaperEditorPage() {
                                   chapterNameMap={chapterNameMap}
                                   knowledgeNameMap={knowledgeNameMap}
                                   onEditAttributes={setAttributeQuestion}
+                                  onQuestionUpdated={handlePreviewQuestionUpdated}
                                   onUpdateCatalogs={handleUpdateQuestionCatalogs}
                                   onReplace={(replacement) => replacePaperQuestionAt(index, replacement)}
                                   onUpdateScore={(score) => handleUpdateScore(paperQuestion.id, score)}
@@ -3752,6 +3755,7 @@ function EditQuestionCatalogPanel({
   chapterNameMap,
   knowledgeNameMap,
   onUpdateCatalogs,
+  onQuestionUpdated,
   onEditAttributes,
   onReplace,
   onUpdateScore,
@@ -3771,6 +3775,7 @@ function EditQuestionCatalogPanel({
   chapterNameMap: Map<string, string>;
   knowledgeNameMap: Map<string, string>;
   onUpdateCatalogs: (questionId: string, chapterIds: string[], knowledgePointIds: string[], thoughtMethodIds?: string[], errorReasonIds?: string[]) => Promise<void>;
+  onQuestionUpdated: (question: Question) => void;
   onEditAttributes: (question: Question) => void;
   onReplace: (question: Question) => void;
   onUpdateScore: (score: number) => void;
@@ -3896,6 +3901,7 @@ function EditQuestionCatalogPanel({
           onChapterTreeChange={onChapterTreeChange}
           onKnowledgeTreeChange={onKnowledgeTreeChange}
           onUpdateCatalogs={onUpdateCatalogs}
+          onQuestionUpdated={onQuestionUpdated}
           onClose={() => setCatalogOpen(false)}
         />
       )}
@@ -4142,6 +4148,7 @@ function PreviewQuestionDetails({
           onChapterTreeChange={onChapterTreeChange}
           onKnowledgeTreeChange={onKnowledgeTreeChange}
           onUpdateCatalogs={onUpdateCatalogs}
+          onQuestionUpdated={onQuestionUpdated}
           onClose={() => setCatalogOpen(false)}
         />
       )}
