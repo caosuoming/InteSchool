@@ -303,8 +303,7 @@ function summaryForRecords(
     return recordTotal(record, totalSubjects, mode, examSubjects, settings);
   };
   return {
-    customValues: Object.fromEntries(customTotals.map((total) => [total.id, averageGradeValues(records.map((record) => gradeAttendance(record, examSubjects, settings).complete
-      ? gradeCustomTotal(record, total) : null))])),
+    customValues: Object.fromEntries(customTotals.map((total) => [total.id, averageGradeValues(records.map((record) => gradeCustomTotal(record, total)))])),
     subjectValues: Object.fromEntries(subjects.map((subject) => [
       subject,
       {
@@ -527,8 +526,7 @@ export function buildGradeClassAverageReport(
       }];
     })),
     totalValues: summaryForRecords(unifiedTotalRecords, effectiveSubjects, exam.subjects, settings, [], totalSubjects).totalValues,
-    customValues: Object.fromEntries(customTotals.map((total) => [total.id, averageGradeValues(unifiedTotalRecords.map((record) => gradeAttendance(record, exam.subjects, settings).complete
-        ? gradeCustomTotal(record, total) : null))])),
+    customValues: Object.fromEntries(customTotals.map((total) => [total.id, averageGradeValues(unifiedTotalRecords.map((record) => gradeCustomTotal(record, total)))])),
   };
 
   return {

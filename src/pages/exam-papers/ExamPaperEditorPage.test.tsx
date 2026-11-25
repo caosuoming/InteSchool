@@ -598,6 +598,10 @@ describe("ExamPaperEditorPage preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑第 1 题章节课和知识点" }));
     expect(await screen.findByRole("heading", { name: "编辑第 1 题章节课和知识点" })).toBeInTheDocument();
 
+    const catalogEditor = screen.getByTestId("question-catalog-editor");
+    expect(within(catalogEditor).getByRole("region", { name: "完整题目" })).toBeInTheDocument();
+    expect(within(catalogEditor).getByRole("tab", { name: /思想方法/ })).toBeInTheDocument();
+    expect(within(catalogEditor).getByRole("tab", { name: /错因/ })).toBeInTheDocument();
     const chapterRow = screen.getByTitle("函数与方程").parentElement as HTMLElement;
     fireEvent.click(within(chapterRow).getByRole("button"));
     fireEvent.click(screen.getByRole("tab", { name: /知识点/ }));

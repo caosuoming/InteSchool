@@ -137,7 +137,7 @@ export function buildGradeTotalScoreRankingReport(
   const hiddenClassIds = new Set(classOptions.hiddenClassIds || []);
   const classLabels = classOptions.classLabels || {};
   const records = participatingGradeRecords(exam.records).filter((record) =>
-    !hiddenClassIds.has(record.classId) && gradeAttendance(record, exam.subjects, exam.settings).complete);
+    !hiddenClassIds.has(record.classId) && (customTotal || gradeAttendance(record, exam.subjects, exam.settings).complete));
   const subjects = customTotal ? [...customTotal.subjects] : [...exam.subjects];
   const topN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreTopN);
   const separateTopN = normalizeTopN(template.totalScoreSegmentOptions?.totalScoreSeparateTopN ?? topN);

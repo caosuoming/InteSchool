@@ -3200,6 +3200,7 @@ export default function MyResourcesPage({ initialTab = "question" }: MyResources
         <Suspense fallback={<div className="flex justify-center py-8"><Spinner size={24} /></div>}>
         <QuestionBankPage
           studentIds={selectedResourceStudentIds}
+          resourceStudents={resourceStudents}
           onStudentIdsChange={setSelectedResourceStudentIds}
           hideStudentPicker
           selectedQuestionIds={new Set(

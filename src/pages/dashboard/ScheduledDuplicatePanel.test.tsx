@@ -29,6 +29,25 @@ describe("ScheduledDuplicatePanel", () => {
     });
   });
 
+  it("collapses completed schedules but keeps queued and failed schedules visible", async () => {
+    vi.mocked(rpcCall).mockImplementation(async (_service, method) => {
+      if (method === "listSchedules") return [
+        { id: "done", kind: "library", repeat: "once", enabled: false, nextRunAt: null, lastRunAt: "2026-11-24T00:00:00Z" },
+        { id: "failed", kind: "student", repeat: "once", enabled: false, nextRunAt: null, lastRunAt: "2026-11-24T00:00:00Z", runStatus: "failed" },
+      ];
+      return [];
+    });
+    const user = userEvent.setup();
+    render(<ScheduledDuplicatePanel teacherId="teacher" />);
+    await user.click(await screen.findByRole("button", { name: /管理任务/ }));
+    const summary = screen.getByText("已完成任务（1）");
+    const group = summary.closest("details")!;
+    expect(group).not.toHaveAttribute("open");
+    expect(screen.getByText("检索失败，可重试")).toBeVisible();
+    await user.click(summary);
+    expect(group).toHaveAttribute("open");
+  });
+
   it("can cancel only the remaining review after confirming a higher-ranked duplicate", async () => {
     const user = userEvent.setup();
     let pending = [

@@ -84,6 +84,12 @@ describe("ExtractedQuestionContent", () => {
     expect(question).not.toHaveTextContent("16.");
   });
 
+  it("removes an imported standalone source number outside geography", () => {
+    render(<ExtractedQuestionContent number={2} geographySubject="数学" stem="16. 求函数值" answer="1" analysis="" />);
+    expect(screen.getByRole("button", { name: "第 2 题，点击展开答案和解析" })).toHaveTextContent(/2\.\s*求函数值/);
+    expect(screen.queryByText("16. 求函数值")).not.toBeInTheDocument();
+  });
+
   it("supports keyboard expansion", () => {
     render(
       <ExtractedQuestionContent
