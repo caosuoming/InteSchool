@@ -11,7 +11,7 @@ import type { DuplicateQuestionMergeFields, Question } from "@/types";
 
 type Kind = "library" | "student";
 type Repeat = "once" | "daily" | "weekend";
-interface Schedule { id: string; kind: Kind; repeat: Repeat; enabled: boolean; nextRunAt: string | null; lastRunAt?: string }
+interface Schedule { id: string; kind: Kind; repeat: Repeat; enabled: boolean; nextRunAt: string | null; lastRunAt?: string; runStatus?: "queued" | "running" | "failed" }
 interface CandidateQuestion extends Pick<Question, "id" | "stem" | "options" | "answer" | "analysis" | "summary" | "subject"> {
   sources: string[];
 }
@@ -76,6 +76,29 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
     setCandidates(nextCandidates);
   }, [teacherId]);
   useEffect(() => { void refresh().catch(() => toast.error("预约任务加载失败")); }, [refresh]);
+  const scanning = tasks.some((task) => task.runStatus === "queued" || task.runStatus === "running");
+  useEffect(() => {
+    if (!scanning && !open) return;
+    let stopped = false;
+    let polling = false;
+    const timer = window.setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const nextTasks = await rpcCall<Schedule[]>("scheduledDuplicate", "listSchedules", [teacherId]);
+        if (stopped) return;
+        const completed = nextTasks.some((next) => tasks.find((task) => task.id === next.id)?.lastRunAt !== next.lastRunAt);
+        if (completed) {
+          const nextCandidates = await rpcCall<Candidate[]>("scheduledDuplicate", "listCandidates", [teacherId]);
+          if (stopped) return;
+          setCandidates(nextCandidates);
+        }
+        setTasks(nextTasks);
+      } catch { /* Retry transient failures on the next poll. */ }
+      finally { polling = false; }
+    }, 5000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [scanning, open, teacherId, tasks]);
   async function execute(action: () => Promise<unknown>, success: string): Promise<boolean> {
     setBusy(true);
     try { await action(); await refresh(); toast.success(success); return true; }
@@ -92,7 +115,7 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
   return (
     <>
       <Card>
-        <CardHeader title="预约定时任务" action={<Button size="sm" onClick={() => setOpen(true)}><CalendarClock className="w-4 h-4" /> 管理任务</Button>} />
+        <CardHeader title="预约定时任务" action={<Button size="sm" onClick={() => { setOpen(true); void refresh().catch(() => toast.error("预约任务加载失败")); }}><CalendarClock className="w-4 h-4" /> 管理任务</Button>} />
         <div className="px-4 pb-4 text-sm text-ink-600">
           {tasks.filter((t) => t.enabled).length} 个运行中任务 · {candidates.length} 组待确认题目
           {candidates.length > 0 && <button className="ml-3 text-gold-600 hover:underline" onClick={() => setOpen(true)}>处理待办</button>}
@@ -121,12 +144,12 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
             {tasks.length === 0 && <p className="text-sm text-ink-500">暂无任务</p>}
             {tasks.map((task) => <div key={task.id} className="flex items-center justify-between gap-2 border rounded-md p-3 text-sm">
               <div><div className="font-medium">{kindLabel[task.kind]} · {repeatLabel[task.repeat]}</div>
-                <div className="text-ink-500">{task.enabled ? `下次执行：${displayDate(task.nextRunAt)}` : "已结束"} · 上次执行：{displayDate(task.lastRunAt)}</div></div>
+                <div className="text-ink-500">{task.enabled ? `下次执行：${displayDate(task.nextRunAt)}` : "已结束"} · 上次执行：{displayDate(task.lastRunAt)}</div>
+                {task.runStatus && <div role="status" className="text-ink-500">{({ queued: "排队中", running: "后台检索中", failed: "检索失败，可重试" })[task.runStatus]}</div>}</div>
               <div className="flex gap-2">
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => void execute(async () => {
-                  const count = await rpcCall<number>("scheduledDuplicate", "runSchedule", [teacherId, task.id]);
-                  toast.info(`新增 ${count} 组待确认题目`);
-                }, "扫描完成")}><Play className="w-4 h-4" /> 立即执行</Button>
+                <Button size="sm" variant="ghost" disabled={busy || task.runStatus === "queued" || task.runStatus === "running"} onClick={() => void execute(() =>
+                  rpcCall("scheduledDuplicate", "startSchedule", [teacherId, task.id]),
+                  "已提交后台检索，可继续使用平台")}><Play className="w-4 h-4" /> 立即执行</Button>
                 {task.enabled && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "cancelSchedule", [teacherId, task.id]), "已停止任务")}><Trash2 className="w-4 h-4" /> 停止</Button>}
               </div>
             </div>)}
