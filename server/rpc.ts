@@ -1,3 +1,5 @@
+import type { DuplicateSchedule } from "./domain/scheduledDuplicate.js";
+import { DuplicateScanQueue } from "./duplicate-scan-queue.js";
 import type { AppState, SessionUser, TeacherRecord } from "./types.js";
 import { highestTeacherRoleLevel, isTeacherRole, TEACHER_ROLE_LEVEL } from "../src/lib/teacher-roles.js";
 import { isPlatformAdminAccount } from "../src/lib/platform-admin.js";
@@ -264,6 +266,27 @@ export async function withReadOnlyState<T>(
 ): Promise<T> {
   const readSharedState = sharedStateReader(store);
   return task(readSharedState ? readSharedState() : store.loadState());
+}
+
+const duplicateQueues = new WeakMap<DatabaseStore, DuplicateScanQueue>();
+function duplicateQueue(store: DatabaseStore): DuplicateScanQueue {
+  let queue = duplicateQueues.get(store);
+  if (!queue) {
+    queue = new DuplicateScanQueue(store, { read: withReadOnlyState, write: withSerializedState });
+    duplicateQueues.set(store, queue);
+  }
+  return queue;
+}
+
+export async function enqueueDueDuplicateSchedules(store: DatabaseStore, onError: (error: unknown) => void): Promise<void> {
+  const now = new Date().toISOString();
+  const due = await withReadOnlyState(store, (state) => ((state.duplicateSchedules || []) as DuplicateSchedule[])
+    .filter((schedule) => schedule.enabled && schedule.nextRunAt && schedule.nextRunAt <= now));
+  const queue = duplicateQueue(store);
+  for (const schedule of due) {
+    if (queue.status(schedule.id) === "queued" || queue.status(schedule.id) === "running") continue;
+    void queue.enqueue(schedule, now).catch(onError);
+  }
 }
 
 function isReadOnly(service: ServiceName, method: string): boolean {
@@ -810,6 +833,19 @@ export async function invokeRpc(
   args: unknown[],
 ): Promise<unknown> {
   if (!(serviceName in serviceRegistry)) throw new Error("未知服务");
+  if (serviceName === "scheduledDuplicate" && ["runSchedule", "startSchedule"].includes(methodName)) {
+    const schedule = await withReadOnlyState(store, (state) => {
+      const authorized = authorize(state, session, "scheduledDuplicate", methodName, args);
+      const [teacherId, scheduleId] = authorized.args;
+      const task = ((state.duplicateSchedules || []) as DuplicateSchedule[]).find((item) => item.id === scheduleId && item.teacherId === teacherId);
+      if (!task) throw new Error("任务不存在");
+      return task;
+    });
+    const promise = duplicateQueue(store).enqueue(schedule);
+    if (methodName === "runSchedule") return promise;
+    void promise.catch((error) => console.error("duplicate scan failed", error));
+    return { accepted: true };
+  }
   const service = serviceRegistry[serviceName as ServiceName] as Record<string, unknown>;
   const method = service[methodName];
   if (typeof method !== "function" || methodName.startsWith("_")) throw new Error("未知服务方法");
@@ -838,6 +874,9 @@ export async function invokeRpc(
           if (corresponding?.subject) record.subject = corresponding.subject;
         }
       }
+    }
+    if (serviceName === "scheduledDuplicate" && methodName === "listSchedules" && Array.isArray(result)) {
+      return sanitize(result.map((schedule: DuplicateSchedule) => ({ ...schedule, runStatus: duplicateQueue(store).status(schedule.id) })));
     }
     return sanitize(filterAuthorizedResult(
       state,

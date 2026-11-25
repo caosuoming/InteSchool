@@ -1,7 +1,8 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { AppState, SessionUser } from "../types.js";
 import type { DatabaseStore } from "../database.js";
-import { invokeRpc } from "../rpc.js";
+import { enqueueDueDuplicateSchedules, invokeRpc, withSerializedState } from "../rpc.js";
 import type { AnswerRecord, Question, ExamPaper, Lecture } from "../../src/types/index.js";
 import { runWithState } from "../runtime-db.js";
 import { nextExecution, runDueDuplicateSchedules, scheduledDuplicateService } from "./scheduledDuplicate.js";
@@ -279,5 +280,57 @@ describe("scheduled choice duplicate scoring", () => {
       expect(candidate.rightQuestionId).toBe("b");
       expect(candidate.similarity).toBe(1);
     });
+  });
+});
+
+describe("isolated duplicate scan RPC", () => {
+  const session: SessionUser = {
+    userId: "user", teacherId: "teacher", email: "teacher@example.com",
+    csrfToken: "token", expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  function storeFor(initial: AppState) {
+    let current = initial;
+    return {
+      readState: () => current,
+      loadState: () => structuredClone(current),
+      saveState: async (_before: AppState, next: AppState) => { current = next; },
+    } as unknown as DatabaseStore;
+  }
+  it("returns immediately, coalesces manual scans and permits writes while the real worker computes", async () => {
+    const data = state([question("a", "完全相同的题干"), question("b", "完全相同的题干"), question("c", "完全相同的题干")]);
+    const task = await runWithState(data, () => makeTask("library"));
+    const store = storeFor(data);
+    const call = (method: string, args: unknown[] = ["teacher", task.id]) => invokeRpc(store, session, "scheduledDuplicate", method, args);
+    await expect(call("startSchedule", ["other", task.id])).rejects.toThrow("无权");
+    await expect(call("startSchedule")).resolves.toEqual({ accepted: true });
+    const running = call("runSchedule");
+    const coalesced = call("runSchedule");
+    const tasks = await call("listSchedules", ["teacher"]) as Array<{ runStatus?: string }>;
+    expect(["queued", "running"]).toContain(tasks[0].runStatus);
+    await withSerializedState(store, (snapshot) => {
+      snapshot.questions = (snapshot.questions as Question[]).filter((q) => q.id !== "c");
+      snapshot.concurrentChange = "preserved";
+    });
+    await expect(running).resolves.toBe(1);
+    await expect(coalesced).resolves.toBe(1);
+    expect(store.readState().concurrentChange).toBe("preserved");
+    expect(store.readState().duplicateCandidates).toHaveLength(1);
+    expect((store.readState().duplicateCandidates as Array<{ rightQuestionId: string }>)[0].rightQuestionId).toBe("b");
+    expect((await call("listSchedules", ["teacher"]) as Array<{ runStatus?: string }>)[0].runStatus).toBeUndefined();
+  });
+
+  it("enqueues due schedules without holding the serialized state queue and advances one-time tasks", async () => {
+    const data = state([question("a", "完全相同的题干"), question("b", "完全相同的题干")]);
+    const task = await runWithState(data, () => makeTask("library"));
+    task.nextRunAt = "2000-01-01T00:00:00.000Z";
+    const store = storeFor(data);
+    const failures: unknown[] = [];
+    await enqueueDueDuplicateSchedules(store, (error) => failures.push(error));
+    const running = invokeRpc(store, session, "scheduledDuplicate", "runSchedule", ["teacher", task.id]);
+    await enqueueDueDuplicateSchedules(store, (error) => failures.push(error));
+    await expect(running).resolves.toBe(1);
+    expect(failures).toEqual([]);
+    expect((store.readState().duplicateSchedules as Array<{ enabled: boolean; nextRunAt: string | null }>)[0])
+      .toMatchObject({ enabled: false, nextRunAt: null });
   });
 });

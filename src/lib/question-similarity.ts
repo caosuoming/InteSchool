@@ -19,21 +19,33 @@ export function questionStemSimilarity(left: string, right: string): number {
   return normalizedSimilarity(normalizeQuestionStem(left), normalizeQuestionStem(right));
 }
 
-function normalizedSimilarity(a: string, b: string): number {
+interface PreparedText {
+  value: string;
+  pairs?: Map<string, number>;
+}
+
+export function prepareQuestionStemSimilarity(stem: string): PreparedText & { pairs: Map<string, number> } {
+  const value = normalizeQuestionStem(stem);
+  return { value, pairs: bigramCounts(value) };
+}
+
+export function preparedStemSimilarity(left: PreparedText, right: PreparedText): number {
+  const a = left.value, b = right.value;
   if (a === b) return a.length > 0 ? 1 : 0;
-  if (!a.length || !b.length) return 0;
-  if (Math.min(a.length, b.length) === 1) return 0;
+  if (!a.length || !b.length || Math.min(a.length, b.length) === 1) return 0;
+  if (Math.min(a.length, b.length) / Math.max(a.length, b.length) < HIGH_SIMILARITY_THRESHOLD) return 0;
 
-  const lengthRatio = Math.min(a.length, b.length) / Math.max(a.length, b.length);
-  if (lengthRatio < HIGH_SIMILARITY_THRESHOLD) return 0;
-
-  const leftPairs = bigramCounts(a);
-  const rightPairs = bigramCounts(b);
+  const leftPairs = left.pairs ?? bigramCounts(a);
+  const rightPairs = right.pairs ?? bigramCounts(b);
   let overlap = 0;
   for (const [pair, leftCount] of leftPairs) {
     overlap += Math.min(leftCount, rightPairs.get(pair) || 0);
   }
   return (2 * overlap) / (a.length + b.length - 2);
+}
+
+function normalizedSimilarity(a: string, b: string): number {
+  return preparedStemSimilarity({ value: a }, { value: b });
 }
 
 function bigramCounts(value: string): Map<string, number> {
@@ -56,7 +68,15 @@ export function questionContentSimilarity(
   left: QuestionSimilarityContent,
   right: QuestionSimilarityContent,
 ): number {
-  const stemScore = questionStemSimilarity(left.stem, right.stem);
+  return questionContentSimilarityWithStemScore(left, right, questionStemSimilarity(left.stem, right.stem));
+}
+
+/** Reuse an already computed stem score during batch scanning. */
+export function questionContentSimilarityWithStemScore(
+  left: QuestionSimilarityContent,
+  right: QuestionSimilarityContent,
+  stemScore: number,
+): number {
   const leftOptions = (left.options || []).map(normalizeOption).filter(Boolean);
   const rightOptions = (right.options || []).map(normalizeOption).filter(Boolean);
   if (!leftOptions.length && !rightOptions.length) return stemScore;

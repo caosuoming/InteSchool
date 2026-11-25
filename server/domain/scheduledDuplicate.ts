@@ -1,5 +1,5 @@
 import type { AnswerRecord, Question, ExamPaper, Lecture, DocumentRecord, DuplicateQuestionMergeFields, Student, PersonalClass } from "../../src/types/index.js";
-import { HIGH_SIMILARITY_THRESHOLD, normalizeQuestionStem, questionContentSimilarity } from "../../src/lib/question-similarity.js";
+import { computeDuplicateScan, type DuplicateScanInput, type ScanQuestion } from "./duplicateScan.js";
 import { db, computeDuplicateHash } from "../runtime-db.js";
 import { genId } from "../domain-shared.js";
 import { linkSameQuestions } from "./sameQuestion.js";
@@ -131,15 +131,14 @@ export function nextExecution(from: Date, repeat: RepeatRule, timezoneOffsetMinu
   return next.toISOString();
 }
 
-function scan(schedule: DuplicateSchedule): number {
+export function prepareDuplicateScan(schedule: DuplicateSchedule): DuplicateScanInput | null {
   const all = (db.read("questions") || []) as Question[];
   const teacher = ((db.read("teachers") || []) as TeacherRecord[]).find((t) => t.id === schedule.teacherId);
-  if (!teacher) return 0;
+  if (!teacher) return null;
   const subject = selectedSubject(teacher);
   const mine = all.filter((q) => q.teacherId === schedule.teacherId && (!subject || !q.subject || q.subject === subject));
   const source = schedule.kind === "library" ? mine : [...all, ...paperQuestionSources()];
   const ownIds = new Set(mine.map((q) => q.id));
-  const ownPositions = new Map(mine.map((q, index) => [q.id, index]));
   const studentIds = new Set<string>();
   if (schedule.kind === "student") {
     const classes = (db.read("schoolClasses") || []).filter((c: { schoolId: string; status?: string }) =>
@@ -159,44 +158,37 @@ function scan(schedule: DuplicateSchedule): number {
   // Cancelled reviews are deliberately not checked: a later scan may rediscover them.
   const found = new Set(candidates().filter((c) => c.teacherId === teacher.id && c.kind === schedule.kind && c.status === "pending")
     .map((c) => pairId(c.kind, c.leftQuestionId, c.rightQuestionId)));
-  const index = new Map<string, Set<Question>>();
-  for (const q of source) {
-    if (schedule.kind === "student" && (ownIds.has(q.id) || (q.teacherId === teacher.id && !q.id.startsWith("exam-item:")) || !counts.has(q.id))) continue;
-    const value = normalizeQuestionStem(q.stem);
-    if (!value) continue;
-    for (let i = 0; i < Math.max(1, value.length - 1); i++) {
-      const key = value.length === 1 ? value : value.slice(i, i + 2);
-      if (!index.has(key)) index.set(key, new Set());
-      index.get(key)!.add(q);
-    }
-  }
-  const additions: DuplicateCandidate[] = [];
-  const maximumNewCandidates = 300;
-  scanQuestions: for (let i = 0; i < mine.length; i++) {
-    const left = mine[i];
-    const value = normalizeQuestionStem(left.stem);
-    const possibilities = new Set<Question>();
-    for (let j = 0; j < Math.max(1, value.length - 1); j++) {
-      const key = value.length === 1 ? value : value.slice(j, j + 2);
-      for (const q of index.get(key) || []) possibilities.add(q);
-    }
-    for (const right of possibilities) {
-      if (schedule.kind === "student" && left.subject && right.subject && left.subject !== right.subject) continue;
-      if (left.id === right.id || (schedule.kind === "library" && (ownPositions.get(right.id) ?? -1) <= i)) continue;
-      if (left.sameQuestionGroupId && left.sameQuestionGroupId === right.sameQuestionGroupId) continue;
-      const id = pairId(schedule.kind, left.id, right.id);
-      if (prior.has(id) || found.has(id)) continue;
-      const similarity = questionContentSimilarity(left, right);
-      if (similarity < HIGH_SIMILARITY_THRESHOLD) continue;
-      additions.push({ id: genId("duplicate"), teacherId: teacher.id, scheduleId: schedule.id, kind: schedule.kind,
-        leftQuestionId: left.id, rightQuestionId: right.id, similarity, status: "pending",
-        studentCount: counts.get(right.id), createdAt: new Date().toISOString() });
-      found.add(id);
-      if (additions.length >= maximumNewCandidates) break scanQuestions;
-    }
-  }
-  if (additions.length) db.update("duplicateCandidates", (items: DuplicateCandidate[] = []) => [...items, ...additions]);
-  return additions.length;
+  const project = (q: Question): ScanQuestion => ({
+    id: q.id, stem: q.stem, options: q.options, subject: q.subject, sameQuestionGroupId: q.sameQuestionGroupId,
+  });
+  const eligible = source.filter((q) => schedule.kind === "library"
+    || (!ownIds.has(q.id) && (q.teacherId !== teacher.id || q.id.startsWith("exam-item:")) && counts.has(q.id)));
+  return { schedule, mine: mine.map(project), source: eligible.map(project), counts, prior, found };
+}
+
+export function applyDuplicateScan(input: DuplicateScanInput | null, additions: DuplicateCandidate[]): number {
+  if (!input || !additions.length) return 0;
+  const current = prepareDuplicateScan(input.schedule);
+  if (!current) return 0;
+  const originalLeft = new Map(input.mine.map((q) => [q.id, q]));
+  const originalRight = new Map(input.source.map((q) => [q.id, q]));
+  const currentLeft = new Map(current.mine.map((q) => [q.id, q]));
+  const currentRight = new Map(current.source.map((q) => [q.id, q]));
+  const unchanged = (before: ScanQuestion | undefined, after: ScanQuestion | undefined) =>
+    !!before && !!after && JSON.stringify(before) === JSON.stringify(after);
+  const valid = additions.filter((item) => {
+    const id = pairId(item.kind, item.leftQuestionId, item.rightQuestionId);
+    return !current.prior.has(id) && !current.found.has(id)
+      && unchanged(originalLeft.get(item.leftQuestionId), currentLeft.get(item.leftQuestionId))
+      && unchanged(originalRight.get(item.rightQuestionId), currentRight.get(item.rightQuestionId));
+  }).map((item) => ({ ...item, studentCount: current.counts.get(item.rightQuestionId) }));
+  if (valid.length) db.update("duplicateCandidates", (items: DuplicateCandidate[] = []) => [...items, ...valid]);
+  return valid.length;
+}
+
+function scan(schedule: DuplicateSchedule): number {
+  const input = prepareDuplicateScan(schedule);
+  return input ? applyDuplicateScan(input, computeDuplicateScan(input)) : 0;
 }
 
 export function runDueDuplicateSchedules(now = new Date()): number {
