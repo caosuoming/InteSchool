@@ -91,7 +91,7 @@ describe("multiple custom totals across statistics tables", () => {
     expect(report.customTotals).toEqual([raw, assigned]);
     const rows = report.groups.flatMap((group) => group.rows);
     expect(rows.find((row) => row.classId === "c1")?.customAverages).toEqual({ "raw-pair": 195, "assigned-chem": 93 });
-    expect(rows.find((row) => row.classId === "c2")?.customAverages).toEqual({ "raw-pair": 200, "assigned-chem": 90 });
+    expect(rows.find((row) => row.classId === "c2")?.customAverages).toEqual({ "raw-pair": 200, "assigned-chem": 87.5 });
   });
 
   it("produces dedicated segment and top-N report for each total", () => {
@@ -122,7 +122,7 @@ describe("multiple custom totals across statistics tables", () => {
     expect(first?.values["exam-custom:customGradeRank:raw-pair"]).toBe(1);
     const absent = report.classes.find((table) => table.classId === "c2")?.rows.find((row) => row.studentId === "s4");
     expect(absent?.values["exam-custom:custom:raw-pair"]).toBeNull();
-    expect(absent?.values["exam-custom:custom:assigned-chem"]).toBeNull();
+    expect(absent?.values["exam-custom:custom:assigned-chem"]).toBe(85);
   });
 
   it("sanitizes persisted configuration and includes custom reports in publication", () => {

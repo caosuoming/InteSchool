@@ -118,7 +118,7 @@ export function renumberGeographyPaperStem(
   stem: string, type: string, subject: string | undefined, startNumber: number,
 ): string {
   if (isChemistryCompositeGroup(stem, type, subject)) return renumberChemistryGroupStem(stem, startNumber);
-  if (subject?.trim() !== "地理" || type !== "single") return stem;
+  if (subject?.trim() !== "地理" || type !== "single") return stem.replace(lineStart, (_match, prefix: string) => prefix);
   const group = splitGeographyChoiceGroup(stem);
   // Standalone questions receive their number from the paper layout. Avoid
   // displaying both the source-paper number and the new continuous number.

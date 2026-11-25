@@ -66,6 +66,8 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
   const [busy, setBusy] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [mergeCandidate, setMergeCandidate] = useState<Candidate | null>(null);
+  const completedTasks = tasks.filter((task) => !task.enabled && task.lastRunAt && !task.runStatus);
+  const activeTasks = tasks.filter((task) => !completedTasks.includes(task));
   const sortedCandidates = [...candidates].sort((a, b) => b.similarity - a.similarity || a.id.localeCompare(b.id));
   const refresh = useCallback(async () => {
     const [nextTasks, nextCandidates] = await Promise.all([
@@ -112,6 +114,15 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
       return next;
     });
   }
+  const renderTask = (task: Schedule) => <div key={task.id} className="flex items-center justify-between gap-2 border rounded-md p-3 text-sm">
+              <div><div className="font-medium">{kindLabel[task.kind]} · {repeatLabel[task.repeat]}</div>
+                <div className="text-ink-500">{task.enabled ? `下次执行：${displayDate(task.nextRunAt)}` : "已结束"} · 上次执行：{displayDate(task.lastRunAt)}</div>
+                {task.runStatus && <div role="status" className="text-ink-500">{({ queued: "排队中", running: "后台检索中", failed: "检索失败，可重试" })[task.runStatus]}</div>}</div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" disabled={busy || task.runStatus === "queued" || task.runStatus === "running"} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "startSchedule", [teacherId, task.id]), "已提交后台检索，可继续使用平台")}><Play className="w-4 h-4" /> 立即执行</Button>
+                {task.enabled && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "cancelSchedule", [teacherId, task.id]), "已停止任务")}><Trash2 className="w-4 h-4" /> 停止</Button>}
+              </div>
+            </div>;
   return (
     <>
       <Card>
@@ -142,17 +153,11 @@ export function ScheduledDuplicatePanel({ teacherId }: { teacherId: string }) {
           <div className="space-y-2">
             <h4 className="font-medium">已创建任务</h4>
             {tasks.length === 0 && <p className="text-sm text-ink-500">暂无任务</p>}
-            {tasks.map((task) => <div key={task.id} className="flex items-center justify-between gap-2 border rounded-md p-3 text-sm">
-              <div><div className="font-medium">{kindLabel[task.kind]} · {repeatLabel[task.repeat]}</div>
-                <div className="text-ink-500">{task.enabled ? `下次执行：${displayDate(task.nextRunAt)}` : "已结束"} · 上次执行：{displayDate(task.lastRunAt)}</div>
-                {task.runStatus && <div role="status" className="text-ink-500">{({ queued: "排队中", running: "后台检索中", failed: "检索失败，可重试" })[task.runStatus]}</div>}</div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="ghost" disabled={busy || task.runStatus === "queued" || task.runStatus === "running"} onClick={() => void execute(() =>
-                  rpcCall("scheduledDuplicate", "startSchedule", [teacherId, task.id]),
-                  "已提交后台检索，可继续使用平台")}><Play className="w-4 h-4" /> 立即执行</Button>
-                {task.enabled && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void execute(() => rpcCall("scheduledDuplicate", "cancelSchedule", [teacherId, task.id]), "已停止任务")}><Trash2 className="w-4 h-4" /> 停止</Button>}
-              </div>
-            </div>)}
+            {activeTasks.map(renderTask)}
+            {completedTasks.length > 0 && <details className="space-y-2">
+              <summary className="cursor-pointer text-sm font-medium text-ink-600">已完成任务（{completedTasks.length}）</summary>
+              {completedTasks.map(renderTask)}
+            </details>}
           </div>
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

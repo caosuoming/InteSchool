@@ -161,6 +161,7 @@ interface QuestionBankPageProps {
   onQuestionDeleted?: (questionId: string) => void;
   refreshToken?: number;
   studentIds?: string[];
+  resourceStudents?: ReadonlyArray<Pick<Student, "id" | "name" | "classId">>;
   onStudentIdsChange?: (ids: string[]) => void;
   hideStudentPicker?: boolean;
 }
@@ -173,6 +174,7 @@ export default function QuestionBankPage({
   onQuestionDeleted,
   refreshToken = 0,
   studentIds,
+  resourceStudents,
   onStudentIdsChange,
   hideStudentPicker = false,
 }: QuestionBankPageProps = {}) {
@@ -274,6 +276,7 @@ export default function QuestionBankPage({
     [pendingQuestionAssignments],
   );
   const [excludeDone, setExcludeDone] = useState(true);
+  const [showDoneOnly, setShowDoneOnly] = useState(false);
   const [timeRangeKey, setTimeRangeKey] = useState<TimeRangeKey>("all");
   const dateRange = useMemo(() => getDateRange(timeRangeKey), [timeRangeKey]);
 
@@ -359,7 +362,9 @@ export default function QuestionBankPage({
     setLoading(true);
 
     let excludeIds: string[] = [];
-    if (mode === "use" && excludeDone && selectedStudentIds.length > 0) {
+    const doneOnly = mode === "use" && showDoneOnly && selectedStudentIds.length > 0;
+    const answeredOnlyIds = doneOnly ? new Set(await analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange)) : null;
+    if (mode === "use" && !doneOnly && excludeDone && selectedStudentIds.length > 0) {
       const [answeredIds, pendingAssignments] = await Promise.all([
         analyticsService.getAnsweredQuestionIds(selectedStudentIds, dateRange),
         analyticsService.listPendingQuestionAssignments(selectedStudentIds),
@@ -423,7 +428,7 @@ export default function QuestionBankPage({
 
     const data = await questionService.listQuestions(filter);
 
-    let sorted = [...data];
+    let sorted = answeredOnlyIds ? data.filter((question) => answeredOnlyIds.has(question.id)) : [...data];
     if (mode === "use" && selectedStudentIds.length > 0 && isTreeEnabled("knowledge") && trainingStatus !== "all") {
       const mastery = await analyticsService.getKnowledgeMastery(
         selectedStudentIds,
@@ -503,7 +508,7 @@ export default function QuestionBankPage({
     teacher, debouncedKeyword, searchFields, checkedChapters, checkedKnowledge, checkedMethods, checkedErrors, chapterLogic, knowledgeLogic, methodLogic, errorLogic,
     noChapter, noKnowledge, noMethod,
     selectedDifficulties, selectedTypes, selectedGrade, selectedYear, selectedSemester,
-    selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, sortKey, trainingStatus, dateRange,
+    selectedSources, selectedCategories, expandCategoryFilter, mode, selectedStudentIds, excludeDone, showDoneOnly, sortKey, trainingStatus, dateRange,
     currentPage, pageSize, isTreeEnabled,
   ]);
 
@@ -1339,15 +1344,21 @@ export default function QuestionBankPage({
                     已针对 <span className="font-medium text-ink-900">{selectedStudentIds.length} 名学生</span> 优化排序
                   </span>
                 </div>
+                <div className="flex flex-wrap gap-3">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={showDoneOnly} onChange={(e) => { setShowDoneOnly(e.target.checked); if (e.target.checked) setExcludeDone(false); }} />
+                  做过的题目
+                </label>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
                     type="checkbox"
                     checked={excludeDone}
-                    onChange={(e) => setExcludeDone(e.target.checked)}
+                    onChange={(e) => { setExcludeDone(e.target.checked); if (e.target.checked) setShowDoneOnly(false); }}
                     className="w-4 h-4 rounded border-ink-300 text-gold-500 focus:ring-gold-500"
                   />
                   <span className="text-ink-600">自动排除做过和待做的题目</span>
                 </label>
+                </div>
               </div>
             )}
 
@@ -1512,6 +1523,7 @@ export default function QuestionBankPage({
                   methodMap={methodMap}
                   teacher={teacher}
                   students={students}
+                  resourceStudents={resourceStudents}
                   classes={[...schoolClasses, ...personalClasses]}
                   followedStudentIds={followedStudentIds}
                   sameQuestionIds={sameQuestionIds[q.id] || []}
@@ -2144,7 +2156,7 @@ function ToggleFilter({
 
 function QuestionRow({
   question, schoolStat, mode, chapterMap, knowledgeMap, methodMap, teacher,
-  students, classes, followedStudentIds, sameQuestionIds, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
+  students, resourceStudents, classes, followedStudentIds, sameQuestionIds, selectedStudentIds, studentAnswerRecords, pendingQuestionKeys,
   defaultBasket, showChapter, showKnowledge, showMethod = true, showRemark, showStudentAnswers,
   isUsedBySelectedStudents, lecturesUsingQuestion, examPapersUsingQuestion,
   usageResourcesLoaded, usageResourcesLoading, onLoadUsageResources,
@@ -2172,6 +2184,7 @@ function QuestionRow({
   methodMap: Map<string, string>;
   teacher: any;
   students: Student[];
+  resourceStudents?: ReadonlyArray<Pick<Student, "id" | "name" | "classId">>;
   classes: Array<SchoolClass | PersonalClass>;
   followedStudentIds: ReadonlySet<string>;
   sameQuestionIds: string[];
@@ -2248,23 +2261,29 @@ function QuestionRow({
       }
     }
     return selectedStudentIds.map((sid) => {
-      const student = students.find((item) => item.id === sid);
+      const student = students.find((item) => item.id === sid) || resourceStudents?.find((item) => item.id === sid);
       const record = latest.get(sid);
       const score = record ? inferScore(record) : null;
       const pending = !record && pendingQuestionKeys.has(sid + ":" + question.id);
       return { student, studentId: sid, record, score, pending };
     });
-  }, [mode, selectedStudentIds, students, studentAnswerRecords, pendingQuestionKeys, question.id, sameQuestionIds]);
+  }, [mode, selectedStudentIds, students, resourceStudents, studentAnswerRecords, pendingQuestionKeys, question.id, sameQuestionIds]);
 
   const visibleStudentAnswers = useMemo(() => {
     if (editingAnswers || questionStudentAnswers.length <= 5) return questionStudentAnswers;
     return [...questionStudentAnswers]
       .sort((a, b) => {
-        const priority = (item: typeof a) => item.score ? 0 : followedStudentIds.has(item.studentId) ? 1 : 2;
+        const priority = (item: typeof a) => {
+          if (item.score) return 0;
+          const personal = classes.some((group) => group.type === "personal" && group.studentIds.includes(item.studentId));
+          const taught = classes.some((group) => group.type === "school" && group.id === item.student?.classId);
+          if (personal && !taught) return 1;
+          return followedStudentIds.has(item.studentId) ? 2 : 3;
+        };
         return priority(a) - priority(b);
       })
       .slice(0, 5);
-  }, [editingAnswers, questionStudentAnswers, followedStudentIds]);
+  }, [editingAnswers, questionStudentAnswers, followedStudentIds, classes]);
 
   const answerClassGroups = useMemo(() => {
     const groups = new Map<string, { name: string; answers: typeof questionStudentAnswers }>();
@@ -2281,7 +2300,7 @@ function QuestionRow({
 
   const renderStudentAnswer = ({ student, studentId: selectedId, score, pending }: typeof questionStudentAnswers[number]) => {
     const name = student?.name || "未知学生";
-    const studentId = student?.id;
+    const studentId = students.some((item) => item.id === selectedId) ? selectedId : undefined;
     if (editingAnswers && onUpdateStudentAnswer && studentId) {
       const options: Array<{ value: AnswerScore | null; label: string; cls: string }> = [
         { value: null, label: pending ? "待做" : "未做", cls: "bg-ink-100 text-ink-500 border-ink-200" },

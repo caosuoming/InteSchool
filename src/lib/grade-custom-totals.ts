@@ -1,5 +1,5 @@
 import type { GradeCustomTotalScore, GradeExam, GradeScoreRecord, GradeStatisticsTemplate } from "../types/index.js";
-import { gradeAttendance, participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
+import { participatingGradeRecords, totalRankingGroupKey } from "./grade-statistics.js";
 import { inferGradeAcademicTrackFromSelection } from "./grade-total-score-segment.js";
 
 /** Same name/subject selection is used by every statistics table. */
@@ -33,8 +33,7 @@ export interface GradeCustomRanks {
 
 /** Competition ranking (1,1,3), respecting separate ranking groups and mixed tracks. */
 export function gradeCustomRanks(exam: GradeExam, total: GradeCustomTotalScore): GradeCustomRanks {
-  const records = participatingGradeRecords(exam.records)
-    .filter((record) => gradeAttendance(record, exam.subjects, exam.settings).complete);
+  const records = participatingGradeRecords(exam.records);
   const scored = records.flatMap((record) => {
     const score = gradeCustomTotal(record, total);
     return score === null ? [] : [{ record, score }];
