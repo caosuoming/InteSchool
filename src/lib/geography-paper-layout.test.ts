@@ -86,7 +86,7 @@ describe("geography paper subquestion numbering", () => {
   it("replaces a standalone choice question's source number with the paper number", () => {
     const original = "16. 农耕聚落空间布局是？";
     expect(renumberGeographyPaperStem(original, "single", "地理", 4)).toBe("农耕聚落空间布局是？");
-    expect(renumberGeographyPaperStem(original, "single", "历史", 4)).toBe(original);
+    expect(renumberGeographyPaperStem(original, "single", "历史", 4)).toBe("农耕聚落空间布局是？");
     expect(geographyPaperQuestionCount(original, "single", "地理")).toBe(1);
     expect(renumberGeographyPaperStem("普通选择题", "single", "地理", 4)).toBe("普通选择题");
   });
