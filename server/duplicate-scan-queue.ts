@@ -70,11 +70,13 @@ function computeInWorker(input: DuplicateScanInput): Promise<DuplicateCandidate[
   return new Promise((resolve, reject) => {
     const compiled = new URL("./domain/duplicateScanWorker.js", import.meta.url);
     const source = new URL("./domain/duplicateScanWorker.ts", import.meta.url);
-    const worker = new Worker(existsSync(compiled) ? compiled : source, {
-      workerData: input,
-      ...(existsSync(compiled) ? {} : { execArgv: ["--import", "tsx"] }),
-      resourceLimits: { maxOldGenerationSizeMb: 1024 },
-    });
+    const options = { workerData: input, resourceLimits: { maxOldGenerationSizeMb: 1024 } };
+    const worker = existsSync(compiled)
+      ? new Worker(compiled, options)
+      : new Worker(`import("tsx/esm/api").then(({ register }) => {
+          register();
+          return import(${JSON.stringify(source.href)});
+        }).catch((error) => { throw error; });`, { ...options, eval: true, execArgv: [] });
     worker.once("message", resolve);
     worker.once("error", reject);
     worker.once("exit", (code) => reject(new Error(`duplicate scan worker exited before returning a result (code ${code})`)));
